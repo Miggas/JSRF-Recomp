@@ -1,0 +1,1307 @@
+[
+ {
+  "start": "0x000110D0"
+ },
+ {
+  "start": "0x0001113A"
+ },
+ {
+  "start": "0x000111A1"
+ },
+ {
+  "start": "0x0001120D"
+ },
+ {
+  "start": "0x00015682"
+ },
+ {
+  "start": "0x000156B0"
+ },
+ {
+  "start": "0x000158A8"
+ },
+ {
+  "start": "0x000158C1"
+ },
+ {
+  "start": "0x00015B85"
+ },
+ {
+  "start": "0x00015B8E"
+ },
+ {
+  "start": "0x0001BF40"
+ },
+ {
+  "start": "0x0001C9B4"
+ },
+ {
+  "start": "0x0001DF48"
+ },
+ {
+  "start": "0x0001E0A2"
+ },
+ {
+  "start": "0x0002011B"
+ },
+ {
+  "start": "0x00020156"
+ },
+ {
+  "start": "0x0002040D"
+ },
+ {
+  "start": "0x00022043"
+ },
+ {
+  "start": "0x000221E7"
+ },
+ {
+  "start": "0x00022F30"
+ },
+ {
+  "start": "0x00022F93"
+ },
+ {
+  "start": "0x00023C50"
+ },
+ {
+  "start": "0x00029FE0"
+ },
+ {
+  "start": "0x0002F642"
+ },
+ {
+  "start": "0x0002F650"
+ },
+ {
+  "start": "0x0002F65E"
+ },
+ {
+  "start": "0x0002F66C"
+ },
+ {
+  "start": "0x0002F67A"
+ },
+ {
+  "start": "0x0002F688"
+ },
+ {
+  "start": "0x0002F830"
+ },
+ {
+  "start": "0x0002FF70"
+ },
+ {
+  "start": "0x00030099"
+ },
+ {
+  "start": "0x0003060E"
+ },
+ {
+  "start": "0x00038D98"
+ },
+ {
+  "start": "0x0003A900"
+ },
+ {
+  "start": "0x0003C9C3"
+ },
+ {
+  "start": "0x0003D8E2"
+ },
+ {
+  "start": "0x0003E1B5"
+ },
+ {
+  "start": "0x0003FEC0"
+ },
+ {
+  "start": "0x00040921"
+ },
+ {
+  "start": "0x00040A77"
+ },
+ {
+  "start": "0x00040A82"
+ },
+ {
+  "start": "0x00041D10"
+ },
+ {
+  "start": "0x0004250A"
+ },
+ {
+  "start": "0x000425D0"
+ },
+ {
+  "start": "0x00042890"
+ },
+ {
+  "start": "0x000439F0"
+ },
+ {
+  "start": "0x00043FE0"
+ },
+ {
+  "start": "0x00044207"
+ },
+ {
+  "start": "0x00044227"
+ },
+ {
+  "start": "0x00044BA0"
+ },
+ {
+  "start": "0x00044C90"
+ },
+ {
+  "start": "0x00047600"
+ },
+ {
+  "start": "0x00047850"
+ },
+ {
+  "start": "0x0004C400"
+ },
+ {
+  "start": "0x00050180"
+ },
+ {
+  "start": "0x00050330"
+ },
+ {
+  "start": "0x00050860"
+ },
+ {
+  "start": "0x00050D30"
+ },
+ {
+  "start": "0x000512F0"
+ },
+ {
+  "start": "0x00051490"
+ },
+ {
+  "start": "0x00052780"
+ },
+ {
+  "start": "0x000540CD"
+ },
+ {
+  "start": "0x00054750"
+ },
+ {
+  "start": "0x000580D2"
+ },
+ {
+  "start": "0x000580F2"
+ },
+ {
+  "start": "0x00069430"
+ },
+ {
+  "start": "0x00069F90"
+ },
+ {
+  "start": "0x0006A770"
+ },
+ {
+  "start": "0x0006FE40"
+ },
+ {
+  "start": "0x0006FFA0"
+ },
+ {
+  "start": "0x0007004E"
+ },
+ {
+  "start": "0x00070060"
+ },
+ {
+  "start": "0x0007400A"
+ },
+ {
+  "start": "0x0007402D"
+ },
+ {
+  "start": "0x00077000"
+ },
+ {
+  "start": "0x00078887"
+ },
+ {
+  "start": "0x00079740"
+ },
+ {
+  "start": "0x00079BE0"
+ },
+ {
+  "start": "0x0007AF90"
+ },
+ {
+  "start": "0x0007B956"
+ },
+ {
+  "start": "0x0007B978"
+ },
+ {
+  "start": "0x0007BBF3"
+ },
+ {
+  "start": "0x0007E255"
+ },
+ {
+  "start": "0x000817C3"
+ },
+ {
+  "start": "0x000817EE"
+ },
+ {
+  "start": "0x00081834"
+ },
+ {
+  "start": "0x00081860"
+ },
+ {
+  "start": "0x000861A0"
+ },
+ {
+  "start": "0x00089A60"
+ },
+ {
+  "start": "0x0008AEB0"
+ },
+ {
+  "start": "0x0008FF70"
+ },
+ {
+  "start": "0x000901AD"
+ },
+ {
+  "start": "0x0009043E"
+ },
+ {
+  "start": "0x00090440"
+ },
+ {
+  "start": "0x00091FC0"
+ },
+ {
+  "start": "0x00092060"
+ },
+ {
+  "start": "0x00094AB0"
+ },
+ {
+  "start": "0x000963E3"
+ },
+ {
+  "start": "0x00096560"
+ },
+ {
+  "start": "0x00096B60"
+ },
+ {
+  "start": "0x0009A970"
+ },
+ {
+  "start": "0x000A5B60"
+ },
+ {
+  "start": "0x000A82D1"
+ },
+ {
+  "start": "0x000AA550"
+ },
+ {
+  "start": "0x000ADE86"
+ },
+ {
+  "start": "0x000AE655"
+ },
+ {
+  "start": "0x000AF067"
+ },
+ {
+  "start": "0x000AFFF4"
+ },
+ {
+  "start": "0x000B0060"
+ },
+ {
+  "start": "0x000B07A3"
+ },
+ {
+  "start": "0x000B07D2"
+ },
+ {
+  "start": "0x000B09DC"
+ },
+ {
+  "start": "0x000B3DCF"
+ },
+ {
+  "start": "0x000B3DD0"
+ },
+ {
+  "start": "0x000B5ECE"
+ },
+ {
+  "start": "0x000B5ED0"
+ },
+ {
+  "start": "0x000B672A"
+ },
+ {
+  "start": "0x000B86E0"
+ },
+ {
+  "start": "0x000B8A60"
+ },
+ {
+  "start": "0x000B9270"
+ },
+ {
+  "start": "0x000BC160"
+ },
+ {
+  "start": "0x000BE280"
+ },
+ {
+  "start": "0x000BFFE0"
+ },
+ {
+  "start": "0x000C0033"
+ },
+ {
+  "start": "0x000C1050"
+ },
+ {
+  "start": "0x000C2730"
+ },
+ {
+  "start": "0x000C3410"
+ },
+ {
+  "start": "0x000C5B90"
+ },
+ {
+  "start": "0x000C67A0"
+ },
+ {
+  "start": "0x000C6820"
+ },
+ {
+  "start": "0x000CB35C"
+ },
+ {
+  "start": "0x000CF370"
+ },
+ {
+  "start": "0x000CF4E0"
+ },
+ {
+  "start": "0x000D0800"
+ },
+ {
+  "start": "0x000D15D0"
+ },
+ {
+  "start": "0x000D52A0"
+ },
+ {
+  "start": "0x000D59FC"
+ },
+ {
+  "start": "0x000D6390"
+ },
+ {
+  "start": "0x000D9920"
+ },
+ {
+  "start": "0x000D9A10"
+ },
+ {
+  "start": "0x000DA3E0"
+ },
+ {
+  "start": "0x000DA710"
+ },
+ {
+  "start": "0x000DAF90"
+ },
+ {
+  "start": "0x000DB0F0"
+ },
+ {
+  "start": "0x000E2BF0"
+ },
+ {
+  "start": "0x000E3E80"
+ },
+ {
+  "start": "0x000E6180"
+ },
+ {
+  "start": "0x000E6590"
+ },
+ {
+  "start": "0x000E7260"
+ },
+ {
+  "start": "0x000E7D70"
+ },
+ {
+  "start": "0x000E7F51"
+ },
+ {
+  "start": "0x000E7FAC"
+ },
+ {
+  "start": "0x000E96E0"
+ },
+ {
+  "start": "0x000E9E90"
+ },
+ {
+  "start": "0x000EA7A0"
+ },
+ {
+  "start": "0x000EA8C0"
+ },
+ {
+  "start": "0x000EAA30"
+ },
+ {
+  "start": "0x000EAD00"
+ },
+ {
+  "start": "0x000EAE40"
+ },
+ {
+  "start": "0x000EAFC0"
+ },
+ {
+  "start": "0x000EB440"
+ },
+ {
+  "start": "0x000EC3E0"
+ },
+ {
+  "start": "0x000F3BB0"
+ },
+ {
+  "start": "0x000F4DD0"
+ },
+ {
+  "start": "0x000F7720"
+ },
+ {
+  "start": "0x000F9AE0"
+ },
+ {
+  "start": "0x000FD190"
+ },
+ {
+  "start": "0x000FD3E0"
+ },
+ {
+  "start": "0x000FFD70"
+ },
+ {
+  "start": "0x001005D0"
+ },
+ {
+  "start": "0x00101A70"
+ },
+ {
+  "start": "0x001025B0"
+ },
+ {
+  "start": "0x00102936"
+ },
+ {
+  "start": "0x001063B2"
+ },
+ {
+  "start": "0x00107106"
+ },
+ {
+  "start": "0x0010710A"
+ },
+ {
+  "start": "0x00107680"
+ },
+ {
+  "start": "0x00109FA0"
+ },
+ {
+  "start": "0x0010A050"
+ },
+ {
+  "start": "0x0010AF10"
+ },
+ {
+  "start": "0x0010CF50"
+ },
+ {
+  "start": "0x0010EB10"
+ },
+ {
+  "start": "0x00111320"
+ },
+ {
+  "start": "0x00111C10"
+ },
+ {
+  "start": "0x001128C0"
+ },
+ {
+  "start": "0x001129E0"
+ },
+ {
+  "start": "0x00113290"
+ },
+ {
+  "start": "0x001133A0"
+ },
+ {
+  "start": "0x00114080"
+ },
+ {
+  "start": "0x001185B0"
+ },
+ {
+  "start": "0x00119C20"
+ },
+ {
+  "start": "0x00119CE0"
+ },
+ {
+  "start": "0x00119DA0"
+ },
+ {
+  "start": "0x00119DE0"
+ },
+ {
+  "start": "0x00119E20"
+ },
+ {
+  "start": "0x00119E60"
+ },
+ {
+  "start": "0x0011AC50"
+ },
+ {
+  "start": "0x0011B290"
+ },
+ {
+  "start": "0x0011B2F0"
+ },
+ {
+  "start": "0x0011B680"
+ },
+ {
+  "start": "0x0011BD0D"
+ },
+ {
+  "start": "0x0011E315"
+ },
+ {
+  "start": "0x0011E41A"
+ },
+ {
+  "start": "0x0011E420"
+ },
+ {
+  "start": "0x00123B6E"
+ },
+ {
+  "start": "0x00124B20"
+ },
+ {
+  "start": "0x00127E6D"
+ },
+ {
+  "start": "0x00127F70"
+ },
+ {
+  "start": "0x001293E4"
+ },
+ {
+  "start": "0x001294D8"
+ },
+ {
+  "start": "0x001295BC"
+ },
+ {
+  "start": "0x001296C7"
+ },
+ {
+  "start": "0x0012A55B"
+ },
+ {
+  "start": "0x0012A585"
+ },
+ {
+  "start": "0x0012F220"
+ },
+ {
+  "start": "0x00134B30"
+ },
+ {
+  "start": "0x00134D70"
+ },
+ {
+  "start": "0x00134D86"
+ },
+ {
+  "start": "0x00134D92"
+ },
+ {
+  "start": "0x00136410"
+ },
+ {
+  "start": "0x001380C0"
+ },
+ {
+  "start": "0x00139B50"
+ },
+ {
+  "start": "0x00139C00"
+ },
+ {
+  "start": "0x00139CF0"
+ },
+ {
+  "start": "0x00139F40"
+ },
+ {
+  "start": "0x0013A240"
+ },
+ {
+  "start": "0x0013B180"
+ },
+ {
+  "start": "0x0013B1C0"
+ },
+ {
+  "start": "0x0013B230"
+ },
+ {
+  "start": "0x0013B2A0"
+ },
+ {
+  "start": "0x0013B750"
+ },
+ {
+  "start": "0x0013D840"
+ },
+ {
+  "start": "0x00152DE0"
+ },
+ {
+  "start": "0x0015374B"
+ },
+ {
+  "start": "0x00154DAA"
+ },
+ {
+  "start": "0x00159330"
+ },
+ {
+  "start": "0x0015A0AE"
+ },
+ {
+  "start": "0x0015A0B4"
+ },
+ {
+  "start": "0x0015A0BA"
+ },
+ {
+  "start": "0x0015A0C0"
+ },
+ {
+  "start": "0x0015A0C6"
+ },
+ {
+  "start": "0x0015A0CC"
+ },
+ {
+  "start": "0x0015A0D2"
+ },
+ {
+  "start": "0x0015A0F9"
+ },
+ {
+  "start": "0x00161C09"
+ },
+ {
+  "start": "0x001625A0"
+ },
+ {
+  "start": "0x001625F0"
+ },
+ {
+  "start": "0x001626C0"
+ },
+ {
+  "start": "0x00168260"
+ },
+ {
+  "start": "0x0016B090"
+ },
+ {
+  "start": "0x00170CFD"
+ },
+ {
+  "start": "0x00171EB7"
+ },
+ {
+  "start": "0x00174D54"
+ },
+ {
+  "start": "0x001783FE"
+ },
+ {
+  "start": "0x00178882"
+ },
+ {
+  "start": "0x0017888A"
+ },
+ {
+  "start": "0x00178F40"
+ },
+ {
+  "start": "0x0017B390"
+ },
+ {
+  "start": "0x0017DBE3"
+ },
+ {
+  "start": "0x0017FD31"
+ },
+ {
+  "start": "0x0017FF7F"
+ },
+ {
+  "start": "0x00180020"
+ },
+ {
+  "start": "0x00180063"
+ },
+ {
+  "start": "0x00180074"
+ },
+ {
+  "start": "0x00180078"
+ },
+ {
+  "start": "0x0018007F"
+ },
+ {
+  "start": "0x0018011B"
+ },
+ {
+  "start": "0x001801A6"
+ },
+ {
+  "start": "0x001801AD"
+ },
+ {
+  "start": "0x001801EC"
+ },
+ {
+  "start": "0x00180221"
+ },
+ {
+  "start": "0x00180470"
+ },
+ {
+  "start": "0x00180472"
+ },
+ {
+  "start": "0x00182C08"
+ },
+ {
+  "start": "0x00182C71"
+ },
+ {
+  "start": "0x00183F71"
+ },
+ {
+  "start": "0x00183F86"
+ },
+ {
+  "start": "0x00183FC4"
+ },
+ {
+  "start": "0x00184008"
+ },
+ {
+  "start": "0x00184068"
+ },
+ {
+  "start": "0x001840A6"
+ },
+ {
+  "start": "0x00184E66"
+ },
+ {
+  "start": "0x0018AFB0"
+ },
+ {
+  "start": "0x0018B1A0"
+ },
+ {
+  "start": "0x0018B390"
+ },
+ {
+  "start": "0x0018B580"
+ },
+ {
+  "start": "0x0018B770"
+ },
+ {
+  "start": "0x0018B960"
+ },
+ {
+  "start": "0x0018BB50"
+ },
+ {
+  "start": "0x0018BD40"
+ },
+ {
+  "start": "0x0018C1D0"
+ },
+ {
+  "start": "0x0018C3C0"
+ },
+ {
+  "start": "0x0019F040"
+ },
+ {
+  "start": "0x001BCAA3"
+ },
+ {
+  "start": "0x001BD274"
+ },
+ {
+  "start": "0x001BE0B4"
+ },
+ {
+  "start": "0x001C379D"
+ },
+ {
+  "start": "0x001C37AF"
+ },
+ {
+  "start": "0x001C38AE"
+ },
+ {
+  "start": "0x0007BE30",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 13"
+ },
+ {
+  "start": "0x00024700",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 13"
+ },
+ {
+  "start": "0x001BE689",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 13"
+ },
+ {
+  "start": "0x00173DB0",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 15"
+ },
+ {
+  "start": "0x0001FFF0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0003C060",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0003E230",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00045DC0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00045FB0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00048690",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000489E0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000498B0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00049B20",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0004BF70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000521B0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00052350",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000530A0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0007C290",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0007DBD0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00091AC0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00091C30",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00091D70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A3E50",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A3F70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A44E0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A4890",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A9200",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000AAFB0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000AC950",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000B3C30",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000BE930",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000C2630",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000C8C10",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000CE010",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000CF170",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000D9040",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000D9500",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000DE3D0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000DEE50",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000E17D0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000E54F0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000EDA30",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000EED40",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000EFFF0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000F0F70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000F3420",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000F51A0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0010F670",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00110B40",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00115030",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00115A40",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0011C070",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0011C750",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0011EAF0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0013FAD0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x001571E0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0015F680",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00172870",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00175300",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x001774F0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x001BDE21",
+  "observed": true,
+  "note": "observed at runtime: ICALL target (XPP USB callback) in run 16"
+ },
+ {
+  "start": "0x000496E0",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 27 (press start screen)"
+ },
+ {
+  "start": "0x000BE190",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 27 (press start screen)"
+ },
+ {
+  "start": "0x0001FD10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00020F10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0002CC90",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00030B30",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00034680",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000352D0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00038090",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00039620",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00041400",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0005C840",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00096F80",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000A4100",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000A5070",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000AEE90",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000BE4E0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000DBD80",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000E8500",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000F3180",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000F31C0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0010FA60",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00110330",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011CF10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011D740",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011EDE0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011F7D0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011FEB0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00154560",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0015AD10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0002F420"
+ },
+ {
+  "start": "0x000D02F0"
+ }
+]

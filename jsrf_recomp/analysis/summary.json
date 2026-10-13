@@ -1,0 +1,41 @@
+{
+  "total_functions": 12144,
+  "classification": {
+    "renderware": 0,
+    "crt": 11,
+    "data_init": 0,
+    "game_classified": 7138,
+    "vtable_methods": 3167,
+    "unknown": 4995
+  },
+  "percentages": {
+    "renderware": 0.0,
+    "crt": 0.1,
+    "data_init": 0.0,
+    "game_classified": 58.8,
+    "unknown": 41.1
+  },
+  "by_category": {
+    "crt": 11,
+    "game_audio": 365,
+    "game_camera": 1,
+    "game_debug": 11,
+    "game_input": 171,
+    "game_io": 3,
+    "game_render": 303,
+    "game_ui": 3,
+    "game_vtable": 6281,
+    "unknown": 4995
+  },
+  "by_method": {
+    "crt_signature": 11,
+    "none": 4995,
+    "string_keyword": 22,
+    "vtable_ctor": 457,
+    "vtable_scan": 2710,
+    "vtable_thunk": 3114,
+    "xdk_caller": 835
+  },
+  "rw_modules": {},
+  "rw_module_count": 0
+}

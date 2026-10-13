@@ -1,0 +1,16 @@
+Jet Set Radio Future recomp - clean project (v183)
+
+project\xboxrecomp      the runtime toolkit (with all changes so far)
+project\jsrf_recomp     the game project: source, generated code, tools, .bat files
+
+1. Copy your game files (default.xbe and the rest) into jsrf_recomp\game\
+2. jsrf_recomp\rebuild.bat          build (first run configures, takes a while)
+3. jsrf_recomp\play_jsrf.bat        play;  run_jsrf.bat = play with logs for reports
+   or jsrf_recomp\build_portable.bat  release: puts jsrf_recomp.exe + jsrf.ini in the game folder
+
+Unzip to a new folder rather than over an old copy, and do not copy an old
+"build" folder into it (CMake remembers the folder it was configured in).
+
+Saves are in jsrf_recomp\game\savegame (old saves are copied there on the first run).
+jsrf_recomp\jsrf.ini.example lists every setting.
+The history of every version is in jsrf_recomp\README_JSRF.md.

@@ -1,0 +1,35 @@
+# Generated from the game binary -- never commit (see README.md)
+jsrf_recomp/src/recomp/gen/
+
+# Game files: everyone supplies their own
+jsrf_recomp/game/*
+!jsrf_recomp/game/PUT_GAME_FILES_HERE.txt
+xboxrecomp/game_files/
+*.xbe
+!xboxrecomp/tools/conformance/test.xbe
+*.iso
+*.xiso
+
+# Files worked out from the xbe header, regenerated when needed
+jsrf_recomp/analysis/default_analysis.json
+jsrf_recomp/analysis/xbe_inventory.txt
+jsrf_recomp/analysis/recomp.log
+
+# Builds and logs
+**/build/
+*.exe
+*.dll
+*.pdb
+*.obj
+*.lib
+stderr*.txt
+*.wav
+savegame/
+
+# Python / editors / OS
+__pycache__/
+*.pyc
+.vs/
+.vscode/
+Thumbs.db
+.DS_Store
