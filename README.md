@@ -37,10 +37,12 @@ the runtime in `xboxrecomp/`.
 
 - **A Windows 10 or 11 PC** to build the game. (Once built, the game also runs
   on a Steam Deck. Building on the Deck itself is not supported.)
-- **Your copy of Jet Set Radio Future for the original Xbox**: the retail game,
-  either as a disc image (`.iso`) or as its files (`default.xbe` plus the
-  folders next to it). The project is made for the version whose `default.xbe`
-  has this SHA-256 fingerprint; the build checks it for you:
+- **Your copy of Jet Set Radio Future for the original Xbox — the NTSC
+  (North American) retail release.** The PAL (European) and NTSC-J (Japanese)
+  releases are built differently inside and **will not work**. You can use a
+  disc image (`.iso`) or the game's files (`default.xbe` plus the folders next
+  to it). The build checks that your `default.xbe` is the right one by its
+  SHA-256 fingerprint:
   `bb2410618c35ccab1ab8ad989194bbd50619eeb648a03b21483efca57f36547d`
 - **About 5 GB of free disk space** (mostly Visual Studio).
 - **A graphics card with OpenGL 3.3** or newer (practically any GPU from the
@@ -221,7 +223,7 @@ your progress to another PC or the Deck.
 | `Python 3 not found` | Install Python (section 2) with **"Add python.exe to PATH"** ticked. Close and reopen the window afterwards. |
 | `Python package 'capstone' is missing` | Run `py -3 -m pip install capstone==5.0.7` in Command Prompt. |
 | `default.xbe not found` | The game files must be in `jsrf_recomp\game\`, with `default.xbe` directly in it (not in a subfolder). |
-| `this default.xbe is not the one the analysis was made from` | Your copy is a different version or region. The project is made for the one retail version (section 1). |
+| `this default.xbe is not the one the analysis was made from` | Your copy is a different version — most likely the PAL (European) or NTSC-J (Japanese) release. Only the NTSC (North American) retail release works (section 1). |
 | `No recompiled code yet in src\recomp\gen` | Run `generate_code.bat` before `rebuild.bat`. |
 | `cmake` not found, or `Visual Studio 17 2022` not found | Install Visual Studio 2022 with **"Desktop development with C++"** (section 2). |
 | CMake says the cache or source folder doesn't match | You moved or copied the project. Delete the `jsrf_recomp\build` folder and run `rebuild.bat` again. |

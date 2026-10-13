@@ -40,8 +40,9 @@ ANALYSIS = os.path.join(JR, "analysis")
 GEN = os.path.join(JR, "src", "recomp", "gen")
 MANUAL = os.path.join(JR, "src", "recomp_manual.c")
 
-# The retail default.xbe the analysis was made from. Another version or
-# region has its code at other addresses: the analysis would not fit it.
+# The NTSC (North American) retail default.xbe the analysis was made from.
+# The PAL and NTSC-J releases have their code at other addresses: the
+# analysis would not fit them.
 XBE_SHA256 = "bb2410618c35ccab1ab8ad989194bbd50619eeb648a03b21483efca57f36547d"
 
 # v66: reached only through data tables; the function list folds each into
@@ -116,12 +117,13 @@ def main():
     if digest != XBE_SHA256:
         msg = ("this default.xbe is not the one the analysis was made from\n"
                "  yours:    %s\n  expected: %s\n"
-               "  (another version or region of the game). " % (digest, XBE_SHA256))
+               "  Only the NTSC (North American) retail release works; PAL and\n"
+               "  NTSC-J (Japanese) copies are built differently. " % (digest, XBE_SHA256))
         if not a.any_xbe:
             die(msg + "--any-xbe to try anyway; the result will very likely not work.")
         print("WARNING: " + msg)
     else:
-        print("  the retail version the project is made for")
+        print("  the NTSC retail release the project is made for")
 
     # 1. the toolkit reads <stem>_analysis.json beside the XBE
     gf = os.path.join(xr, "game_files")
