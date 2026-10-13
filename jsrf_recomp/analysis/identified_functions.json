@@ -2736,13 +2736,26 @@
   },
   {
     "start": "0x0001FCD2",
-    "end": "0x0001FD47",
-    "size": 117,
+    "end": "0x0001FD12",
+    "size": 64,
     "name": "sub_0001FCD2",
     "section": ".text",
     "category": "unknown",
     "confidence": 0.0,
     "method": "none"
+  },
+  {
+    "start": "0x0001FD10",
+    "end": "0x0001FD47",
+    "size": 55,
+    "name": "sub_0001FD10",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_537",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EBC84",
+    "vtable_index": 22
   },
   {
     "start": "0x0001FD50",
@@ -2798,8 +2811,8 @@
   },
   {
     "start": "0x0001FF90",
-    "end": "0x000200A5",
-    "size": 277,
+    "end": "0x0001FFF0",
+    "size": 96,
     "name": "sub_0001FF90",
     "section": ".text",
     "category": "game_vtable",
@@ -2808,6 +2821,135 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001EBCF4",
     "vtable_index": 25
+  },
+  {
+    "start": "0x0001FFF0",
+    "end": "0x0002011B",
+    "size": 299,
+    "name": "sub_0001FFF0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_538",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EBCF4",
+    "vtable_index": 19
+  },
+  {
+    "start": "0x00020000",
+    "end": "0x0002011B",
+    "size": 283,
+    "name": "sub_00020000",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_356",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0019A148",
+    "vtable_index": 2
+  },
+  {
+    "start": "0x00020004",
+    "end": "0x0002011B",
+    "size": 279,
+    "name": "sub_00020004",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_603",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0021C0A8",
+    "vtable_index": 4
+  },
+  {
+    "start": "0x00020022",
+    "end": "0x0002011B",
+    "size": 249,
+    "name": "sub_00020022",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x00020025",
+    "end": "0x0002011B",
+    "size": 246,
+    "name": "sub_00020025",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x00020028",
+    "end": "0x0002011B",
+    "size": 243,
+    "name": "sub_00020028",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x0002002B",
+    "end": "0x0002011B",
+    "size": 240,
+    "name": "sub_0002002B",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x0002003C",
+    "end": "0x0002011B",
+    "size": 223,
+    "name": "sub_0002003C",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x0002003F",
+    "end": "0x0002011B",
+    "size": 220,
+    "name": "sub_0002003F",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x00020040",
+    "end": "0x0002011B",
+    "size": 219,
+    "name": "sub_00020040",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x0002005D",
+    "end": "0x0002011B",
+    "size": 190,
+    "name": "sub_0002005D",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x00020060",
+    "end": "0x0002011B",
+    "size": 187,
+    "name": "sub_00020060",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
   },
   {
     "start": "0x000200A5",
@@ -3156,8 +3298,8 @@
   },
   {
     "start": "0x00020D70",
-    "end": "0x00021010",
-    "size": 672,
+    "end": "0x00020F10",
+    "size": 416,
     "name": "sub_00020D70",
     "section": ".text",
     "category": "game_vtable",
@@ -3166,6 +3308,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001EBD64",
     "vtable_index": 22
+  },
+  {
+    "start": "0x00020F10",
+    "end": "0x00021004",
+    "size": 244,
+    "name": "sub_00020F10",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_539",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EBD64",
+    "vtable_index": 24
   },
   {
     "start": "0x00021010",
@@ -3836,8 +3991,8 @@
   },
   {
     "start": "0x000246E0",
-    "end": "0x00024970",
-    "size": 656,
+    "end": "0x00024700",
+    "size": 32,
     "name": "sub_000246E0",
     "section": ".text",
     "category": "game_vtable",
@@ -3846,6 +4001,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001C4CD0",
     "vtable_index": 16
+  },
+  {
+    "start": "0x00024700",
+    "end": "0x00024964",
+    "size": 612,
+    "name": "sub_00024700",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_368",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001C4CD0",
+    "vtable_index": 17
   },
   {
     "start": "0x00024970",
@@ -5448,8 +5616,8 @@
   },
   {
     "start": "0x0002C360",
-    "end": "0x0002CFC0",
-    "size": 3168,
+    "end": "0x0002CC90",
+    "size": 2352,
     "name": "sub_0002C360",
     "section": ".text",
     "category": "game_vtable",
@@ -5457,6 +5625,19 @@
     "confidence": 0.85,
     "method": "vtable_scan",
     "vtable_addr": "0x001EC0F0",
+    "vtable_index": 18
+  },
+  {
+    "start": "0x0002CC90",
+    "end": "0x0002CFBA",
+    "size": 810,
+    "name": "sub_0002CC90",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_544",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EC288",
     "vtable_index": 18
   },
   {
@@ -6261,8 +6442,8 @@
   },
   {
     "start": "0x00030850",
-    "end": "0x00030D00",
-    "size": 1200,
+    "end": "0x00030B30",
+    "size": 736,
     "name": "sub_00030850",
     "section": ".text",
     "category": "game_vtable",
@@ -6270,6 +6451,19 @@
     "confidence": 0.85,
     "method": "vtable_scan",
     "vtable_addr": "0x001EC0F0",
+    "vtable_index": 29
+  },
+  {
+    "start": "0x00030B30",
+    "end": "0x00030CF2",
+    "size": 450,
+    "name": "sub_00030B30",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_544",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EC288",
     "vtable_index": 29
   },
   {
@@ -6792,8 +6986,8 @@
   },
   {
     "start": "0x00034200",
-    "end": "0x00034810",
-    "size": 1552,
+    "end": "0x00034680",
+    "size": 1152,
     "name": "sub_00034200",
     "section": ".text",
     "category": "game_vtable",
@@ -6801,6 +6995,19 @@
     "confidence": 0.85,
     "method": "vtable_scan",
     "vtable_addr": "0x001EC0F0",
+    "vtable_index": 16
+  },
+  {
+    "start": "0x00034680",
+    "end": "0x00034801",
+    "size": 385,
+    "name": "sub_00034680",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_544",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EC288",
     "vtable_index": 16
   },
   {
@@ -6844,8 +7051,8 @@
   },
   {
     "start": "0x000348A0",
-    "end": "0x00035560",
-    "size": 3264,
+    "end": "0x000352D0",
+    "size": 2608,
     "name": "sub_000348A0",
     "section": ".text",
     "category": "game_vtable",
@@ -6853,6 +7060,19 @@
     "confidence": 0.85,
     "method": "vtable_scan",
     "vtable_addr": "0x001EC0F0",
+    "vtable_index": 10
+  },
+  {
+    "start": "0x000352D0",
+    "end": "0x00035555",
+    "size": 645,
+    "name": "sub_000352D0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_544",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EC288",
     "vtable_index": 10
   },
   {
@@ -7320,8 +7540,8 @@
   },
   {
     "start": "0x00037550",
-    "end": "0x00038460",
-    "size": 3856,
+    "end": "0x00038090",
+    "size": 2880,
     "name": "sub_00037550",
     "section": ".text",
     "category": "game_vtable",
@@ -7329,6 +7549,19 @@
     "confidence": 0.85,
     "method": "vtable_scan",
     "vtable_addr": "0x001EC0F0",
+    "vtable_index": 6
+  },
+  {
+    "start": "0x00038090",
+    "end": "0x0003845E",
+    "size": 974,
+    "name": "sub_00038090",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_544",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EC288",
     "vtable_index": 6
   },
   {
@@ -7582,8 +7815,8 @@
   },
   {
     "start": "0x00039410",
-    "end": "0x00039740",
-    "size": 816,
+    "end": "0x00039620",
+    "size": 528,
     "name": "sub_00039410",
     "section": ".text",
     "category": "game_vtable",
@@ -7591,6 +7824,19 @@
     "confidence": 0.85,
     "method": "vtable_scan",
     "vtable_addr": "0x001EC0F0",
+    "vtable_index": 20
+  },
+  {
+    "start": "0x00039620",
+    "end": "0x00039732",
+    "size": 274,
+    "name": "sub_00039620",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_544",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001EC288",
     "vtable_index": 20
   },
   {
@@ -8601,8 +8847,8 @@
   },
   {
     "start": "0x0003C040",
-    "end": "0x0003C150",
-    "size": 272,
+    "end": "0x0003C060",
+    "size": 32,
     "name": "sub_0003C040",
     "section": ".text",
     "category": "game_vtable",
@@ -8611,6 +8857,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CA3E8",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0003C060",
+    "end": "0x0003C14B",
+    "size": 235,
+    "name": "sub_0003C060",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_371",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CA3E8",
+    "vtable_index": 3
   },
   {
     "start": "0x0003C150",
@@ -8937,8 +9196,8 @@
   },
   {
     "start": "0x0003E210",
-    "end": "0x0003E3C0",
-    "size": 432,
+    "end": "0x0003E230",
+    "size": 32,
     "name": "sub_0003E210",
     "section": ".text",
     "category": "game_vtable",
@@ -8947,6 +9206,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CA490",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0003E230",
+    "end": "0x0003E3B6",
+    "size": 390,
+    "name": "sub_0003E230",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_373",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CA490",
+    "vtable_index": 1
   },
   {
     "start": "0x0003E3C0",
@@ -9808,6 +10080,19 @@
     "method": "vtable_ctor",
     "vtable_addr": "0x000413E0",
     "vtable_index": -1
+  },
+  {
+    "start": "0x00041400",
+    "end": "0x00041554",
+    "size": 340,
+    "name": "sub_00041400",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_377",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CA5A8",
+    "vtable_index": 1
   },
   {
     "start": "0x00041560",
@@ -10779,8 +11064,8 @@
   },
   {
     "start": "0x00045DB0",
-    "end": "0x000461A0",
-    "size": 1008,
+    "end": "0x00045DC0",
+    "size": 16,
     "name": "sub_00045DB0",
     "section": ".text",
     "category": "game_vtable",
@@ -10789,6 +11074,32 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CA6C8",
     "vtable_index": 53
+  },
+  {
+    "start": "0x00045DC0",
+    "end": "0x00045FA4",
+    "size": 484,
+    "name": "sub_00045DC0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_379",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CA6C8",
+    "vtable_index": 51
+  },
+  {
+    "start": "0x00045FB0",
+    "end": "0x00046193",
+    "size": 483,
+    "name": "sub_00045FB0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_379",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CA6C8",
+    "vtable_index": 54
   },
   {
     "start": "0x000461A0",
@@ -11473,8 +11784,8 @@
   },
   {
     "start": "0x00048570",
-    "end": "0x000488B0",
-    "size": 832,
+    "end": "0x00048690",
+    "size": 288,
     "name": "sub_00048570",
     "section": ".text",
     "category": "game_vtable",
@@ -11485,9 +11796,22 @@
     "vtable_index": 0
   },
   {
+    "start": "0x00048690",
+    "end": "0x000488AA",
+    "size": 538,
+    "name": "sub_00048690",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_555",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F97B4",
+    "vtable_index": 1
+  },
+  {
     "start": "0x000488B0",
-    "end": "0x00048DB0",
-    "size": 1280,
+    "end": "0x000489E0",
+    "size": 304,
     "name": "sub_000488B0",
     "section": ".text",
     "category": "game_vtable",
@@ -11498,9 +11822,22 @@
     "vtable_index": 2
   },
   {
+    "start": "0x000489E0",
+    "end": "0x00048DAD",
+    "size": 973,
+    "name": "sub_000489E0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_555",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F97B4",
+    "vtable_index": 3
+  },
+  {
     "start": "0x00048DB0",
-    "end": "0x000497E0",
-    "size": 2608,
+    "end": "0x000496E0",
+    "size": 2352,
     "name": "sub_00048DB0",
     "section": ".text",
     "category": "game_vtable",
@@ -11511,9 +11848,22 @@
     "vtable_index": 5
   },
   {
+    "start": "0x000496E0",
+    "end": "0x000497D4",
+    "size": 244,
+    "name": "sub_000496E0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_555",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F97B4",
+    "vtable_index": 6
+  },
+  {
     "start": "0x000497E0",
-    "end": "0x00049A80",
-    "size": 672,
+    "end": "0x000498B0",
+    "size": 208,
     "name": "sub_000497E0",
     "section": ".text",
     "category": "game_vtable",
@@ -11524,9 +11874,22 @@
     "vtable_index": 7
   },
   {
+    "start": "0x000498B0",
+    "end": "0x00049A7F",
+    "size": 463,
+    "name": "sub_000498B0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_555",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F97B4",
+    "vtable_index": 8
+  },
+  {
     "start": "0x00049A80",
-    "end": "0x00049E80",
-    "size": 1024,
+    "end": "0x00049B20",
+    "size": 160,
     "name": "sub_00049A80",
     "section": ".text",
     "category": "game_vtable",
@@ -11535,6 +11898,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001F97B4",
     "vtable_index": 9
+  },
+  {
+    "start": "0x00049B20",
+    "end": "0x00049E71",
+    "size": 849,
+    "name": "sub_00049B20",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_555",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F97B4",
+    "vtable_index": 10
   },
   {
     "start": "0x00049E80",
@@ -12379,8 +12755,8 @@
   },
   {
     "start": "0x0004BF40",
-    "end": "0x0004C070",
-    "size": 304,
+    "end": "0x0004BF70",
+    "size": 48,
     "name": "sub_0004BF40",
     "section": ".text",
     "category": "game_vtable",
@@ -12389,6 +12765,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001F9888",
     "vtable_index": 89
+  },
+  {
+    "start": "0x0004BF70",
+    "end": "0x0004C070",
+    "size": 256,
+    "name": "sub_0004BF70",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_556",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F9888",
+    "vtable_index": 90
   },
   {
     "start": "0x0004C070",
@@ -13749,8 +14138,8 @@
   },
   {
     "start": "0x00052150",
-    "end": "0x00052460",
-    "size": 784,
+    "end": "0x000521B0",
+    "size": 96,
     "name": "sub_00052150",
     "section": ".text",
     "category": "game_vtable",
@@ -13759,6 +14148,32 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001F9888",
     "vtable_index": 4
+  },
+  {
+    "start": "0x000521B0",
+    "end": "0x00052343",
+    "size": 403,
+    "name": "sub_000521B0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_556",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F9888",
+    "vtable_index": 7
+  },
+  {
+    "start": "0x00052350",
+    "end": "0x0005245A",
+    "size": 266,
+    "name": "sub_00052350",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_556",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F9888",
+    "vtable_index": 8
   },
   {
     "start": "0x00052460",
@@ -13905,8 +14320,8 @@
   },
   {
     "start": "0x00052FC0",
-    "end": "0x00053270",
-    "size": 688,
+    "end": "0x000530A0",
+    "size": 224,
     "name": "sub_00052FC0",
     "section": ".text",
     "category": "game_vtable",
@@ -13915,6 +14330,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001F9888",
     "vtable_index": 55
+  },
+  {
+    "start": "0x000530A0",
+    "end": "0x00053262",
+    "size": 450,
+    "name": "sub_000530A0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_556",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001F9888",
+    "vtable_index": 72
   },
   {
     "start": "0x00053270",
@@ -14910,8 +15338,8 @@
   },
   {
     "start": "0x0005BF00",
-    "end": "0x0005C990",
-    "size": 2704,
+    "end": "0x0005C840",
+    "size": 2368,
     "name": "sub_0005BF00",
     "section": ".text",
     "category": "game_vtable",
@@ -14920,6 +15348,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001FA1B0",
     "vtable_index": 3
+  },
+  {
+    "start": "0x0005C840",
+    "end": "0x0005C983",
+    "size": 323,
+    "name": "sub_0005C840",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_565",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001FA1B0",
+    "vtable_index": 4
   },
   {
     "start": "0x0005C990",
@@ -20122,8 +20563,8 @@
   },
   {
     "start": "0x0007BDD0",
-    "end": "0x0007BFD0",
-    "size": 512,
+    "end": "0x0007BE30",
+    "size": 96,
     "name": "sub_0007BDD0",
     "section": ".text",
     "category": "game_vtable",
@@ -20132,6 +20573,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CCEB8",
     "vtable_index": 1
+  },
+  {
+    "start": "0x0007BE30",
+    "end": "0x0007BFC4",
+    "size": 404,
+    "name": "sub_0007BE30",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_567",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0020D2B8",
+    "vtable_index": 0
   },
   {
     "start": "0x0007BFD0",
@@ -20291,8 +20745,8 @@
   },
   {
     "start": "0x0007C270",
-    "end": "0x0007C410",
-    "size": 416,
+    "end": "0x0007C290",
+    "size": 32,
     "name": "sub_0007C270",
     "section": ".text",
     "category": "game_vtable",
@@ -20301,6 +20755,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x0020D2B8",
     "vtable_index": 5
+  },
+  {
+    "start": "0x0007C290",
+    "end": "0x0007C403",
+    "size": 371,
+    "name": "sub_0007C290",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_567",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0020D2B8",
+    "vtable_index": 14
   },
   {
     "start": "0x0007C410",
@@ -21092,8 +21559,8 @@
   },
   {
     "start": "0x0007DAE0",
-    "end": "0x0007DE20",
-    "size": 832,
+    "end": "0x0007DBD0",
+    "size": 240,
     "name": "sub_0007DAE0",
     "section": ".text",
     "category": "game_vtable",
@@ -21102,6 +21569,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x0020D2B8",
     "vtable_index": 67
+  },
+  {
+    "start": "0x0007DBD0",
+    "end": "0x0007DE20",
+    "size": 592,
+    "name": "sub_0007DBD0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_567",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0020D2B8",
+    "vtable_index": 68
   },
   {
     "start": "0x0007DE20",
@@ -23914,8 +24394,8 @@
   },
   {
     "start": "0x00091AB0",
-    "end": "0x00091C00",
-    "size": 336,
+    "end": "0x00091AC0",
+    "size": 16,
     "name": "sub_00091AB0",
     "section": ".text",
     "category": "game_vtable",
@@ -23926,9 +24406,22 @@
     "vtable_index": 11
   },
   {
+    "start": "0x00091AC0",
+    "end": "0x00091BF3",
+    "size": 307,
+    "name": "sub_00091AC0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_570",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0020D8A8",
+    "vtable_index": 11
+  },
+  {
     "start": "0x00091C00",
-    "end": "0x00091EB0",
-    "size": 688,
+    "end": "0x00091C30",
+    "size": 48,
     "name": "sub_00091C00",
     "section": ".text",
     "category": "game_vtable",
@@ -23937,6 +24430,32 @@
     "method": "vtable_scan",
     "vtable_addr": "0x0020D8A8",
     "vtable_index": 12
+  },
+  {
+    "start": "0x00091C30",
+    "end": "0x00091D63",
+    "size": 307,
+    "name": "sub_00091C30",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_570",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0020D8A8",
+    "vtable_index": 13
+  },
+  {
+    "start": "0x00091D70",
+    "end": "0x00091EA3",
+    "size": 307,
+    "name": "sub_00091D70",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_570",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0020D8A8",
+    "vtable_index": 15
   },
   {
     "start": "0x00091EB0",
@@ -25418,8 +25937,8 @@
   },
   {
     "start": "0x00096F60",
-    "end": "0x00097190",
-    "size": 560,
+    "end": "0x00096F80",
+    "size": 32,
     "name": "sub_00096F60",
     "section": ".text",
     "category": "game_vtable",
@@ -25428,6 +25947,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD290",
     "vtable_index": 5
+  },
+  {
+    "start": "0x00096F80",
+    "end": "0x0009718A",
+    "size": 522,
+    "name": "sub_00096F80",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_408",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD2E0",
+    "vtable_index": 35
   },
   {
     "start": "0x00097190",
@@ -27923,8 +28455,8 @@
   },
   {
     "start": "0x000A3D10",
-    "end": "0x000A4640",
-    "size": 2352,
+    "end": "0x000A3E50",
+    "size": 320,
     "name": "sub_000A3D10",
     "section": ".text",
     "category": "game_vtable",
@@ -27933,6 +28465,58 @@
     "method": "vtable_scan",
     "vtable_addr": "0x00215530",
     "vtable_index": 18
+  },
+  {
+    "start": "0x000A3E50",
+    "end": "0x000A3F67",
+    "size": 279,
+    "name": "sub_000A3E50",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_579",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00215530",
+    "vtable_index": 7
+  },
+  {
+    "start": "0x000A3F70",
+    "end": "0x000A40F9",
+    "size": 393,
+    "name": "sub_000A3F70",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_579",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00215530",
+    "vtable_index": 37
+  },
+  {
+    "start": "0x000A4100",
+    "end": "0x000A44D2",
+    "size": 978,
+    "name": "sub_000A4100",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_579",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00215530",
+    "vtable_index": 8
+  },
+  {
+    "start": "0x000A44E0",
+    "end": "0x000A463C",
+    "size": 348,
+    "name": "sub_000A44E0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_579",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00215530",
+    "vtable_index": 38
   },
   {
     "start": "0x000A4640",
@@ -27949,8 +28533,8 @@
   },
   {
     "start": "0x000A4840",
-    "end": "0x000A49C0",
-    "size": 384,
+    "end": "0x000A4890",
+    "size": 80,
     "name": "sub_000A4840",
     "section": ".text",
     "category": "game_vtable",
@@ -27959,6 +28543,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x00215530",
     "vtable_index": 42
+  },
+  {
+    "start": "0x000A4890",
+    "end": "0x000A49BC",
+    "size": 300,
+    "name": "sub_000A4890",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_579",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00215530",
+    "vtable_index": 15
   },
   {
     "start": "0x000A49C0",
@@ -28048,8 +28645,8 @@
   },
   {
     "start": "0x000A5050",
-    "end": "0x000A5390",
-    "size": 832,
+    "end": "0x000A5070",
+    "size": 32,
     "name": "sub_000A5050",
     "section": ".text",
     "category": "game_vtable",
@@ -28058,6 +28655,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD518",
     "vtable_index": 0
+  },
+  {
+    "start": "0x000A5070",
+    "end": "0x000A538C",
+    "size": 796,
+    "name": "sub_000A5070",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_410",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD518",
+    "vtable_index": 1
   },
   {
     "start": "0x000A5390",
@@ -28565,8 +29175,8 @@
   },
   {
     "start": "0x000A8C00",
-    "end": "0x000A95B0",
-    "size": 2480,
+    "end": "0x000A9200",
+    "size": 1536,
     "name": "sub_000A8C00",
     "section": ".text",
     "category": "game_vtable",
@@ -28575,6 +29185,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD5C8",
     "vtable_index": 18
+  },
+  {
+    "start": "0x000A9200",
+    "end": "0x000A95AE",
+    "size": 942,
+    "name": "sub_000A9200",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_412",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD5C8",
+    "vtable_index": 19
   },
   {
     "start": "0x000A95B0",
@@ -28673,8 +29296,8 @@
   },
   {
     "start": "0x000AAB90",
-    "end": "0x000AB280",
-    "size": 1776,
+    "end": "0x000AAFB0",
+    "size": 1056,
     "name": "sub_000AAB90",
     "section": ".text",
     "category": "game_vtable",
@@ -28683,6 +29306,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD658",
     "vtable_index": 2
+  },
+  {
+    "start": "0x000AAFB0",
+    "end": "0x000AB275",
+    "size": 709,
+    "name": "sub_000AAFB0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_413",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD658",
+    "vtable_index": 3
   },
   {
     "start": "0x000AB280",
@@ -28738,8 +29374,8 @@
   },
   {
     "start": "0x000AC0B0",
-    "end": "0x000ACCE0",
-    "size": 3120,
+    "end": "0x000AC950",
+    "size": 2208,
     "name": "sub_000AC0B0",
     "section": ".text",
     "category": "game_vtable",
@@ -28748,6 +29384,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD6A0",
     "vtable_index": 2
+  },
+  {
+    "start": "0x000AC950",
+    "end": "0x000ACCE0",
+    "size": 912,
+    "name": "sub_000AC950",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_414",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD6A0",
+    "vtable_index": 3
   },
   {
     "start": "0x000ACCE0",
@@ -29145,8 +29794,8 @@
   },
   {
     "start": "0x000AEE80",
-    "end": "0x000AEFF8",
-    "size": 376,
+    "end": "0x000AEE90",
+    "size": 16,
     "name": "sub_000AEE80",
     "section": ".text",
     "category": "game_vtable",
@@ -29157,14 +29806,17 @@
     "vtable_index": 11
   },
   {
-    "start": "0x000AEFF8",
+    "start": "0x000AEE90",
     "end": "0x000AF067",
-    "size": 111,
-    "name": "sub_000AEFF8",
+    "size": 471,
+    "name": "sub_000AEE90",
     "section": ".text",
-    "category": "unknown",
-    "confidence": 0.0,
-    "method": "none"
+    "category": "game_vtable",
+    "subcategory": "cls_416",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD730",
+    "vtable_index": 19
   },
   {
     "start": "0x000AF067",
@@ -29657,8 +30309,8 @@
   },
   {
     "start": "0x000B3970",
-    "end": "0x000B3D67",
-    "size": 1015,
+    "end": "0x000B3C30",
+    "size": 704,
     "name": "sub_000B3970",
     "section": ".text",
     "category": "game_vtable",
@@ -29669,14 +30321,17 @@
     "vtable_index": 34
   },
   {
-    "start": "0x000B3D67",
+    "start": "0x000B3C30",
     "end": "0x000B3DCF",
-    "size": 104,
-    "name": "sub_000B3D67",
+    "size": 415,
+    "name": "sub_000B3C30",
     "section": ".text",
-    "category": "unknown",
-    "confidence": 0.0,
-    "method": "none"
+    "category": "game_vtable",
+    "subcategory": "cls_417",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD7F8",
+    "vtable_index": 35
   },
   {
     "start": "0x000B3DCF",
@@ -30771,6 +31426,16 @@
     "method": "none"
   },
   {
+    "start": "0x000BDAE0",
+    "end": "0x000BDB92",
+    "size": 178,
+    "name": "sub_000BDAE0",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
     "start": "0x000BDBA0",
     "end": "0x000BDE30",
     "size": 656,
@@ -30798,8 +31463,8 @@
   },
   {
     "start": "0x000BDFD0",
-    "end": "0x000BE1B0",
-    "size": 480,
+    "end": "0x000BE190",
+    "size": 448,
     "name": "sub_000BDFD0",
     "section": ".text",
     "category": "game_vtable",
@@ -30808,6 +31473,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD9E0",
     "vtable_index": 67
+  },
+  {
+    "start": "0x000BE190",
+    "end": "0x000BE1AE",
+    "size": 30,
+    "name": "sub_000BE190",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_421",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD9E0",
+    "vtable_index": 64
   },
   {
     "start": "0x000BE1B0",
@@ -30834,8 +31512,8 @@
   },
   {
     "start": "0x000BE480",
-    "end": "0x000BE8F0",
-    "size": 1136,
+    "end": "0x000BE4E0",
+    "size": 96,
     "name": "sub_000BE480",
     "section": ".text",
     "category": "game_vtable",
@@ -30844,6 +31522,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD9E0",
     "vtable_index": 82
+  },
+  {
+    "start": "0x000BE4E0",
+    "end": "0x000BE8E7",
+    "size": 1031,
+    "name": "sub_000BE4E0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_421",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD9E0",
+    "vtable_index": 83
   },
   {
     "start": "0x000BE8F0",
@@ -30857,8 +31548,8 @@
   },
   {
     "start": "0x000BE900",
-    "end": "0x000BEA40",
-    "size": 320,
+    "end": "0x000BE930",
+    "size": 48,
     "name": "sub_000BE900",
     "section": ".text",
     "category": "game_vtable",
@@ -30867,6 +31558,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CD9E0",
     "vtable_index": 98
+  },
+  {
+    "start": "0x000BE930",
+    "end": "0x000BEA34",
+    "size": 260,
+    "name": "sub_000BE930",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_421",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CD9E0",
+    "vtable_index": 99
   },
   {
     "start": "0x000BEA40",
@@ -31841,8 +32545,8 @@
   },
   {
     "start": "0x000C25D0",
-    "end": "0x000C2700",
-    "size": 304,
+    "end": "0x000C2630",
+    "size": 96,
     "name": "sub_000C25D0",
     "section": ".text",
     "category": "game_vtable",
@@ -31851,6 +32555,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CDCB0",
     "vtable_index": 15
+  },
+  {
+    "start": "0x000C2630",
+    "end": "0x000C2700",
+    "size": 208,
+    "name": "sub_000C2630",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_423",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CDC60",
+    "vtable_index": 0
   },
   {
     "start": "0x000C2700",
@@ -33833,8 +34550,8 @@
   },
   {
     "start": "0x000C8BD0",
-    "end": "0x000C8D30",
-    "size": 352,
+    "end": "0x000C8C10",
+    "size": 64,
     "name": "sub_000C8BD0",
     "section": ".text",
     "category": "game_vtable",
@@ -33843,6 +34560,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CE078",
     "vtable_index": 127
+  },
+  {
+    "start": "0x000C8C10",
+    "end": "0x000C8D2E",
+    "size": 286,
+    "name": "sub_000C8C10",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_432",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CE078",
+    "vtable_index": 128
   },
   {
     "start": "0x000C8D30",
@@ -35079,8 +35809,8 @@
   },
   {
     "start": "0x000CDFC0",
-    "end": "0x000CE110",
-    "size": 336,
+    "end": "0x000CE010",
+    "size": 80,
     "name": "sub_000CDFC0",
     "section": ".text",
     "category": "game_vtable",
@@ -35089,6 +35819,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x002165F0",
     "vtable_index": 0
+  },
+  {
+    "start": "0x000CE010",
+    "end": "0x000CE10E",
+    "size": 254,
+    "name": "sub_000CE010",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_587",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x002165F0",
+    "vtable_index": 6
   },
   {
     "start": "0x000CE110",
@@ -35311,8 +36054,8 @@
   },
   {
     "start": "0x000CF030",
-    "end": "0x000CF2A0",
-    "size": 624,
+    "end": "0x000CF170",
+    "size": 320,
     "name": "sub_000CF030",
     "section": ".text",
     "category": "game_vtable",
@@ -35321,6 +36064,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x002165F0",
     "vtable_index": 4
+  },
+  {
+    "start": "0x000CF170",
+    "end": "0x000CF2A0",
+    "size": 304,
+    "name": "sub_000CF170",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_587",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x002165F0",
+    "vtable_index": 5
   },
   {
     "start": "0x000CF2A0",
@@ -38285,8 +39041,8 @@
   },
   {
     "start": "0x000D8E90",
-    "end": "0x000D9140",
-    "size": 688,
+    "end": "0x000D9040",
+    "size": 432,
     "name": "sub_000D8E90",
     "section": ".text",
     "category": "game_vtable",
@@ -38295,6 +39051,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CE63C",
     "vtable_index": 1
+  },
+  {
+    "start": "0x000D9040",
+    "end": "0x000D9137",
+    "size": 247,
+    "name": "sub_000D9040",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_592",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00217378",
+    "vtable_index": 0
   },
   {
     "start": "0x000D9140",
@@ -38360,8 +39129,8 @@
   },
   {
     "start": "0x000D9430",
-    "end": "0x000D9610",
-    "size": 480,
+    "end": "0x000D9500",
+    "size": 208,
     "name": "sub_000D9430",
     "section": ".text",
     "category": "game_vtable",
@@ -38370,6 +39139,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x00217378",
     "vtable_index": 1
+  },
+  {
+    "start": "0x000D9500",
+    "end": "0x000D9603",
+    "size": 259,
+    "name": "sub_000D9500",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_592",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00217378",
+    "vtable_index": 2
   },
   {
     "start": "0x000D9610",
@@ -39141,8 +39923,8 @@
   },
   {
     "start": "0x000DBBA0",
-    "end": "0x000DBF40",
-    "size": 928,
+    "end": "0x000DBD80",
+    "size": 480,
     "name": "sub_000DBBA0",
     "section": ".text",
     "category": "game_vtable",
@@ -39153,9 +39935,22 @@
     "vtable_index": 18
   },
   {
+    "start": "0x000DBD80",
+    "end": "0x000DBF32",
+    "size": 434,
+    "name": "sub_000DBD80",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_444",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CE740",
+    "vtable_index": 19
+  },
+  {
     "start": "0x000DBF00",
-    "end": "0x000DBF40",
-    "size": 64,
+    "end": "0x000DBF32",
+    "size": 50,
     "name": "sub_000DBF00",
     "section": ".text",
     "category": "game_vtable",
@@ -39751,8 +40546,8 @@
   },
   {
     "start": "0x000DE390",
-    "end": "0x000DE510",
-    "size": 384,
+    "end": "0x000DE3D0",
+    "size": 64,
     "name": "sub_000DE390",
     "section": ".text",
     "category": "game_vtable",
@@ -39761,6 +40556,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x00217A20",
     "vtable_index": 31
+  },
+  {
+    "start": "0x000DE3D0",
+    "end": "0x000DE505",
+    "size": 309,
+    "name": "sub_000DE3D0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_595",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00217A20",
+    "vtable_index": 32
   },
   {
     "start": "0x000DE510",
@@ -39875,8 +40683,8 @@
   },
   {
     "start": "0x000DEDC0",
-    "end": "0x000DF070",
-    "size": 688,
+    "end": "0x000DEE50",
+    "size": 144,
     "name": "sub_000DEDC0",
     "section": ".text",
     "category": "game_vtable",
@@ -39885,6 +40693,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x00217A20",
     "vtable_index": 9
+  },
+  {
+    "start": "0x000DEE50",
+    "end": "0x000DF06E",
+    "size": 542,
+    "name": "sub_000DEE50",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_445",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CE7B8",
+    "vtable_index": 12
   },
   {
     "start": "0x000DF070",
@@ -40658,8 +41479,8 @@
   },
   {
     "start": "0x000E1780",
-    "end": "0x000E18D0",
-    "size": 336,
+    "end": "0x000E17D0",
+    "size": 80,
     "name": "sub_000E1780",
     "section": ".text",
     "category": "game_vtable",
@@ -40668,6 +41489,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CE804",
     "vtable_index": 7
+  },
+  {
+    "start": "0x000E17D0",
+    "end": "0x000E18C1",
+    "size": 241,
+    "name": "sub_000E17D0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_596",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00217DFC",
+    "vtable_index": 4
   },
   {
     "start": "0x000E18D0",
@@ -41332,8 +42166,8 @@
   },
   {
     "start": "0x000E5450",
-    "end": "0x000E55D0",
-    "size": 384,
+    "end": "0x000E54F0",
+    "size": 160,
     "name": "sub_000E5450",
     "section": ".text",
     "category": "game_vtable",
@@ -41342,6 +42176,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CED6C",
     "vtable_index": 7
+  },
+  {
+    "start": "0x000E54F0",
+    "end": "0x000E55CB",
+    "size": 219,
+    "name": "sub_000E54F0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_597",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00218D90",
+    "vtable_index": 0
   },
   {
     "start": "0x000E55D0",
@@ -42245,8 +43092,8 @@
   },
   {
     "start": "0x000E8280",
-    "end": "0x000E86F0",
-    "size": 1136,
+    "end": "0x000E8500",
+    "size": 640,
     "name": "sub_000E8280",
     "section": ".text",
     "category": "game_vtable",
@@ -42255,6 +43102,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CEDE8",
     "vtable_index": 25
+  },
+  {
+    "start": "0x000E8500",
+    "end": "0x000E86BB",
+    "size": 443,
+    "name": "sub_000E8500",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_453",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CEDE8",
+    "vtable_index": 26
   },
   {
     "start": "0x000E86F0",
@@ -43289,8 +44149,8 @@
   },
   {
     "start": "0x000EDA10",
-    "end": "0x000EDB00",
-    "size": 240,
+    "end": "0x000EDA30",
+    "size": 32,
     "name": "sub_000EDA10",
     "section": ".text",
     "category": "game_vtable",
@@ -43299,6 +44159,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CEED8",
     "vtable_index": 36
+  },
+  {
+    "start": "0x000EDA30",
+    "end": "0x000EDAF4",
+    "size": 196,
+    "name": "sub_000EDA30",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_581",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x00215DA4",
+    "vtable_index": 7
   },
   {
     "start": "0x000EDB00",
@@ -43484,8 +44357,8 @@
   },
   {
     "start": "0x000EEC90",
-    "end": "0x000EEEA0",
-    "size": 528,
+    "end": "0x000EED40",
+    "size": 176,
     "name": "sub_000EEC90",
     "section": ".text",
     "category": "game_vtable",
@@ -43494,6 +44367,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x0021A900",
     "vtable_index": 15
+  },
+  {
+    "start": "0x000EED40",
+    "end": "0x000EEE9A",
+    "size": 346,
+    "name": "sub_000EED40",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_600",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0021A900",
+    "vtable_index": 16
   },
   {
     "start": "0x000EEEA0",
@@ -43576,8 +44462,8 @@
   },
   {
     "start": "0x000EFB20",
-    "end": "0x000F0260",
-    "size": 1856,
+    "end": "0x000EFFF0",
+    "size": 1232,
     "name": "sub_000EFB20",
     "section": ".text",
     "category": "game_vtable",
@@ -43586,6 +44472,29 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CEFAC",
     "vtable_index": 8
+  },
+  {
+    "start": "0x000EFFF0",
+    "end": "0x000F0258",
+    "size": 616,
+    "name": "sub_000EFFF0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_456",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CEFAC",
+    "vtable_index": 9
+  },
+  {
+    "start": "0x000F002F",
+    "end": "0x000F0258",
+    "size": 553,
+    "name": "sub_000F002F",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
   },
   {
     "start": "0x000F0260",
@@ -43755,8 +44664,8 @@
   },
   {
     "start": "0x000F0DE0",
-    "end": "0x000F1170",
-    "size": 912,
+    "end": "0x000F0F70",
+    "size": 400,
     "name": "sub_000F0DE0",
     "section": ".text",
     "category": "game_vtable",
@@ -43765,6 +44674,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CF02C",
     "vtable_index": 1
+  },
+  {
+    "start": "0x000F0F70",
+    "end": "0x000F1169",
+    "size": 505,
+    "name": "sub_000F0F70",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_458",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CF02C",
+    "vtable_index": 2
   },
   {
     "start": "0x000F1170",
@@ -44288,8 +45210,8 @@
   },
   {
     "start": "0x000F2C10",
-    "end": "0x000F3300",
-    "size": 1776,
+    "end": "0x000F3180",
+    "size": 1392,
     "name": "sub_000F2C10",
     "section": ".text",
     "category": "game_vtable",
@@ -44298,6 +45220,32 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CF02C",
     "vtable_index": 5
+  },
+  {
+    "start": "0x000F3180",
+    "end": "0x000F31B2",
+    "size": 50,
+    "name": "sub_000F3180",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_601",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0021B0F0",
+    "vtable_index": 2
+  },
+  {
+    "start": "0x000F31C0",
+    "end": "0x000F32FC",
+    "size": 316,
+    "name": "sub_000F31C0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_601",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0021B0F0",
+    "vtable_index": 6
   },
   {
     "start": "0x000F3300",
@@ -44327,8 +45275,8 @@
   },
   {
     "start": "0x000F33E0",
-    "end": "0x000F36E0",
-    "size": 768,
+    "end": "0x000F3420",
+    "size": 64,
     "name": "sub_000F33E0",
     "section": ".text",
     "category": "game_vtable",
@@ -44337,6 +45285,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x0021B0F0",
     "vtable_index": 14
+  },
+  {
+    "start": "0x000F3420",
+    "end": "0x000F36D5",
+    "size": 693,
+    "name": "sub_000F3420",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_601",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0021B0F0",
+    "vtable_index": 18
   },
   {
     "start": "0x000F36E0",
@@ -44798,8 +45759,8 @@
   },
   {
     "start": "0x000F4FF0",
-    "end": "0x000F5310",
-    "size": 800,
+    "end": "0x000F51A0",
+    "size": 432,
     "name": "sub_000F4FF0",
     "section": ".text",
     "category": "game_vtable",
@@ -44808,6 +45769,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001CEAC0",
     "vtable_index": 12
+  },
+  {
+    "start": "0x000F51A0",
+    "end": "0x000F530D",
+    "size": 365,
+    "name": "sub_000F51A0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_460",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001CF220",
+    "vtable_index": 16
   },
   {
     "start": "0x000F5310",
@@ -49912,8 +50886,8 @@
   },
   {
     "start": "0x0010F620",
-    "end": "0x0010F850",
-    "size": 560,
+    "end": "0x0010F670",
+    "size": 80,
     "name": "sub_0010F620",
     "section": ".text",
     "category": "game_vtable",
@@ -49922,6 +50896,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D24F0",
     "vtable_index": 1
+  },
+  {
+    "start": "0x0010F670",
+    "end": "0x0010F843",
+    "size": 467,
+    "name": "sub_0010F670",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_476",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D24F0",
+    "vtable_index": 3
   },
   {
     "start": "0x0010F850",
@@ -49987,6 +50974,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x0010FA48",
     "vtable_index": 5
+  },
+  {
+    "start": "0x0010FA60",
+    "end": "0x0010FCDE",
+    "size": 638,
+    "name": "sub_0010FA60",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_477",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D2538",
+    "vtable_index": 3
   },
   {
     "start": "0x0010FCE0",
@@ -50137,6 +51137,19 @@
     "vtable_index": 4
   },
   {
+    "start": "0x00110330",
+    "end": "0x00110707",
+    "size": 983,
+    "name": "sub_00110330",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_478",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D2580",
+    "vtable_index": 3
+  },
+  {
     "start": "0x00110710",
     "end": "0x00110825",
     "size": 277,
@@ -50177,8 +51190,8 @@
   },
   {
     "start": "0x00110B20",
-    "end": "0x00110EE0",
-    "size": 960,
+    "end": "0x00110B40",
+    "size": 32,
     "name": "sub_00110B20",
     "section": ".text",
     "category": "game_vtable",
@@ -50187,6 +51200,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D26A8",
     "vtable_index": 0
+  },
+  {
+    "start": "0x00110B40",
+    "end": "0x00110EE0",
+    "size": 928,
+    "name": "sub_00110B40",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_479",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D26A8",
+    "vtable_index": 3
   },
   {
     "start": "0x00110EE0",
@@ -50781,8 +51807,8 @@
   },
   {
     "start": "0x00114FE0",
-    "end": "0x00115510",
-    "size": 1328,
+    "end": "0x00115030",
+    "size": 80,
     "name": "sub_00114FE0",
     "section": ".text",
     "category": "game_vtable",
@@ -50791,6 +51817,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D2AA8",
     "vtable_index": 55
+  },
+  {
+    "start": "0x00115030",
+    "end": "0x001154ED",
+    "size": 1213,
+    "name": "sub_00115030",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_482",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D2AA8",
+    "vtable_index": 57
   },
   {
     "start": "0x00115510",
@@ -50843,8 +51882,8 @@
   },
   {
     "start": "0x00115910",
-    "end": "0x00115DB0",
-    "size": 1184,
+    "end": "0x00115A40",
+    "size": 304,
     "name": "sub_00115910",
     "section": ".text",
     "category": "game_vtable",
@@ -50853,6 +51892,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D2BB0",
     "vtable_index": 7
+  },
+  {
+    "start": "0x00115A40",
+    "end": "0x00115DAA",
+    "size": 874,
+    "name": "sub_00115A40",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_483",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D2BB0",
+    "vtable_index": 9
   },
   {
     "start": "0x00115DB0",
@@ -52414,8 +53466,8 @@
   },
   {
     "start": "0x0011C050",
-    "end": "0x0011C310",
-    "size": 704,
+    "end": "0x0011C070",
+    "size": 32,
     "name": "sub_0011C050",
     "section": ".text",
     "category": "game_vtable",
@@ -52424,6 +53476,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D8638",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0011C070",
+    "end": "0x0011C307",
+    "size": 663,
+    "name": "sub_0011C070",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_490",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D8638",
+    "vtable_index": 3
   },
   {
     "start": "0x0011C310",
@@ -52476,8 +53541,8 @@
   },
   {
     "start": "0x0011C730",
-    "end": "0x0011CA00",
-    "size": 720,
+    "end": "0x0011C750",
+    "size": 32,
     "name": "sub_0011C730",
     "section": ".text",
     "category": "game_vtable",
@@ -52486,6 +53551,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D8798",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0011C750",
+    "end": "0x0011C9FA",
+    "size": 682,
+    "name": "sub_0011C750",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_491",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D8798",
+    "vtable_index": 3
   },
   {
     "start": "0x0011CA00",
@@ -52538,8 +53616,8 @@
   },
   {
     "start": "0x0011CEF0",
-    "end": "0x0011D230",
-    "size": 832,
+    "end": "0x0011CF10",
+    "size": 32,
     "name": "sub_0011CEF0",
     "section": ".text",
     "category": "game_vtable",
@@ -52548,6 +53626,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D8898",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0011CF10",
+    "end": "0x0011D230",
+    "size": 800,
+    "name": "sub_0011CF10",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_492",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D8898",
+    "vtable_index": 3
   },
   {
     "start": "0x0011D230",
@@ -52600,8 +53691,8 @@
   },
   {
     "start": "0x0011D720",
-    "end": "0x0011DA60",
-    "size": 832,
+    "end": "0x0011D740",
+    "size": 32,
     "name": "sub_0011D720",
     "section": ".text",
     "category": "game_vtable",
@@ -52610,6 +53701,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D8C90",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0011D740",
+    "end": "0x0011DA5D",
+    "size": 797,
+    "name": "sub_0011D740",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_493",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D8C90",
+    "vtable_index": 3
   },
   {
     "start": "0x0011DA60",
@@ -52787,8 +53891,8 @@
   },
   {
     "start": "0x0011E9E0",
-    "end": "0x0011ED70",
-    "size": 912,
+    "end": "0x0011EAF0",
+    "size": 272,
     "name": "sub_0011E9E0",
     "section": ".text",
     "category": "game_vtable",
@@ -52797,6 +53901,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D8E88",
     "vtable_index": 17
+  },
+  {
+    "start": "0x0011EAF0",
+    "end": "0x0011ED63",
+    "size": 627,
+    "name": "sub_0011EAF0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_494",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D8E88",
+    "vtable_index": 19
   },
   {
     "start": "0x0011ED70",
@@ -52836,8 +53953,8 @@
   },
   {
     "start": "0x0011EDB0",
-    "end": "0x0011F120",
-    "size": 880,
+    "end": "0x0011EDE0",
+    "size": 48,
     "name": "sub_0011EDB0",
     "section": ".text",
     "category": "game_vtable",
@@ -52846,6 +53963,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D8F20",
     "vtable_index": 1
+  },
+  {
+    "start": "0x0011EDE0",
+    "end": "0x0011F11C",
+    "size": 828,
+    "name": "sub_0011EDE0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_495",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D8F20",
+    "vtable_index": 3
   },
   {
     "start": "0x0011F120",
@@ -52954,8 +54084,8 @@
   },
   {
     "start": "0x0011F7B0",
-    "end": "0x0011FA50",
-    "size": 672,
+    "end": "0x0011F7D0",
+    "size": 32,
     "name": "sub_0011F7B0",
     "section": ".text",
     "category": "game_vtable",
@@ -52964,6 +54094,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D8F88",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0011F7D0",
+    "end": "0x0011FA48",
+    "size": 632,
+    "name": "sub_0011F7D0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_496",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D8F88",
+    "vtable_index": 3
   },
   {
     "start": "0x0011FA50",
@@ -53016,8 +54159,8 @@
   },
   {
     "start": "0x0011FE90",
-    "end": "0x00120170",
-    "size": 736,
+    "end": "0x0011FEB0",
+    "size": 32,
     "name": "sub_0011FE90",
     "section": ".text",
     "category": "game_vtable",
@@ -53026,6 +54169,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001D9090",
     "vtable_index": 0
+  },
+  {
+    "start": "0x0011FEB0",
+    "end": "0x0012016F",
+    "size": 703,
+    "name": "sub_0011FEB0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_497",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001D9090",
+    "vtable_index": 3
   },
   {
     "start": "0x00120170",
@@ -57764,8 +58920,8 @@
   },
   {
     "start": "0x0013F9E0",
-    "end": "0x0013FBC0",
-    "size": 480,
+    "end": "0x0013FAD0",
+    "size": 240,
     "name": "sub_0013F9E0",
     "section": ".text",
     "category": "game_vtable",
@@ -57774,6 +58930,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x0022DB44",
     "vtable_index": 3
+  },
+  {
+    "start": "0x0013FAD0",
+    "end": "0x0013FBBD",
+    "size": 237,
+    "name": "sub_0013FAD0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_667",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x0022DB44",
+    "vtable_index": 5
   },
   {
     "start": "0x0013FBC0",
@@ -65309,8 +66478,8 @@
   },
   {
     "start": "0x00154540",
-    "end": "0x001548E0",
-    "size": 928,
+    "end": "0x00154560",
+    "size": 32,
     "name": "sub_00154540",
     "section": ".text",
     "category": "game_vtable",
@@ -65319,6 +66488,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001E0F00",
     "vtable_index": 29
+  },
+  {
+    "start": "0x00154560",
+    "end": "0x001548DC",
+    "size": 892,
+    "name": "sub_00154560",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_504",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001E0F00",
+    "vtable_index": 23
   },
   {
     "start": "0x001548E0",
@@ -66144,8 +67326,8 @@
   },
   {
     "start": "0x00157100",
-    "end": "0x001572D0",
-    "size": 464,
+    "end": "0x001571E0",
+    "size": 224,
     "name": "sub_00157100",
     "section": ".text",
     "category": "game_vtable",
@@ -66154,6 +67336,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001E13F0",
     "vtable_index": 16
+  },
+  {
+    "start": "0x001571E0",
+    "end": "0x001572C2",
+    "size": 226,
+    "name": "sub_001571E0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_508",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001E13F0",
+    "vtable_index": 17
   },
   {
     "start": "0x001572D0",
@@ -67660,6 +68855,19 @@
     "method": "none"
   },
   {
+    "start": "0x0015AD10",
+    "end": "0x0015AE20",
+    "size": 272,
+    "name": "sub_0015AD10",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_508",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001E13F0",
+    "vtable_index": 47
+  },
+  {
     "start": "0x0015AE20",
     "end": "0x0015AE70",
     "size": 80,
@@ -68761,9 +69969,29 @@
   },
   {
     "start": "0x0015F630",
-    "end": "0x0015F6A2",
-    "size": 114,
+    "end": "0x0015F67F",
+    "size": 79,
     "name": "sub_0015F630",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x0015F680",
+    "end": "0x0015F69F",
+    "size": 31,
+    "name": "sub_0015F680",
+    "section": ".text",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
+    "start": "0x0015F6A0",
+    "end": "0x0015F6B0",
+    "size": 16,
+    "name": "sub_0015F6A0",
     "section": ".text",
     "category": "unknown",
     "confidence": 0.0,
@@ -75136,8 +76364,8 @@
   },
   {
     "start": "0x00172850",
-    "end": "0x00172AD0",
-    "size": 640,
+    "end": "0x00172870",
+    "size": 32,
     "name": "sub_00172850",
     "section": ".text",
     "category": "game_vtable",
@@ -75146,6 +76374,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001E3A70",
     "vtable_index": 137
+  },
+  {
+    "start": "0x00172870",
+    "end": "0x00172AC8",
+    "size": 600,
+    "name": "sub_00172870",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_521",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001E3A70",
+    "vtable_index": 136
   },
   {
     "start": "0x00172AD0",
@@ -75730,8 +76971,8 @@
   },
   {
     "start": "0x00173D70",
-    "end": "0x00173ED0",
-    "size": 352,
+    "end": "0x00173DB0",
+    "size": 64,
     "name": "sub_00173D70",
     "section": ".text",
     "category": "game_vtable",
@@ -75740,6 +76981,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001E3D30",
     "vtable_index": 54
+  },
+  {
+    "start": "0x00173DB0",
+    "end": "0x00173EC9",
+    "size": 281,
+    "name": "sub_00173DB0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_523",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001E3D30",
+    "vtable_index": 55
   },
   {
     "start": "0x00173ED0",
@@ -76245,8 +77499,8 @@
   },
   {
     "start": "0x00175250",
-    "end": "0x001753D0",
-    "size": 384,
+    "end": "0x00175300",
+    "size": 176,
     "name": "sub_00175250",
     "section": ".text",
     "category": "game_vtable",
@@ -76255,6 +77509,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001E3E80",
     "vtable_index": 22
+  },
+  {
+    "start": "0x00175300",
+    "end": "0x001753CB",
+    "size": 203,
+    "name": "sub_00175300",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_524",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001E3E80",
+    "vtable_index": 23
   },
   {
     "start": "0x001753D0",
@@ -76920,8 +78187,8 @@
   },
   {
     "start": "0x00177420",
-    "end": "0x001775E0",
-    "size": 448,
+    "end": "0x001774F0",
+    "size": 208,
     "name": "sub_00177420",
     "section": ".text",
     "category": "game_vtable",
@@ -76930,6 +78197,19 @@
     "method": "vtable_scan",
     "vtable_addr": "0x001E3F84",
     "vtable_index": 34
+  },
+  {
+    "start": "0x001774F0",
+    "end": "0x001775D6",
+    "size": 230,
+    "name": "sub_001774F0",
+    "section": ".text",
+    "category": "game_vtable",
+    "subcategory": "cls_526",
+    "confidence": 0.85,
+    "method": "vtable_scan",
+    "vtable_addr": "0x001E3F84",
+    "vtable_index": 35
   },
   {
     "start": "0x001775E0",
@@ -98639,6 +99919,16 @@
     "method": "xdk_caller"
   },
   {
+    "start": "0x001BDE21",
+    "end": "0x001BDE62",
+    "size": 65,
+    "name": "sub_001BDE21",
+    "section": "XPP",
+    "category": "unknown",
+    "confidence": 0.0,
+    "method": "none"
+  },
+  {
     "start": "0x001BDEA9",
     "end": "0x001BDED6",
     "size": 45,
@@ -98774,6 +100064,17 @@
     "end": "0x001BE689",
     "size": 590,
     "name": "sub_001BE43B",
+    "section": "XPP",
+    "category": "game_input",
+    "subcategory": "input",
+    "confidence": 0.7,
+    "method": "xdk_caller"
+  },
+  {
+    "start": "0x001BE689",
+    "end": "0x001BE7DE",
+    "size": 341,
+    "name": "sub_001BE689",
     "section": "XPP",
     "category": "game_input",
     "subcategory": "input",
@@ -136393,19 +137694,6 @@
     "vtable_index": 0
   },
   {
-    "start": "0x00020000",
-    "end": "0x00020020",
-    "size": 32,
-    "name": "sub_00020000",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_356",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0019A148",
-    "vtable_index": 2
-  },
-  {
     "start": "0x00040000",
     "end": "0x00040020",
     "size": 32,
@@ -137303,240 +138591,6 @@
     "vtable_index": 81
   },
   {
-    "start": "0x00024700",
-    "end": "0x00024720",
-    "size": 32,
-    "name": "sub_00024700",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_368",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001C4CD0",
-    "vtable_index": 17
-  },
-  {
-    "start": "0x0003C060",
-    "end": "0x0003C080",
-    "size": 32,
-    "name": "sub_0003C060",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_371",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CA3E8",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0003E230",
-    "end": "0x0003E250",
-    "size": 32,
-    "name": "sub_0003E230",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_373",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CA490",
-    "vtable_index": 1
-  },
-  {
-    "start": "0x00041400",
-    "end": "0x00041420",
-    "size": 32,
-    "name": "sub_00041400",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_377",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CA5A8",
-    "vtable_index": 1
-  },
-  {
-    "start": "0x00045DC0",
-    "end": "0x00045DE0",
-    "size": 32,
-    "name": "sub_00045DC0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_379",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CA6C8",
-    "vtable_index": 51
-  },
-  {
-    "start": "0x00045FB0",
-    "end": "0x00045FD0",
-    "size": 32,
-    "name": "sub_00045FB0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_379",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CA6C8",
-    "vtable_index": 54
-  },
-  {
-    "start": "0x00096F80",
-    "end": "0x00096FA0",
-    "size": 32,
-    "name": "sub_00096F80",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_408",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD2E0",
-    "vtable_index": 35
-  },
-  {
-    "start": "0x000A5070",
-    "end": "0x000A5090",
-    "size": 32,
-    "name": "sub_000A5070",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_410",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD518",
-    "vtable_index": 1
-  },
-  {
-    "start": "0x000A9200",
-    "end": "0x000A9220",
-    "size": 32,
-    "name": "sub_000A9200",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_412",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD5C8",
-    "vtable_index": 19
-  },
-  {
-    "start": "0x000AAFB0",
-    "end": "0x000AAFD0",
-    "size": 32,
-    "name": "sub_000AAFB0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_413",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD658",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x000AC950",
-    "end": "0x000AC970",
-    "size": 32,
-    "name": "sub_000AC950",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_414",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD6A0",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x000AEE90",
-    "end": "0x000AEEB0",
-    "size": 32,
-    "name": "sub_000AEE90",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_416",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD730",
-    "vtable_index": 19
-  },
-  {
-    "start": "0x000B3C30",
-    "end": "0x000B3C50",
-    "size": 32,
-    "name": "sub_000B3C30",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_417",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD7F8",
-    "vtable_index": 35
-  },
-  {
-    "start": "0x000BE190",
-    "end": "0x000BE1B0",
-    "size": 32,
-    "name": "sub_000BE190",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_421",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD9E0",
-    "vtable_index": 64
-  },
-  {
-    "start": "0x000BE4E0",
-    "end": "0x000BE500",
-    "size": 32,
-    "name": "sub_000BE4E0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_421",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD9E0",
-    "vtable_index": 83
-  },
-  {
-    "start": "0x000BE930",
-    "end": "0x000BE950",
-    "size": 32,
-    "name": "sub_000BE930",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_421",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CD9E0",
-    "vtable_index": 99
-  },
-  {
-    "start": "0x000C2630",
-    "end": "0x000C2650",
-    "size": 32,
-    "name": "sub_000C2630",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_423",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CDC60",
-    "vtable_index": 0
-  },
-  {
-    "start": "0x000C8C10",
-    "end": "0x000C8C30",
-    "size": 32,
-    "name": "sub_000C8C10",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_432",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CE078",
-    "vtable_index": 128
-  },
-  {
     "start": "0x000D02F0",
     "end": "0x000D0310",
     "size": 32,
@@ -137548,357 +138602,6 @@
     "method": "vtable_thunk",
     "vtable_addr": "0x001CE3B8",
     "vtable_index": 3
-  },
-  {
-    "start": "0x000DBD80",
-    "end": "0x000DBDA0",
-    "size": 32,
-    "name": "sub_000DBD80",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_444",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CE740",
-    "vtable_index": 19
-  },
-  {
-    "start": "0x000DEE50",
-    "end": "0x000DEE70",
-    "size": 32,
-    "name": "sub_000DEE50",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_445",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CE7B8",
-    "vtable_index": 12
-  },
-  {
-    "start": "0x000E8500",
-    "end": "0x000E8520",
-    "size": 32,
-    "name": "sub_000E8500",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_453",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CEDE8",
-    "vtable_index": 26
-  },
-  {
-    "start": "0x000EFFF0",
-    "end": "0x000F0010",
-    "size": 32,
-    "name": "sub_000EFFF0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_456",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CEFAC",
-    "vtable_index": 9
-  },
-  {
-    "start": "0x000F0F70",
-    "end": "0x000F0F90",
-    "size": 32,
-    "name": "sub_000F0F70",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_458",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CF02C",
-    "vtable_index": 2
-  },
-  {
-    "start": "0x000F51A0",
-    "end": "0x000F51C0",
-    "size": 32,
-    "name": "sub_000F51A0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_460",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001CF220",
-    "vtable_index": 16
-  },
-  {
-    "start": "0x0010F670",
-    "end": "0x0010F690",
-    "size": 32,
-    "name": "sub_0010F670",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_476",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D24F0",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0010FA60",
-    "end": "0x0010FA80",
-    "size": 32,
-    "name": "sub_0010FA60",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_477",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D2538",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x00110330",
-    "end": "0x00110350",
-    "size": 32,
-    "name": "sub_00110330",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_478",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D2580",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x00110B40",
-    "end": "0x00110B60",
-    "size": 32,
-    "name": "sub_00110B40",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_479",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D26A8",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x00115030",
-    "end": "0x00115050",
-    "size": 32,
-    "name": "sub_00115030",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_482",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D2AA8",
-    "vtable_index": 57
-  },
-  {
-    "start": "0x00115A40",
-    "end": "0x00115A60",
-    "size": 32,
-    "name": "sub_00115A40",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_483",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D2BB0",
-    "vtable_index": 9
-  },
-  {
-    "start": "0x0011C070",
-    "end": "0x0011C090",
-    "size": 32,
-    "name": "sub_0011C070",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_490",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D8638",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0011C750",
-    "end": "0x0011C770",
-    "size": 32,
-    "name": "sub_0011C750",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_491",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D8798",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0011CF10",
-    "end": "0x0011CF30",
-    "size": 32,
-    "name": "sub_0011CF10",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_492",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D8898",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0011D740",
-    "end": "0x0011D760",
-    "size": 32,
-    "name": "sub_0011D740",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_493",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D8C90",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0011EAF0",
-    "end": "0x0011EB10",
-    "size": 32,
-    "name": "sub_0011EAF0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_494",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D8E88",
-    "vtable_index": 19
-  },
-  {
-    "start": "0x0011EDE0",
-    "end": "0x0011EE00",
-    "size": 32,
-    "name": "sub_0011EDE0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_495",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D8F20",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0011F7D0",
-    "end": "0x0011F7F0",
-    "size": 32,
-    "name": "sub_0011F7D0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_496",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D8F88",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x0011FEB0",
-    "end": "0x0011FED0",
-    "size": 32,
-    "name": "sub_0011FEB0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_497",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001D9090",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x00154560",
-    "end": "0x00154580",
-    "size": 32,
-    "name": "sub_00154560",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_504",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001E0F00",
-    "vtable_index": 23
-  },
-  {
-    "start": "0x001571E0",
-    "end": "0x00157200",
-    "size": 32,
-    "name": "sub_001571E0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_508",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001E13F0",
-    "vtable_index": 17
-  },
-  {
-    "start": "0x0015AD10",
-    "end": "0x0015AD30",
-    "size": 32,
-    "name": "sub_0015AD10",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_508",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001E13F0",
-    "vtable_index": 47
-  },
-  {
-    "start": "0x00172870",
-    "end": "0x00172890",
-    "size": 32,
-    "name": "sub_00172870",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_521",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001E3A70",
-    "vtable_index": 136
-  },
-  {
-    "start": "0x00173DB0",
-    "end": "0x00173DD0",
-    "size": 32,
-    "name": "sub_00173DB0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_523",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001E3D30",
-    "vtable_index": 55
-  },
-  {
-    "start": "0x00175300",
-    "end": "0x00175320",
-    "size": 32,
-    "name": "sub_00175300",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_524",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001E3E80",
-    "vtable_index": 23
-  },
-  {
-    "start": "0x001774F0",
-    "end": "0x00177510",
-    "size": 32,
-    "name": "sub_001774F0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_526",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001E3F84",
-    "vtable_index": 35
   },
   {
     "start": "0x00100010",
@@ -137940,97 +138643,6 @@
     "vtable_index": 9
   },
   {
-    "start": "0x0001FD10",
-    "end": "0x0001FD30",
-    "size": 32,
-    "name": "sub_0001FD10",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_537",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EBC84",
-    "vtable_index": 22
-  },
-  {
-    "start": "0x0001FFF0",
-    "end": "0x00020010",
-    "size": 32,
-    "name": "sub_0001FFF0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_538",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EBCF4",
-    "vtable_index": 19
-  },
-  {
-    "start": "0x00020F10",
-    "end": "0x00020F30",
-    "size": 32,
-    "name": "sub_00020F10",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_539",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EBD64",
-    "vtable_index": 24
-  },
-  {
-    "start": "0x00038090",
-    "end": "0x000380B0",
-    "size": 32,
-    "name": "sub_00038090",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_544",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EC288",
-    "vtable_index": 6
-  },
-  {
-    "start": "0x000352D0",
-    "end": "0x000352F0",
-    "size": 32,
-    "name": "sub_000352D0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_544",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EC288",
-    "vtable_index": 10
-  },
-  {
-    "start": "0x00034680",
-    "end": "0x000346A0",
-    "size": 32,
-    "name": "sub_00034680",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_544",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EC288",
-    "vtable_index": 16
-  },
-  {
-    "start": "0x0002CC90",
-    "end": "0x0002CCB0",
-    "size": 32,
-    "name": "sub_0002CC90",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_544",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EC288",
-    "vtable_index": 18
-  },
-  {
     "start": "0x0002F420",
     "end": "0x0002F440",
     "size": 32,
@@ -138042,32 +138654,6 @@
     "method": "vtable_thunk",
     "vtable_addr": "0x001EC288",
     "vtable_index": 19
-  },
-  {
-    "start": "0x00039620",
-    "end": "0x00039640",
-    "size": 32,
-    "name": "sub_00039620",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_544",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EC288",
-    "vtable_index": 20
-  },
-  {
-    "start": "0x00030B30",
-    "end": "0x00030B50",
-    "size": 32,
-    "name": "sub_00030B30",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_544",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001EC288",
-    "vtable_index": 29
   },
   {
     "start": "0x000148C0",
@@ -138382,123 +138968,6 @@
     "vtable_index": 2
   },
   {
-    "start": "0x00048690",
-    "end": "0x000486B0",
-    "size": 32,
-    "name": "sub_00048690",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_555",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F97B4",
-    "vtable_index": 1
-  },
-  {
-    "start": "0x000489E0",
-    "end": "0x00048A00",
-    "size": 32,
-    "name": "sub_000489E0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_555",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F97B4",
-    "vtable_index": 3
-  },
-  {
-    "start": "0x000496E0",
-    "end": "0x00049700",
-    "size": 32,
-    "name": "sub_000496E0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_555",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F97B4",
-    "vtable_index": 6
-  },
-  {
-    "start": "0x000498B0",
-    "end": "0x000498D0",
-    "size": 32,
-    "name": "sub_000498B0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_555",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F97B4",
-    "vtable_index": 8
-  },
-  {
-    "start": "0x00049B20",
-    "end": "0x00049B40",
-    "size": 32,
-    "name": "sub_00049B20",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_555",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F97B4",
-    "vtable_index": 10
-  },
-  {
-    "start": "0x000521B0",
-    "end": "0x000521D0",
-    "size": 32,
-    "name": "sub_000521B0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_556",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F9888",
-    "vtable_index": 7
-  },
-  {
-    "start": "0x00052350",
-    "end": "0x00052370",
-    "size": 32,
-    "name": "sub_00052350",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_556",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F9888",
-    "vtable_index": 8
-  },
-  {
-    "start": "0x000530A0",
-    "end": "0x000530C0",
-    "size": 32,
-    "name": "sub_000530A0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_556",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F9888",
-    "vtable_index": 72
-  },
-  {
-    "start": "0x0004BF70",
-    "end": "0x0004BF90",
-    "size": 32,
-    "name": "sub_0004BF70",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_556",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001F9888",
-    "vtable_index": 90
-  },
-  {
     "start": "0x000556D0",
     "end": "0x000556F0",
     "size": 32,
@@ -138510,97 +138979,6 @@
     "method": "vtable_thunk",
     "vtable_addr": "0x001FA008",
     "vtable_index": 14
-  },
-  {
-    "start": "0x0005C840",
-    "end": "0x0005C860",
-    "size": 32,
-    "name": "sub_0005C840",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_565",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x001FA1B0",
-    "vtable_index": 4
-  },
-  {
-    "start": "0x0007BE30",
-    "end": "0x0007BE50",
-    "size": 32,
-    "name": "sub_0007BE30",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_567",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0020D2B8",
-    "vtable_index": 0
-  },
-  {
-    "start": "0x0007C290",
-    "end": "0x0007C2B0",
-    "size": 32,
-    "name": "sub_0007C290",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_567",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0020D2B8",
-    "vtable_index": 14
-  },
-  {
-    "start": "0x0007DBD0",
-    "end": "0x0007DBF0",
-    "size": 32,
-    "name": "sub_0007DBD0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_567",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0020D2B8",
-    "vtable_index": 68
-  },
-  {
-    "start": "0x00091AC0",
-    "end": "0x00091AE0",
-    "size": 32,
-    "name": "sub_00091AC0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_570",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0020D8A8",
-    "vtable_index": 11
-  },
-  {
-    "start": "0x00091C30",
-    "end": "0x00091C50",
-    "size": 32,
-    "name": "sub_00091C30",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_570",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0020D8A8",
-    "vtable_index": 13
-  },
-  {
-    "start": "0x00091D70",
-    "end": "0x00091D90",
-    "size": 32,
-    "name": "sub_00091D70",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_570",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0020D8A8",
-    "vtable_index": 15
   },
   {
     "start": "0x00020003",
@@ -138616,84 +138994,6 @@
     "vtable_index": 0
   },
   {
-    "start": "0x000A3E50",
-    "end": "0x000A3E70",
-    "size": 32,
-    "name": "sub_000A3E50",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_579",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00215530",
-    "vtable_index": 7
-  },
-  {
-    "start": "0x000A4100",
-    "end": "0x000A4120",
-    "size": 32,
-    "name": "sub_000A4100",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_579",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00215530",
-    "vtable_index": 8
-  },
-  {
-    "start": "0x000A4890",
-    "end": "0x000A48B0",
-    "size": 32,
-    "name": "sub_000A4890",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_579",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00215530",
-    "vtable_index": 15
-  },
-  {
-    "start": "0x000A3F70",
-    "end": "0x000A3F90",
-    "size": 32,
-    "name": "sub_000A3F70",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_579",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00215530",
-    "vtable_index": 37
-  },
-  {
-    "start": "0x000A44E0",
-    "end": "0x000A4500",
-    "size": 32,
-    "name": "sub_000A44E0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_579",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00215530",
-    "vtable_index": 38
-  },
-  {
-    "start": "0x000EDA30",
-    "end": "0x000EDA50",
-    "size": 32,
-    "name": "sub_000EDA30",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_581",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00215DA4",
-    "vtable_index": 7
-  },
-  {
     "start": "0x000C42E0",
     "end": "0x000C4300",
     "size": 32,
@@ -138705,149 +139005,6 @@
     "method": "vtable_thunk",
     "vtable_addr": "0x00216148",
     "vtable_index": 8
-  },
-  {
-    "start": "0x000CF170",
-    "end": "0x000CF190",
-    "size": 32,
-    "name": "sub_000CF170",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_587",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x002165F0",
-    "vtable_index": 5
-  },
-  {
-    "start": "0x000CE010",
-    "end": "0x000CE030",
-    "size": 32,
-    "name": "sub_000CE010",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_587",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x002165F0",
-    "vtable_index": 6
-  },
-  {
-    "start": "0x000D9040",
-    "end": "0x000D9060",
-    "size": 32,
-    "name": "sub_000D9040",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_592",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00217378",
-    "vtable_index": 0
-  },
-  {
-    "start": "0x000D9500",
-    "end": "0x000D9520",
-    "size": 32,
-    "name": "sub_000D9500",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_592",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00217378",
-    "vtable_index": 2
-  },
-  {
-    "start": "0x000DE3D0",
-    "end": "0x000DE3F0",
-    "size": 32,
-    "name": "sub_000DE3D0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_595",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00217A20",
-    "vtable_index": 32
-  },
-  {
-    "start": "0x000E17D0",
-    "end": "0x000E17F0",
-    "size": 32,
-    "name": "sub_000E17D0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_596",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00217DFC",
-    "vtable_index": 4
-  },
-  {
-    "start": "0x000E54F0",
-    "end": "0x000E5510",
-    "size": 32,
-    "name": "sub_000E54F0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_597",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x00218D90",
-    "vtable_index": 0
-  },
-  {
-    "start": "0x000EED40",
-    "end": "0x000EED60",
-    "size": 32,
-    "name": "sub_000EED40",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_600",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0021A900",
-    "vtable_index": 16
-  },
-  {
-    "start": "0x000F3180",
-    "end": "0x000F31A0",
-    "size": 32,
-    "name": "sub_000F3180",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_601",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0021B0F0",
-    "vtable_index": 2
-  },
-  {
-    "start": "0x000F31C0",
-    "end": "0x000F31E0",
-    "size": 32,
-    "name": "sub_000F31C0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_601",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0021B0F0",
-    "vtable_index": 6
-  },
-  {
-    "start": "0x000F3420",
-    "end": "0x000F3440",
-    "size": 32,
-    "name": "sub_000F3420",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_601",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0021B0F0",
-    "vtable_index": 18
   },
   {
     "start": "0x00020001",
@@ -138874,19 +139031,6 @@
     "method": "vtable_thunk",
     "vtable_addr": "0x0021C0A8",
     "vtable_index": 2
-  },
-  {
-    "start": "0x00020004",
-    "end": "0x00020024",
-    "size": 32,
-    "name": "sub_00020004",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_603",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0021C0A8",
-    "vtable_index": 4
   },
   {
     "start": "0x00030001",
@@ -139628,19 +139772,6 @@
     "method": "vtable_thunk",
     "vtable_addr": "0x0022C080",
     "vtable_index": 2
-  },
-  {
-    "start": "0x0013FAD0",
-    "end": "0x0013FAF0",
-    "size": 32,
-    "name": "sub_0013FAD0",
-    "section": ".text",
-    "category": "game_vtable",
-    "subcategory": "cls_667",
-    "confidence": 0.75,
-    "method": "vtable_thunk",
-    "vtable_addr": "0x0022DB44",
-    "vtable_index": 5
   },
   {
     "start": "0x000ACDA0",

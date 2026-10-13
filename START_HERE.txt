@@ -4,7 +4,8 @@ project\xboxrecomp      the runtime toolkit (with all changes so far)
 project\jsrf_recomp     the game project: source, generated code, tools, .bat files
 
 1. Copy your game files (default.xbe and the rest) into jsrf_recomp\game\
-2. jsrf_recomp\rebuild.bat          build (first run configures, takes a while)
+2. jsrf_recomp\generate_code.bat    translate your default.xbe into C (once; Python 3 + capstone)
+   jsrf_recomp\rebuild.bat          build (first run configures, takes a while)
 3. jsrf_recomp\play_jsrf.bat        play;  run_jsrf.bat = play with logs for reports
    or jsrf_recomp\build_portable.bat  release: puts jsrf_recomp.exe + jsrf.ini in the game folder
 

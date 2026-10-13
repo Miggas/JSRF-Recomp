@@ -13,6 +13,13 @@ for /f "usebackq delims=" %%I in (`"%VSWHERE%" -latest -products * -property ins
 if defined VSDIR set "CMAKE=%VSDIR%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
 :have_cmake
 
+rem The recompiled code is generated from your own default.xbe, not shipped.
+if not exist "src\recomp\gen\recomp_dispatch.c" (
+  echo No recompiled code yet in src\recomp\gen.
+  echo Put your game files in jsrf_recomp\game\ and run generate_code.bat first.
+  goto fail
+)
+
 if not exist "build\CMakeCache.txt" (
   echo Configuring...
   "%CMAKE%" -S . -B build -G "Visual Studio 17 2022" -A x64

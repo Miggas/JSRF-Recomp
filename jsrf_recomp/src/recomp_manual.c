@@ -1082,6 +1082,10 @@ static uint32_t cri_reqs, cri_dones;
  * vsync thread through [0x261638]). Count both, and how often 0x141F10 found
  * its re-entry guard [0x26173c] already set and did nothing. */
 static volatile long cri_adx_runs, cri_adx_skips, cri_fs_runs;
+/* the generated bodies these wrap (declared here so a fresh lift's
+ * --exclude-manual scan sees them as wrapped, not replaced) */
+extern void sub_00141F10_gen(void);
+extern void sub_00140C30_gen(void);
 static void bgm_buffer_watch(void);
 void sub_00141F10(void)
 {
