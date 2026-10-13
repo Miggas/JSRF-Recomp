@@ -1,17 +1,12 @@
-Jet Set Radio Future recomp - clean project (v183)
+Jet Set Radio Future recomp
 
-project\xboxrecomp      the runtime toolkit (with all changes so far)
-project\jsrf_recomp     the game project: source, generated code, tools, .bat files
+Full instructions, for first-time users too: README.md (open it with Notepad,
+or read it on the GitHub page).
 
-1. Copy your game files (default.xbe and the rest) into jsrf_recomp\game\
-2. jsrf_recomp\generate_code.bat    translate your default.xbe into C (once; Python 3 + capstone)
-   jsrf_recomp\rebuild.bat          build (first run configures, takes a while)
-3. jsrf_recomp\play_jsrf.bat        play;  run_jsrf.bat = play with logs for reports
-   or jsrf_recomp\build_portable.bat  release: puts jsrf_recomp.exe + jsrf.ini in the game folder
-
-Unzip to a new folder rather than over an old copy, and do not copy an old
-"build" folder into it (CMake remembers the folder it was configured in).
-
-Saves are in jsrf_recomp\game\savegame (old saves are copied there on the first run).
-jsrf_recomp\jsrf.ini.example lists every setting.
-The history of every version is in jsrf_recomp\README_JSRF.md.
+Short version, in jsrf_recomp\:
+  1. copy your game files (default.xbe and the rest) into game\
+  2. generate_code.bat     translate your default.xbe into C (Python 3 + capstone)
+  3. rebuild.bat           build (Visual Studio 2022 with C++)
+  4. build_portable.bat    put jsrf_recomp.exe + jsrf.ini in the game folder,
+                           then play by double-clicking jsrf_recomp.exe there
+     (or play_jsrf.bat to play from the project; run_jsrf.bat to make a log)

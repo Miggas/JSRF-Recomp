@@ -92,13 +92,13 @@ rem --- Frame cap (v43): the game advances once per frame, so it is held to 60 l
 rem     console. RECOMP_FPS_CAP=0 removes the cap.
 rem set RECOMP_FPS_CAP=60
 rem --- Rendering diagnostics (v32): a few sample batches of each transform path, and a
-rem     full one-frame trace whenever trace_frame.bat is double-clicked during play.
+rem     full one-frame trace whenever debug\trace_frame.bat is double-clicked during play.
 set RECOMP_FF_TRACE=4
 set RECOMP_VSH_TRACE=12
 set RECOMP_FRAME_TRACE=%~dp0trace.flag
 if exist "%~dp0trace.flag" del "%~dp0trace.flag"
 rem --- No watchdog here: it ends the run after N seconds whether or not the game is stuck.
-rem     run_jsrf_debug.bat sets it (and the hang sampler) for diagnosing a stall.
+rem     debug\run_jsrf_debug.bat sets it (and the hang sampler) for diagnosing a stall.
 if not defined RECOMP_WATCHDOG_SECS set RECOMP_WATCHDOG_SECS=0
 
 if not exist "build\Release\jsrf_recomp.exe" (

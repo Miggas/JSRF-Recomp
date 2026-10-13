@@ -27,7 +27,7 @@ if not exist "build\CMakeCache.txt" (
 )
 
 rem v118b: the generated bodies recomp_manual.c wraps get their _gen names
-rem first, every time (idempotent), so a skipped wrap_dsound.bat cannot break
+rem first, every time (idempotent), so the link cannot break
 rem the link.
 set "PY=py -3"
 where py >nul 2>&1 || set "PY=python"

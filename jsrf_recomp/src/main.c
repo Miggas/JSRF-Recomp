@@ -532,7 +532,7 @@ static void sample_main_thread(int k, const char *why)
 
 /* Samples the main game thread three times: once at RECOMP_SAMPLE_SECS (if
  * set), and whenever a file named sample.flag appears in the working folder
- * (sample_hang.bat makes one) -- so a freeze that happens at a random point
+ * (debug\sample_hang.bat makes one) -- so a freeze that happens at a random point
  * of play can be caught when it happens. */
 static DWORD WINAPI sampler_thread(LPVOID p)
 {
