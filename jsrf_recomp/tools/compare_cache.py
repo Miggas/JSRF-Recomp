@@ -21,12 +21,23 @@ cache = os.path.join(game, "savegame", "Cache", "Media")
 disc = os.path.join(game, "Media")
 
 
-def digest(p):
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def compare(c, d):
+    """'same', 'padded' (the disc file plus extra bytes at the end) or
+    'different' with the offset of the first byte that differs."""
+    with open(c, "rb") as fc, open(d, "rb") as fd:
+        off = 0
+        while True:
+            a = fd.read(1 << 20)
+            b = fc.read(len(a)) if a else b""
+            if not a:
+                rest = fc.read(1)
+                return ("same", None) if not rest else ("padded", None)
+            if a != b:
+                for i in range(min(len(a), len(b))):
+                    if a[i] != b[i]:
+                        return "different", off + i
+                return "different", off + min(len(a), len(b))
+            off += len(a)
 
 
 def main():
@@ -36,7 +47,8 @@ def main():
     if not os.path.isdir(disc):
         print("No disc files at %s -- is this the game folder?" % disc)
         return 1
-    same = diff = only = 0
+    same = diff = only = padded = 0
+    pads = []
     for root, _, files in os.walk(cache):
         for f in files:
             c = os.path.join(root, f)
@@ -56,16 +68,24 @@ def main():
                 print("  only in the cache: %s (%d bytes)" % (rel, os.path.getsize(c)))
                 continue
             sc, sd = os.path.getsize(c), os.path.getsize(d)
-            if sc != sd or digest(c) != digest(d):
-                diff += 1
-                print("  DIFFERENT: %s  (cache %d bytes, disc %d bytes)" % (rel, sc, sd))
-            else:
+            how, at = compare(c, d)
+            if how == "same":
                 same += 1
-    print("\n%d cached files match the disc, %d differ, %d are only in the cache." % (same, diff, only))
+            elif how == "padded":
+                padded += 1
+                pads.append(sc - sd)
+            else:
+                diff += 1
+                print("  DIFFERENT: %s  (cache %d bytes, disc %d bytes; first difference at byte %d)"
+                      % (rel, sc, sd, at))
+    print("\n%d cached files match the disc exactly, %d match with extra bytes at the end,"
+          " %d really differ, %d are only in the cache." % (same, padded, diff, only))
+    if padded:
+        print("Extra bytes at the end (%d to %d) are normal: the game copies whole disc"
+              " sectors, so a cached file is rounded up to the next sector." % (min(pads), max(pads)))
     if diff:
-        print("The cache is damaged. Close the game, delete the folder\n  %s\n"
-              "(your saves are elsewhere and are kept) and play again: the game\n"
-              "copies the files from the disc again." % os.path.join(game, "savegame", "Cache"))
+        print("Some cached files do not match the disc. Send this list with your report:"
+              " which files differ, and where, says what went wrong when they were copied.")
     return 0
 
 
