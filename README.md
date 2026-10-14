@@ -160,23 +160,91 @@ Settings that suit the Deck (already the defaults in the provided `jsrf.ini`):
 `RECOMP_GL_SCALE=2` (1280×960 inside the game) and `RECOMP_GL_TEX_WATCH=0`
 (avoids stutter).
 
-**To roughly halve the power use (longer battery, cooler Deck):**
+### Choose a power mode
 
-1. In `jsrf.ini`, set `RECOMP_SLEEP_WAITS=all` (remove the `;` in front of the
-   line and change `vblank` to `all`). The game then lets the CPU rest while it
-   waits, instead of keeping a core busy.
-2. Set the Deck's CPU governor to **performance**, so the CPU speeds up the
-   moment the game needs it. Without this, the Deck is slow to raise its clock
-   and busy areas (99th Street) drop under 50 fps for a few seconds. The easiest
-   way is the [Decky Loader](https://decky.xyz/) plugin **PowerTools** (CPU
-   governor, per game). Or, in Desktop Mode, in Konsole (needs a sudo password,
-   set with `passwd`; lasts until you reboot):
-   ```
-   echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
-   ```
+There are two ways to run the game on the Deck. Both give a steady 60 fps;
+they differ in power use and in how much setup they need.
 
-Measured on a Deck: 3–4 W in quieter areas and 5–7 W in busy ones at 60 fps,
-against about 7 W everywhere with the defaults.
+| | **Option 1 — Standard** | **Option 2 — Power saving** |
+|---|---|---|
+| Setup | none | one line in `jsrf.ini` + PowerTools |
+| Power use (measured) | about 7 W | 3–4 W in quieter areas, 5–7 W in busy ones |
+| Battery and heat | normal for a demanding game | noticeably longer battery, cooler, quieter fan |
+| Affects other games | no | only if you set the governor for all games (see below) |
+
+**Why there is a difference.** While the game runs, its threads constantly hand
+work to each other and wait for the other side to finish. They can wait in two
+ways:
+
+- **Spinning:** the thread keeps checking, over and over, whether the other side
+  is done. It reacts instantly, but a CPU core stays busy the whole time —
+  that is power spent on waiting.
+- **Sleeping:** the thread tells the system "wake me when it's done" and the core
+  rests. That saves a lot of power, but it has a side effect on the Deck: with
+  its cores resting, the Deck lowers the CPU clock to save even more, and its
+  default settings take 2–3 seconds to raise it again when the game suddenly
+  needs it. In busy areas like 99th Street that shows up as a few seconds under
+  50 fps.
+
+Option 1 keeps the spinning, so the Deck always runs fast. Option 2 sleeps, and
+fixes the side effect by telling the Deck to raise its clock straight away
+(the **performance** CPU governor).
+
+#### Option 1 — Standard (nothing to do)
+
+Leave `jsrf.ini` as it is. In the file, the line reads `;RECOMP_SLEEP_WAITS=vblank`
+(off, so the default `vblank` is used): only one small wait sleeps — the one
+that avoids music crackling — and the rest spin.
+
+#### Option 2 — Power saving
+
+**Step 1: tell the game to sleep while waiting.** Open `jsrf.ini` (in the game
+folder) with a text editor and change the line
+
+```
+;RECOMP_SLEEP_WAITS=vblank
+```
+to
+```
+RECOMP_SLEEP_WAITS=all
+```
+
+(remove the `;` and change `vblank` to `all`). Save the file.
+
+**Step 2: set the CPU governor to "performance" with PowerTools.** PowerTools
+is a plugin for **Decky Loader**, a free plugin system for the Deck's Quick
+Access menu.
+
+1. *Install Decky Loader (once).* Switch to **Desktop Mode**, open a web browser,
+   go to <https://decky.xyz/>, download the installer and run it (choose the
+   normal *release* version). Then go back to **Gaming Mode**.
+2. *Install PowerTools (once).* Press the **`…`** (Quick Access) button. A new
+   **plug icon** (Decky) is now at the bottom of the menu. Open it, then the
+   **store icon** at its top, search for **PowerTools** and install it.
+3. *Set the governor for this game.* Start Jet Set Radio Future, then press
+   **`…`** → plug icon → **PowerTools**:
+   - turn on the per-game setting (so the change only applies to this game);
+   - in the **CPU** section, set the **governor** to **performance** (if the
+     governor is not shown, turn on the advanced or per-core CPU options first).
+
+   The labels can differ a little between PowerTools versions; look for
+   *governor* in the CPU options. PowerTools remembers the setting and applies
+   it every time you start the game, and puts your normal setting back for
+   other games.
+
+**Without PowerTools** you can set it by hand: in Desktop Mode, open **Konsole**
+and type (it asks for your sudo password — if you have never set one, run
+`passwd` first):
+
+```
+echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
+```
+
+This applies to **every** game until you restart the Deck.
+
+**If you use only Step 1 without Step 2**, the game still works, but busy areas
+drop under 50 fps for a few seconds whenever the CPU has to speed up. Use both
+steps, or neither.
 
 ## 8. Controls
 
