@@ -160,6 +160,24 @@ Settings that suit the Deck (already the defaults in the provided `jsrf.ini`):
 `RECOMP_GL_SCALE=2` (1280×960 inside the game) and `RECOMP_GL_TEX_WATCH=0`
 (avoids stutter).
 
+**To roughly halve the power use (longer battery, cooler Deck):**
+
+1. In `jsrf.ini`, set `RECOMP_SLEEP_WAITS=all` (remove the `;` in front of the
+   line and change `vblank` to `all`). The game then lets the CPU rest while it
+   waits, instead of keeping a core busy.
+2. Set the Deck's CPU governor to **performance**, so the CPU speeds up the
+   moment the game needs it. Without this, the Deck is slow to raise its clock
+   and busy areas (99th Street) drop under 50 fps for a few seconds. The easiest
+   way is the [Decky Loader](https://decky.xyz/) plugin **PowerTools** (CPU
+   governor, per game). Or, in Desktop Mode, in Konsole (needs a sudo password,
+   set with `passwd`; lasts until you reboot):
+   ```
+   echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
+   ```
+
+Measured on a Deck: 3–4 W in quieter areas and 5–7 W in busy ones at 60 fps,
+against about 7 W everywhere with the defaults.
+
 ## 8. Controls
 
 **A controller** (Xbox, PlayStation, the Steam Deck's own) works as an Xbox

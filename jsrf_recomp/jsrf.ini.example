@@ -81,6 +81,8 @@ RECOMP_GL_TEX_WATCH=0
 ;     vblank = only the vblank wait sleeps (default: no music crackle on the
 ;     Deck, full clocks), all = both sleep (least power, but the Deck clocks
 ;     down and busy areas dip for a few seconds), none = both spin.
+;     On a Steam Deck, all + the CPU governor set to "performance" (Decky
+;     PowerTools) halves the power use at 60 fps.
 ;RECOMP_SLEEP_WAITS=vblank
 
 ; --- How long the GL thread spins, in microseconds, when it runs out of
