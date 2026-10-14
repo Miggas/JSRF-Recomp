@@ -10,6 +10,8 @@
  */
 
 #include "kernel.h"
+#include "xbox_memory_layout.h"   /* RECOMP_TLS (v184) */
+#include <stdio.h>
 #include <string.h>
 
 /* ============================================================================
@@ -137,6 +139,16 @@ NTSTATUS __stdcall xbox_ExQueryNonVolatileSetting(
     switch (ValueIndex) {
     case XC_LANGUAGE:
         /* English = 1 */
+        {
+            /* v184: who asks, and when (a game that picks its text by
+             * language shows it in the log; French subtitles were reported) */
+            extern RECOMP_TLS uint32_t g_xbox_kernel_caller;
+            static volatile LONG n_lang;
+            LONG k = InterlockedIncrement(&n_lang);
+            if (k <= 64)
+                fprintf(stderr, "  [NVRAM] language asked (#%ld) by 0x%08X -> 1 (English)\n",
+                        (long)k, g_xbox_kernel_caller);
+        }
         if (ValueLength >= sizeof(ULONG)) {
             *(PULONG)Value = 1;
             if (Type) *Type = 4; /* REG_DWORD */

@@ -3218,7 +3218,8 @@ static void bridge_NtCreateFile(void)
                   : _e ==  2u ? " ERROR_FILE_NOT_FOUND"
                   : _e ==  3u ? " ERROR_PATH_NOT_FOUND" : "");
         else
-            fprintf(stderr, "  [FILE] -> 0x%08X\n", g_eax);
+            fprintf(stderr, "  [FILE] -> 0x%08X h=%08X\n", g_eax,   /* v184: the handle, for [READ] h= */
+                    handle_va ? BRIDGE_MEM32(handle_va) : 0u);
     }
     fflush(stderr);
 }
@@ -3597,19 +3598,25 @@ static void bridge_NtReadFile(void)
          * whatever precedes the file it actually wants, and a read that stops
          * early looks identical to one that never started -- until you can
          * see where each one landed. */
+        /* v184: which file (h=, matched to the [FILE] line that opened it)
+         * and a hash of every byte delivered, so two runs can be compared
+         * read by read: the same file and offset must give the same hash */
+        uint32_t fnv = 2166136261u, i;
+        for (i = 0; i < got; i++)
+            fnv = (fnv ^ p[i]) * 16777619u;
         if (poff)
-            fprintf(stderr, "  [READ] from=0x%08X ev=%08X apc=%08X @%lld want=%u got=%u st=0x%08X  %02X %02X %02X %02X\n",
-                    g_xbox_kernel_caller, STACK_ARG(1), STACK_ARG(2),
+            fprintf(stderr, "  [READ] from=0x%08X h=%08X ev=%08X apc=%08X @%lld want=%u got=%u st=0x%08X  %02X %02X %02X %02X fnv=%08X\n",
+                    g_xbox_kernel_caller, STACK_ARG(0), STACK_ARG(1), STACK_ARG(2),
                     (long long)off.QuadPart, length, got,
                     (uint32_t)ios.Status,
                     got > 0 ? p[0] : 0, got > 1 ? p[1] : 0,
-                    got > 2 ? p[2] : 0, got > 3 ? p[3] : 0);
+                    got > 2 ? p[2] : 0, got > 3 ? p[3] : 0, fnv);
         else
-            fprintf(stderr, "  [READ] from=0x%08X @seq want=%u got=%u st=0x%08X  %02X %02X %02X %02X\n",
-                    g_xbox_kernel_caller,
+            fprintf(stderr, "  [READ] from=0x%08X h=%08X @seq want=%u got=%u st=0x%08X  %02X %02X %02X %02X fnv=%08X\n",
+                    g_xbox_kernel_caller, STACK_ARG(0),
                     length, got, (uint32_t)ios.Status,
                     got > 0 ? p[0] : 0, got > 1 ? p[1] : 0,
-                    got > 2 ? p[2] : 0, got > 3 ? p[3] : 0);
+                    got > 2 ? p[2] : 0, got > 3 ? p[3] : 0, fnv);
         fflush(stderr);
     }
     bridge_write_iostatus(iostatus, ios.Status, (uint32_t)ios.Information);
