@@ -545,6 +545,31 @@ static DWORD WINAPI sampler_thread(LPVOID p)
             timed_done = 1;
             for (k = 0; k < 3; k++) { sample_main_thread(k, "timed"); Sleep(700); }
         }
+        /* v184: a stall samples itself. If no frame has been flipped for 4 s
+         * (after the first one), the main thread is sampled three times, and
+         * again every 20 s while it lasts: a softlock or freeze that happens
+         * during normal play is caught without anyone having to be there.
+         * RECOMP_STALL_SAMPLE=0 turns it off. */
+        {
+            extern unsigned long xbox_Nv2aLastFlipMs(void);
+            static int stall_on = -1;
+            static DWORD last_sampled;
+            DWORD lf = (DWORD)xbox_Nv2aLastFlipMs(), now = GetTickCount();
+            if (stall_on < 0) {
+                const char *e = getenv("RECOMP_STALL_SAMPLE");
+                stall_on = !(e && e[0] == '0');
+            }
+            if (stall_on && lf && now - lf > 4000
+                    && (!last_sampled || now - last_sampled > 20000)) {
+                int k;
+                last_sampled = now;
+                fprintf(stderr, "\n[STALL] no frame for %lu ms: sampling the main game thread\n",
+                        (unsigned long)(now - lf));
+                for (k = 0; k < 3; k++) { sample_main_thread(k, "stall"); Sleep(700); }
+            } else if (lf && now - lf <= 4000) {
+                last_sampled = 0;
+            }
+        }
         if (GetFileAttributesA("sample.flag") != INVALID_FILE_ATTRIBUTES) {
             int k;
             DeleteFileA("sample.flag");
@@ -936,7 +961,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     fprintf(stderr, "[CONFIG] %s layout, game files in %s; %d setting(s) from %s\n",
             g_portable ? "portable" : "classic", g_game_dir, g_ini_count,
             g_ini_count ? g_ini_path : "no jsrf.ini");
-    fprintf(stderr, "[CONFIG] build v184, compiled " __DATE__ " " __TIME__ "\n");
+    fprintf(stderr, "[CONFIG] build v184b, compiled " __DATE__ " " __TIME__ "\n");
 
     /* Install VEH handler (first handler in chain) */
     /* Load symbols up front rather than from inside the handler: at fault

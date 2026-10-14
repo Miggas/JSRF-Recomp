@@ -731,6 +731,9 @@ int xbox_Nv2aFrameCounter(uint32_t device_ptr_va, uint32_t counter_off)
  * stalling, blocky video rather than a clock running away.
  */
 static DWORD g_frame_counter_flip_ms;
+/* v184: when the last frame was flipped (GetTickCount; 0 = none yet), for
+ * the stall sampler in the game project */
+unsigned long xbox_Nv2aLastFlipMs(void) { return g_frame_counter_flip_ms; }
 
 void xbox_Nv2aFrameCounterFlip(void)
 {
