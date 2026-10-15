@@ -6,7 +6,7 @@
 Runs on Windows 10/11, and on the Steam Deck through Proton.
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
-![Steam Deck](https://img.shields.io/badge/Steam%20Deck-Proton-1A9FFF?logo=steamdeck&logoColor=white)
+![Steam Deck](https://img.shields.io/badge/Steam%20Deck-Proton%2011-1A9FFF?logo=steamdeck&logoColor=white)
 ![Version](https://img.shields.io/badge/game-NTSC%20(US)%20retail%20only-orange)
 ![Bring your own game](https://img.shields.io/badge/game%20files-not%20included-lightgrey)
 
@@ -60,7 +60,7 @@ Each section is marked with how much effort it takes:
 
 | | Requirement |
 |---|---|
-| 💻 | **A Windows 10 or 11 PC** to build the game. Once built, it also runs on a Steam Deck (building on the Deck itself is not supported). |
+| 💻 | **A Windows 10 or 11 PC** to build the game. Once built, it also runs on a Steam Deck with **Proton 11** (building on the Deck itself is not supported). |
 | 💿 | **Your copy of Jet Set Radio Future for the original Xbox — the NTSC (North American) retail release**, as a disc image (`.iso`) or as its files (`default.xbe` plus the folders next to it). |
 | 💾 | **About 5 GB of free disk space** (mostly Visual Studio). |
 | 🎮 | **A graphics card with OpenGL 3.3** or newer — practically any GPU from the last ten years. |
@@ -250,9 +250,14 @@ instead of `jsrf.ini`.
    **Games → Add a Non-Steam Game to My Library… → Browse…**. Set the file type
    to *All Files*, pick `jsrf_recomp.exe`, and add it.
 4. In Steam, right-click the new entry → **Properties → Compatibility** → tick
-   **Force the use of a specific Steam Play compatibility tool** and choose a
-   recent **Proton** version.
+   **Force the use of a specific Steam Play compatibility tool** and choose
+   **Proton 11**.
 5. Go back to **Gaming Mode** and play.
+
+> [!WARNING]
+> **Tested with Proton 11 only.** Earlier Proton versions have not been tested,
+> and there are no plans to support them. If something goes wrong on an older
+> version, switch to Proton 11 first.
 
 > [!NOTE]
 > The provided `jsrf.ini` already has the settings that suit the Deck:
@@ -466,6 +471,7 @@ Your `jsrf.ini` and saves are kept.
 | `BUILD FAILED` with something else | Scroll up to the first line that says `error`, and report it ([section 13](#13-reporting-a-problem)). |
 | `Could not copy the exe … is the game still running?` | Close the game and run `build_portable.bat` again. |
 | The game is slow or stutters | Lower `RECOMP_GL_SCALE`; make sure `RECOMP_QUIET=1` is on; on a laptop, plug it in. |
+| Problems on the Steam Deck (or under Proton/Linux) with a Proton version other than 11 | Switch to **Proton 11** ([section 7](#7-playing-on-a-steam-deck)). Only Proton 11 is tested; older versions are not supported. |
 | Busy areas on the Deck drop below 50 fps for a few seconds | You set `RECOMP_SLEEP_WAITS=all` without the performance governor — do both steps of [Mode 2](#-mode-2--power-saving), or go back to Mode 1. |
 
 ---
