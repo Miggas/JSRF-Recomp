@@ -50,7 +50,7 @@ the runtime in `xboxrecomp/`.
 
 ## 2. Install the tools (once)
 
-You need three free programs. Install them in this order.
+You need two free programs (a third, capstone, installs itself). Install them in this order.
 
 ### Visual Studio 2022 Community (the C compiler)
 
@@ -69,12 +69,13 @@ You need three free programs. Install them in this order.
 
 ### capstone (a Python package the translator uses)
 
-1. Open the Start menu, type `cmd` and open **Command Prompt**.
-2. Type this and press Enter:
-   ```
-   py -3 -m pip install capstone==5.0.7
-   ```
-3. It should end with `Successfully installed capstone-5.0.7`.
+Nothing to do: `generate_code.bat` installs it the first time it runs, if it
+is missing (it needs an internet connection then). To install it yourself,
+open **Command Prompt** and type:
+
+```
+py -3 -m pip install capstone==5.0.7
+```
 
 ## 3. Get this project
 
@@ -307,7 +308,7 @@ your progress to another PC or the Deck.
 | You see | What to do |
 |---|---|
 | `Python 3 not found` | Install Python (section 2) with **"Add python.exe to PATH"** ticked. Close and reopen the window afterwards. |
-| `Python package 'capstone' is missing` | Run `py -3 -m pip install capstone==5.0.7` in Command Prompt. |
+| `could not install capstone` / `Python package 'capstone' is missing` | Check the internet connection and run `generate_code.bat` again, or run `py -3 -m pip install capstone==5.0.7` in Command Prompt. |
 | `default.xbe not found` | The game files must be in `jsrf_recomp\game\`, with `default.xbe` directly in it (not in a subfolder). |
 | `this default.xbe is not the one the analysis was made from` | Your copy is a different version — most likely the PAL (European) or NTSC-J (Japanese) release. Only the NTSC (North American) retail release works (section 1). |
 | `No recompiled code yet in src\recomp\gen` | Run `generate_code.bat` before `rebuild.bat`. |
