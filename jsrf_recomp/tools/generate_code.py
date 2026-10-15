@@ -12,8 +12,9 @@ no game code):
   2. tools.recomp       every function, split 250 to a file, with the
                         functions recomp_manual.c defines or wraps left out
                         or renamed to sub_X_gen
-  3. recomp_extra.c     two functions reached only through data tables that
-                        the function list folds into a neighbour (v66)
+  3. recomp_extra.c     functions reached only through data tables or stored
+                        pointers that the function list folds into a
+                        neighbour (two from v66, one from v185)
   4. log_stubs.py,      the project's fix-ups applied to the generated files
      wrap_dsound.py     (rebuild.bat runs wrap_dsound.py again; idempotent)
 
@@ -48,7 +49,12 @@ XBE_SHA256 = "bb2410618c35ccab1ab8ad989194bbd50619eeb648a03b21483efca57f36547d"
 # v66: reached only through data tables; the function list folds each into
 # the function before it, so they are lifted on their own into recomp_extra.c
 # and added to the dispatch table (start, end).
-EXTRA = (("0x0002F420", "0x0002F5A0"), ("0x000D02F0", "0x000D03F0"))
+EXTRA = (("0x0002F420", "0x0002F5A0"), ("0x000D02F0", "0x000D03F0"),
+         # v185: stored as a function pointer at 0x2584C8 by the init at
+         # 0x18C000 and called every frame from the future site's tutorial
+         # (Professor K's lock-on lesson and the machine) on; folded into
+         # sub_000E9A40, so each call failed ([ICALL] Failed to resolve)
+         ("0x000E9C30", "0x000E9D80"))
 EXTRA_HEADER = """/**
  * Jet Set Radio Future - functions the detector folded into a neighbour
  * and that are reached only through data tables (v66).
@@ -56,6 +62,9 @@ EXTRA_HEADER = """/**
  *               job 19 stays "loaded" and BOOT state 44 waits forever
  *               when the graffiti screen is entered a second time.
  *   0x000D02F0  vtable 0x1CE3B8 slot 4.
+ *   0x000E9C30  (v185) a function pointer stored at 0x2584C8, called every
+ *               frame in the future site's tutorial (the machine, Professor
+ *               K's lock-on lesson); it failed to resolve, so it never ran.
  * Lifted with tools.recomp -f against functions.json plus these entries.
  */
 
@@ -150,7 +159,7 @@ def main():
          "--exclude-manual", MANUAL] + inputs, xr)
 
     # 3. recomp_extra.c
-    print("\n[3/4] The two functions reached only through data tables...")
+    print("\n[3/4] The functions reached only through data tables...")
     funcs = json.load(open(os.path.join(ANALYSIS, "functions_named.json")))
     have = {f["start"] for f in funcs}
     for start, end in EXTRA:

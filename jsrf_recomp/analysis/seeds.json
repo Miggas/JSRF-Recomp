@@ -42,6 +42,15 @@
   "start": "0x0001E0A2"
  },
  {
+  "start": "0x0001FD10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0001FFF0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x0002011B"
  },
  {
@@ -49,6 +58,11 @@
  },
  {
   "start": "0x0002040D"
+ },
+ {
+  "start": "0x00020F10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
  },
  {
   "start": "0x00022043"
@@ -66,7 +80,20 @@
   "start": "0x00023C50"
  },
  {
+  "start": "0x00024700",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 13"
+ },
+ {
   "start": "0x00029FE0"
+ },
+ {
+  "start": "0x0002CC90",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0002F420"
  },
  {
   "start": "0x0002F642"
@@ -99,10 +126,39 @@
   "start": "0x0003060E"
  },
  {
+  "start": "0x00030B30",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00034680",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000352D0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00038090",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
   "start": "0x00038D98"
  },
  {
+  "start": "0x00039620",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
   "start": "0x0003A900"
+ },
+ {
+  "start": "0x0003C060",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x0003C9C3"
@@ -112,6 +168,10 @@
  },
  {
   "start": "0x0003E1B5"
+ },
+ {
+  "start": "0x0003E230",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x0003FEC0"
@@ -124,6 +184,11 @@
  },
  {
   "start": "0x00040A82"
+ },
+ {
+  "start": "0x00041400",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
  },
  {
   "start": "0x00041D10"
@@ -156,10 +221,43 @@
   "start": "0x00044C90"
  },
  {
+  "start": "0x00045DC0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00045FB0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x00047600"
  },
  {
   "start": "0x00047850"
+ },
+ {
+  "start": "0x00048690",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000489E0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000496E0",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 27 (press start screen)"
+ },
+ {
+  "start": "0x000498B0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00049B20",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0004BF70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x0004C400"
@@ -183,7 +281,19 @@
   "start": "0x00051490"
  },
  {
+  "start": "0x000521B0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00052350",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x00052780"
+ },
+ {
+  "start": "0x000530A0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000540CD"
@@ -196,6 +306,11 @@
  },
  {
   "start": "0x000580F2"
+ },
+ {
+  "start": "0x0005C840",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
  },
  {
   "start": "0x00069430"
@@ -249,6 +364,19 @@
   "start": "0x0007BBF3"
  },
  {
+  "start": "0x0007BE30",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 13"
+ },
+ {
+  "start": "0x0007C290",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0007DBD0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x0007E255"
  },
  {
@@ -285,6 +413,18 @@
   "start": "0x00090440"
  },
  {
+  "start": "0x00091AC0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00091C30",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00091D70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x00091FC0"
  },
  {
@@ -303,7 +443,38 @@
   "start": "0x00096B60"
  },
  {
+  "start": "0x00096F80",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
   "start": "0x0009A970"
+ },
+ {
+  "start": "0x000A3E50",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A3F70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A4100",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000A44E0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A4890",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000A5070",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
  },
  {
   "start": "0x000A5B60"
@@ -312,13 +483,30 @@
   "start": "0x000A82D1"
  },
  {
+  "start": "0x000A9200",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x000AA550"
+ },
+ {
+  "start": "0x000AAFB0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000AC950",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000ADE86"
  },
  {
   "start": "0x000AE655"
+ },
+ {
+  "start": "0x000AEE90",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
  },
  {
   "start": "0x000AF067"
@@ -337,6 +525,10 @@
  },
  {
   "start": "0x000B09DC"
+ },
+ {
+  "start": "0x000B3C30",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000B3DCF"
@@ -366,7 +558,21 @@
   "start": "0x000BC160"
  },
  {
+  "start": "0x000BE190",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 27 (press start screen)"
+ },
+ {
   "start": "0x000BE280"
+ },
+ {
+  "start": "0x000BE4E0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000BE930",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000BFFE0"
@@ -376,6 +582,10 @@
  },
  {
   "start": "0x000C1050"
+ },
+ {
+  "start": "0x000C2630",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000C2730"
@@ -393,13 +603,28 @@
   "start": "0x000C6820"
  },
  {
+  "start": "0x000C8C10",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x000CB35C"
+ },
+ {
+  "start": "0x000CE010",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000CF170",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000CF370"
  },
  {
   "start": "0x000CF4E0"
+ },
+ {
+  "start": "0x000D02F0"
  },
  {
   "start": "0x000D0800"
@@ -415,6 +640,14 @@
  },
  {
   "start": "0x000D6390"
+ },
+ {
+  "start": "0x000D9040",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000D9500",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000D9920"
@@ -435,10 +668,31 @@
   "start": "0x000DB0F0"
  },
  {
+  "start": "0x000DBD80",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000DE3D0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000DEE50",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000E17D0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x000E2BF0"
  },
  {
   "start": "0x000E3E80"
+ },
+ {
+  "start": "0x000E54F0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000E6180"
@@ -459,7 +713,15 @@
   "start": "0x000E7FAC"
  },
  {
+  "start": "0x000E8500",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
   "start": "0x000E96E0"
+ },
+ {
+  "start": "0x000E9C30"
  },
  {
   "start": "0x000E9E90"
@@ -489,10 +751,44 @@
   "start": "0x000EC3E0"
  },
  {
+  "start": "0x000EDA30",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000EED40",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000EFFF0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000F0F70",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x000F3180",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000F31C0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x000F3420",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x000F3BB0"
  },
  {
   "start": "0x000F4DD0"
+ },
+ {
+  "start": "0x000F51A0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x000F7720"
@@ -549,6 +845,24 @@
   "start": "0x0010EB10"
  },
  {
+  "start": "0x0010F670",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0010FA60",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00110330",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x00110B40",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x00111320"
  },
  {
@@ -568,6 +882,14 @@
  },
  {
   "start": "0x00114080"
+ },
+ {
+  "start": "0x00115030",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00115A40",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x001185B0"
@@ -606,6 +928,24 @@
   "start": "0x0011BD0D"
  },
  {
+  "start": "0x0011C070",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0011C750",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0011CF10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011D740",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
   "start": "0x0011E315"
  },
  {
@@ -613,6 +953,25 @@
  },
  {
   "start": "0x0011E420"
+ },
+ {
+  "start": "0x0011EAF0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x0011EDE0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011F7D0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0011FEB0",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
  },
  {
   "start": "0x00123B6E"
@@ -699,13 +1058,26 @@
   "start": "0x0013D840"
  },
  {
+  "start": "0x0013FAD0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x00152DE0"
  },
  {
   "start": "0x0015374B"
  },
  {
+  "start": "0x00154560",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
   "start": "0x00154DAA"
+ },
+ {
+  "start": "0x001571E0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x00159330"
@@ -735,6 +1107,15 @@
   "start": "0x0015A0F9"
  },
  {
+  "start": "0x0015AD10",
+  "observed": true,
+  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
+ },
+ {
+  "start": "0x0015F680",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
   "start": "0x00161C09"
  },
  {
@@ -759,7 +1140,24 @@
   "start": "0x00171EB7"
  },
  {
+  "start": "0x00172870",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x00173DB0",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 15"
+ },
+ {
   "start": "0x00174D54"
+ },
+ {
+  "start": "0x00175300",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
+ },
+ {
+  "start": "0x001774F0",
+  "note": "hidden function: aligned prologue after ret+padding inside another function"
  },
  {
   "start": "0x001783FE"
@@ -888,7 +1286,17 @@
   "start": "0x001BD274"
  },
  {
+  "start": "0x001BDE21",
+  "observed": true,
+  "note": "observed at runtime: ICALL target (XPP USB callback) in run 16"
+ },
+ {
   "start": "0x001BE0B4"
+ },
+ {
+  "start": "0x001BE689",
+  "observed": true,
+  "note": "observed at runtime: ICALL target in run 13"
  },
  {
   "start": "0x001C379D"
@@ -898,410 +1306,5 @@
  },
  {
   "start": "0x001C38AE"
- },
- {
-  "start": "0x0007BE30",
-  "observed": true,
-  "note": "observed at runtime: ICALL target in run 13"
- },
- {
-  "start": "0x00024700",
-  "observed": true,
-  "note": "observed at runtime: ICALL target in run 13"
- },
- {
-  "start": "0x001BE689",
-  "observed": true,
-  "note": "observed at runtime: ICALL target in run 13"
- },
- {
-  "start": "0x00173DB0",
-  "observed": true,
-  "note": "observed at runtime: ICALL target in run 15"
- },
- {
-  "start": "0x0001FFF0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0003C060",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0003E230",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00045DC0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00045FB0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00048690",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000489E0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000498B0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00049B20",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0004BF70",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000521B0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00052350",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000530A0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0007C290",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0007DBD0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00091AC0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00091C30",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00091D70",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000A3E50",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000A3F70",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000A44E0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000A4890",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000A9200",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000AAFB0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000AC950",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000B3C30",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000BE930",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000C2630",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000C8C10",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000CE010",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000CF170",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000D9040",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000D9500",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000DE3D0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000DEE50",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000E17D0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000E54F0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000EDA30",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000EED40",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000EFFF0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000F0F70",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000F3420",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x000F51A0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0010F670",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00110B40",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00115030",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00115A40",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0011C070",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0011C750",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0011EAF0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0013FAD0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x001571E0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x0015F680",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00172870",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x00175300",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x001774F0",
-  "note": "hidden function: aligned prologue after ret+padding inside another function"
- },
- {
-  "start": "0x001BDE21",
-  "observed": true,
-  "note": "observed at runtime: ICALL target (XPP USB callback) in run 16"
- },
- {
-  "start": "0x000496E0",
-  "observed": true,
-  "note": "observed at runtime: ICALL target in run 27 (press start screen)"
- },
- {
-  "start": "0x000BE190",
-  "observed": true,
-  "note": "observed at runtime: ICALL target in run 27 (press start screen)"
- },
- {
-  "start": "0x0001FD10",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00020F10",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0002CC90",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00030B30",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00034680",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000352D0",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00038090",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00039620",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00041400",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0005C840",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00096F80",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000A4100",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000A5070",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000AEE90",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000BE4E0",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000DBD80",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000E8500",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000F3180",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x000F31C0",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0010FA60",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00110330",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0011CF10",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0011D740",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0011EDE0",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0011F7D0",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0011FEB0",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x00154560",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0015AD10",
-  "observed": true,
-  "note": "vtable entry next to known methods, 16-aligned prologue (find_vtable_methods)"
- },
- {
-  "start": "0x0002F420"
- },
- {
-  "start": "0x000D02F0"
  }
 ]
