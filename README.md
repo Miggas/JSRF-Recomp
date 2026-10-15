@@ -527,6 +527,8 @@ was on a PC or a Steam Deck.
 
 ## 15. Credits and licences
 
+- This project's own files (everything outside `xboxrecomp/`) are MIT
+  licensed — see [`LICENSE`](LICENSE).
 - `xboxrecomp/` is MIT licensed (see `xboxrecomp/LICENSE`). Some of its audio
   files come from [xemu](https://github.com/xemu-project/xemu) under
   LGPL-2.1 — see `xboxrecomp/NOTICE` for the full list and their authors.

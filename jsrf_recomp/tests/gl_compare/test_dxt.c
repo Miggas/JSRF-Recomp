@@ -9,7 +9,14 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <pthread.h>
+/* beam_tris.h holds vertices captured from a frame of the game, so it is not
+ * in the repository; capture your own to run TEST_BEAM. */
+#if defined(__has_include)
+#if __has_include("beam_tris.h")
 #include "beam_tris.h"
+#define HAVE_BEAM_TRIS 1
+#endif
+#endif
 
 /* ---- stubs for the runtime the executor links against ---- */
 static uint8_t *g_mem;
@@ -248,6 +255,7 @@ int main(int argc, char **argv)
         }
         goto flip;
     }
+#ifdef HAVE_BEAM_TRIS
     if (getenv("TEST_BEAM")) {
         /* v96: the police-spotlight beam after tagging, replayed from a frame
          * trace: D3D's pre-transformed pass-through program run on the
@@ -289,6 +297,7 @@ int main(int argc, char **argv)
             draw(5, 0, 3 * (int)(sizeof beam / sizeof beam[0]));
         goto flip;
     }
+#endif
     /* 1: big textured triangle, depth middle. */
     put_vtx(0, 40, 40, 8000000, 0xFFFFFFFFu, 0, 0);
     put_vtx(1, 600, 60, 8000000, 0xFFFFFFFFu, 128, 0);

@@ -10,6 +10,9 @@ xboxrecomp/game_files/
 *.iso
 *.xiso
 
+# Data captured from the running game (test fixtures you make yourself)
+jsrf_recomp/tests/gl_compare/beam_tris.h
+
 # Files worked out from the xbe header, regenerated when needed
 jsrf_recomp/analysis/default_analysis.json
 jsrf_recomp/analysis/xbe_inventory.txt
