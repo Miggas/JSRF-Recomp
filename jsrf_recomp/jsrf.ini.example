@@ -50,9 +50,11 @@ RECOMP_FULLSCREEN=1
 ;RECOMP_APU_BACKEND=wasapi
 
 [files]
-; --- Where saves are kept. Unset = a "savegame" folder in the game folder.
+; --- Where the "savegame" folder goes (the hard-disk cache and partition
+;     images, up to ~5 GB). Unset = in the game folder. Your save itself
+;     is always in the UDATA folder of the game folder.
 ;     A relative path is taken from the game folder.
-;RECOMP_SAVE_DIR=D:\JSRF saves
+;RECOMP_SAVE_DIR=D:\JSRF cache
 
 ; --- Write a log (for reporting a problem). Unset = no log.
 ;RECOMP_LOG=stderr.txt

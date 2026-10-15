@@ -393,7 +393,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 | `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |
 | `RECOMP_APU_GAIN=0.5` | Master volume. |
 | `RECOMP_APU_REVERB=0` | Turns off the echo effect in some areas. |
-| `RECOMP_SAVE_DIR=…` | Keep saves somewhere other than the game folder. |
+| `RECOMP_SAVE_DIR=…` | Where the `savegame` folder (the cache and partition images) goes, if not in the game folder. Your save itself stays in `UDATA`. |
 | `RECOMP_SLEEP_WAITS=…` | Steam Deck power mode — see [section 7](#choose-a-power-mode). |
 | `RECOMP_QUIET=1` | Leave this on: it turns off diagnostics that cost speed. |
 
@@ -410,14 +410,23 @@ If you play with **Option B** (`play_jsrf.bat`), its settings are inside the
 
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen)
 
-Saves are kept in a `savegame` folder inside your game folder (for example
-`jsrf_recomp\game\savegame\`). Copy that folder to back them up, or to move your
-progress to another PC or the Deck.
+Your save is in the **`UDATA`** folder of your game folder (for example
+`jsrf_recomp\game\UDATA\`), next to `TDATA`, which holds the game's own
+settings. These two folders are tiny: copy them to back up your progress, or to
+move it to another PC or the Deck.
+
+| Folder in the game folder | What it holds | Size |
+|---|---|---|
+| `UDATA\` | 💾 **your save** | tiny |
+| `TDATA\` | the game's own settings | tiny |
+| `savegame\` | the Xbox hard-disk cache (`Cache\`) and partition images (`.img`) — rebuilt automatically if deleted | up to ~5 GB |
+| `shader_cache\` | compiled shaders, so effects don't stutter the second time — rebuilt automatically if deleted | small |
 
 > [!NOTE]
-> Most of that folder's size is `savegame\Cache` — the game's own copy of disc
-> files, rebuilt automatically if deleted. The save itself is in
-> `savegame\UDATA` and is tiny.
+> Despite its name, `savegame\` does **not** hold your save — only data the game
+> rebuilds by itself. You can delete it to free space (with the game closed);
+> the first run after that loads a little slower while the game copies its
+> files again.
 
 ---
 
