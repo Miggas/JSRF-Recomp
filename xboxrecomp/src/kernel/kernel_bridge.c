@@ -3602,6 +3602,15 @@ static void bridge_NtReadFile(void)
          * and a hash of every byte delivered, so two runs can be compared
          * read by read: the same file and offset must give the same hash */
         uint32_t fnv = 2166136261u, i;
+        /* v185b: with RECOMP_QUIET (playing) no per-read line and no hash,
+         * unless RECOMP_READ_LOG=1 asks for them */
+        static int read_log = -1;
+        if (read_log < 0) {
+            const char *rl = getenv("RECOMP_READ_LOG");
+            read_log = rl ? (rl[0] != '0') : (getenv("RECOMP_QUIET") == NULL);
+        }
+        if (!read_log)
+            goto read_logged;
         for (i = 0; i < got; i++)
             fnv = (fnv ^ p[i]) * 16777619u;
         if (poff)
@@ -3619,6 +3628,7 @@ static void bridge_NtReadFile(void)
                     got > 2 ? p[2] : 0, got > 3 ? p[3] : 0, fnv);
         fflush(stderr);
     }
+read_logged:
     bridge_write_iostatus(iostatus, ios.Status, (uint32_t)ios.Information);
     bridge_complete_file_io(STACK_ARG(1), STACK_ARG(2), STACK_ARG(3),
                             iostatus);
