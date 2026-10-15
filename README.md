@@ -3,7 +3,7 @@
 # Jet Set Radio Future — PC recompilation
 
 **The original Xbox game, translated into a native Windows program.**<br>
-Runs on Windows 10/11, and on the Steam Deck through Proton.
+Runs on Windows 10/11, and on the Steam Deck through Proton 11.
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
 ![Steam Deck](https://img.shields.io/badge/Steam%20Deck-Proton%2011-1A9FFF?logo=steamdeck&logoColor=white)
