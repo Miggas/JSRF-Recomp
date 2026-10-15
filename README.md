@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛼 Jet Set Radio Future — PC recompilation
+# Jet Set Radio Future — PC recompilation
 
 **The original Xbox game, translated into a native Windows program.**<br>
 Runs on Windows 10/11, and on the Steam Deck through Proton.
