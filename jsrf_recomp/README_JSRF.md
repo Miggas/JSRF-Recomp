@@ -436,6 +436,7 @@ next fix.
 - **v185:** 0xE9C30 lifted into recomp_extra.c and the dispatch table (generate_code.py's EXTRA, as v66 did for two others; extent 0xE9C30-0xE9D80, 109 instructions ending in ret) and added to analysis/seeds.json. A scan of every code address the generated code loads as a constant found no other such function. Run generate_code.bat, then rebuild.bat.
 - **Run 185 (PC):** the future-site scene plays correctly: the machine goes where it should and Professor K's text stays in English. The cause was the missing function 0xE9C30.
 - **v185b:** with RECOMP_QUIET the per-read `[READ]` line and its hash (v184) are skipped (`RECOMP_READ_LOG=1` keeps them); they were printed and flushed for every file read even while playing.
+- **Run 185b (PC):** frame times back to normal (v185, with the per-read hash, stuttered). `tools/check_gen.py` checks a generated `src/recomp/gen` against `analysis/gen_hashes.txt` (line endings ignored); a regeneration on Windows matched all 42 files.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
