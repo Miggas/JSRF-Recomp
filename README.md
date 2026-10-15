@@ -422,6 +422,14 @@ move it to another PC or the Deck.
 | `savegame\` | the Xbox hard-disk cache (`Cache\`) and partition images (`.img`) — rebuilt automatically if deleted | up to ~5 GB |
 | `shader_cache\` | compiled shaders, so effects don't stutter the second time — rebuilt automatically if deleted | small |
 
+> [!TIP]
+> The `.img` files show a size of up to 2 GB each but are *sparse*: their
+> **Size on disk** (right-click → Properties) should be about 0. If it is the
+> full size — files made by an older build — close the game and delete them;
+> they come back empty and sparse on the next start. When copying the game to a
+> Steam Deck, leave `savegame\` out: a FAT32/exFAT stick would copy the full
+> ~5 GB, and the Deck recreates it by itself.
+
 > [!NOTE]
 > Despite its name, `savegame\` does **not** hold your save — only data the game
 > rebuilds by itself. You can delete it to free space (with the game closed);
