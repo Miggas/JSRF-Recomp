@@ -56,7 +56,11 @@ EXTRA = (("0x0002F420", "0x0002F5A0"), ("0x000D02F0", "0x000D03F0"),
          # 0x18C000 and called every frame from the future site's tutorial
          # (Professor K's lock-on lesson and the machine) on; folded into
          # sub_000E9A40, so each call failed ([ICALL] Failed to resolve)
-         ("0x000E9C30", "0x000E9D80"))
+         ("0x000E9C30", "0x000E9D80"),
+         # v186e: a thiscall method (state 3 / 8, +0x98 = 255.0) reached only
+         # by a tail jump from 0x107FD5 in VS mode; folded into sub_00109B70.
+         # Skipped, the item box showed its item at once instead of cycling.
+         ("0x00109FA0", "0x0010A035"))
 EXTRA_HEADER = """/**
  * Jet Set Radio Future - functions the detector folded into a neighbour
  * and that are reached only through data tables (v66).
@@ -67,6 +71,8 @@ EXTRA_HEADER = """/**
  *   0x000E9C30  (v185) a function pointer stored at 0x2584C8, called every
  *               frame in the future site's tutorial (the machine, Professor
  *               K's lock-on lesson); it failed to resolve, so it never ran.
+ *   0x00109FA0  (v186e) reached by a tail jump from 0x107FD5 in VS mode
+ *               (item boxes); it was a stub that skipped its body.
  * Lifted with tools.recomp -f against functions.json plus these entries.
  */
 
@@ -192,6 +198,17 @@ def main():
         f.write(EXTRA_HEADER + "\n\n".join(bodies) + "\n")
 
     names = ["sub_%08X" % int(s, 16) for s, _ in EXTRA]
+
+    # A function the main lift only reached by a direct call or jump got an
+    # empty placeholder in recomp_stubs_unresolved.c (v186e: 0x00109FA0, a
+    # tail jump); now that recomp_extra.c defines it, the placeholder goes.
+    sp = os.path.join(GEN, "recomp_stubs_unresolved.c")
+    if os.path.isfile(sp):
+        st = open(sp).read()
+        kept = [l for l in st.split("\n")
+                if not any(l.startswith("void %s(void) {" % n) for n in names)]
+        if len(kept) != len(st.split("\n")):
+            open(sp, "w", newline="\n").write("\n".join(kept))
     hp = os.path.join(GEN, "recomp_funcs.h")
     h = open(hp).read()
     decl = "".join("void %s(void);\n" % n for n in names)
