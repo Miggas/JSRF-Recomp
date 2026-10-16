@@ -3527,7 +3527,11 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         int full = ws_span(kind, st, 64u, &lo, &hi)
                    && lo <= 0.02f * W && hi >= 0.98f * W
                    && lo >= -over * W && hi <= (1.0f + over) * W;
-        int keep = full && (plain || rt);
+        /* v187j: or a small 3D (perspective) quad that fills the screen
+         * exactly -- an effect fixed to the camera (boost); menus and logos
+         * are flat 2D and stay fitted */
+        int camquad = !*is_2d && s_gpu.idx_count <= 8;
+        int keep = full && (plain || rt || camquad);
         if (logw < 0) {
             const char *e = getenv("RECOMP_WS_LOG");
             logw = e && e[0] == '1';
