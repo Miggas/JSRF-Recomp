@@ -2892,6 +2892,7 @@ static float s_gl_fog[NV_MAX_INDICES];
 
 enum { XK_PROGRAM, XK_FIXED, XK_PRE };
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d);   /* v187 */
+static float ws_centre(const NvGlState *st);                            /* v187l */
 
 /* Hand a transformed batch (s_xf[0..n)) to the GPU. Strip triangles are
  * re-wound so every one keeps the strip's facing, as the software path does. */
@@ -2992,6 +2993,7 @@ static void gl_submit(uint32_t n)
     st.ws_k = ws_k_for(s_fog_direct ? XK_PRE                      /* v187 */
                        : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED,
                        &st, &st.ws_2d);
+    st.ws_c = ws_centre(&st);                              /* v187l */
     nv2a_gl_draw(&st, s_xf, s_gl_fog, s_gl_idx, m);
     s_gpu.tris_drawn += m / 3;
     note_drawn();
@@ -3465,6 +3467,20 @@ static int ws_tex_is_target(void)
     return ws_target_at(s_gpu.texs[0].offset) >= 0;
 }
 
+/* v187l: the squeeze's centre, in NDC: the middle of the area being drawn
+ * (the clip, window clip included), not of the whole surface. A blur pass
+ * drawing a half-size copy into a corner of a 512x512 target was squeezed
+ * about the texture's middle and came out shifted (a gap on the left, run
+ * 187k); and split screen's halves are squeezed about their own middles. */
+static float ws_centre(const NvGlState *st)
+{
+    float cx;
+    if (!st->width || !st->clip_w)
+        return 0.0f;
+    cx = (float)st->clip_x + 0.5f * (float)st->clip_w;
+    return 2.0f * cx / (float)st->width - 1.0f;
+}
+
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
 {
     /* v187d: the whole frame is squeezed into the shown shape's middle by k
@@ -3929,6 +3945,7 @@ static void gl_draw_batch(void)
         if (!zdirect_wanted(s_vx.kind, &st))
             st.zdirect_off = 1;
         st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);   /* v187 */
+    st.ws_c = ws_centre(&st);                              /* v187l */
         fast_qpc_li(&q1);
         s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
         if (s_ftrace == 2)
@@ -3938,6 +3955,7 @@ static void gl_draw_batch(void)
     } else {
     st.zdirect_off = s_vx.behind || !zdirect_wanted(s_vx.kind, &st);
     st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);       /* v187 */
+    st.ws_c = ws_centre(&st);                              /* v187l */
     fast_qpc_li(&q1);
     s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
     if (s_ftrace == 2)

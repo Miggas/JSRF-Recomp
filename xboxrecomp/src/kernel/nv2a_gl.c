@@ -85,11 +85,11 @@ void xbox_PresentFit(int cw, int ch, int *dw, int *dh);
 typedef struct GlProg {
     GLuint id;
     GLint L_bmat, L_bls, L_osi;
-    GLint L_scr, L_wsk, L_ws2d, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
+    GLint L_scr, L_wsk, L_wsc, L_ws2d, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
     GLint L_s2d[4], L_scube[4];
     /* What this program's uniforms were last set to (apply_state). */
     int ap_valid, ap_w, ap_h, ap_zdirect, ap_scr, ap_ws2d;
-    float ap_wsk;
+    float ap_wsk, ap_wsc;
     NvGlState ap;
     float ap_poff[3];
     GLint ap_isc[4], ap_tv[4];
@@ -114,6 +114,7 @@ static GlProg *P;                    /* the bound program */
 #define u_vp (P->L_vp)
 #define u_scr (P->L_scr)
 #define u_wsk (P->L_wsk)
+#define u_wsc (P->L_wsc)
 #define u_ws2d (P->L_ws2d)
 #define u_bmat (P->L_bmat)
 #define u_bls (P->L_bls)
@@ -203,7 +204,7 @@ static const char *VS_FF =
 "layout(location=10) in vec4 i10; layout(location=11) in vec4 i11;\n"
 "layout(location=12) in vec4 i12; layout(location=13) in vec4 i13;\n"
 "layout(location=14) in vec4 i14; layout(location=15) in vec4 i15;\n"
-"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform int u_ws2d;\n"
+"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d;\n"
 "uniform float u_zs;\n"
 "uniform uint u_present;\n"
 "uniform vec4 u_c[192];\n"
@@ -400,9 +401,10 @@ static const char *VS_FF =
 "  q_d0 = d0 * iw; q_d1 = d1 * iw; q_t0 = t[0] * iw; q_t1 = t[1] * iw;\n"
 "  q_t2 = t[2] * iw; q_t3 = t[3] * iw; q_fog = fog * iw;\n"
 "#endif\n"
-"  /* v187: widescreen: x squeezed about the centre by u_wsk (1 = none);\n"
-"   * which batches, the executor decides (ws_k_for) */\n"
-"  gl_Position.x *= u_wsk;\n"
+"  /* v187: widescreen: x squeezed by u_wsk (1 = none) about u_wsc, the\n"
+"   * drawing area's centre in NDC (v187l); which batches, the executor\n"
+"   * decides (ws_k_for) */\n"
+"  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
 "  v_z = pos.z;\n"
 "}\n"
 "\n";
@@ -416,7 +418,7 @@ static const char *VSH_HEAD =
 "layout(location=10) in vec4 i10; layout(location=11) in vec4 i11;\n"
 "layout(location=12) in vec4 i12; layout(location=13) in vec4 i13;\n"
 "layout(location=14) in vec4 i14; layout(location=15) in vec4 i15;\n"
-"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform int u_ws2d;\n"
+"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d;\n"
 "uniform float u_zs;\n"
 "uniform vec4 u_c[192];\n"
 "uniform int u_fog_en; uniform uint u_fog_mode; uniform vec2 u_fogp;\n"
@@ -520,9 +522,10 @@ static const char *VSH_TAIL =
 "  q_d0 = d0 * iw; q_d1 = d1 * iw; q_t0 = t[0] * iw; q_t1 = t[1] * iw;\n"
 "  q_t2 = t[2] * iw; q_t3 = t[3] * iw; q_fog = fog * iw;\n"
 "#endif\n"
-"  /* v187: widescreen: x squeezed about the centre by u_wsk (1 = none);\n"
-"   * which batches, the executor decides (ws_k_for) */\n"
-"  gl_Position.x *= u_wsk;\n"
+"  /* v187: widescreen: x squeezed by u_wsk (1 = none) about u_wsc, the\n"
+"   * drawing area's centre in NDC (v187l); which batches, the executor\n"
+"   * decides (ws_k_for) */\n"
+"  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
 "  v_z = pos.z;\n"
 "}\n"
 "\n";
@@ -539,7 +542,7 @@ static const char *VS_OLD =
 "layout(location=5) in vec4 a_t2;\n"
 "layout(location=6) in vec4 a_t3;\n"
 "layout(location=7) in float a_fog;\n"
-"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform int u_ws2d;\n"
+"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d;\n"
 "uniform float u_zs;\n"
 "#ifdef OLD_CLIP\n"
 "out vec4 v_d0; out vec4 v_d1; out vec4 v_t0; out vec4 v_t1; out vec4 v_t2;\n"
@@ -586,9 +589,10 @@ static const char *VS_OLD =
 "  q_d0 = a_d0 * iw; q_d1 = a_d1 * iw; q_t0 = a_t0 * iw; q_t1 = a_t1 * iw;\n"
 "  q_t2 = a_t2 * iw; q_t3 = a_t3 * iw; q_fog = a_fog * iw;\n"
 "#endif\n"
-"  /* v187: widescreen: x squeezed about the centre by u_wsk (1 = none);\n"
-"   * which batches, the executor decides (ws_k_for) */\n"
-"  gl_Position.x *= u_wsk;\n"
+"  /* v187: widescreen: x squeezed by u_wsk (1 = none) about u_wsc, the\n"
+"   * drawing area's centre in NDC (v187l); which batches, the executor\n"
+"   * decides (ws_k_for) */\n"
+"  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
 "  v_z = a_pos.z;\n"
 "  v_behind = 0.0;\n"
 "}\n";
@@ -1193,7 +1197,7 @@ static void get_locs(GlProg *p)
     glUseProgram(id);
 #define U(v) p->L_##v = glGetUniformLocation(id, "u_" #v)
     U(bmat); U(bls); U(osi);
-    U(scr); U(wsk); U(ws2d); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
+    U(scr); U(wsk); U(wsc); U(ws2d); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
     U(aocw); U(f0); U(f1); U(final0); U(final1); U(fc0); U(fc1); U(control); U(sp);
     U(clipmode); U(fogc); U(atest); U(afunc); U(aref); U(tscale); U(iscube); U(tvalid);
     U(vsmode); U(present); U(c); U(prog); U(nins); U(comp); U(mv); U(imv0); U(texm);
@@ -4068,6 +4072,10 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
         if (all || P->ap_wsk != k) {
             glUniform1f(u_wsk, k);
             P->ap_wsk = k;
+        }
+        if (all || P->ap_wsc != st->ws_c) {
+            glUniform1f(u_wsc, st->ws_c);
+            P->ap_wsc = st->ws_c;
         }
         if (all || P->ap_ws2d != d) {
             glUniform1i(u_ws2d, d);

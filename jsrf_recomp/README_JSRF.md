@@ -466,6 +466,8 @@ next fix.
 - **v187j:** a 3D (perspective, not flat) batch of at most 8 vertices that fills the screen to its edges stays full width: an effect fixed to the camera.
 - **Run 187j (PC):** a lighter strip on the left only. A stencil-tested 3D batch of 57 vertices (shadow volume, x 9..666) passed the full-width test and was kept unsqueezed, so the shadow marks were laid out wider than the scene.
 - **v187k:** "untextured" and "stencil-tested" keep a full-width layer only when it is flat 2D or at most 6 vertices; frames (textured from a drawn surface) and camera quads as before.
+- **Run 187k (PC):** the strip on the left while boosting is still there; one-sided, so a shift rather than a squeeze.
+- **v187l:** the squeeze is about the middle of the area being drawn (the clip, window clip included), passed to the shaders as `u_wsc` (NDC), not about the middle of the surface: a pass drawing into part of a target (a half-size copy in a corner of a 512x512 one) came out shifted. Split screen's halves are now squeezed about their own middles too.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
