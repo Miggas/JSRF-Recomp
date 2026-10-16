@@ -12,7 +12,8 @@ set RECOMP_FB_WINDOW=1
 set RECOMP_TITLE_KEVENTS=1
 set RECOMP_AC97_READY=1
 set RECOMP_USB=1
-rem How many controllers (1-4, default 1); 2 or more for multiplayer:
+rem How many players (1-4, default 1); with 2 or more, players join in the
+rem order their controller (or the keyboard) first presses a button:
 rem set RECOMP_USB_PADS=2
 set RECOMP_KEYBOARD=1
 rem Diagnostics off:

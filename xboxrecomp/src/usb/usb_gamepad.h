@@ -41,6 +41,13 @@ int usb_gamepad_report(int pad, uint8_t *out, int max);
 uint8_t usb_gamepad_address(int pad);
 int usb_gamepad_configured(int pad);
 
+/* v186b: with RECOMP_USB_PADS 2 or more, players are given out in the order
+ * devices are used: the first PC controller or keyboard to press a button is
+ * player 1, the next one player 2, and so on. Whether pad `pad` has a device
+ * yet (always 1 with one pad, or with RECOMP_PAD_ASSIGN=fixed); ohci.c plugs
+ * pad n in only once it has. */
+int usb_gamepad_claimed(int pad);
+
 /* An output report the title sent pad `pad` (on its interrupt OUT endpoint
  * or as a SET_REPORT on the control pipe): the Xbox rumble report, passed on
  * to host pad n. Anything that is not one is ignored. */

@@ -556,6 +556,94 @@ static void pad_script_apply(int pad, uint8_t *out)
     }
 }
 
+/* ---- who plays which pad (v186b) ------------------------------------------ */
+
+/* The PC's devices -- XInput pads 0..3 and the keyboard -- are sources; the
+ * console's pads are players. With one pad every source drives it, merged,
+ * as before. With RECOMP_USB_PADS 2..4 each source belongs to one player:
+ * the first one to press a button becomes player 1, the next player 2.
+ * Before player 1 is claimed nothing drives pad 0, but the press that claims
+ * it is read in the same report, so "press Start" works from any device.
+ * RECOMP_PAD_ASSIGN=fixed keeps PC pad n = player n (keyboard on player 1). */
+static int s_assign = -1;                 /* 1 claim in press order, 0 fixed */
+static int s_players = 1;
+static int s_slot_src[USB_GAMEPAD_MAX] = {-1, -1, -1, -1};
+
+static void assign_init(void)
+{
+    const char *e;
+    if (s_assign >= 0)
+        return;
+    e = getenv("RECOMP_USB_PADS");
+    s_players = e ? atoi(e) : 1;
+    if (s_players < 1) s_players = 1;
+    if (s_players > USB_GAMEPAD_MAX) s_players = USB_GAMEPAD_MAX;
+    e = getenv("RECOMP_PAD_ASSIGN");
+    s_assign = (s_players > 1 && !(e && !strcmp(e, "fixed"))) ? 1 : 0;
+    if (s_assign) {
+        fprintf(stderr, "  PAD: %d players, given out in the order controllers "
+                "(or the keyboard) press a button\n", s_players);
+        fflush(stderr);
+    }
+}
+
+static int source_pressed(const XBOX_INPUT_STATE *st)
+{
+    int i;
+    if (st->Gamepad.wButtons & 0x00FF)
+        return 1;
+    for (i = 0; i < 8; i++)
+        if (st->Gamepad.bAnalogButtons[i] > 64)
+            return 1;
+    return 0;                             /* sticks alone do not count */
+}
+
+/* Give any device that presses something and has no player the next free
+ * one. Called from pad 0's report, which the host polls all the time. */
+static void claims_poll(void)
+{
+    int src, slot, k;
+    for (src = 0; src < XBOX_INPUT_SOURCES; src++) {
+        XBOX_INPUT_STATE st;
+        for (k = 0; k < s_players; k++)
+            if (s_slot_src[k] == src)
+                break;
+        if (k < s_players)
+            continue;                     /* already playing */
+        if (xbox_InputGetSource(src, &st) != 0 || !source_pressed(&st))
+            continue;
+        for (slot = 0; slot < s_players && s_slot_src[slot] >= 0; slot++)
+            ;
+        if (slot >= s_players)
+            return;                       /* every player taken */
+        s_slot_src[slot] = src;
+        if (src == XBOX_INPUT_SOURCE_KEYBOARD)
+            fprintf(stderr, "  PAD: the keyboard is player %d\n", slot + 1);
+        else
+            fprintf(stderr, "  PAD: PC controller %d is player %d\n", src + 1, slot + 1);
+        fflush(stderr);
+    }
+}
+
+int usb_gamepad_claimed(int pad)
+{
+    assign_init();
+    if (!s_assign)
+        return 1;
+    return pad >= 0 && pad < USB_GAMEPAD_MAX && s_slot_src[pad] >= 0;
+}
+
+/* The PC pad (XInput index) behind player `pad`, -1 for none or the keyboard. */
+static int host_pad_of(int pad)
+{
+    assign_init();
+    if (!s_assign)
+        return pad;
+    if (pad < 0 || pad >= USB_GAMEPAD_MAX)
+        return -1;
+    return s_slot_src[pad] == XBOX_INPUT_SOURCE_KEYBOARD ? -1 : s_slot_src[pad];
+}
+
 int usb_gamepad_report(int pad, uint8_t *out, int max)
 {
     XBOX_INPUT_STATE state;
@@ -608,7 +696,17 @@ int usb_gamepad_report(int pad, uint8_t *out, int max)
     /* The synthetic press and the host pad drive pad n from host pad n. */
     if (pad != 0)
         synth = 0;
-    if (xbox_InputGetState((DWORD)pad, &state) != 0) {
+    assign_init();
+    if (s_assign) {
+        if (pad == 0)
+            claims_poll();
+        if (pad < 0 || pad >= USB_GAMEPAD_MAX || s_slot_src[pad] < 0
+                || xbox_InputGetSource(s_slot_src[pad], &state) != 0) {
+            out[2] = synth;
+            pad_script_apply(pad, out);
+            return 20;
+        }
+    } else if (xbox_InputGetState((DWORD)pad, &state) != 0) {
         out[2] = synth;
         pad_script_apply(pad, out);
         return 20;
@@ -681,6 +779,9 @@ void usb_gamepad_rumble(int pad, const uint8_t *p, int len)
     }
     if (!s_rumble_pct || pad < 0 || pad >= USB_GAMEPAD_MAX || len < 6 || !p)
         return;
+    pad = host_pad_of(pad);               /* v186b: the player's own pad */
+    if (pad < 0)
+        return;                           /* the keyboard, or nobody yet */
     if (p[0] != 0 || p[1] < 6)
         return;                               /* not a rumble report */
     left  = (unsigned)(p[2] | (p[3] << 8)) * (unsigned)s_rumble_pct / 100u;

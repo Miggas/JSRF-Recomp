@@ -134,7 +134,7 @@ void xbox_InputInit(void)
     }
 }
 
-DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
+static DWORD input_get(DWORD dwPort, XBOX_INPUT_STATE *pState, int merge_kbd)
 {
     XINPUT_STATE xi_state;
     DWORD result;
@@ -145,7 +145,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     result = XInputGetState(dwPort, &xi_state);
     if (result != ERROR_SUCCESS) {
         g_controller_connected[dwPort] = FALSE;
-        if (dwPort == 0 && keyboard_enabled()) {
+        if (merge_kbd && dwPort == 0 && keyboard_enabled()) {
             keyboard_state(pState);
             return ERROR_SUCCESS;
         }
@@ -191,7 +191,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
      * Merging is also the better rule. A real pad keeps working -- its
      * buttons are already in pState and the keyboard only adds to them --
      * and there is no special case left to get wrong. */
-    if (dwPort == 0 && keyboard_enabled()) {
+    if (merge_kbd && dwPort == 0 && keyboard_enabled()) {
         XBOX_INPUT_STATE kb;
         int i;
         keyboard_state(&kb);
@@ -228,6 +228,29 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     }
 
     return ERROR_SUCCESS;
+}
+
+DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
+{
+    return input_get(dwPort, pState, 1);
+}
+
+/* v186b: one input device on its own -- PC pad 0..3 without the keyboard
+ * merged in, or the keyboard alone -- for the per-player assignment in
+ * usb/usb_gamepad.c. */
+DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState)
+{
+    if (!pState)
+        return ERROR_DEVICE_NOT_CONNECTED;
+    if (src == XBOX_INPUT_SOURCE_KEYBOARD) {
+        if (!keyboard_enabled())
+            return ERROR_DEVICE_NOT_CONNECTED;
+        keyboard_state(pState);
+        return ERROR_SUCCESS;
+    }
+    if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
+        return ERROR_DEVICE_NOT_CONNECTED;
+    return input_get((DWORD)src, pState, 0);
 }
 
 DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration)
@@ -371,6 +394,13 @@ DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration)
     SDL_GameControllerRumble(c, pVibration->wLeftMotorSpeed,
                              pVibration->wRightMotorSpeed, 1000);
     return ERROR_SUCCESS;
+}
+
+DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState)
+{
+    if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
+        return ERROR_DEVICE_NOT_CONNECTED;   /* no keyboard source here */
+    return xbox_InputGetState((DWORD)src, pState);
 }
 
 BOOL xbox_InputIsConnected(DWORD dwPort)
