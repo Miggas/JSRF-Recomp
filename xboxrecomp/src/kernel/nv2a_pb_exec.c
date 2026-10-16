@@ -3388,6 +3388,31 @@ static double xbox_WidescreenK(void)    /* no presenter here: the harness */
     return e ? atof(e) : 1.0;
 }
 #endif
+/* v187b: an untextured 2D quad (at most 6 vertices) spanning the surface's
+ * whole width: a fade or a flash. */
+static int ws_fullscreen_fill(int kind, const NvGlState *st)
+{
+    uint32_t i, n = s_gpu.idx_count;
+    float lo = 1.0e9f, hi = -1.0e9f, p[4], x;
+    if (s_gpu.texs[0].valid || n == 0 || n > 6)
+        return 0;
+    for (i = 0; i < n; i++) {
+        uint32_t idx = s_gpu.idx[i];
+        if (kind == XK_FIXED && !st->screen_space) {
+            Nv2aVshOutput o;
+            ff_transform(idx, &o);
+            x = o.pos[0];                      /* screen x, already over w */
+        } else {
+            if (!fetch_attr(&s_gpu.attr[0], idx, p))
+                return 0;
+            x = p[0];
+        }
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+    }
+    return lo <= 2.0f && hi >= (float)st->width - 2.0f;
+}
+
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
 {
     static float k = -1.0f;
@@ -3414,6 +3439,15 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
             *is_2d = 1;
     }
     if (!*is_2d && !gpu3d)
+        return 1.0f;
+    /* v187b: 2D is squeezed as a whole -- logos, menus, text boxes and the
+     * HUD keep their shape in the 4:3 middle, and whatever the game places
+     * over the world from its own (4:3) projection lands where the widened
+     * 3D puts it. v187 kept vertices at the screen's edges where they were,
+     * which pulled apart panels built from several pieces and stretched the
+     * boot logos. Only an untextured quad covering the whole width -- a fade
+     * or a flash -- is left full width, so it still covers the screen. */
+    if (*is_2d && ws_fullscreen_fill(kind, st))
         return 1.0f;
     return k;
 }

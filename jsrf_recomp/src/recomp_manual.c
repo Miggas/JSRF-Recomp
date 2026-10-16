@@ -1823,7 +1823,8 @@ void sub_00153FE0(void)
     static int mode = -1;
     static double k = 1.0;
     static int said;
-    uint32_t fov, w;
+    static int keep = -1;
+    uint32_t fov, w, cam;
     double half, t;
     int32_t fov2;
     float cx;
@@ -1852,10 +1853,37 @@ void sub_00153FE0(void)
                 "for the setup (k %.4f)\n", fov * 360.0 / 65536.0, fov2 * 360.0 / 65536.0,
                 w, (unsigned)(w / k + 0.5), k);
     }
+    cam = MEM32(g_esp + 4);
     MEM32(g_esp + 8) = (uint32_t)fov2;
     MEM32(0x264ED8) = (uint32_t)(w / k + 0.5);
     sub_00153FE0_gen();
     MEM32(0x264ED8) = w;
+    /* v187b: only the projection and the culling planes (built inside the
+     * call) see the wider view. What the rest of the game reads afterwards --
+     * the field of view (+0x48, handed out by the getter at vtable +0x24) and
+     * tan(fov/2) (+0x54, which sub_00154110 turns into the on-screen size of
+     * things at depth z: sprites, the dialogue bubbles) -- goes back to the
+     * 4:3 values, so the game's own 2D stays 4:3 and the renderer fitting it
+     * into the middle puts it where the widened 3D is. v187 left them wide:
+     * text out of its boxes, bubbles too high. RECOMP_WS_KEEP_CAMERA=1 keeps
+     * them wide (v187). The tangent comes from the game's own sine/cosine
+     * table (0x264BA4), as sub_0014C660 reads it. */
+    if (keep < 0) {
+        const char *e = getenv("RECOMP_WS_KEEP_CAMERA");
+        keep = e && e[0] == '1';
+    }
+    if (!keep && cam) {
+        uint32_t tab = MEM32(0x264BA4);
+        uint32_t i = (((int32_t)fov >> 1) & 0xFFFF) >> 4;
+        float sn, cs, tn;
+        memcpy(&sn, (void *)XBOX_PTR(tab + i * 8), 4);
+        memcpy(&cs, (void *)XBOX_PTR(tab + i * 8 + 4), 4);
+        MEM32(cam + 0x48) = fov;
+        if (tab && cs != 0.0f) {
+            tn = sn / cs;
+            memcpy((void *)XBOX_PTR(cam + 0x54), &tn, 4);
+        }
+    }
     cx = (float)(int32_t)((w >> 1) + MEM32(0x264ED0));   /* as the original: */
     memcpy((void *)XBOX_PTR(0x264EEC), &cx, 4);         /* centre x, a float */
 }
