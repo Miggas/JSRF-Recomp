@@ -16,7 +16,8 @@ import sys
 NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectData",
          "sub_00039D40",   # v118b: the in-air input crash guard
          "D3D8_D3DDevice_SetTexture",   # v124: who sets the spark texture
-         "sub_001A2E2E")                # v130: the idle-voice crash guard
+         "sub_001A2E2E",                # v130: the idle-voice crash guard
+         "XAPILIB_XInputSetState")      # v186c: the rumble trace
 
 
 def main():
