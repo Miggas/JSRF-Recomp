@@ -1519,6 +1519,29 @@ void sub_001C3E14(void)
     }
 }
 
+/* v186c: XInputSetState(h, *feedback) -- the rumble. Logs the first calls and
+ * every change of the two motor speeds, to see whether the game asks for
+ * rumble at all and what reaches the pad. XINPUT_FEEDBACK is a 66-byte
+ * header (status, event, reserved) and then the two 16-bit speeds. */
+extern void XAPILIB_XInputSetState_gen(void);
+static unsigned xi_set;
+static uint32_t xi_set_last = 0xFFFFFFFFu;
+void XAPILIB_XInputSetState(void)
+{
+    uint32_t h = MEM32(g_esp + 4), pf = MEM32(g_esp + 8);
+    uint32_t sp = pf ? (MEM16(pf + 0x42) | ((uint32_t)MEM16(pf + 0x44) << 16)) : 0;
+    XAPILIB_XInputSetState_gen();
+    xi_set++;
+    if (xi_set <= 5 || (sp != xi_set_last && xi_set < 400))
+        fprintf(stderr, "[XINPUT] XInputSetState(0x%08X) #%u -> 0x%X, motors %u / %u "
+                        "(feedback bytes 40..47: %02X %02X %02X %02X %02X %02X %02X %02X)\n",
+                h, xi_set, g_eax, sp & 0xFFFF, sp >> 16,
+                pf ? MEM8(pf + 0x40) : 0, pf ? MEM8(pf + 0x41) : 0, pf ? MEM8(pf + 0x42) : 0,
+                pf ? MEM8(pf + 0x43) : 0, pf ? MEM8(pf + 0x44) : 0, pf ? MEM8(pf + 0x45) : 0,
+                pf ? MEM8(pf + 0x46) : 0, pf ? MEM8(pf + 0x47) : 0);
+    xi_set_last = sp;
+}
+
 /* ── v118b/c: the in-air crash (sub_00039D40 reading 0x78000000) ─────────
  *
  * sub_00039D40(list, count) asks the flag object at 0x1EFFB0 whether every

@@ -335,6 +335,11 @@ static struct {
     uint64_t pixels;
     uint32_t pixel_max;   /* brightest value any pixel write carried */
     uint32_t clip_x, clip_w, clip_y, clip_h;
+    /* v186d: window clip 0 (SET_WINDOW_CLIP_HORIZONTAL/VERTICAL, inclusive
+     * min and max) and its type (0 = draw inside). D3D's viewports restrict
+     * drawing with it: JSRF's split screen draws each player's view across
+     * the whole screen, shifted, and clips it to its half. */
+    uint32_t wclip_x0, wclip_x1, wclip_y0, wclip_y1, wclip_type, wclip_set;
     uint32_t clear_color;
     uint32_t clears, unhandled_total;
     uint32_t flip_read, flip_write, flip_modulo, flips;
@@ -2791,6 +2796,28 @@ static int gl_state(NvGlState *st)
     st->surf_has_alpha = (s_gpu.format & 0xF) == 0x8;
     st->clip_x = s_gpu.clip_x; st->clip_y = s_gpu.clip_y;
     st->clip_w = s_gpu.clip_w; st->clip_h = s_gpu.clip_h;
+    /* v186d: and narrowed to window clip 0 when it draws inside a smaller
+     * rectangle (the split-screen halves). An exclusive clip, or one that
+     * leaves nothing, is left alone. RECOMP_GL_NO_WINDOW_CLIP=1 ignores it. */
+    {
+        static int off = -1;
+        if (off < 0)
+            off = getenv("RECOMP_GL_NO_WINDOW_CLIP") != NULL;
+        if (!off && s_gpu.wclip_set && s_gpu.wclip_type == 0) {
+            uint32_t cx0 = s_gpu.clip_x, cy0 = s_gpu.clip_y;
+            uint32_t cx1 = s_gpu.clip_w ? s_gpu.clip_x + s_gpu.clip_w - 1 : st->width - 1;
+            uint32_t cy1 = s_gpu.clip_h ? s_gpu.clip_y + s_gpu.clip_h - 1 : st->height - 1;
+            uint32_t x0 = s_gpu.wclip_x0 > cx0 ? s_gpu.wclip_x0 : cx0;
+            uint32_t x1 = s_gpu.wclip_x1 < cx1 ? s_gpu.wclip_x1 : cx1;
+            uint32_t y0 = s_gpu.wclip_y0 > cy0 ? s_gpu.wclip_y0 : cy0;
+            uint32_t y1 = s_gpu.wclip_y1 < cy1 ? s_gpu.wclip_y1 : cy1;
+            if (x1 >= x0 && y1 >= y0
+                    && (x0 != cx0 || x1 != cx1 || y0 != cy0 || y1 != cy1)) {
+                st->clip_x = x0; st->clip_w = x1 - x0 + 1;
+                st->clip_y = y0; st->clip_h = y1 - y0 + 1;
+            }
+        }
+    }
     st->zeta_key = s_gpu.zeta_offset;
     st->screen_space = (s_gpu.xf_mode & 3) == 2 && nv2a_vsh_is_passthrough()
                        && !passthrough_3d();
@@ -5685,6 +5712,19 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
     case NV097_SET_SURFACE_CLIP_VERTICAL:
         s_gpu.clip_y = param & 0xFFFF;
         s_gpu.clip_h = (param >> 16) & 0xFFFF;
+        break;
+    case 0x02B4:                           /* SET_WINDOW_CLIP_TYPE (v186d) */
+        s_gpu.wclip_type = param;
+        break;
+    case 0x02C0:                           /* SET_WINDOW_CLIP_HORIZONTAL(0) */
+        s_gpu.wclip_x0 = param & 0xFFF;
+        s_gpu.wclip_x1 = (param >> 16) & 0xFFF;
+        s_gpu.wclip_set = 1;
+        break;
+    case 0x02E0:                           /* SET_WINDOW_CLIP_VERTICAL(0) */
+        s_gpu.wclip_y0 = param & 0xFFF;
+        s_gpu.wclip_y1 = (param >> 16) & 0xFFF;
+        s_gpu.wclip_set = 1;
         break;
     case NV097_SET_SURFACE_FORMAT:
         s_gpu.format = param;

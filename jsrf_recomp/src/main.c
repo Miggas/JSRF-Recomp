@@ -123,6 +123,8 @@ static void ini_load(const char *path)
 {
     FILE *f = fopen(path, "r");
     char line[1024];
+    static char own[128][64];              /* names this file has set */
+    static int n_own;
     if (!f)
         return;
     while (fgets(line, sizeof line, f)) {
@@ -140,12 +142,25 @@ static void ini_load(const char *path)
             if (!c) c = strstr(v, "\t;");
             if (c) { *c = 0; v = ini_trim(v); }
         }
-        if (!*k || getenv(k))
-            continue;                      /* the environment wins */
-        if (!*v)
-            continue;                      /* empty: leave unset */
+        /* The environment wins, but within the file the last line does
+         * (v186b): an old jsrf.ini with RECOMP_USB_PADS=1 under [game] and a
+         * new =2 under [input] used to keep the 1, silently. */
+        if (!*k)
+            continue;
+        {
+            int i, mine = 0;
+            for (i = 0; i < n_own; i++)
+                if (!_stricmp(own[i], k)) { mine = 1; break; }
+            if (getenv(k) && !mine)
+                continue;                  /* the environment wins */
+            if (!*v)
+                continue;                  /* empty: leave unset */
+            if (!mine && n_own < (int)(sizeof own / sizeof own[0]))
+                snprintf(own[n_own++], sizeof own[0], "%s", k);
+            if (!mine)
+                g_ini_count++;
+        }
         _putenv_s(k, v);
-        g_ini_count++;
     }
     fclose(f);
 }
@@ -961,7 +976,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     fprintf(stderr, "[CONFIG] %s layout, game files in %s; %d setting(s) from %s\n",
             g_portable ? "portable" : "classic", g_game_dir, g_ini_count,
             g_ini_count ? g_ini_path : "no jsrf.ini");
-    fprintf(stderr, "[CONFIG] build v185b, compiled " __DATE__ " " __TIME__ "\n");
+    fprintf(stderr, "[CONFIG] build v186e, compiled " __DATE__ " " __TIME__ "\n");
 
     /* Install VEH handler (first handler in chain) */
     /* Load symbols up front rather than from inside the handler: at fault

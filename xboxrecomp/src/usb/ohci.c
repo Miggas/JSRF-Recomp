@@ -117,7 +117,13 @@ static void wr32(uint32_t va, uint32_t v);
 
 /* The MCPX gives each controller a small root hub. Two ports apiece covers
  * the console's four front sockets, which is what a title enumerates over. */
-#define OHCI_PORTS              2
+#define OHCI_PORTS              4
+/* v186b: which root port each player's pad goes on. XAPI turns ports into
+ * controller slots rotated by two -- ports 3, 4, 1, 2 are players 1-4, the
+ * order xemu plugs its pads in too -- which is why the first pad, on port 1
+ * of the old two-port hub, was always controller 3. RECOMP_USB_PORTMAP
+ * (e.g. "3,4,1,2", 1-based) overrides it. */
+static unsigned s_port_of[4] = {2, 3, 0, 1};
 
 /* Passes this thread will keep an interrupt back while the guest is at
  * DISPATCH_LEVEL or above. One pass is the OHCI_TICK_MS (4 ms) loop tick, so
@@ -646,11 +652,18 @@ static uint32_t ohci_do_td(OhciController *hc, uint32_t ed0, uint32_t td)
          * control request's stages broke that request; Burnout 3 starts its
          * engine-rev rumble on the Crash countdown and then paused with the
          * pad unresponsive. */
+        const uint8_t *out = (len >= 6) ? guest_ptr(cbp, 6) : NULL;
         moved = len;
         if (endpoint == 0) {
+            /* v186: a SET_REPORT's data stage carries the rumble report */
+            if (out && g_setup_pending && g_setup.bmRequestType == 0x21u
+                    && g_setup.bRequest == 0x09u)
+                usb_gamepad_rumble(pad, out, len);
             g_setup_pending = 0;
             s_n_out_ep0++;
         } else {
+            if (out)
+                usb_gamepad_rumble(pad, out, len);   /* v186 */
             s_n_out_other++;
         }
     }
@@ -1065,15 +1078,15 @@ static DWORD WINAPI ohci_thread(LPVOID unused)
              * 0. RECOMP_USB_PORT picks it (0..1 on this controller) so the
              * mapping can be found by measurement rather than assumed. */
             const char *pspec = getenv("RECOMP_USB_PORT");
-            unsigned port = pspec ? (unsigned)atoi(pspec) : 0u;
+            unsigned port = pspec ? (unsigned)atoi(pspec) : s_port_of[0];
             if (port >= s_ndp) port = s_ndp - 1u;
             hc->reg[(HcRhPortStatus1 + port * 4) / 4] |= PORT_CCS | PORT_CSC;
             hc->reg[HcInterruptStatus / 4] |= INTR_RHSC;
             plugged = 1;
             s_plugged_pads = 1;
             first_port = port;
-            fprintf(stderr, "  [OHCI0] operational after %u ms; device "
-                            "arriving on port 1\n", waited * 20);
+            fprintf(stderr, "  [OHCI0] operational after %u ms; pad 1 "
+                            "arriving on port %u\n", waited * 20, port + 1);
             fflush(stderr);
         }
 
@@ -1081,10 +1094,15 @@ static DWORD WINAPI ohci_thread(LPVOID unused)
          * configured, on the next port, so the driver enumerates them in
          * turn and there is only ever one device at the default address.
          * RECOMP_USB_PADS sets how many (1-4). */
+        /* v186b: and, with players given out by button press, only once
+         * someone has claimed that player, so the game sees a controller
+         * plugged in when its player joins. */
         if (plugged && s_plugged_pads < s_npads
-            && usb_gamepad_configured(s_plugged_pads - 1)) {
+            && usb_gamepad_configured(s_plugged_pads - 1)
+            && usb_gamepad_claimed(s_plugged_pads)) {
             if (++settle > 50) {                 /* ~1 s after the last */
-                unsigned port = (first_port + (unsigned)s_plugged_pads) % s_ndp;
+                unsigned port = s_port_of[s_plugged_pads & 3];
+                (void)first_port;
                 hc->reg[(HcRhPortStatus1 + port * 4) / 4] |= PORT_CCS | PORT_CSC;
                 hc->reg[HcInterruptStatus / 4] |= INTR_RHSC;
                 fprintf(stderr, "  [OHCI0] pad %d arriving on port %u%c",
@@ -1282,6 +1300,16 @@ void xbox_OhciInit(void)
         }
         if ((unsigned)s_npads > s_ndp)
             s_ndp = (unsigned)s_npads;      /* a port for every pad */
+        {
+            const char *pm = getenv("RECOMP_USB_PORTMAP");
+            unsigned v[4], i;
+            if (pm && sscanf(pm, "%u,%u,%u,%u", &v[0], &v[1], &v[2], &v[3]) == 4) {
+                for (i = 0; i < 4; i++)
+                    if (v[i] >= 1 && v[i] <= 4) s_port_of[i] = v[i] - 1;
+            }
+            for (i = 0; i < 4; i++)
+                if (s_port_of[i] >= s_ndp) s_ndp = s_port_of[i] + 1;
+        }
     }
     ohci_reset(&s_hc[0], XBOX_OHCI0_BASE, 0);
     ohci_reset(&s_hc[1], XBOX_OHCI1_BASE, 1);

@@ -95,6 +95,14 @@ void xbox_InputInit(void);
 DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState);
 
 /**
+ * v186b: one input device alone: PC pad 0-3 (no keyboard merged in) or
+ * XBOX_INPUT_SOURCE_KEYBOARD. Used to give each device its own player.
+ */
+#define XBOX_INPUT_SOURCE_KEYBOARD 4
+#define XBOX_INPUT_SOURCES 5
+DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState);
+
+/**
  * Set controller vibration.
  */
 DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration);
