@@ -3479,7 +3479,47 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
      *  - showing a frame already drawn (and squeezed): boost's motion blur
      *    (v187e: it went back to 4:3, squeezed twice).
      * Logos, menu art and movies are none of these and are fitted. */
-    if (kind != XK_PROGRAM || st->screen_space) {
+    if (kind == XK_PROGRAM && !st->screen_space) {
+        /* v187f: a vertex program's positions are not known here without
+         * running it, so: a small batch (at most 64 vertices) textured from
+         * a display-sized surface drawn into lately is a picture of a frame
+         * (boost's motion blur is drawn this way) and stays full width */
+        static int logp = -1;
+        if (ws_tex_is_target() && s_gpu.idx_count <= 64) {
+            if (logp < 0) {
+                const char *e = getenv("RECOMP_WS_LOG");
+                logp = e && e[0] == '1';
+            }
+            if (logp > 0 && logp < 20) {
+                logp++;
+                fprintf(stderr, "[WS] program layer from a frame kept full width: texture %08X "
+                        "%ux%u, %u vertices\n", s_gpu.texs[0].offset, s_gpu.texs[0].width,
+                        s_gpu.texs[0].height, s_gpu.idx_count);
+            }
+            return 1.0f;
+        }
+        /* RECOMP_WS_LOG=1: textured program quads that are fitted, in case a
+         * frame picture comes from a surface not counted above */
+        if (logp < 0) {
+            const char *e = getenv("RECOMP_WS_LOG");
+            logp = e && e[0] == '1';
+        }
+        if (logp > 0 && s_gpu.texs[0].valid && s_gpu.idx_count <= 8) {
+            static uint32_t seenq[32];
+            static int nq;
+            uint32_t t = s_gpu.texs[0].offset;
+            int j, known = 0;
+            for (j = 0; j < nq; j++) if (seenq[j] == t) known = 1;
+            if (!known && nq < 32) {
+                seenq[nq++] = t;
+                fprintf(stderr, "[WS] program quad fitted: texture %08X %ux%u, %u vertices, "
+                        "surface %08X %ux%u\n", t, s_gpu.texs[0].width, s_gpu.texs[0].height,
+                        s_gpu.idx_count, st->surf_va, st->width, st->height);
+            }
+        }
+        return k;
+    }
+    {
         static int logw = -1;
         int rt = ws_tex_is_target();
         int plain = !s_gpu.texs[0].valid || st->stencil_test;
@@ -3492,7 +3532,7 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         }
         /* RECOMP_WS_LOG=1: each distinct full-width textured layer that is
          * fitted, to find one that should not be */
-        if (logw && !plain && ws_span(kind, st, 4096u, &lo, &hi)
+        if (logw && !plain && *is_2d && ws_span(kind, st, 4096u, &lo, &hi)
                 && lo <= 2.0f && hi >= (float)st->width - 2.0f) {
             static uint32_t seen[64];
             static int ns;
