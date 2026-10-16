@@ -2885,6 +2885,9 @@ static int gl_state(NvGlState *st)
 static uint32_t s_gl_idx[NV_MAX_INDICES * 3];
 static float s_gl_fog[NV_MAX_INDICES];
 
+enum { XK_PROGRAM, XK_FIXED, XK_PRE };
+static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d);   /* v187 */
+
 /* Hand a transformed batch (s_xf[0..n)) to the GPU. Strip triangles are
  * re-wound so every one keeps the strip's facing, as the software path does. */
 static void gl_submit(uint32_t n)
@@ -2981,6 +2984,9 @@ static void gl_submit(uint32_t n)
     }
     if (m < 3 || !gl_state(&st))
         return;
+    st.ws_k = ws_k_for(s_fog_direct ? XK_PRE                      /* v187 */
+                       : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED,
+                       &st, &st.ws_2d);
     nv2a_gl_draw(&st, s_xf, s_gl_fog, s_gl_idx, m);
     s_gpu.tris_drawn += m / 3;
     note_drawn();
@@ -3000,7 +3006,7 @@ static void gl_submit(uint32_t n)
  * for the batch, so the order they are computed in does not matter. The one
  * exception is a vertex program that writes constants (CXT_WRITE_EN), which
  * stays serial and in index order. */
-enum { XK_PROGRAM, XK_FIXED, XK_PRE };
+/* XK_PROGRAM, XK_FIXED, XK_PRE: declared above gl_submit (v187) */
 static void ff_transform(uint32_t index, Nv2aVshOutput *o);
 static void pre_transform(uint32_t index, Nv2aVshOutput *o, float zmax);
 
@@ -3360,6 +3366,58 @@ static uint32_t s_raw_present;
  * 3D batches now take GL's depth, with early depth testing.
  * RECOMP_GL_FRAGDEPTH=1 writes it for every batch again (pre-v103), =0 for
  * none. */
+/* v187: widescreen, done on the GPU (as v137 tried, before v138 withdrew it).
+ * The title's matrices are left exactly as they are -- v131-v136 scaled its
+ * look-at, which the game's own logic also reads, and the skater vanished
+ * behind walls the game would have hidden. Here the batches drawn into a
+ * display-sized surface have their x squeezed about the centre by
+ * k = (4/3) / shown aspect (0.75 at 16:9), so the wider picture shows more
+ * of the scene. 2D batches (pre-transformed, D3D's pass-through program, a
+ * composite without perspective) are squeezed too, keeping the HUD's shape,
+ * but the shader leaves their vertices at the screen's left and right edges
+ * where they are, so fades and full-screen layers still cover it all.
+ * Smaller render targets (reflections, the graffiti previews) are left
+ * alone. The game still culls for its 4:3 view, so things can appear late
+ * at the far left and right. k comes from the presenter (fb_present.c). */
+#if defined(_WIN32)
+extern double xbox_WidescreenK(void);
+#else
+static double xbox_WidescreenK(void)    /* no presenter here: the harness */
+{
+    const char *e = getenv("RECOMP_GL_WS_K");
+    return e ? atof(e) : 1.0;
+}
+#endif
+static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
+{
+    static float k = -1.0f;
+    if (k < 0.0f) {
+        k = (float)xbox_WidescreenK();
+        if (!(k > 0.2f && k <= 2.0f)) k = 1.0f;
+    }
+    static int gpu3d = -1;
+    if (gpu3d < 0) {
+        /* RECOMP_WS_MODE=gpu: v137's way, the 3D squeezed here as well. By
+         * default the title draws its 3D wide itself (recomp_manual.c,
+         * sub_00153FE0, the perspective setup), so only 2D is fitted here. */
+        const char *m = getenv("RECOMP_WS_MODE");
+        gpu3d = m && !strcmp(m, "gpu");
+    }
+    *is_2d = 0;
+    if (k == 1.0f || st->width < 640 || st->height < 480)
+        return 1.0f;
+    if (kind == XK_PRE || st->screen_space)
+        *is_2d = 1;
+    else if (kind == XK_FIXED) {
+        const float *m = s_gpu.ff_composite;
+        if (m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f && m[15] != 0.0f)
+            *is_2d = 1;
+    }
+    if (!*is_2d && !gpu3d)
+        return 1.0f;
+    return k;
+}
+
 static int zdirect_wanted(int kind, const NvGlState *st)
 {
     static int mode = -1;
@@ -3709,6 +3767,7 @@ static void gl_draw_batch(void)
         st.zdirect_off = 0;                    /* the shader decides per vertex */
         if (!zdirect_wanted(s_vx.kind, &st))
             st.zdirect_off = 1;
+        st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);   /* v187 */
         fast_qpc_li(&q1);
         s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
         if (s_ftrace == 2)
@@ -3717,6 +3776,7 @@ static void gl_draw_batch(void)
         s_raw_active = 0;
     } else {
     st.zdirect_off = s_vx.behind || !zdirect_wanted(s_vx.kind, &st);
+    st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);       /* v187 */
     fast_qpc_li(&q1);
     s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
     if (s_ftrace == 2)

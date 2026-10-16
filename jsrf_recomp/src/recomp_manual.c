@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>               /* v187: the widescreen field of view */
 
 /* ── ICALL trace ring buffer ───────────────────────────────── */
 
@@ -1792,3 +1793,69 @@ float recomp_rsqrtss_at(float x, int id)
 /* v125 names, for a gen tree that has not been through wrap_dsound.py again */
 float recomp_rcpss(float x) { return recomp_rcpss_at(x, -1); }
 float recomp_rsqrtss(float x) { return recomp_rsqrtss_at(x, -1); }
+
+
+/* ── v187: widescreen, in the game's own perspective setup ───────────────
+ *
+ * sub_00153FE0(camera, fov, near, far) is the renderer's SetPerspective
+ * (vtable 0x1E0F00 +0x7C; the camera's apply at 0x1DABC calls it with 75
+ * degrees, 1, 4000). From the horizontal field of view (65536 = 360 deg) and
+ * the viewport width (0x264ED8) it builds everything else: the D3D
+ * projection (sub_00153EC0: x scale 1/tan, y scale width/(height*aspect*tan)),
+ * the culling frustum's planes (sub_00153A90), the focal length (camera
+ * +0x50, 0x264EE8) and the screen centre (0x264EEC) the game projects its
+ * own points with.
+ *
+ * Called with the half angle's tangent divided by k = (4/3)/aspect and the
+ * width divided by k too, the horizontal view widens by 1/k while the
+ * vertical scale (width/tan), the focal length and so everything vertical
+ * stay exactly as they were -- and the frustum widens with the picture, so
+ * nothing at the sides is culled away (v137 squeezed the picture on the GPU
+ * and things vanished where the 4:3 bars had been). The camera itself, which
+ * the game's logic reads (v131-v136 scaled it and the skater vanished behind
+ * walls the game would have hidden), is not touched. The width goes back
+ * afterwards and the screen centre is put back to the real one.
+ * RECOMP_WS_MODE=gpu squeezes on the GPU instead (v137's way). */
+extern double xbox_WidescreenK(void);
+extern void sub_00153FE0_gen(void);
+void sub_00153FE0(void)
+{
+    static int mode = -1;
+    static double k = 1.0;
+    static int said;
+    uint32_t fov, w;
+    double half, t;
+    int32_t fov2;
+    float cx;
+
+    if (mode < 0) {
+        const char *m = getenv("RECOMP_WS_MODE");
+        k = xbox_WidescreenK();
+        mode = (k > 0.2 && k < 0.999 && !(m && !strcmp(m, "gpu"))) ? 1 : 0;
+    }
+    if (!mode) {
+        sub_00153FE0_gen();
+        return;
+    }
+    fov = MEM32(g_esp + 8);
+    w = MEM32(0x264ED8);
+    half = (double)((int32_t)fov >> 1) * (3.14159265358979323846 * 2.0 / 65536.0);
+    t = tan(half);
+    if (!(fov > 0 && fov < 0x8000 && t > 0.0 && w > 0 && w < 4096)) {
+        sub_00153FE0_gen();
+        return;
+    }
+    fov2 = (int32_t)(atan(t / k) * 2.0 * 65536.0 / (3.14159265358979323846 * 2.0) + 0.5);
+    if (said < 4) {
+        said++;
+        fprintf(stderr, "[WS] perspective %.1f -> %.1f degrees across, viewport %u -> %u "
+                "for the setup (k %.4f)\n", fov * 360.0 / 65536.0, fov2 * 360.0 / 65536.0,
+                w, (unsigned)(w / k + 0.5), k);
+    }
+    MEM32(g_esp + 8) = (uint32_t)fov2;
+    MEM32(0x264ED8) = (uint32_t)(w / k + 0.5);
+    sub_00153FE0_gen();
+    MEM32(0x264ED8) = w;
+    cx = (float)(int32_t)((w >> 1) + MEM32(0x264ED0));   /* as the original: */
+    memcpy((void *)XBOX_PTR(0x264EEC), &cx, 4);         /* centre x, a float */
+}

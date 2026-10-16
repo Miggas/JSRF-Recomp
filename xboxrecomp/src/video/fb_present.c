@@ -77,6 +77,53 @@ static uint32_t fb_scale(void)
 static uint32_t     *s_present[2];
 static volatile LONG s_present_idx = -1;   /* -1 until the first flip */
 
+/* v187: the shape the picture is shown at. 4:3 unless
+ *   RECOMP_WIDESCREEN=1      16:9
+ *   RECOMP_WIDESCREEN=auto   the shape of the main monitor (16:10 on a Steam
+ *                            Deck, 21:9 on an ultrawide)
+ *   RECOMP_ASPECT=w:h        any shape (implies widescreen), e.g. 16:10
+ * The 3D is then drawn wider to fill it (nv2a_pb_exec.c, ws_k_for). */
+double xbox_PresentAspect(void)
+{
+    static double a = 0.0;
+    if (a == 0.0) {
+        const char *e = getenv("RECOMP_ASPECT");
+        const char *w = getenv("RECOMP_WIDESCREEN");
+        double x = 0, y = 0;
+        a = 4.0 / 3.0;
+        if (e && sscanf(e, "%lf%*[:x/]%lf", &x, &y) == 2 && x > 0 && y > 0)
+            a = x / y;
+        else if (w && !_stricmp(w, "auto")) {
+            int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+            if (sw > 0 && sh > 0)
+                a = (double)sw / sh;
+        } else if (w && w[0] == '1')
+            a = 16.0 / 9.0;
+        if (a < 1.0 || a > 4.0)
+            a = 4.0 / 3.0;
+        if (a != 4.0 / 3.0)
+            fprintf(stderr, "[WS] widescreen: shown at %.3f:1, 3D squeezed by %.4f "
+                    "(RECOMP_WIDESCREEN / RECOMP_ASPECT)\n", a, (4.0 / 3.0) / a);
+    }
+    return a;
+}
+
+/* (4/3) / shown aspect: 1 for 4:3, 0.75 for 16:9 */
+double xbox_WidescreenK(void)
+{
+    return (4.0 / 3.0) / xbox_PresentAspect();
+}
+
+/* the largest rectangle of the shown shape inside cw x ch */
+void xbox_PresentFit(int cw, int ch, int *dw, int *dh)
+{
+    double a = xbox_PresentAspect();
+    int w = cw, h = (int)(cw / a + 0.5);
+    if (h > ch) { h = ch; w = (int)(ch * a + 0.5); }
+    if (w > cw) w = cw;
+    *dw = w; *dh = h;
+}
+
 /* v68: the window thread drew on its own 16 ms sleep, which beats against
  * the game's 60 Hz flips: every so often a frame was shown twice and the
  * next one never -- a regular hitch at a steady 60 fps. It now waits for
@@ -402,8 +449,7 @@ static void fb_blit(HWND hwnd, HDC hdc, BITMAPINFO *bi)
     cw = cr.right - cr.left; ch = cr.bottom - cr.top;
     if (cw <= 0 || ch <= 0)
         return;
-    dw = cw; dh = cw * 3 / 4;
-    if (dh > ch) { dh = ch; dw = ch * 4 / 3; }
+    xbox_PresentFit(cw, ch, &dw, &dh);      /* v187 */
     dx = (cw - dw) / 2; dy = (ch - dh) / 2;
     bi->bmiHeader.biWidth = (LONG)s_rgb_w;
     bi->bmiHeader.biHeight = -(LONG)s_rgb_h;
@@ -449,6 +495,8 @@ static DWORD WINAPI fb_thread(LPVOID unused)
          * that does; the window can be resized and the frame follows */
         RECT wa;
         LONG cw = (LONG)(s_fb_width * s_scale), ch = (LONG)(s_fb_height * s_scale);
+        /* v187: as wide as the shown shape needs */
+        cw = (LONG)(ch * xbox_PresentAspect() + 0.5);
         if (SystemParametersInfoA(SPI_GETWORKAREA, 0, &wa, 0)) {
             LONG aw = wa.right - wa.left - 16, ah = wa.bottom - wa.top - 48;
             if (cw > aw) { ch = ch * aw / cw; cw = aw; }

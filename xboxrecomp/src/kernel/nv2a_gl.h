@@ -63,6 +63,9 @@ typedef struct {
                                       * program: positions are final screen
                                       * coordinates, drawn flat, never clipped by w */
     uint32_t alpha_test, alpha_func, alpha_ref;
+    float    ws_k;                   /* v187: widescreen x squeeze, 1 (or 0) = none */
+    uint32_t ws_2d;                  /* v187: a 2D batch: vertices at the screen's
+                                      * left/right edge stay there (fades) */
 
     int          rc_seen;
     Nv2aCombiner rc;

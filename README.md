@@ -405,6 +405,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 |---|---|
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480 (original), `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. Higher is sharper and needs a stronger GPU. |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
+| `RECOMP_WIDESCREEN=1` | **Widescreen** 16:9: more of the scene to the left and right instead of black bars; the HUD and menus keep their shape. `auto` uses your monitor's shape (16:10 on a Steam Deck), or set any shape with `RECOMP_ASPECT=21:9`. |
 | `RECOMP_GL_PRESENT=dxgi` | **Borderless window** (Windows, NVIDIA or AMD GPU): with full screen on, Alt+Tab is instant and overlays work, with no black flash. Needs a strong PC — switch it off again if frame times get worse. Leave it off on the Steam Deck. *Tip from Piaka.* |
 | `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |
 | `RECOMP_USB_PADS=2` | How many players (1–4, default 1). With 1, every controller and the keyboard control player 1. With 2 or more, for the **multiplayer modes**, players join in the order they press a button: the first controller or keyboard to press one is player 1, the next player 2, and so on. |
