@@ -472,6 +472,7 @@ Your `jsrf.ini` and saves are kept.
 | `this default.xbe is not the one the analysis was made from` | Your copy is a different version — most likely the PAL (European) or NTSC-J (Japanese) release. Only the NTSC (North American) retail release works. |
 | `No recompiled code yet in src\recomp\gen` | Run `generate_code.bat` before `rebuild.bat`. |
 | `cmake` not found, or `Visual Studio 17 2022` not found | Install Visual Studio 2022 with **Desktop development with C++** ([section 2](#2-install-the-tools-once)). |
+| `MSB1009: Project file does not exist` (`ALL_BUILD.vcxproj`) | An earlier setup failed halfway. Delete the `jsrf_recomp\build` folder and run `rebuild.bat` again (newer versions do this for you); if it fails again, the real error is right after **Configuring...** |
 | CMake says the cache or source folder doesn't match | You moved or copied the project. Delete the `jsrf_recomp\build` folder and run `rebuild.bat` again. |
 | `BUILD FAILED` with something else | Scroll up to the first line that says `error`, and report it ([section 13](#13-reporting-a-problem)). |
 | `Could not copy the exe … is the game still running?` | Close the game and run `build_portable.bat` again. |

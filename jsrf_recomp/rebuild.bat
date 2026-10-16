@@ -20,11 +20,19 @@ if not exist "src\recomp\gen\recomp_dispatch.c" (
   goto fail
 )
 
-if not exist "build\CMakeCache.txt" (
-  echo Configuring...
-  "%CMAKE%" -S . -B build -G "Visual Studio 17 2022" -A x64
-  if errorlevel 1 goto fail
+rem A setup that failed halfway leaves CMakeCache.txt without the project
+rem files (MSB1009: Project file does not exist), so check for the project
+rem itself and start the build folder over if it is missing.
+if exist "build\ALL_BUILD.vcxproj" goto configured
+if exist "build" (
+  echo The build folder is incomplete ^(an earlier setup failed^) - starting it over.
+  rmdir /s /q build
 )
+echo Configuring...
+"%CMAKE%" -S . -B build -G "Visual Studio 17 2022" -A x64
+if errorlevel 1 goto config_fail
+if not exist "build\ALL_BUILD.vcxproj" goto config_fail
+:configured
 
 rem v118b: the generated bodies recomp_manual.c wraps get their _gen names
 rem first, every time (idempotent), so the link cannot break
@@ -44,6 +52,17 @@ if /i "%~1"=="nopause" exit /b 0
 echo Run run_jsrf.bat to start the game.
 pause
 exit /b 0
+
+:config_fail
+echo.
+echo SETUP FAILED - the first error is just above, after "Configuring...".
+echo Usually Visual Studio 2022 is missing the "Desktop development with C++"
+echo workload or a Windows SDK: open the Visual Studio Installer, Modify, and
+echo tick them. Then run rebuild.bat again.
+if exist "build" rmdir /s /q build
+if /i "%~1"=="nopause" exit /b 1
+pause
+exit /b 1
 
 :fail
 echo.
