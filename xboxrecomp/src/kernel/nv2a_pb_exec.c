@@ -2788,8 +2788,9 @@ static int gl_state(NvGlState *st)
     st->pitch = s_gpu.pitch;
     st->width = s_gpu.pitch / bpp;
     st->height = s_gpu.clip_y + s_gpu.clip_h;
-    if (st->width >= 640 && st->height >= 480)                 /* v187e */
-        ws_note_target(base, st->pitch * (st->height < 480 ? 480 : st->height));
+    /* v187e/h: every surface drawn into, any size: boost's blur shrinks the
+     * frame into 512x512 and 256x256 targets and pastes those back */
+    ws_note_target(base, st->pitch * (st->width == 640 && st->height < 480 ? 480 : st->height));
     /* A surface the size of the screen is the screen: keep one GL target
      * for it however the title narrows the clip. */
     if (st->width == 640 && st->height < 480)
@@ -3429,15 +3430,16 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
  * of them is a picture of a frame the renderer has already squeezed (boost's
  * motion blur, screen effects), so a full-screen quad showing it must not be
  * squeezed a second time. */
-static struct { uint32_t base, bytes; } s_ws_rt[8];
+#define WS_RT_N 32
+static struct { uint32_t base, bytes; } s_ws_rt[WS_RT_N];
 static unsigned s_ws_rt_next;
 static void ws_note_target(uint32_t base, uint32_t bytes)
 {
     unsigned i;
-    for (i = 0; i < 8; i++)
+    for (i = 0; i < WS_RT_N; i++)
         if (s_ws_rt[i].base == base) { s_ws_rt[i].bytes = bytes; return; }
-    s_ws_rt[s_ws_rt_next & 7].base = base;
-    s_ws_rt[s_ws_rt_next & 7].bytes = bytes;
+    s_ws_rt[s_ws_rt_next % WS_RT_N].base = base;
+    s_ws_rt[s_ws_rt_next % WS_RT_N].bytes = bytes;
     s_ws_rt_next++;
 }
 static int ws_tex_is_target(void)
@@ -3446,7 +3448,7 @@ static int ws_tex_is_target(void)
     unsigned i;
     if (!s_gpu.texs[0].valid || !t)
         return 0;
-    for (i = 0; i < 8; i++)
+    for (i = 0; i < WS_RT_N; i++)
         if (s_ws_rt[i].bytes && t >= s_ws_rt[i].base && t < s_ws_rt[i].base + s_ws_rt[i].bytes)
             return 1;
     return 0;
@@ -3497,8 +3499,15 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         static int logw = -1;
         int rt = ws_tex_is_target();
         int plain = !s_gpu.texs[0].valid || st->stencil_test;
+        /* v187h: across the whole width, and ending at its edges: within 5%
+         * for a quad, up to 4 widths for a triangle (the one big triangle
+         * covering the screen). World geometry that merely crosses the
+         * screen spans far more (shadow volumes, run 187g) and is fitted. */
+        float W = (float)st->width,
+              over = s_gpu.idx_count <= 3 ? 4.0f : rt ? 0.25f : 0.05f;  /* zoom blur: larger */
         int full = ws_span(kind, st, 64u, &lo, &hi)
-                   && lo <= 0.02f * (float)st->width && hi >= 0.98f * (float)st->width;
+                   && lo <= 0.02f * W && hi >= 0.98f * W
+                   && lo >= -over * W && hi <= (1.0f + over) * W;
         int keep = full && (plain || rt);
         if (logw < 0) {
             const char *e = getenv("RECOMP_WS_LOG");
