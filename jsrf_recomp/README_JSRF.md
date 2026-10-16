@@ -464,6 +464,8 @@ next fix.
 - **v187i:** surface and texture addresses are compared without the aperture bits; a smaller target pasted across a display-sized surface is marked a copy of the screen (`[WS] surface ... is a copy of the screen` with RECOMP_WS_LOG=1) and from then on is squeezed like the screen, its own full-width layers kept full width.
 - **Run 187i (PC):** boost right after its first frame (16:9, a flash of the stretched 4:3 view, then 16:9): `[WS] surface 003E1000 is a copy of the screen` (and the frame itself, 00084000). Faint bands remain at the 4:3 edges while boosting: a perspective quad of 6 vertices filling the screen exactly (texture 80FC0000 256x256, x 1..641) was fitted.
 - **v187j:** a 3D (perspective, not flat) batch of at most 8 vertices that fills the screen to its edges stays full width: an effect fixed to the camera.
+- **Run 187j (PC):** a lighter strip on the left only. A stencil-tested 3D batch of 57 vertices (shadow volume, x 9..666) passed the full-width test and was kept unsqueezed, so the shadow marks were laid out wider than the scene.
+- **v187k:** "untextured" and "stencil-tested" keep a full-width layer only when it is flat 2D or at most 6 vertices; frames (textured from a drawn surface) and camera quads as before.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

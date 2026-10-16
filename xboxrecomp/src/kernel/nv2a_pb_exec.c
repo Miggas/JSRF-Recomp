@@ -3531,7 +3531,12 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
          * exactly -- an effect fixed to the camera (boost); menus and logos
          * are flat 2D and stay fitted */
         int camquad = !*is_2d && s_gpu.idx_count <= 8;
-        int keep = full && (plain || rt || camquad);
+        /* v187k: "untextured" and "stencil-tested" only count for flat 2D or
+         * a tiny batch: stencil-tested 3D (shadow volumes) that happened to
+         * reach both edges was kept unsqueezed, and the shadow marks came out
+         * wider than the scene (an undarkened strip at one side, run 187j) */
+        int flatish = *is_2d || s_gpu.idx_count <= 6;
+        int keep = full && ((plain && flatish) || rt || camquad);
         if (logw < 0) {
             const char *e = getenv("RECOMP_WS_LOG");
             logw = e && e[0] == '1';
