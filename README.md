@@ -407,6 +407,8 @@ off — delete the `;` to switch it on. The full list with explanations is in
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
 | `RECOMP_GL_PRESENT=dxgi` | **Borderless window** (Windows, NVIDIA or AMD GPU): with full screen on, Alt+Tab is instant and overlays work, with no black flash. Needs a strong PC — switch it off again if frame times get worse. Leave it off on the Steam Deck. *Tip from Piaka.* |
 | `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |
+| `RECOMP_USB_PADS=2` | How many controllers the game sees (1–4, default 1). Set it to 2 or more for the **multiplayer modes**: PC controller 1 is player 1, controller 2 is player 2, and so on. |
+| `RECOMP_RUMBLE=50` | Controller rumble strength in percent (default 100); `0` turns it off. |
 | `RECOMP_APU_GAIN=0.5` | Master volume. |
 | `RECOMP_APU_REVERB=0` | Turns off the echo effect in some areas. |
 | `RECOMP_SAVE_DIR=…` | Where the `savegame` folder (the cache and partition images) goes, if not in the game folder. Your save itself stays in `UDATA`. |

@@ -21,7 +21,8 @@ rem --- Controllers: emulate the USB host controller with one gamepad. Your real
 rem     controller drives it through XInput; RECOMP_KEYBOARD=1 also maps the keyboard.
 rem     Without this XAPI finds no USB hardware and the game's input setup fails.
 set RECOMP_USB=1
-set RECOMP_USB_PADS=1
+rem How many controllers (1-4, default 1); 2 or more for multiplayer:
+rem set RECOMP_USB_PADS=2
 set RECOMP_KEYBOARD=1
 rem     Keyboard: Enter=START, Z X A S = A B X Y, arrows = d-pad, numpad 8/4/2/6 = left stick.
 rem     The game window must have focus. INPUT_DIAG prints the input chain once a second,

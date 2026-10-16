@@ -630,3 +630,70 @@ int usb_gamepad_report(int pad, uint8_t *out, int max)
     pad_script_apply(pad, out);
     return 20;
 }
+
+/* ---- rumble -------------------------------------------------------------- */
+
+/* v186: the pad's motors. The title's output report is six bytes:
+ *
+ *   0      report id, always 0
+ *   1      length, 6
+ *   2..3   left motor (the big, low-frequency one), 16-bit little endian
+ *   4..5   right motor (the small, high-frequency one)
+ *
+ * which is XInput's XINPUT_VIBRATION as it is, so host pad n gets the same
+ * two speeds. Before this the report was accepted and dropped.
+ *
+ * RECOMP_RUMBLE=0 turns it off; 1..100 is the strength in percent (default
+ * 100). The motors keep their speed until the next report, as on the
+ * console, so only changes go to the host -- and every pad is stopped when
+ * the program ends, or a pad would go on shaking after the window closes. */
+static int s_rumble_pct = -1;
+static int s_rumble_last[USB_GAMEPAD_MAX][2];
+static int s_rumble_used;
+
+static void rumble_stop_all(void)
+{
+    XBOX_VIBRATION v = {0, 0};
+    int i;
+    for (i = 0; i < USB_GAMEPAD_MAX; i++)
+        if (s_rumble_last[i][0] || s_rumble_last[i][1])
+            xbox_InputSetState((DWORD)i, &v);
+}
+
+void usb_gamepad_rumble(int pad, const uint8_t *p, int len)
+{
+    XBOX_VIBRATION v;
+    unsigned left, right;
+
+    if (s_rumble_pct < 0) {
+        const char *e = getenv("RECOMP_RUMBLE");
+        s_rumble_pct = 100;
+        if (e && *e) {
+            s_rumble_pct = atoi(e);
+            if (s_rumble_pct < 0) s_rumble_pct = 0;
+            if (s_rumble_pct > 100) s_rumble_pct = 100;
+        }
+        fprintf(stderr, "  PAD: rumble %s", s_rumble_pct ? "on" : "off");
+        if (s_rumble_pct && s_rumble_pct < 100)
+            fprintf(stderr, " at %d%%", s_rumble_pct);
+        fprintf(stderr, " (RECOMP_RUMBLE)\n");
+        fflush(stderr);
+    }
+    if (!s_rumble_pct || pad < 0 || pad >= USB_GAMEPAD_MAX || len < 6 || !p)
+        return;
+    if (p[0] != 0 || p[1] < 6)
+        return;                               /* not a rumble report */
+    left  = (unsigned)(p[2] | (p[3] << 8)) * (unsigned)s_rumble_pct / 100u;
+    right = (unsigned)(p[4] | (p[5] << 8)) * (unsigned)s_rumble_pct / 100u;
+    if ((int)left == s_rumble_last[pad][0] && (int)right == s_rumble_last[pad][1])
+        return;
+    if (!s_rumble_used) {
+        s_rumble_used = 1;
+        atexit(rumble_stop_all);
+    }
+    s_rumble_last[pad][0] = (int)left;
+    s_rumble_last[pad][1] = (int)right;
+    v.wLeftMotorSpeed = (WORD)left;
+    v.wRightMotorSpeed = (WORD)right;
+    xbox_InputSetState((DWORD)pad, &v);
+}

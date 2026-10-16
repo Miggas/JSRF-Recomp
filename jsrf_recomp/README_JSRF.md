@@ -437,6 +437,7 @@ next fix.
 - **Run 185 (PC):** the future-site scene plays correctly: the machine goes where it should and Professor K's text stays in English. The cause was the missing function 0xE9C30.
 - **v185b:** with RECOMP_QUIET the per-read `[READ]` line and its hash (v184) are skipped (`RECOMP_READ_LOG=1` keeps them); they were printed and flushed for every file read even while playing.
 - **Run 185b (PC):** frame times back to normal (v185, with the per-read hash, stuttered). `tools/check_gen.py` checks a generated `src/recomp/gen` against `analysis/gen_hashes.txt` (line endings ignored); a regeneration on Windows matched all 42 files.
+- **v186:** controller rumble. The title's rumble report (on the pad's OUT endpoint, or as a SET_REPORT on the control pipe) was accepted and dropped; it now sets host pad n's motors through XInput, only when the speeds change, and every pad is stopped at exit. `RECOMP_RUMBLE=0` turns it off, 1..100 scales it. `RECOMP_USB_PADS` (1-4) moved from the `.bat` files to `jsrf.ini` `[input]`, so it can be set for multiplayer.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

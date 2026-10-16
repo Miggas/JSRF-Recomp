@@ -646,11 +646,18 @@ static uint32_t ohci_do_td(OhciController *hc, uint32_t ed0, uint32_t td)
          * control request's stages broke that request; Burnout 3 starts its
          * engine-rev rumble on the Crash countdown and then paused with the
          * pad unresponsive. */
+        const uint8_t *out = (len >= 6) ? guest_ptr(cbp, 6) : NULL;
         moved = len;
         if (endpoint == 0) {
+            /* v186: a SET_REPORT's data stage carries the rumble report */
+            if (out && g_setup_pending && g_setup.bmRequestType == 0x21u
+                    && g_setup.bRequest == 0x09u)
+                usb_gamepad_rumble(pad, out, len);
             g_setup_pending = 0;
             s_n_out_ep0++;
         } else {
+            if (out)
+                usb_gamepad_rumble(pad, out, len);   /* v186 */
             s_n_out_other++;
         }
     }

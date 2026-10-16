@@ -12,7 +12,8 @@ set RECOMP_FB_WINDOW=1
 set RECOMP_TITLE_KEVENTS=1
 set RECOMP_AC97_READY=1
 set RECOMP_USB=1
-set RECOMP_USB_PADS=1
+rem How many controllers (1-4, default 1); 2 or more for multiplayer:
+rem set RECOMP_USB_PADS=2
 set RECOMP_KEYBOARD=1
 rem Diagnostics off:
 set RECOMP_QUIET=1
