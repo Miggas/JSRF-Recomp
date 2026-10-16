@@ -17,6 +17,11 @@ code on your computer, and that code is compiled into a normal Windows `.exe`.
 The Xbox's hardware — graphics, sound, controllers, memory card — is recreated
 by the runtime in `xboxrecomp/`.
 
+> [!NOTE]
+> **Made with AI.** Most of this project's code was written by Claude
+> (Anthropic's AI), directed, tested and played through by Miggas. See
+> [how this was made](#how-this-was-made).
+
 > [!IMPORTANT]
 > **You need your own copy of the game.** Nothing from the game is in this
 > repository: no code, no graphics, no music. The translation is made on your
@@ -534,6 +539,21 @@ was on a PC or a Steam Deck.
 
 ## 15. Credits and licences
 
+### How this was made
+
+Most of the code here — the JSRF-specific fixes, the changes to the
+`xboxrecomp` runtime, the tools and this README — was written by
+[Claude](https://claude.ai) (Anthropic's AI). Miggas directed the work: chose
+what to fix and when, tested each build on Windows and the Steam Deck, sent the
+logs, found the bugs by playing, and made the calls on the approach. The game
+was played from start to finish this way. The commit history marks Claude as
+co-author.
+
+### Credits
+
+- [sp00nznet](https://github.com/sp00nznet/xboxrecomp) for the `xboxrecomp` toolkit this port is
+  built on.
+- Piaka for the borderless window tip.
 - This project's own files (everything outside `xboxrecomp/`) are MIT
   licensed — see [`LICENSE`](LICENSE).
 - `xboxrecomp/` is MIT licensed (see `xboxrecomp/LICENSE`). Some of its audio
