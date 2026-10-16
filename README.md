@@ -400,6 +400,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 |---|---|
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480 (original), `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. Higher is sharper and needs a stronger GPU. |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
+| `RECOMP_GL_PRESENT=dxgi` | **Borderless window** (Windows, NVIDIA or AMD GPU): with full screen on, Alt+Tab is instant and overlays work, with no black flash. Needs a strong PC — switch it off again if frame times get worse. Leave it off on the Steam Deck. *Tip from Piaka.* |
 | `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |
 | `RECOMP_APU_GAIN=0.5` | Master volume. |
 | `RECOMP_APU_REVERB=0` | Turns off the echo effect in some areas. |

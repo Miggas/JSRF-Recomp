@@ -33,6 +33,13 @@ RECOMP_GL_SCALE=2
 ; --- Start in full screen. F11 or Alt+Enter switches at any time.
 RECOMP_FULLSCREEN=1
 
+; --- Borderless window (Windows with an NVIDIA or AMD GPU; tip from Piaka).
+;     With full screen on, Alt+Tab is instant and overlays work, with no
+;     black flash. It moves the graphics work back onto the game's main
+;     thread, so it needs a strong PC: switch it off again if frame times get
+;     worse. Leave it off on the Steam Deck (it does nothing there).
+;RECOMP_GL_PRESENT=dxgi
+
 ; --- Wait for the screen's refresh (no tearing).
 ;RECOMP_GL_VSYNC=1
 
