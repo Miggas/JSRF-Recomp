@@ -35,16 +35,18 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import xbe_info  # noqa: E402  (tools/xbe_info.py)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 JR = os.path.normpath(os.path.join(HERE, ".."))
 ANALYSIS = os.path.join(JR, "analysis")
 GEN = os.path.join(JR, "src", "recomp", "gen")
 MANUAL = os.path.join(JR, "src", "recomp_manual.c")
 
-# The NTSC (North American) retail default.xbe the analysis was made from.
-# The PAL and NTSC-J releases have their code at other addresses: the
-# analysis would not fit them.
-XBE_SHA256 = "bb2410618c35ccab1ab8ad989194bbd50619eeb648a03b21483efca57f36547d"
+# The check is in xbe_info.py: it compares the game's code and data
+# sections with the NTSC (North American) retail release the analysis was
+# made from, not the whole file, since dumping tools often patch the header.
 
 # v66: reached only through data tables; the function list folds each into
 # the function before it, so they are lifted on their own into recomp_extra.c
@@ -122,12 +124,16 @@ def main():
             die("analysis/%s is missing" % n)
 
     print("Checking default.xbe...")
-    digest = sha256(a.xbe)
-    if digest != XBE_SHA256:
-        msg = ("this default.xbe is not the one the analysis was made from\n"
-               "  yours:    %s\n  expected: %s\n"
+    try:
+        ok, info, results = xbe_info.check(a.xbe)
+    except Exception as e:  # not an XBE, truncated, unreadable
+        die("could not read %s: %s" % (a.xbe, e))
+    digest = info["file_sha256"]
+    if not ok:
+        msg = ("this default.xbe's code is not the one the analysis was made from\n"
+               + xbe_info.describe(info, results) + "\n"
                "  Only the NTSC (North American) retail release works; PAL and\n"
-               "  NTSC-J (Japanese) copies are built differently. " % (digest, XBE_SHA256))
+               "  NTSC-J (Japanese) copies are built differently. ")
         if not a.any_xbe:
             die(msg + "--any-xbe to try anyway; the result will very likely not work.")
         print("WARNING: " + msg)

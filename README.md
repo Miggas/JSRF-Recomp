@@ -67,10 +67,15 @@ Each section is marked with how much effort it takes:
 
 > [!WARNING]
 > **Only the NTSC (North American) release works.** The PAL (European) and
-> NTSC-J (Japanese) releases are built differently inside. The build checks
-> your `default.xbe` by its SHA-256 fingerprint and stops if it is not the right
-> one:<br>
-> `bb2410618c35ccab1ab8ad989194bbd50619eeb648a03b21483efca57f36547d`
+> NTSC-J (Japanese) releases are built differently inside. The build checks the
+> game's code and data inside your `default.xbe` and stops if they are not the
+> right ones. It does **not** compare the whole file: many dumps have a patched
+> header (region, allowed media), which changes the file's SHA-256 but not the
+> game, and those work fine.
+>
+> To check your copy before building, open a terminal in `jsrf_recomp` and run
+> `py -3 tools\xbe_info.py` (or `py -3 tools\xbe_info.py path\to\default.xbe`).
+> It says whether the code matches and, if not, which part differs.
 
 ---
 
