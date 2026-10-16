@@ -1,0 +1,3 @@
+# Windows batch files must keep CRLF: with LF endings cmd mis-jumps to
+# labels (goto lands in the wrong place).
+*.bat -text
