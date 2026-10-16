@@ -1795,158 +1795,80 @@ float recomp_rcpss(float x) { return recomp_rcpss_at(x, -1); }
 float recomp_rsqrtss(float x) { return recomp_rsqrtss_at(x, -1); }
 
 
-/* ── v187: widescreen, in the game's own perspective setup ───────────────
+/* ── v187: widescreen -- the culling widened, nothing else ──────────────
  *
  * sub_00153FE0(camera, fov, near, far) is the renderer's SetPerspective
  * (vtable 0x1E0F00 +0x7C; the camera's apply at 0x1DABC calls it with 75
  * degrees, 1, 4000). From the horizontal field of view (65536 = 360 deg) and
- * the viewport width (0x264ED8) it builds everything else: the D3D
- * projection (sub_00153EC0: x scale 1/tan, y scale width/(height*aspect*tan)),
- * the culling frustum's planes (sub_00153A90), the focal length (camera
- * +0x50, 0x264EE8) and the screen centre (0x264EEC) the game projects its
- * own points with.
+ * the viewport width (0x264ED8) it builds the D3D projection (sub_00153EC0),
+ * the culling frustum's planes (sub_00153A90), the focal length and the
+ * screen centre.
  *
- * Called with the half angle's tangent divided by k = (4/3)/aspect and the
- * width divided by k too, the horizontal view widens by 1/k while the
- * vertical scale (width/tan), the focal length and so everything vertical
- * stay exactly as they were -- and the frustum widens with the picture, so
- * nothing at the sides is culled away (v137 squeezed the picture on the GPU
- * and things vanished where the 4:3 bars had been). The camera itself, which
- * the game's logic reads (v131-v136 scaled it and the skater vanished behind
- * walls the game would have hidden), is not touched. The width goes back
- * afterwards and the screen centre is put back to the real one.
- * RECOMP_WS_MODE=gpu squeezes on the GPU instead (v137's way). */
+ * v187d: it runs exactly as the game wrote it, so every projection, the HUD
+ * and every menu keep their 4:3 maths and agree with each other, and the
+ * renderer squeezes the whole frame into the shown shape's middle and so
+ * shows the 3D wider (nv2a_pb_exec.c, ws_k_for). What would still be missing
+ * at the sides is what the game culls for its 4:3 view (v137), so afterwards
+ * the planes alone are built again for the wider view: sub_00153A90 with
+ * the camera's field of view and tan(fov/2) (+0x48, +0x54) and the width set
+ * for 1/k more across -- the same focal length, so the vertical planes come
+ * out as before -- and then all three are put back. v187-v187c widened the
+ * projection itself, and the HUD and menus, drawn through other projections
+ * that could not all be told apart, came out stretched in some maps and
+ * fitted in others. RECOMP_WS_MODE=gpu leaves the culling alone (v137). */
 extern double xbox_WidescreenK(void);
 extern void sub_00153FE0_gen(void);
-static int g_ws_in_setup;   /* v187c: inside the widened perspective setup */
-static int g_ws_mode = -1;  /* 1: widescreen done in the game (the default) */
-static double g_ws_k = 1.0;
+void sub_00153A90(void);
 void sub_00153FE0(void)
 {
     static int mode = -1;
     static double k = 1.0;
     static int said;
-    static int keep = -1;
-    uint32_t fov, w, cam;
+    uint32_t fov, w, cam, fov48, tan54, tab, i;
     double half, t;
     int32_t fov2;
-    float cx;
+    float sn, cs, tn;
 
     if (mode < 0) {
         const char *m = getenv("RECOMP_WS_MODE");
         k = xbox_WidescreenK();
         mode = (k > 0.2 && k < 0.999 && !(m && !strcmp(m, "gpu"))) ? 1 : 0;
-        g_ws_mode = mode;
-        g_ws_k = k;
     }
-    if (!mode) {
-        sub_00153FE0_gen();
-        return;
-    }
+    cam = MEM32(g_esp + 4);
     fov = MEM32(g_esp + 8);
+    sub_00153FE0_gen();                    /* the game's own setup, untouched */
+    if (!mode || !cam)
+        return;
     w = MEM32(0x264ED8);
     half = (double)((int32_t)fov >> 1) * (3.14159265358979323846 * 2.0 / 65536.0);
     t = tan(half);
-    if (!(fov > 0 && fov < 0x8000 && t > 0.0 && w > 0 && w < 4096)) {
-        sub_00153FE0_gen();
+    if (!(fov > 0 && fov < 0x8000 && t > 0.0 && w > 0 && w < 4096))
         return;
-    }
     fov2 = (int32_t)(atan(t / k) * 2.0 * 65536.0 / (3.14159265358979323846 * 2.0) + 0.5);
+    tab = MEM32(0x264BA4);
+    if (!tab)
+        return;
+    i = (((uint32_t)fov2 >> 1) & 0xFFFF) >> 4;            /* as sub_0014C660 */
+    memcpy(&sn, (void *)XBOX_PTR(tab + i * 8), 4);
+    memcpy(&cs, (void *)XBOX_PTR(tab + i * 8 + 4), 4);
+    if (cs == 0.0f)
+        return;
+    tn = sn / cs;
     if (said < 4) {
         said++;
-        fprintf(stderr, "[WS] perspective %.1f -> %.1f degrees across, viewport %u -> %u "
-                "for the setup (k %.4f)\n", fov * 360.0 / 65536.0, fov2 * 360.0 / 65536.0,
-                w, (unsigned)(w / k + 0.5), k);
+        fprintf(stderr, "[WS] culling for %.1f degrees across (the view %.1f), k %.4f\n",
+                fov2 * 360.0 / 65536.0, fov * 360.0 / 65536.0, k);
     }
-    cam = MEM32(g_esp + 4);
-    MEM32(g_esp + 8) = (uint32_t)fov2;
+    fov48 = MEM32(cam + 0x48);
+    tan54 = MEM32(cam + 0x54);
+    MEM32(cam + 0x48) = (uint32_t)fov2;
+    memcpy((void *)XBOX_PTR(cam + 0x54), &tn, 4);
     MEM32(0x264ED8) = (uint32_t)(w / k + 0.5);
-    g_ws_in_setup = 1;                     /* its SetTransform is the wide one */
-    sub_00153FE0_gen();
-    g_ws_in_setup = 0;
+    g_ecx = cam;                           /* thiscall, no stack arguments */
+    g_esp -= 4;
+    MEM32(g_esp) = 0;                      /* a return address for its ret */
+    sub_00153A90();
     MEM32(0x264ED8) = w;
-    /* v187b: only the projection and the culling planes (built inside the
-     * call) see the wider view. What the rest of the game reads afterwards --
-     * the field of view (+0x48, handed out by the getter at vtable +0x24) and
-     * tan(fov/2) (+0x54, which sub_00154110 turns into the on-screen size of
-     * things at depth z: sprites, the dialogue bubbles) -- goes back to the
-     * 4:3 values, so the game's own 2D stays 4:3 and the renderer fitting it
-     * into the middle puts it where the widened 3D is. v187 left them wide:
-     * text out of its boxes, bubbles too high. RECOMP_WS_KEEP_CAMERA=1 keeps
-     * them wide (v187). The tangent comes from the game's own sine/cosine
-     * table (0x264BA4), as sub_0014C660 reads it. */
-    if (keep < 0) {
-        const char *e = getenv("RECOMP_WS_KEEP_CAMERA");
-        keep = e && e[0] == '1';
-    }
-    if (!keep && cam) {
-        uint32_t tab = MEM32(0x264BA4);
-        uint32_t i = (((int32_t)fov >> 1) & 0xFFFF) >> 4;
-        float sn, cs, tn;
-        memcpy(&sn, (void *)XBOX_PTR(tab + i * 8), 4);
-        memcpy(&cs, (void *)XBOX_PTR(tab + i * 8 + 4), 4);
-        MEM32(cam + 0x48) = fov;
-        if (tab && cs != 0.0f) {
-            tn = sn / cs;
-            memcpy((void *)XBOX_PTR(cam + 0x54), &tn, 4);
-        }
-    }
-    cx = (float)(int32_t)((w >> 1) + MEM32(0x264ED0));   /* as the original: */
-    memcpy((void *)XBOX_PTR(0x264EEC), &cx, 4);         /* centre x, a float */
-}
-
-/* v187c: every other projection the game hands Direct3D -- the flat
- * (orthographic) ones some HUD parts, menu panels and dialogue boxes are
- * drawn with, and the menus' own perspectives (the pause menu's icons) --
- * goes in with its x scaled by k, so what it draws lands in the 4:3 middle
- * with the rest of the 2D instead of being stretched across the screen (run
- * 187b: icons spread wider than their names, the dialogue box past its text,
- * the spray count apart from its can). Only the projection made by the
- * widened setup above is left as it is. SetTransform(state, matrix) copies
- * the matrix into the device; state 1 is the projection. The game's matrix
- * is scaled for the call and put back after it.
- * RECOMP_WS_OTHER=keep leaves them all alone (v187b); RECOMP_WS_LOG=1 logs
- * each distinct one with its caller, to find one that should not be. */
-extern void D3D8_D3DDevice_SetTransform_gen(void);
-void D3D8_D3DDevice_SetTransform(void)
-{
-    static int other = -1, logp = -1, nlog;
-    static uint32_t seen[32];
-    uint32_t state = MEM32(g_esp + 4), pm = MEM32(g_esp + 8);
-    float m[16], s2[16];
-    int i;
-
-    if (g_ws_mode < 0) {                   /* not decided yet: decide now */
-        const char *e = getenv("RECOMP_WS_MODE");
-        g_ws_k = xbox_WidescreenK();
-        g_ws_mode = (g_ws_k > 0.2 && g_ws_k < 0.999 && !(e && !strcmp(e, "gpu"))) ? 1 : 0;
-    }
-    if (other < 0) {
-        const char *e = getenv("RECOMP_WS_OTHER");
-        other = !(e && !strcmp(e, "keep"));
-        e = getenv("RECOMP_WS_LOG");
-        logp = e && e[0] == '1';
-    }
-    if (state != 1 || !pm || g_ws_mode != 1 || !other || g_ws_in_setup) {
-        D3D8_D3DDevice_SetTransform_gen();
-        return;
-    }
-    memcpy(m, (void *)XBOX_PTR(pm), sizeof m);
-    if (logp) {
-        uint32_t ret = MEM32(g_esp), key = ret ^ (m[11] == 0.0f ? 0x80000000u : 0);
-        int known = 0;
-        for (i = 0; i < nlog; i++) if (seen[i] == key) known = 1;
-        if (!known && nlog < 32) {
-            seen[nlog++] = key;
-            fprintf(stderr, "[WS] other projection from 0x%08X (%s): x %.4f %.4f %.4f %.4f, "
-                    "scaled by %.4f\n", ret, m[11] == 0.0f ? "flat" : "perspective",
-                    m[0], m[4], m[8], m[12], g_ws_k);
-        }
-    }
-    memcpy(s2, m, sizeof m);
-    s2[0] *= (float)g_ws_k; s2[4] *= (float)g_ws_k;      /* the x column */
-    s2[8] *= (float)g_ws_k; s2[12] *= (float)g_ws_k;
-    memcpy((void *)XBOX_PTR(pm), s2, sizeof s2);
-    D3D8_D3DDevice_SetTransform_gen();
-    memcpy((void *)XBOX_PTR(pm), m, sizeof m);
+    MEM32(cam + 0x48) = fov48;
+    MEM32(cam + 0x54) = tan54;
 }

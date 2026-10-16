@@ -3417,54 +3417,36 @@ static int ws_fill_span(int kind, const NvGlState *st, float *lo, float *hi)
 
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
 {
+    /* v187d: the whole frame is squeezed into the shown shape's middle by k
+     * -- 3D, HUD, menus, text alike, all drawn with the game's own 4:3 maths,
+     * so they can only agree with each other; the 3D shows more at the sides
+     * because what lay beyond the 4:3 edges is no longer clipped away (and
+     * no longer culled: recomp_manual.c widens the game's culling planes).
+     * v187-v187c sorted batches by the projection they used, which the game
+     * varies by map. Left alone: render targets smaller than 640x480
+     * (reflections, the graffiti previews), and an untextured quad across the
+     * whole width -- a fade, a flash, the letterbox bars -- which stays full
+     * width. */
     static float k = -1.0f;
-    static int gpu3d = -1;
-    float lo, hi, w;
+    float lo, hi;
     if (k < 0.0f) {
         k = (float)xbox_WidescreenK();
         if (!(k > 0.2f && k <= 2.0f)) k = 1.0f;
     }
-    if (gpu3d < 0) {
-        /* RECOMP_WS_MODE=gpu: v137's way, the 3D squeezed here as well. By
-         * default the title draws its 3D wide itself (recomp_manual.c: the
-         * perspective setup, sub_00153FE0, widened; every other projection
-         * given to SetTransform fitted to the 4:3 middle), so only the
-         * pre-transformed 2D is fitted here. */
-        const char *m = getenv("RECOMP_WS_MODE");
-        gpu3d = m && !strcmp(m, "gpu");
-    }
     *is_2d = 0;
     if (k == 1.0f || st->width < 640 || st->height < 480)
         return 1.0f;
-    w = (float)st->width;
-    if (kind == XK_PRE || st->screen_space) {
-        /* 2D squeezed as a whole: logos, menus, text and the HUD keep their
-         * shape in the middle, and whatever the game places over the world
-         * from its own 4:3 projection lands on the widened 3D. Only an
-         * untextured quad across the whole width -- a fade, a flash, the
-         * letterbox bars -- stays full width. */
+    if (kind == XK_PRE || st->screen_space)
         *is_2d = 1;
-        if (ws_fill_span(kind, st, &lo, &hi) && lo <= 2.0f && hi >= w - 2.0f)
-            return 1.0f;
-        return k;
-    }
-    if (kind == XK_FIXED) {
+    else if (kind == XK_FIXED) {
         const float *m = s_gpu.ff_composite;
-        int flat = m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f && m[15] != 0.0f;
-        if (gpu3d) {
-            *is_2d = flat;
-            return k;
-        }
-        /* drawn through a projection already fitted into the middle: a fill
-         * across that middle is widened back out to the whole screen */
-        if (ws_fill_span(kind, st, &lo, &hi)
-                && lo <= (1.0f - k) * w * 0.5f + 2.0f && hi >= (1.0f + k) * w * 0.5f - 2.0f) {
-            *is_2d = 1;
-            return 1.0f / k;
-        }
-        return 1.0f;
+        *is_2d = m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f && m[15] != 0.0f;
     }
-    return gpu3d ? k : 1.0f;
+    if ((kind != XK_PROGRAM || st->screen_space)
+            && ws_fill_span(kind, st, &lo, &hi)
+            && lo <= 2.0f && hi >= (float)st->width - 2.0f)
+        return 1.0f;
+    return k;
 }
 
 static int zdirect_wanted(int kind, const NvGlState *st)

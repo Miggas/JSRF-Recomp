@@ -18,8 +18,7 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "D3D8_D3DDevice_SetTexture",   # v124: who sets the spark texture
          "sub_001A2E2E",                # v130: the idle-voice crash guard
          "XAPILIB_XInputSetState",      # v186c: the rumble trace
-         "sub_00153FE0",                # v187: widescreen field of view
-         "D3D8_D3DDevice_SetTransform") # v187c: the other projections
+         "sub_00153FE0")                # v187: widescreen culling
 
 
 def main():
@@ -125,7 +124,8 @@ def ws_undo(gen):
 # v152r: functions a later build wrapped and this one no longer does -- their
 # generated definitions are given their plain names back (v166 wrapped D3D's
 # vblank DPC, sub_00193D90; reverted with the rest of the RECOMP_ACK_FAST work).
-UNWRAP = ("sub_00193D90",)
+UNWRAP = ("sub_00193D90",
+          "D3D8_D3DDevice_SetTransform")   # v187c wrapped it, v187d does not
 
 
 def unwrap_pass(gen):
