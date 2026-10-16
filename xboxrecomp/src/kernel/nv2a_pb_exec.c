@@ -2772,6 +2772,8 @@ int nv2a_exec_decode_texture(int stage, uint32_t face, uint32_t *out)
 
 /* Everything nv2a_gl.c needs to draw what the executor would. Returns 0 when
  * there is no drawable surface. */
+static void ws_note_target(uint32_t base, uint32_t bytes);   /* v187e */
+
 static int gl_state(NvGlState *st)
 {
     uint32_t bpp = surface_bpp(), base, zf, i;
@@ -2786,6 +2788,8 @@ static int gl_state(NvGlState *st)
     st->pitch = s_gpu.pitch;
     st->width = s_gpu.pitch / bpp;
     st->height = s_gpu.clip_y + s_gpu.clip_h;
+    if (st->width >= 640 && st->height >= 480)                 /* v187e */
+        ws_note_target(base, st->pitch * (st->height < 480 ? 480 : st->height));
     /* A surface the size of the screen is the screen: keep one GL target
      * for it however the title narrows the clip. */
     if (st->width == 640 && st->height < 480)
@@ -3388,15 +3392,14 @@ static double xbox_WidescreenK(void)    /* no presenter here: the harness */
     return e ? atof(e) : 1.0;
 }
 #endif
-/* v187b/c: the x span (guest pixels) of a small untextured batch -- at most
- * 24 vertices, so a fade, a flash or the letterbox bars, not a model or a
- * string of text. 0 when it is not one. */
-static int ws_fill_span(int kind, const NvGlState *st, float *lo, float *hi)
+/* v187b-e: the x span (guest pixels) of a batch of at most maxn vertices.
+ * 0 when it has more, or a position cannot be read. */
+static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, float *hi)
 {
     uint32_t i, n = s_gpu.idx_count;
     float p[4], x;
     *lo = 1.0e9f; *hi = -1.0e9f;
-    if (s_gpu.texs[0].valid || n == 0 || n > 24)
+    if (n == 0 || n > maxn)
         return 0;
     for (i = 0; i < n; i++) {
         uint32_t idx = s_gpu.idx[i];
@@ -3413,6 +3416,33 @@ static int ws_fill_span(int kind, const NvGlState *st, float *lo, float *hi)
         if (x > *hi) *hi = x;
     }
     return 1;
+}
+
+/* v187e: the display-sized surfaces drawn into lately. A texture over one
+ * of them is a picture of a frame the renderer has already squeezed (boost's
+ * motion blur, screen effects), so a full-screen quad showing it must not be
+ * squeezed a second time. */
+static struct { uint32_t base, bytes; } s_ws_rt[8];
+static unsigned s_ws_rt_next;
+static void ws_note_target(uint32_t base, uint32_t bytes)
+{
+    unsigned i;
+    for (i = 0; i < 8; i++)
+        if (s_ws_rt[i].base == base) { s_ws_rt[i].bytes = bytes; return; }
+    s_ws_rt[s_ws_rt_next & 7].base = base;
+    s_ws_rt[s_ws_rt_next & 7].bytes = bytes;
+    s_ws_rt_next++;
+}
+static int ws_tex_is_target(void)
+{
+    uint32_t t = s_gpu.texs[0].offset;
+    unsigned i;
+    if (!s_gpu.texs[0].valid || !t)
+        return 0;
+    for (i = 0; i < 8; i++)
+        if (s_ws_rt[i].bytes && t >= s_ws_rt[i].base && t < s_ws_rt[i].base + s_ws_rt[i].bytes)
+            return 1;
+    return 0;
 }
 
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
@@ -3442,10 +3472,42 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         const float *m = s_gpu.ff_composite;
         *is_2d = m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f && m[15] != 0.0f;
     }
-    if ((kind != XK_PROGRAM || st->screen_space)
-            && ws_fill_span(kind, st, &lo, &hi)
-            && lo <= 2.0f && hi >= (float)st->width - 2.0f)
-        return 1.0f;
+    /* A layer across the whole width stays full width when it is
+     *  - untextured: a fade, a flash, the letterbox bars;
+     *  - stencil-tested: the shadow pass's darkening quad (v187e: in some
+     *    maps it is textured, and a 4:3 box of shadow showed);
+     *  - showing a frame already drawn (and squeezed): boost's motion blur
+     *    (v187e: it went back to 4:3, squeezed twice).
+     * Logos, menu art and movies are none of these and are fitted. */
+    if (kind != XK_PROGRAM || st->screen_space) {
+        static int logw = -1;
+        int rt = ws_tex_is_target();
+        int plain = !s_gpu.texs[0].valid || st->stencil_test;
+        if ((plain || rt) && ws_span(kind, st, rt ? 4096u : 24u, &lo, &hi)
+                && lo <= 2.0f && hi >= (float)st->width - 2.0f)
+            return 1.0f;
+        if (logw < 0) {
+            const char *e = getenv("RECOMP_WS_LOG");
+            logw = e && e[0] == '1';
+        }
+        /* RECOMP_WS_LOG=1: each distinct full-width textured layer that is
+         * fitted, to find one that should not be */
+        if (logw && !plain && ws_span(kind, st, 4096u, &lo, &hi)
+                && lo <= 2.0f && hi >= (float)st->width - 2.0f) {
+            static uint32_t seen[64];
+            static int ns;
+            uint32_t t = s_gpu.texs[0].offset;
+            int j, known = 0;
+            for (j = 0; j < ns; j++) if (seen[j] == t) known = 1;
+            if (!known && ns < 64) {
+                seen[ns++] = t;
+                fprintf(stderr, "[WS] full-width layer fitted: texture %08X %ux%u, %u vertices, "
+                        "kind %d, surface %08X %ux%u\n", t, s_gpu.texs[0].width,
+                        s_gpu.texs[0].height, s_gpu.idx_count, kind, st->surf_va,
+                        st->width, st->height);
+            }
+        }
+    }
     return k;
 }
 
