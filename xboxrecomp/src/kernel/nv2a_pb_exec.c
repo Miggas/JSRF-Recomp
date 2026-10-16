@@ -3431,27 +3431,38 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
  * motion blur, screen effects), so a full-screen quad showing it must not be
  * squeezed a second time. */
 #define WS_RT_N 32
-static struct { uint32_t base, bytes; } s_ws_rt[WS_RT_N];
+/* addresses compared without the aperture bits: the tiled window at
+ * 0xF0000000 and the contiguous one at 0x80000000 alias the same memory */
+#define WS_ADDR(a) ((a) & 0x0FFFFFFFu)
+static struct { uint32_t base, bytes; int screen; } s_ws_rt[WS_RT_N];
 static unsigned s_ws_rt_next;
 static void ws_note_target(uint32_t base, uint32_t bytes)
 {
     unsigned i;
+    base = WS_ADDR(base);
     for (i = 0; i < WS_RT_N; i++)
         if (s_ws_rt[i].base == base) { s_ws_rt[i].bytes = bytes; return; }
-    s_ws_rt[s_ws_rt_next % WS_RT_N].base = base;
-    s_ws_rt[s_ws_rt_next % WS_RT_N].bytes = bytes;
+    i = s_ws_rt_next % WS_RT_N;
+    s_ws_rt[i].base = base;
+    s_ws_rt[i].bytes = bytes;
+    s_ws_rt[i].screen = 0;
     s_ws_rt_next++;
+}
+/* the remembered surface holding address a, or -1 */
+static int ws_target_at(uint32_t a)
+{
+    unsigned i;
+    a = WS_ADDR(a);
+    for (i = 0; i < WS_RT_N; i++)
+        if (s_ws_rt[i].bytes && a >= s_ws_rt[i].base && a < s_ws_rt[i].base + s_ws_rt[i].bytes)
+            return (int)i;
+    return -1;
 }
 static int ws_tex_is_target(void)
 {
-    uint32_t t = s_gpu.texs[0].offset;
-    unsigned i;
-    if (!s_gpu.texs[0].valid || !t)
+    if (!s_gpu.texs[0].valid || !s_gpu.texs[0].offset)
         return 0;
-    for (i = 0; i < WS_RT_N; i++)
-        if (s_ws_rt[i].bytes && t >= s_ws_rt[i].base && t < s_ws_rt[i].base + s_ws_rt[i].bytes)
-            return 1;
-    return 0;
+    return ws_target_at(s_gpu.texs[0].offset) >= 0;
 }
 
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
@@ -3473,8 +3484,16 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         if (!(k > 0.2f && k <= 2.0f)) k = 1.0f;
     }
     *is_2d = 0;
-    if (k == 1.0f || st->width < 640 || st->height < 480)
+    if (k == 1.0f)
         return 1.0f;
+    if (st->width < 640 || st->height < 480) {
+        /* v187i: a smaller target is squeezed like the screen once it has
+         * been pasted across the screen (boost's blur draws the scene into a
+         * 512x512 target and pastes that; unsqueezed it held the 4:3 view) */
+        int t = ws_target_at(st->surf_va);
+        if (t < 0 || !s_ws_rt[t].screen)
+            return 1.0f;
+    }
     if (kind == XK_PRE || st->screen_space)
         *is_2d = 1;
     else if (kind == XK_FIXED) {
@@ -3533,8 +3552,20 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
                         keep ? "full width" : "fitted");
             }
         }
-        if (keep)
+        if (keep) {
+            /* a smaller target pasted across a display-sized surface is a copy
+             * of the screen from now on (v187i) */
+            if (rt && st->width >= 640 && st->height >= 480) {
+                int t = ws_target_at(s_gpu.texs[0].offset);
+                if (t >= 0 && !s_ws_rt[t].screen) {
+                    s_ws_rt[t].screen = 1;
+                    if (logw)
+                        fprintf(stderr, "[WS] surface %08X is a copy of the screen: squeezed "
+                                "from now on\n", s_ws_rt[t].base);
+                }
+            }
             return 1.0f;
+        }
     }
     return k;
 }
