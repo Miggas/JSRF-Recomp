@@ -3388,13 +3388,15 @@ static double xbox_WidescreenK(void)    /* no presenter here: the harness */
     return e ? atof(e) : 1.0;
 }
 #endif
-/* v187b: an untextured 2D quad (at most 6 vertices) spanning the surface's
- * whole width: a fade or a flash. */
-static int ws_fullscreen_fill(int kind, const NvGlState *st)
+/* v187b/c: the x span (guest pixels) of a small untextured batch -- at most
+ * 24 vertices, so a fade, a flash or the letterbox bars, not a model or a
+ * string of text. 0 when it is not one. */
+static int ws_fill_span(int kind, const NvGlState *st, float *lo, float *hi)
 {
     uint32_t i, n = s_gpu.idx_count;
-    float lo = 1.0e9f, hi = -1.0e9f, p[4], x;
-    if (s_gpu.texs[0].valid || n == 0 || n > 6)
+    float p[4], x;
+    *lo = 1.0e9f; *hi = -1.0e9f;
+    if (s_gpu.texs[0].valid || n == 0 || n > 24)
         return 0;
     for (i = 0; i < n; i++) {
         uint32_t idx = s_gpu.idx[i];
@@ -3407,49 +3409,62 @@ static int ws_fullscreen_fill(int kind, const NvGlState *st)
                 return 0;
             x = p[0];
         }
-        if (x < lo) lo = x;
-        if (x > hi) hi = x;
+        if (x < *lo) *lo = x;
+        if (x > *hi) *hi = x;
     }
-    return lo <= 2.0f && hi >= (float)st->width - 2.0f;
+    return 1;
 }
 
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
 {
     static float k = -1.0f;
+    static int gpu3d = -1;
+    float lo, hi, w;
     if (k < 0.0f) {
         k = (float)xbox_WidescreenK();
         if (!(k > 0.2f && k <= 2.0f)) k = 1.0f;
     }
-    static int gpu3d = -1;
     if (gpu3d < 0) {
         /* RECOMP_WS_MODE=gpu: v137's way, the 3D squeezed here as well. By
-         * default the title draws its 3D wide itself (recomp_manual.c,
-         * sub_00153FE0, the perspective setup), so only 2D is fitted here. */
+         * default the title draws its 3D wide itself (recomp_manual.c: the
+         * perspective setup, sub_00153FE0, widened; every other projection
+         * given to SetTransform fitted to the 4:3 middle), so only the
+         * pre-transformed 2D is fitted here. */
         const char *m = getenv("RECOMP_WS_MODE");
         gpu3d = m && !strcmp(m, "gpu");
     }
     *is_2d = 0;
     if (k == 1.0f || st->width < 640 || st->height < 480)
         return 1.0f;
-    if (kind == XK_PRE || st->screen_space)
+    w = (float)st->width;
+    if (kind == XK_PRE || st->screen_space) {
+        /* 2D squeezed as a whole: logos, menus, text and the HUD keep their
+         * shape in the middle, and whatever the game places over the world
+         * from its own 4:3 projection lands on the widened 3D. Only an
+         * untextured quad across the whole width -- a fade, a flash, the
+         * letterbox bars -- stays full width. */
         *is_2d = 1;
-    else if (kind == XK_FIXED) {
-        const float *m = s_gpu.ff_composite;
-        if (m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f && m[15] != 0.0f)
-            *is_2d = 1;
+        if (ws_fill_span(kind, st, &lo, &hi) && lo <= 2.0f && hi >= w - 2.0f)
+            return 1.0f;
+        return k;
     }
-    if (!*is_2d && !gpu3d)
+    if (kind == XK_FIXED) {
+        const float *m = s_gpu.ff_composite;
+        int flat = m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f && m[15] != 0.0f;
+        if (gpu3d) {
+            *is_2d = flat;
+            return k;
+        }
+        /* drawn through a projection already fitted into the middle: a fill
+         * across that middle is widened back out to the whole screen */
+        if (ws_fill_span(kind, st, &lo, &hi)
+                && lo <= (1.0f - k) * w * 0.5f + 2.0f && hi >= (1.0f + k) * w * 0.5f - 2.0f) {
+            *is_2d = 1;
+            return 1.0f / k;
+        }
         return 1.0f;
-    /* v187b: 2D is squeezed as a whole -- logos, menus, text boxes and the
-     * HUD keep their shape in the 4:3 middle, and whatever the game places
-     * over the world from its own (4:3) projection lands where the widened
-     * 3D puts it. v187 kept vertices at the screen's edges where they were,
-     * which pulled apart panels built from several pieces and stretched the
-     * boot logos. Only an untextured quad covering the whole width -- a fade
-     * or a flash -- is left full width, so it still covers the screen. */
-    if (*is_2d && ws_fullscreen_fill(kind, st))
-        return 1.0f;
-    return k;
+    }
+    return gpu3d ? k : 1.0f;
 }
 
 static int zdirect_wanted(int kind, const NvGlState *st)

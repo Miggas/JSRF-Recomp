@@ -1818,6 +1818,9 @@ float recomp_rsqrtss(float x) { return recomp_rsqrtss_at(x, -1); }
  * RECOMP_WS_MODE=gpu squeezes on the GPU instead (v137's way). */
 extern double xbox_WidescreenK(void);
 extern void sub_00153FE0_gen(void);
+static int g_ws_in_setup;   /* v187c: inside the widened perspective setup */
+static int g_ws_mode = -1;  /* 1: widescreen done in the game (the default) */
+static double g_ws_k = 1.0;
 void sub_00153FE0(void)
 {
     static int mode = -1;
@@ -1833,6 +1836,8 @@ void sub_00153FE0(void)
         const char *m = getenv("RECOMP_WS_MODE");
         k = xbox_WidescreenK();
         mode = (k > 0.2 && k < 0.999 && !(m && !strcmp(m, "gpu"))) ? 1 : 0;
+        g_ws_mode = mode;
+        g_ws_k = k;
     }
     if (!mode) {
         sub_00153FE0_gen();
@@ -1856,7 +1861,9 @@ void sub_00153FE0(void)
     cam = MEM32(g_esp + 4);
     MEM32(g_esp + 8) = (uint32_t)fov2;
     MEM32(0x264ED8) = (uint32_t)(w / k + 0.5);
+    g_ws_in_setup = 1;                     /* its SetTransform is the wide one */
     sub_00153FE0_gen();
+    g_ws_in_setup = 0;
     MEM32(0x264ED8) = w;
     /* v187b: only the projection and the culling planes (built inside the
      * call) see the wider view. What the rest of the game reads afterwards --
@@ -1886,4 +1893,60 @@ void sub_00153FE0(void)
     }
     cx = (float)(int32_t)((w >> 1) + MEM32(0x264ED0));   /* as the original: */
     memcpy((void *)XBOX_PTR(0x264EEC), &cx, 4);         /* centre x, a float */
+}
+
+/* v187c: every other projection the game hands Direct3D -- the flat
+ * (orthographic) ones some HUD parts, menu panels and dialogue boxes are
+ * drawn with, and the menus' own perspectives (the pause menu's icons) --
+ * goes in with its x scaled by k, so what it draws lands in the 4:3 middle
+ * with the rest of the 2D instead of being stretched across the screen (run
+ * 187b: icons spread wider than their names, the dialogue box past its text,
+ * the spray count apart from its can). Only the projection made by the
+ * widened setup above is left as it is. SetTransform(state, matrix) copies
+ * the matrix into the device; state 1 is the projection. The game's matrix
+ * is scaled for the call and put back after it.
+ * RECOMP_WS_OTHER=keep leaves them all alone (v187b); RECOMP_WS_LOG=1 logs
+ * each distinct one with its caller, to find one that should not be. */
+extern void D3D8_D3DDevice_SetTransform_gen(void);
+void D3D8_D3DDevice_SetTransform(void)
+{
+    static int other = -1, logp = -1, nlog;
+    static uint32_t seen[32];
+    uint32_t state = MEM32(g_esp + 4), pm = MEM32(g_esp + 8);
+    float m[16], s2[16];
+    int i;
+
+    if (g_ws_mode < 0) {                   /* not decided yet: decide now */
+        const char *e = getenv("RECOMP_WS_MODE");
+        g_ws_k = xbox_WidescreenK();
+        g_ws_mode = (g_ws_k > 0.2 && g_ws_k < 0.999 && !(e && !strcmp(e, "gpu"))) ? 1 : 0;
+    }
+    if (other < 0) {
+        const char *e = getenv("RECOMP_WS_OTHER");
+        other = !(e && !strcmp(e, "keep"));
+        e = getenv("RECOMP_WS_LOG");
+        logp = e && e[0] == '1';
+    }
+    if (state != 1 || !pm || g_ws_mode != 1 || !other || g_ws_in_setup) {
+        D3D8_D3DDevice_SetTransform_gen();
+        return;
+    }
+    memcpy(m, (void *)XBOX_PTR(pm), sizeof m);
+    if (logp) {
+        uint32_t ret = MEM32(g_esp), key = ret ^ (m[11] == 0.0f ? 0x80000000u : 0);
+        int known = 0;
+        for (i = 0; i < nlog; i++) if (seen[i] == key) known = 1;
+        if (!known && nlog < 32) {
+            seen[nlog++] = key;
+            fprintf(stderr, "[WS] other projection from 0x%08X (%s): x %.4f %.4f %.4f %.4f, "
+                    "scaled by %.4f\n", ret, m[11] == 0.0f ? "flat" : "perspective",
+                    m[0], m[4], m[8], m[12], g_ws_k);
+        }
+    }
+    memcpy(s2, m, sizeof m);
+    s2[0] *= (float)g_ws_k; s2[4] *= (float)g_ws_k;      /* the x column */
+    s2[8] *= (float)g_ws_k; s2[12] *= (float)g_ws_k;
+    memcpy((void *)XBOX_PTR(pm), s2, sizeof s2);
+    D3D8_D3DDevice_SetTransform_gen();
+    memcpy((void *)XBOX_PTR(pm), m, sizeof m);
 }

@@ -18,7 +18,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "D3D8_D3DDevice_SetTexture",   # v124: who sets the spark texture
          "sub_001A2E2E",                # v130: the idle-voice crash guard
          "XAPILIB_XInputSetState",      # v186c: the rumble trace
-         "sub_00153FE0")                # v187: widescreen field of view
+         "sub_00153FE0",                # v187: widescreen field of view
+         "D3D8_D3DDevice_SetTransform") # v187c: the other projections
 
 
 def main():
