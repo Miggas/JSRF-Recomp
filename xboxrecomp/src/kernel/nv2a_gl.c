@@ -3561,6 +3561,30 @@ static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
 /* RECOMP_GL_TEX_PROBES: mid-frame re-checks per small texture on every 8th
  * frame (v167, default 3); a large value restores the old every-bind check */
 static int s_tex_probes = -1;
+/* v187t: a surface the GPU drew whose memory the CPU has since rewritten is
+ * no longer that surface: the title freed it and loaded something else
+ * there. Leaving graffiti select, the garage's textures were read from disc
+ * into memory its previews had been drawn in; the first texture bound over
+ * it read the stale previews back on top of them (the scrambled garage,
+ * run 187s, 4:3 as well). The CPU's write wins: the GPU copy is dropped. */
+static int surf_overwritten(GlSurf *g)
+{
+    if (!g->dirty || !g->host)
+        return 0;
+    if (guest_same(g->va, g->host, (uint32_t)surf_bytes(g), &g->wm, g->hash))
+        return 0;
+    {
+        static int said;
+        if (said++ < 8)
+            fprintf(stderr, "[GL] surface %08X rewritten by the CPU after it was drawn;"
+                    " its GPU copy is dropped\n", g->va);
+    }
+    g->dirty = 0;
+    xbox_gw_mark(g->va, (uint32_t)surf_bytes(g), &g->wm);
+    g->hash = hash_bytes(g->host, surf_bytes(g));
+    return 1;
+}
+
 static void bind_texture(int stage, const NvGlTexture *t)
 {
     const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
@@ -3627,7 +3651,8 @@ static void bind_texture(int stage, const NvGlTexture *t)
         for (k = 0; k < NV_GL_SURFS; k++) {
             GlSurf *g = &s_surf[k];
             if (g->fbo && g->dirty && g->va < t->offset + t->bytes
-                    && t->offset < g->va + (uint32_t)surf_bytes(g)) {
+                    && t->offset < g->va + (uint32_t)surf_bytes(g)
+                    && !surf_overwritten(g)) {
                 n++;
                 only = g;
             }
