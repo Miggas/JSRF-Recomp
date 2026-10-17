@@ -408,6 +408,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
 | `RECOMP_WIDESCREEN=1` | **Widescreen** 16:9: more of the scene to the left and right instead of black bars; the HUD moves out to the screen edges, and the garage menus, map, character select, VS setup and graffiti select are shown 4:3 while open. `auto` uses your monitor's shape (16:10 on a Steam Deck), or set any shape with `RECOMP_ASPECT=21:9`. *HUD placement and the 4:3 menus from Piaka's widescreen work.* |
 | `RECOMP_SKIP_INTRO=1` | Skip the logos and the graffiti warning at start-up, straight to the title. *By Piaka.* |
+| `RECOMP_SAVE_STRICT=1` | Refuse save files whose signature does not match, as the Xbox does. By default the recomp accepts them, so saves from a real Xbox, another emulator or a save editor load instead of showing as damaged. |
 | `RECOMP_GL_PRESENT=dxgi` | **Borderless window** (Windows, NVIDIA or AMD GPU): with full screen on, Alt+Tab is instant and overlays work, with no black flash. Needs a strong PC — switch it off again if frame times get worse. Leave it off on the Steam Deck. *Tip from Piaka.* |
 | `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |
 | `RECOMP_USB_PADS=2` | How many players (1–4, default 1). With 1, every controller and the keyboard control player 1. With 2 or more, for the **multiplayer modes**, players join in the order they press a button: the first controller or keyboard to press one is player 1, the next player 2, and so on. |

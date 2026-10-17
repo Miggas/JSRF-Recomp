@@ -142,6 +142,29 @@ static void wsp_count(uint32_t va)
     }
 }
 
+/* v188: save signatures (tools/wrap_dsound.py, sig_pass). Every compare of
+ * a save file's stored signature with the one the game computed goes through
+ * here. The recomp's kernel has no console signature key, so saves made on a
+ * real Xbox or in another emulator never match, and the game called them
+ * damaged. A mismatch is accepted, and logged once, unless RECOMP_SAVE_STRICT=1. */
+int recomp_sig_cmp(int equal)
+{
+    static int strict = -1, said;
+    if (equal)
+        return 1;
+    if (strict < 0) {
+        const char *e = getenv("RECOMP_SAVE_STRICT");
+        strict = e && e[0] == '1';
+    }
+    if (!said) {
+        said = 1;
+        fprintf(stderr, "[SAVE] a save file's signature does not match (made on another"
+                " console or emulator, or edited): %s\n",
+                strict ? "refused, RECOMP_SAVE_STRICT=1" : "accepted (RECOMP_SAVE_STRICT=1 refuses)");
+    }
+    return !strict;
+}
+
 /* v187y: the hang after the tutorial (runs 187x, Windows and Linux): the
  * next mission (0x100C4) asks for stage 0x1889B927 instead of 8 (runs of
  * 10 October), so its stage never loads. The stage number is the first

@@ -221,6 +221,51 @@ def spin_pass(gen):
             print("WARNING: spin wait %d found %d times (expected 1)" % (i, n))
 
 
+# v188: save signatures. Each save file holds an HMAC-SHA1 of its contents;
+# after XCalculateSignatureEnd (0x146BE7) the game compares 5 dwords of the
+# signature it computed with the stored one (repe cmpsd, ecx = 5) and treats a
+# mismatch as a damaged save. The recomp's kernel has no console signature key,
+# so saves from a real Xbox or another emulator never match. Each such compare
+# is routed through recomp_sig_cmp() (recomp_manual.c), which accepts a
+# mismatch unless RECOMP_SAVE_STRICT=1. Idempotent.
+SIG_PROTO = "int recomp_sig_cmp(int equal); /* v188 */\n"
+SIG_OLD = "        _flags = (MEM32(esi) == MEM32(edi));\n"
+SIG_NEW = "        _flags = recomp_sig_cmp(MEM32(esi) == MEM32(edi)); /* v188: save signature */\n"
+
+
+def sig_pass(gen):
+    total = 0
+    for fn in sorted(os.listdir(gen)):
+        if not fn.endswith(".c"):
+            continue
+        path = os.path.join(gen, fn)
+        with open(path, encoding="utf-8", errors="surrogateescape") as f:
+            lines = f.read().split("\n")
+        out, n, since = [], 0, 1000
+        for ln in lines:
+            if "RECOMP_ABI_CALL(0x00146BE7u," in ln:
+                since = 0
+            else:
+                since += 1
+            if since < 24 and ln + "\n" == SIG_OLD:
+                ln = SIG_NEW[:-1]
+                n += 1
+            elif SIG_NEW[:-1] == ln:
+                n += 1
+            out.append(ln)
+        if n:
+            src = "\n".join(out)
+            if SIG_PROTO not in src:
+                i = src.find("\n", src.find("#include")) + 1
+                src = src[:i] + SIG_PROTO + src[i:]
+            with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                f.write(src)
+            total += n
+    print("sig: %d save-signature compares" % total)
+    if total != 21:
+        print("WARNING: expected 21 save-signature compares, found %d" % total)
+
+
 if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     gen_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "..", "src", "recomp", "gen")
@@ -230,4 +275,5 @@ if __name__ == "__main__":
     sse_pass(gen_dir)
     ws_undo(gen_dir)
     spin_pass(gen_dir)
+    sig_pass(gen_dir)
     sys.exit(rc)
