@@ -3443,7 +3443,22 @@ static void ws_note_target(uint32_t base, uint32_t bytes)
     unsigned i;
     base = WS_ADDR(base);
     for (i = 0; i < WS_RT_N; i++)
-        if (s_ws_rt[i].base == base) { s_ws_rt[i].bytes = bytes; return; }
+        if (s_ws_rt[i].base == base) {
+            /* v187o: the same memory as a target of another size is another
+             * use of it: no longer known as a copy of the screen */
+            if (s_ws_rt[i].bytes != bytes)
+                s_ws_rt[i].screen = 0;
+            s_ws_rt[i].bytes = bytes;
+            return;
+        }
+    /* v187o: a target overlapping a remembered one reuses its memory (the
+     * garage's graffiti previews were drawn inside boost's old 512x512
+     * target, still marked as a copy of the screen, and came out squeezed
+     * with black at the sides): the old one is forgotten */
+    for (i = 0; i < WS_RT_N; i++)
+        if (s_ws_rt[i].bytes && base < s_ws_rt[i].base + s_ws_rt[i].bytes
+                && s_ws_rt[i].base < base + bytes)
+            s_ws_rt[i].bytes = 0, s_ws_rt[i].base = 0, s_ws_rt[i].screen = 0;
     i = s_ws_rt_next % WS_RT_N;
     s_ws_rt[i].base = base;
     s_ws_rt[i].bytes = bytes;

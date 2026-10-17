@@ -113,12 +113,33 @@ double xbox_PresentAspect(void)
  * are shown. The picture then slides to the original 4:3 over 0.2 s, and
  * back once the calls stop (after Piaka's widescreen patch). s_ws_n is how
  * far it is towards 4:3 (0..1), moved on at each presentation. */
-static volatile ULONGLONG s_ws_hold_ms;
-static volatile double s_ws_n;
+static volatile ULONGLONG s_ws_hold_ms, s_ws_play_ms;
+static volatile double s_ws_n = 1.0;      /* starts at 4:3: the logos and title */
 
 void xbox_WidescreenHold43(void)
 {
     s_ws_hold_ms = GetTickCount64();
+}
+
+/* v187o: called each frame the game draws its gameplay HUD. Menus, the
+ * title, the logos and screens like VS setup and graffiti select were made
+ * for 4:3 and keep turning up new ways to break when drawn wide; so the
+ * picture is wide only in gameplay, and slides back to 4:3 half a second
+ * after the HUD was last drawn. RECOMP_WS_EVERYWHERE=1: wide everywhere
+ * except the listed 4:3 screens (v187n). */
+void xbox_WidescreenGameplay(void)
+{
+    s_ws_play_ms = GetTickCount64();
+}
+
+static int ws_everywhere(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("RECOMP_WS_EVERYWHERE");
+        v = e && e[0] == '1';
+    }
+    return v;
 }
 
 static void ws_tick(void)
@@ -134,7 +155,18 @@ static void ws_tick(void)
     dt = (double)(now.QuadPart - last.QuadPart) / (double)freq.QuadPart;
     last = now;
     if (dt > 0.1) dt = 0.1;
-    n = s_ws_n + (GetTickCount64() - s_ws_hold_ms <= 50 ? dt : -dt) / 0.2;
+    {
+        ULONGLONG now = GetTickCount64();
+        int narrow = now - s_ws_hold_ms <= 50
+                     || (!ws_everywhere() && now - s_ws_play_ms > 500);
+        static int said = -1;
+        n = s_ws_n + (narrow ? dt : -dt) / 0.2;
+        if (narrow != said && xbox_PresentAspect() > 4.0 / 3.0 + 1e-6) {
+            fprintf(stderr, "[WS] %s\n", narrow ? "4:3 (not in gameplay, or a 4:3 screen)"
+                                                : "widescreen (gameplay)");
+            said = narrow;
+        }
+    }
     s_ws_n = n < 0.0 ? 0.0 : n > 1.0 ? 1.0 : n;
 }
 
