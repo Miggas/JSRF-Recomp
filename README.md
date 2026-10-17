@@ -28,7 +28,7 @@ by the runtime in `xboxrecomp/`.
 > computer, from your copy.
 
 > [!WARNING]
-> **Please read the instructions first before proceeding**
+> **Please read the instructions first before proceeding with the recompilation.**
 
 ### How hard is each step?
 
