@@ -18,7 +18,13 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "D3D8_D3DDevice_SetTexture",   # v124: who sets the spark texture
          "sub_001A2E2E",                # v130: the idle-voice crash guard
          "XAPILIB_XInputSetState",      # v186c: the rumble trace
-         "sub_00153FE0")                # v187: widescreen culling
+         "sub_00153FE0",                # v187: widescreen culling
+         "sub_00024620",                # v187n: RECOMP_SKIP_INTRO, fade start (Piaka)
+         # v187n, jsrf_widescreen.c (from Piaka's patch): HUD at the screen edges
+         "sub_0015A880",                # sprite quad submission
+         "sub_001060B0", "sub_0010D480", "sub_0010DC60", "sub_00109B70",   # HUD, right
+         "sub_000FFFD0", "sub_00101F20",                                   # HUD, left
+         "sub_00077730", "sub_0011AC50")                                   # 4:3-only screens
 
 
 def main():

@@ -3493,12 +3493,9 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
      * (reflections, the graffiti previews), and an untextured quad across the
      * whole width -- a fade, a flash, the letterbox bars -- which stays full
      * width. */
-    static float k = -1.0f;
+    float k = (float)xbox_WidescreenK();     /* v187n: can slide to 1 (4:3 screens) */
     float lo, hi;
-    if (k < 0.0f) {
-        k = (float)xbox_WidescreenK();
-        if (!(k > 0.2f && k <= 2.0f)) k = 1.0f;
-    }
+    if (!(k > 0.2f && k <= 2.0f) || k > 0.9999f) k = 1.0f;
     *is_2d = 0;
     if (k == 1.0f)
         return 1.0f;

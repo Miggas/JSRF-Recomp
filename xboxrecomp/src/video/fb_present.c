@@ -108,16 +108,50 @@ double xbox_PresentAspect(void)
     return a;
 }
 
-/* (4/3) / shown aspect: 1 for 4:3, 0.75 for 16:9 */
+/* v187n: screens built for 4:3 only (the garage menus, the map, character
+ * select; jsrf_widescreen.c) call xbox_WidescreenHold43() every frame they
+ * are shown. The picture then slides to the original 4:3 over 0.2 s, and
+ * back once the calls stop (after Piaka's widescreen patch). s_ws_n is how
+ * far it is towards 4:3 (0..1), moved on at each presentation. */
+static volatile ULONGLONG s_ws_hold_ms;
+static volatile double s_ws_n;
+
+void xbox_WidescreenHold43(void)
+{
+    s_ws_hold_ms = GetTickCount64();
+}
+
+static void ws_tick(void)
+{
+    static LARGE_INTEGER freq, last;
+    LARGE_INTEGER now;
+    double dt, n;
+    if (!freq.QuadPart) {
+        QueryPerformanceFrequency(&freq);
+        QueryPerformanceCounter(&last);
+    }
+    QueryPerformanceCounter(&now);
+    dt = (double)(now.QuadPart - last.QuadPart) / (double)freq.QuadPart;
+    last = now;
+    if (dt > 0.1) dt = 0.1;
+    n = s_ws_n + (GetTickCount64() - s_ws_hold_ms <= 50 ? dt : -dt) / 0.2;
+    s_ws_n = n < 0.0 ? 0.0 : n > 1.0 ? 1.0 : n;
+}
+
+/* (4/3) / shown aspect: 1 for 4:3, 0.75 for 16:9 (moving towards 1 while a
+ * 4:3-only screen is shown) */
 double xbox_WidescreenK(void)
 {
-    return (4.0 / 3.0) / xbox_PresentAspect();
+    double k0 = (4.0 / 3.0) / xbox_PresentAspect();
+    return k0 + (1.0 - k0) * s_ws_n;
 }
 
 /* the largest rectangle of the shown shape inside cw x ch */
 void xbox_PresentFit(int cw, int ch, int *dw, int *dh)
 {
-    double a = xbox_PresentAspect();
+    double a;
+    ws_tick();                                  /* once per presented frame */
+    a = (4.0 / 3.0) / xbox_WidescreenK();
     int w = cw, h = (int)(cw / a + 0.5);
     if (h > ch) { h = ch; w = (int)(ch * a + 0.5); }
     if (w > cw) w = cw;

@@ -906,10 +906,54 @@ static void task_report(void);
 static DWORD    logo_last_report;
 static uint32_t fade_obj;
 
+/* v187n, from Piaka's patch -- RECOMP_SKIP_INTRO=1: the four logo cards and
+ * the graffiti warning go by at once, through the logo task's own skip path.
+ * Its update ORs bits 0x05 (A/START) of each pad's pressed byte (0x251DE8,
+ * stride 0x40) into the skip flag [+0xA0]; a shown logo (states 1/4/7/10,
+ * 120 frames) then moves on. The warning (state 13, up to 720 frames) only
+ * takes the skip after 420 frames, so its counter [+0x9C] is moved past
+ * that. Every fade the task starts while skipping goes straight to black
+ * (sub_00024620 below), so no card shows. State 15 ends the task; it is held
+ * at 14 until the task has signalled task 0x1DF1 ([+0xA4], set once task
+ * 0x1DF3 is gone), which the full-length sequence always does first. */
+static int logo_skipping;
+
+static int skip_intro_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_SKIP_INTRO");
+        on = e && !strcmp(e, "1");
+        if (on)
+            fprintf(stderr, "[INTRO] skipping the logo cards and the warning screen\n");
+    }
+    return on;
+}
+
+extern void sub_00024620_gen(void);
+
+void sub_00024620(void)                     /* start a fade: (colour, step) cdecl */
+{
+    if (logo_skipping) {
+        MEM32(g_esp + 4) = 0xFF000000u;     /* black, opaque */
+        MEMF(g_esp + 8) = 1.0f;             /* whole way in one frame */
+    }
+    sub_00024620_gen();
+}
+
 void sub_0007E360(void)                     /* logo task update (thiscall) */
 {
     uint32_t self = g_ecx;
+    if (skip_intro_on()) {
+        MEM32(self + 0xA0) = 1;
+        if (MEM32(self + 0x98) == 13 && MEM32(self + 0x9C) <= 0x1A4)
+            MEM32(self + 0x9C) = 0x1A5;
+        if (MEM32(self + 0x98) == 15 && !MEM32(self + 0xA4))
+            MEM32(self + 0x98) = 14;
+        logo_skipping = 1;
+    }
     sub_0007E360_gen();
+    logo_skipping = 0;
     logo_calls++;
     {
         uint32_t st = MEM32(self + 0x98);
@@ -1838,6 +1882,9 @@ void sub_00153FE0(void)
     fov = MEM32(g_esp + 8);
     sub_00153FE0_gen();                    /* the game's own setup, untouched */
     if (!mode || !cam)
+        return;
+    k = xbox_WidescreenK();                /* v187n: 1 on a screen held at 4:3 */
+    if (!(k > 0.2 && k < 0.999))
         return;
     w = MEM32(0x264ED8);
     half = (double)((int32_t)fov >> 1) * (3.14159265358979323846 * 2.0 / 65536.0);
