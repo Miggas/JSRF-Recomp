@@ -27,6 +27,9 @@ by the runtime in `xboxrecomp/`.
 > repository: no code, no graphics, no music. The translation is made on your
 > computer, from your copy.
 
+> [!WARNING]
+> **Please read the instructions first before proceeding**
+
 ### How hard is each step?
 
 Each section is marked with how much effort it takes:
