@@ -3902,21 +3902,18 @@ uploaded:
                 aniso = ev ? atoi(ev) : 1;
                 if (aniso > 1 && (GLAD_GL_ARB_texture_filter_anisotropic
                                   || GLAD_GL_EXT_texture_filter_anisotropic)) {
-                    GLfloat mx = 0.0f;
-                    GLint mi = 0;
-                    while (glGetError() != GL_NO_ERROR) ;
-                    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &mx);
-                    if (!(mx >= 2.0f)) {
-                        glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &mi);
-                        mx = (GLfloat)mi;
-                    }
-                    /* v187w: run 187v's AMD driver answered 1 here (an RX 6900
-                     * XT, which does 16x), and 1x was used. A maximum under 2
-                     * is not believed: the request is used (GL clamps it). */
-                    if (mx >= 2.0f && aniso > (GLint)mx) aniso = (GLint)mx;
+                    /* v187x: through the calls the GL thread forwards
+                     * (glGetIntegerv, glTexParameteri): with GL calls on a
+                     * thread of their own, glGetFloatv / glTexParameterf
+                     * ran on the executor, which has no context -- v187v's
+                     * maximum read 1 and the setting never reached the
+                     * driver (run 187w: read back as 0) */
+                    GLint mx = 0;
+                    glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &mx);
+                    if (mx >= 2 && aniso > mx) aniso = mx;
                     if (aniso > 16) aniso = 16;
                     fprintf(stderr, "[GL] anisotropic filtering %dx (RECOMP_GL_ANISO; driver"
-                            " maximum reported %.0f)\n", aniso, mx);
+                            " maximum reported %d)\n", aniso, (int)mx);
                 } else {
                     if (aniso > 1)
                         fprintf(stderr, "[GL] anisotropic filtering not offered by the driver\n");
@@ -3925,19 +3922,9 @@ uploaded:
             }
             want_a = mips ? aniso : 1;
             if (aniso > 1 && e->p_aniso != want_a) {
-                static int checked;
                 active_unit(bt_unit);
-                glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY, (GLfloat)want_a);
+                glTexParameteri(target, GL_TEXTURE_MAX_ANISOTROPY, want_a);
                 e->p_aniso = want_a;
-                if (!checked && want_a > 1) {
-                    GLfloat got = 0.0f;
-                    GLenum err = glGetError();
-                    glGetTexParameterfv(target, GL_TEXTURE_MAX_ANISOTROPY, &got);
-                    checked = 1;
-                    fprintf(stderr, "[GL] anisotropy on the first mipmapped texture: asked %d,"
-                            " the driver has %.0f%s\n", want_a, got,
-                            err != GL_NO_ERROR ? " (it reported an error setting it)" : "");
-                }
             }
         }
         if (e->p_ws != ws) {

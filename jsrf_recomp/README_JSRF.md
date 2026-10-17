@@ -490,6 +490,8 @@ next fix.
 - **v187v:** `RECOMP_GL_ANISO=2/4/8/16`: anisotropic filtering on mipmapped textures (`GL_TEXTURE_MAX_ANISOTROPY`, capped at the driver's maximum, set per texture in `bind_texture` and remembered as `p_aniso`). Off by default.
 - **Run 187v:** no change: `driver maximum 1` -- the AMD driver (RX 6900 XT, 16x capable) answered 1 to GL_MAX_TEXTURE_MAX_ANISOTROPY and 1x was used.
 - **v187w:** a reported maximum under 2 is not believed (the request is used, at most 16; GL clamps it), and the first mipmapped texture's setting is read back and logged (`[GL] anisotropy on the first mipmapped texture: ...`).
+- **Run 187w:** maximum read as 16 this time, but the first texture's anisotropy read back as 0: still blurry.
+- **v187x:** the GL calls go to the GL thread only through the wrapped functions (nv2a_gl_thread.h); glGetFloatv, glTexParameterf and glGetTexParameterfv are not among them, so they ran on the executor thread, with no context, and did nothing. Now glGetIntegerv and glTexParameteri.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
