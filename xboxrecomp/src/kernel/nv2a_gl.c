@@ -1467,9 +1467,11 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
         GlProg *p = &s_p_vsh[victim];
         char *src = gen_vsh(prog, n);
         GLuint id;
+        uint64_t c0 = s_tm_compile;            /* v190: how long the driver took */
         if (!src)
             return NULL;
         id = link_with(src);
+        c0 = s_tm_compile - c0;
         if (!id) {
             if (fails++ < 4) {
                 fprintf(stderr, "[GL] vertex program (%d instructions) did not build;"
@@ -1502,9 +1504,12 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
         p->vsrc = src; p->vsrc_owned = 1;      /* kept for the twin */
         {
             static unsigned built;
+            double f = (double)SDL_GetPerformanceFrequency();
             if (built++ < 64)
-                fprintf(stderr, "[GL] vertex program %u ready (%d instructions; shader cache"
-                        " %u loaded, %u compiled so far)\n", built, n, s_cache_hits, s_cache_misses);
+                fprintf(stderr, "[GL] vertex program %u ready (%d instructions, %.0f ms; shader cache"
+                        " %u loaded, %u compiled so far, %.0f ms compiling in all)\n", built, n,
+                        (double)c0 * 1000.0 / f, s_cache_hits, s_cache_misses,
+                        (double)s_tm_compile * 1000.0 / f);
         }
         return p;
     }
