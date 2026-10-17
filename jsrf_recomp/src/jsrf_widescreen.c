@@ -120,6 +120,38 @@ static void ws_set_screen_offset(float x, float y)
     g_xmm4 = xm[4]; g_xmm5 = xm[5]; g_xmm6 = xm[6]; g_xmm7 = xm[7];
 }
 
+/* v187r: split screen. Each player's view is a viewport of half the
+ * screen (320x480, or 320x240 with three or four players), squeezed with
+ * the rest of the frame, so its HUD already sits where the 4:3 game put it
+ * inside that view; moving it to the screen edges put the left player's
+ * health bar and spray can against the middle line (run 187q). While the
+ * game sets such viewports, the HUD is not moved. */
+static volatile DWORD s_split_ms;
+static volatile int s_split_seen;
+
+extern void D3D8_D3DDevice_SetViewport_gen(void);
+
+void D3D8_D3DDevice_SetViewport(void)        /* (const D3DVIEWPORT8 *) stdcall */
+{
+    uint32_t vp = MEM32(g_esp + 4);
+    if (vp) {
+        uint32_t w = MEM32(vp + 8), h = MEM32(vp + 12);
+        if (w == 320 && (h == 480 || h == 240)) {
+            s_split_ms = GetTickCount();
+            if (!s_split_seen) {
+                s_split_seen = 1;
+                fprintf(stderr, "[WS] split screen: the HUD stays inside each view\n");
+            }
+        }
+    }
+    D3D8_D3DDevice_SetViewport_gen();
+}
+
+static int ws_split(void)
+{
+    return s_split_seen && GetTickCount() - s_split_ms < 200;
+}
+
 static void ws_enter(uint32_t addr)
 {
     WsScope *s;
@@ -133,6 +165,8 @@ static void ws_enter(uint32_t addr)
     for (k = 0; k < sizeof ws_hud / sizeof ws_hud[0]; ++k)
         if (ws_hud[k].addr == addr)
             anchor = ws_hud[k].anchor;
+    if (ws_split())
+        anchor = 0;
     s->anchor = anchor;
     s->changed = 0;
     if (anchor == 3 || anchor == -3) {
