@@ -482,6 +482,8 @@ next fix.
 - **v187q:** while the boot task is in either state the picture is held at 4:3 (`boot_ws_hold` in the boot-task wrapper, recomp_manual.c). `RECOMP_WS_HOLD43=0` turns it off with the others.
 - **Run 187q:** VS setup and graffiti select are 4:3; a VS match (boot state 30) is wide. In split screen the health bar, spray can and item box are misplaced: moved to the screen edges, the left player's ended up against the middle line.
 - **v187r:** `D3D8_D3DDevice_SetViewport` wrapped (jsrf_widescreen.c) to see split screen: while the game sets 320x480 or 320x240 viewports (in the last 200 ms), the HUD functions move nothing, so each player's HUD stays where the 4:3 game put it inside that view. `[WS] split screen: ...` logged once.
+- **Run 187r, with a 4:3 reference:** each view's HUD keeps its 4:3 layout but sits 53 guest pixels nearer the outer edge than in 4:3 (left view) or further out (right view): the views are squeezed about their own middles, which moves their HUD out by half of the 106.7 the screen gains. In 4:3 the game keeps the HUD the same distance from the screen's edges, not from each view's.
+- **v187s:** in split screen the HUD functions move their pieces by half as much (53.3 at 16:9), so each piece is as far from the screen edge or the middle line as in 4:3.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

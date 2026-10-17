@@ -38,12 +38,18 @@ extern double xbox_WidescreenK(void);
 extern void xbox_WidescreenHold43(void);
 
 /* guest pixels added at each side by the shape shown now */
+static int ws_split(void);
+
 static float ws_half_extra(void)
 {
     double k = xbox_WidescreenK();
     if (!(k > 0.2 && k < 0.9999))
         return 0.0f;
-    return (float)(320.0 / k - 320.0);
+    /* v187s: in split screen each view is squeezed about its own middle,
+     * which already moves its HUD outwards by half of this; the other half
+     * puts each piece as far from the screen's edge (or the middle line) as
+     * the 4:3 game had it (runs 187r, and the 4:3 reference) */
+    return (float)((320.0 / k - 320.0) * (ws_split() ? 0.5 : 1.0));
 }
 
 static int ws_flag(const char *name)
@@ -125,7 +131,8 @@ static void ws_set_screen_offset(float x, float y)
  * the rest of the frame, so its HUD already sits where the 4:3 game put it
  * inside that view; moving it to the screen edges put the left player's
  * health bar and spray can against the middle line (run 187q). While the
- * game sets such viewports, the HUD is not moved. */
+ * game sets such viewports, the HUD moves by half as much (v187s; not at
+ * all in v187r, which left each view's HUD centred in it, run 187r). */
 static volatile DWORD s_split_ms;
 static volatile int s_split_seen;
 
@@ -140,7 +147,7 @@ void D3D8_D3DDevice_SetViewport(void)        /* (const D3DVIEWPORT8 *) stdcall *
             s_split_ms = GetTickCount();
             if (!s_split_seen) {
                 s_split_seen = 1;
-                fprintf(stderr, "[WS] split screen: the HUD stays inside each view\n");
+                fprintf(stderr, "[WS] split screen: the HUD moves half as far\n");
             }
         }
     }
@@ -165,8 +172,6 @@ static void ws_enter(uint32_t addr)
     for (k = 0; k < sizeof ws_hud / sizeof ws_hud[0]; ++k)
         if (ws_hud[k].addr == addr)
             anchor = ws_hud[k].anchor;
-    if (ws_split())
-        anchor = 0;
     s->anchor = anchor;
     s->changed = 0;
     if (anchor == 3 || anchor == -3) {
