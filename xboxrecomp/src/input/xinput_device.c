@@ -6,7 +6,7 @@
  * (analog buttons as bytes, separate trigger channels) and the host
  * (digital face buttons, trigger axes).
  *
- *   _WIN32 -> Windows XInput
+ *   _WIN32 -> Windows XInput, plus SDL2 for the pads XInput does not see (v189)
  *   POSIX  -> SDL2 GameController
  */
 
@@ -125,6 +125,207 @@ static void keyboard_state(XBOX_INPUT_STATE *pState)
     pState->dwPacketNumber = ++packet;
 }
 
+/* ---- v189: controllers XInput does not see -------------------------------
+ *
+ * XInput only knows Xbox-style pads, so a DualSense, a DualShock 4 or a
+ * Switch Pro controller was invisible on Windows. They are read through
+ * SDL's game controller support (SDL2, already built for the renderer),
+ * which knows them all, rumble included. Xbox pads are left to XInput, so
+ * none is seen twice. They are sources 5..8 for the per-player assignment
+ * (usb/usb_gamepad.c), and port n also merges SDL pad n, so with one player
+ * any of them drives player 1. RECOMP_SDL_PADS=0 turns this off. */
+#if defined(XBOX_INPUT_SDL)
+#include <SDL.h>
+#define SDL_PADS 4
+static SDL_GameController *s_sdl[SDL_PADS];
+static char  s_sdl_name[SDL_PADS][48];
+static XBOX_GAMEPAD s_sdl_prev[SDL_PADS];
+static DWORD s_sdl_packet[SDL_PADS];
+static int   s_sdl_on = -1;
+static DWORD s_sdl_scan, s_sdl_update;
+static CRITICAL_SECTION s_sdl_lock;
+
+static int sdl_is_xinput_type(SDL_GameControllerType t)
+{
+    return t == SDL_CONTROLLER_TYPE_XBOX360 || t == SDL_CONTROLLER_TYPE_XBOXONE;
+}
+
+static void sdl_scan(void)
+{
+    int i, k, n;
+    for (k = 0; k < SDL_PADS; k++)
+        if (s_sdl[k] && !SDL_GameControllerGetAttached(s_sdl[k])) {
+            fprintf(stderr, "  PAD: %s disconnected\n", s_sdl_name[k]);
+            SDL_GameControllerClose(s_sdl[k]);
+            s_sdl[k] = NULL;
+        }
+    n = SDL_NumJoysticks();
+    for (i = 0; i < n; i++) {
+        SDL_JoystickID id;
+        int open = 0, slot = -1;
+        if (!SDL_IsGameController(i) || sdl_is_xinput_type(SDL_GameControllerTypeForIndex(i)))
+            continue;
+        id = SDL_JoystickGetDeviceInstanceID(i);
+        for (k = 0; k < SDL_PADS; k++) {
+            if (s_sdl[k] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(s_sdl[k])) == id)
+                open = 1;
+            if (!s_sdl[k] && slot < 0)
+                slot = k;
+        }
+        if (open || slot < 0)
+            continue;
+        s_sdl[slot] = SDL_GameControllerOpen(i);
+        if (!s_sdl[slot])
+            continue;
+        memset(&s_sdl_prev[slot], 0, sizeof s_sdl_prev[slot]);
+        snprintf(s_sdl_name[slot], sizeof s_sdl_name[slot], "%s",
+                 SDL_GameControllerName(s_sdl[slot]) ? SDL_GameControllerName(s_sdl[slot])
+                                                     : "controller");
+        fprintf(stderr, "  PAD: %s connected (through SDL)\n", s_sdl_name[slot]);
+    }
+    fflush(stderr);
+}
+
+/* Called before every read: brings SDL's state up to date at most every
+ * 2 ms, and looks for controllers coming and going once a second. */
+static int sdl_poll(void)
+{
+    DWORD now;
+    if (s_sdl_on < 0) {
+        const char *e = getenv("RECOMP_SDL_PADS");
+        InitializeCriticalSection(&s_sdl_lock);
+        s_sdl_on = 0;
+        if (!(e && e[0] == '0')) {
+            SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
+            SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+            SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
+            SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
+            if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) == 0) {
+                SDL_GameControllerEventState(SDL_IGNORE);
+                SDL_JoystickEventState(SDL_IGNORE);
+                s_sdl_on = 1;
+                fprintf(stderr, "  PAD: DualSense, DualShock and other non-Xbox controllers"
+                        " through SDL (RECOMP_SDL_PADS=0 turns this off)\n");
+            } else {
+                fprintf(stderr, "  PAD: SDL controllers unavailable: %s\n", SDL_GetError());
+            }
+            fflush(stderr);
+        }
+    }
+    if (!s_sdl_on)
+        return 0;
+    EnterCriticalSection(&s_sdl_lock);
+    now = GetTickCount();
+    if (now - s_sdl_update >= 2) {
+        s_sdl_update = now;
+        SDL_GameControllerUpdate();
+    }
+    if (now - s_sdl_scan >= 1000) {
+        s_sdl_scan = now;
+        sdl_scan();
+    }
+    LeaveCriticalSection(&s_sdl_lock);
+    return 1;
+}
+
+static DWORD sdl_get(int k, XBOX_INPUT_STATE *pState)
+{
+    SDL_GameController *c;
+    XBOX_GAMEPAD *g;
+    WORD b = 0;
+    if (k < 0 || k >= SDL_PADS || !sdl_poll())
+        return ERROR_DEVICE_NOT_CONNECTED;
+    EnterCriticalSection(&s_sdl_lock);
+    c = s_sdl[k];
+    if (!c) {
+        LeaveCriticalSection(&s_sdl_lock);
+        return ERROR_DEVICE_NOT_CONNECTED;
+    }
+    memset(pState, 0, sizeof *pState);
+    g = &pState->Gamepad;
+#define SB(x) SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_##x)
+    if (SB(DPAD_UP))    b |= XBOX_GAMEPAD_DPAD_UP;
+    if (SB(DPAD_DOWN))  b |= XBOX_GAMEPAD_DPAD_DOWN;
+    if (SB(DPAD_LEFT))  b |= XBOX_GAMEPAD_DPAD_LEFT;
+    if (SB(DPAD_RIGHT)) b |= XBOX_GAMEPAD_DPAD_RIGHT;
+    if (SB(START))      b |= XBOX_GAMEPAD_START;       /* Options */
+    if (SB(BACK))       b |= XBOX_GAMEPAD_BACK;        /* Create / Share */
+    if (SB(LEFTSTICK))  b |= XBOX_GAMEPAD_LEFT_THUMB;
+    if (SB(RIGHTSTICK)) b |= XBOX_GAMEPAD_RIGHT_THUMB;
+    g->wButtons = b;
+    /* positions, as XInput pads are mapped above: cross = A, circle = B,
+     * square = X, triangle = Y; L1 = black, R1 = white */
+    g->bAnalogButtons[XBOX_BUTTON_A]     = SB(A) ? 255 : 0;
+    g->bAnalogButtons[XBOX_BUTTON_B]     = SB(B) ? 255 : 0;
+    g->bAnalogButtons[XBOX_BUTTON_X]     = SB(X) ? 255 : 0;
+    g->bAnalogButtons[XBOX_BUTTON_Y]     = SB(Y) ? 255 : 0;
+    g->bAnalogButtons[XBOX_BUTTON_BLACK] = SB(LEFTSHOULDER) ? 255 : 0;
+    g->bAnalogButtons[XBOX_BUTTON_WHITE] = SB(RIGHTSHOULDER) ? 255 : 0;
+#undef SB
+    g->bAnalogButtons[XBOX_BUTTON_LTRIGGER] =
+        (BYTE)(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) >> 7);
+    g->bAnalogButtons[XBOX_BUTTON_RTRIGGER] =
+        (BYTE)(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) >> 7);
+    /* SDL's Y axes grow downwards, XInput's upwards */
+    g->sThumbLX = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX);
+    g->sThumbLY = (SHORT)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY));
+    g->sThumbRX = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX);
+    g->sThumbRY = (SHORT)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
+    if (memcmp(g, &s_sdl_prev[k], sizeof *g)) {
+        s_sdl_prev[k] = *g;
+        s_sdl_packet[k]++;
+    }
+    pState->dwPacketNumber = s_sdl_packet[k];
+    LeaveCriticalSection(&s_sdl_lock);
+    return ERROR_SUCCESS;
+}
+
+static DWORD sdl_rumble(int k, const XBOX_VIBRATION *v)
+{
+    DWORD rc = ERROR_DEVICE_NOT_CONNECTED;
+    if (k < 0 || k >= SDL_PADS || !sdl_poll())
+        return rc;
+    EnterCriticalSection(&s_sdl_lock);
+    if (s_sdl[k]) {
+        /* the motors keep their speed until the next report, as on the
+         * console; SDL wants a duration, so the longest it takes */
+        SDL_GameControllerRumble(s_sdl[k], v->wLeftMotorSpeed, v->wRightMotorSpeed, 0xFFFF);
+        rc = ERROR_SUCCESS;
+    }
+    LeaveCriticalSection(&s_sdl_lock);
+    return rc;
+}
+
+static const char *sdl_name(int k)
+{
+    return (k >= 0 && k < SDL_PADS && s_sdl_on > 0 && s_sdl[k]) ? s_sdl_name[k] : NULL;
+}
+#else
+static DWORD sdl_get(int k, XBOX_INPUT_STATE *pState) { (void)k; (void)pState; return ERROR_DEVICE_NOT_CONNECTED; }
+static DWORD sdl_rumble(int k, const XBOX_VIBRATION *v) { (void)k; (void)v; return ERROR_DEVICE_NOT_CONNECTED; }
+static const char *sdl_name(int k) { (void)k; return NULL; }
+#endif
+
+/* Another device's state on top of pState: buttons and analog buttons
+ * combined, a stick from whichever is pushed further. */
+static void merge_state(XBOX_INPUT_STATE *pState, const XBOX_INPUT_STATE *o)
+{
+    XBOX_GAMEPAD *g = &pState->Gamepad;
+    const XBOX_GAMEPAD *h = &o->Gamepad;
+    int i;
+#define WS_FARTHER(a, b) (abs((int)(b)) > abs((int)(a)) ? (b) : (a))
+    g->wButtons |= h->wButtons;
+    for (i = 0; i < 8; i++)
+        if (h->bAnalogButtons[i] > g->bAnalogButtons[i])
+            g->bAnalogButtons[i] = h->bAnalogButtons[i];
+    g->sThumbLX = WS_FARTHER(g->sThumbLX, h->sThumbLX);
+    g->sThumbLY = WS_FARTHER(g->sThumbLY, h->sThumbLY);
+    g->sThumbRX = WS_FARTHER(g->sThumbRX, h->sThumbRX);
+    g->sThumbRY = WS_FARTHER(g->sThumbRY, h->sThumbRY);
+#undef WS_FARTHER
+    pState->dwPacketNumber += o->dwPacketNumber;
+}
+
 void xbox_InputInit(void)
 {
     for (DWORD i = 0; i < XBOX_MAX_CONTROLLERS; i++) {
@@ -144,9 +345,17 @@ static DWORD input_get(DWORD dwPort, XBOX_INPUT_STATE *pState, int merge_kbd)
 
     result = XInputGetState(dwPort, &xi_state);
     if (result != ERROR_SUCCESS) {
-        g_controller_connected[dwPort] = FALSE;
+        XBOX_INPUT_STATE sp;
+        int have = merge_kbd && sdl_get((int)dwPort, &sp) == ERROR_SUCCESS;   /* v189 */
+        g_controller_connected[dwPort] = have ? TRUE : FALSE;
         if (merge_kbd && dwPort == 0 && keyboard_enabled()) {
             keyboard_state(pState);
+            if (have)
+                merge_state(pState, &sp);
+            return ERROR_SUCCESS;
+        }
+        if (have) {
+            *pState = sp;
             return ERROR_SUCCESS;
         }
         return result;
@@ -208,6 +417,13 @@ static DWORD input_get(DWORD dwPort, XBOX_INPUT_STATE *pState, int merge_kbd)
         pState->dwPacketNumber = kb.dwPacketNumber;
     }
 
+    /* v189: and the n-th controller XInput does not see, for port n */
+    if (merge_kbd) {
+        XBOX_INPUT_STATE sp;
+        if (sdl_get((int)dwPort, &sp) == ERROR_SUCCESS)
+            merge_state(pState, &sp);
+    }
+
     /* v122: RECOMP_GL_EFFECTLOG=1 also logs the left stick's vertical zone
      * changes (forward / centre / back, at half deflection) with the same
      * millisecond clock as the [FX] lines, to line a brake up with the
@@ -248,6 +464,8 @@ DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState)
         keyboard_state(pState);
         return ERROR_SUCCESS;
     }
+    if (src >= XBOX_INPUT_SOURCE_SDL0 && src < XBOX_INPUT_SOURCES)
+        return sdl_get(src - XBOX_INPUT_SOURCE_SDL0, pState);     /* v189 */
     if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
         return ERROR_DEVICE_NOT_CONNECTED;
     return input_get((DWORD)src, pState, 0);
@@ -256,13 +474,47 @@ DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState)
 DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration)
 {
     XINPUT_VIBRATION xi_vib;
+    DWORD rc;
 
     if (dwPort >= XBOX_MAX_CONTROLLERS || !pVibration)
         return ERROR_DEVICE_NOT_CONNECTED;
 
     xi_vib.wLeftMotorSpeed = pVibration->wLeftMotorSpeed;
     xi_vib.wRightMotorSpeed = pVibration->wRightMotorSpeed;
-    return XInputSetState(dwPort, &xi_vib);
+    rc = XInputSetState(dwPort, &xi_vib);
+    if (sdl_rumble((int)dwPort, pVibration) == ERROR_SUCCESS)   /* v189 */
+        rc = ERROR_SUCCESS;
+    return rc;
+}
+
+DWORD xbox_InputSetSource(int src, const XBOX_VIBRATION *pVibration)
+{
+    XINPUT_VIBRATION xi_vib;
+    if (!pVibration)
+        return ERROR_DEVICE_NOT_CONNECTED;
+    if (src >= XBOX_INPUT_SOURCE_SDL0 && src < XBOX_INPUT_SOURCES)
+        return sdl_rumble(src - XBOX_INPUT_SOURCE_SDL0, pVibration);
+    if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
+        return ERROR_DEVICE_NOT_CONNECTED;              /* the keyboard */
+    xi_vib.wLeftMotorSpeed = pVibration->wLeftMotorSpeed;
+    xi_vib.wRightMotorSpeed = pVibration->wRightMotorSpeed;
+    return XInputSetState((DWORD)src, &xi_vib);
+}
+
+const char *xbox_InputSourceName(int src)
+{
+    static char buf[4][24];
+    const char *n;
+    if (src == XBOX_INPUT_SOURCE_KEYBOARD)
+        return "the keyboard";
+    if (src >= XBOX_INPUT_SOURCE_SDL0 && src < XBOX_INPUT_SOURCES) {
+        n = sdl_name(src - XBOX_INPUT_SOURCE_SDL0);
+        return n ? n : "a controller";
+    }
+    if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
+        return "nothing";
+    snprintf(buf[src], sizeof buf[src], "PC controller %d", src + 1);
+    return buf[src];
 }
 
 BOOL xbox_InputIsConnected(DWORD dwPort)
@@ -401,6 +653,22 @@ DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState)
     if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
         return ERROR_DEVICE_NOT_CONNECTED;   /* no keyboard source here */
     return xbox_InputGetState((DWORD)src, pState);
+}
+
+DWORD xbox_InputSetSource(int src, const XBOX_VIBRATION *pVibration)
+{
+    if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
+        return ERROR_DEVICE_NOT_CONNECTED;
+    return xbox_InputSetState((DWORD)src, pVibration);
+}
+
+const char *xbox_InputSourceName(int src)
+{
+    static char buf[4][24];
+    if (src < 0 || src >= XBOX_MAX_CONTROLLERS)
+        return "nothing";
+    snprintf(buf[src], sizeof buf[src], "PC controller %d", src + 1);
+    return buf[src];
 }
 
 BOOL xbox_InputIsConnected(DWORD dwPort)

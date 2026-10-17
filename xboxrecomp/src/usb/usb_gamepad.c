@@ -558,7 +558,8 @@ static void pad_script_apply(int pad, uint8_t *out)
 
 /* ---- who plays which pad (v186b) ------------------------------------------ */
 
-/* The PC's devices -- XInput pads 0..3 and the keyboard -- are sources; the
+/* The PC's devices -- XInput pads 0..3, the keyboard, and (v189) up to four
+ * pads XInput does not see, through SDL -- are sources; the
  * console's pads are players. With one pad every source drives it, merged,
  * as before. With RECOMP_USB_PADS 2..4 each source belongs to one player:
  * the first one to press a button becomes player 1, the next player 2.
@@ -617,10 +618,7 @@ static void claims_poll(void)
         if (slot >= s_players)
             return;                       /* every player taken */
         s_slot_src[slot] = src;
-        if (src == XBOX_INPUT_SOURCE_KEYBOARD)
-            fprintf(stderr, "  PAD: the keyboard is player %d\n", slot + 1);
-        else
-            fprintf(stderr, "  PAD: PC controller %d is player %d\n", src + 1, slot + 1);
+        fprintf(stderr, "  PAD: %s is player %d\n", xbox_InputSourceName(src), slot + 1);
         fflush(stderr);
     }
 }
@@ -633,15 +631,18 @@ int usb_gamepad_claimed(int pad)
     return pad >= 0 && pad < USB_GAMEPAD_MAX && s_slot_src[pad] >= 0;
 }
 
-/* The PC pad (XInput index) behind player `pad`, -1 for none or the keyboard. */
-static int host_pad_of(int pad)
+/* v189: player `pad`'s motors: host port `pad` (its XInput pad and the SDL
+ * pad merged into it) with one player, or the device that claimed it. */
+static void rumble_send(int pad, const XBOX_VIBRATION *v)
 {
     assign_init();
-    if (!s_assign)
-        return pad;
-    if (pad < 0 || pad >= USB_GAMEPAD_MAX)
-        return -1;
-    return s_slot_src[pad] == XBOX_INPUT_SOURCE_KEYBOARD ? -1 : s_slot_src[pad];
+    if (!s_assign) {
+        xbox_InputSetState((DWORD)pad, v);
+        return;
+    }
+    if (pad < 0 || pad >= USB_GAMEPAD_MAX || s_slot_src[pad] < 0)
+        return;                           /* nobody yet */
+    xbox_InputSetSource(s_slot_src[pad], v);  /* the keyboard: nothing */
 }
 
 int usb_gamepad_report(int pad, uint8_t *out, int max)
@@ -755,7 +756,7 @@ static void rumble_stop_all(void)
     int i;
     for (i = 0; i < USB_GAMEPAD_MAX; i++)
         if (s_rumble_last[i][0] || s_rumble_last[i][1])
-            xbox_InputSetState((DWORD)i, &v);
+            rumble_send(i, &v);
 }
 
 void usb_gamepad_rumble(int pad, const uint8_t *p, int len)
@@ -779,9 +780,6 @@ void usb_gamepad_rumble(int pad, const uint8_t *p, int len)
     }
     if (!s_rumble_pct || pad < 0 || pad >= USB_GAMEPAD_MAX || len < 6 || !p)
         return;
-    pad = host_pad_of(pad);               /* v186b: the player's own pad */
-    if (pad < 0)
-        return;                           /* the keyboard, or nobody yet */
     if (p[0] != 0 || p[1] < 6)
         return;                               /* not a rumble report */
     left  = (unsigned)(p[2] | (p[3] << 8)) * (unsigned)s_rumble_pct / 100u;
@@ -796,5 +794,5 @@ void usb_gamepad_rumble(int pad, const uint8_t *p, int len)
     s_rumble_last[pad][1] = (int)right;
     v.wLeftMotorSpeed = (WORD)left;
     v.wRightMotorSpeed = (WORD)right;
-    xbox_InputSetState((DWORD)pad, &v);
+    rumble_send(pad, &v);                 /* v186b/v189: the player's own pad */
 }

@@ -99,8 +99,18 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState);
  * XBOX_INPUT_SOURCE_KEYBOARD. Used to give each device its own player.
  */
 #define XBOX_INPUT_SOURCE_KEYBOARD 4
-#define XBOX_INPUT_SOURCES 5
+/* v189: 5..8 are the controllers XInput does not see (DualSense, DualShock 4,
+ * Switch Pro...), read through SDL's game controller support (Windows). */
+#define XBOX_INPUT_SOURCE_SDL0 5
+#define XBOX_INPUT_SOURCES 9
 DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState);
+
+/* v189: rumble for one source (no-op for the keyboard or an empty one) */
+DWORD xbox_InputSetSource(int src, const XBOX_VIBRATION *pVibration);
+
+/* v189: a short name for a source, for the log ("PC controller 1",
+ * "DualSense Wireless Controller", "the keyboard") */
+const char *xbox_InputSourceName(int src);
 
 /**
  * Set controller vibration.
