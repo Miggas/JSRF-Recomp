@@ -3398,6 +3398,7 @@ typedef struct {
     int      mips;
     GLuint   id;
     GLint    p_mag, p_min, p_ws, p_wt;   /* parameters last set on id; 0 unknown */
+    GLint    p_aniso;                    /* v187v: anisotropy last set (0 unknown) */
     int      rewritten;  /* seen changing between two binds of one frame */
     int      alloc;      /* storage allocated (w x h RGBA8) */
     int      from_gpu;   /* contents copied from a render target on the GPU */
@@ -3620,6 +3621,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
         if (!e->id) {
             glGenTextures(1, &e->id);
             e->p_mag = e->p_min = e->p_ws = e->p_wt = 0;
+            e->p_aniso = 0;
             e->p_maxlev = 1000;
         }
         e->va = t->offset; e->w = t->width; e->h = t->height;
@@ -3888,6 +3890,35 @@ uploaded:
         if (e->p_min != want_min) {
             active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MIN_FILTER, want_min);
             e->p_min = want_min;
+        }
+        {
+            /* v187v: RECOMP_GL_ANISO=2/4/8/16 -- anisotropic filtering of
+             * mipmapped textures (sharper ground and walls at an angle);
+             * the original is off (1). Capped at what the driver offers. */
+            static GLint aniso = -1;
+            GLint want_a;
+            if (aniso < 0) {
+                const char *ev = getenv("RECOMP_GL_ANISO");
+                aniso = ev ? atoi(ev) : 1;
+                if (aniso > 1 && (GLAD_GL_ARB_texture_filter_anisotropic
+                                  || GLAD_GL_EXT_texture_filter_anisotropic)) {
+                    GLfloat mx = 1.0f;
+                    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &mx);
+                    if (aniso > (GLint)mx) aniso = (GLint)mx;
+                    fprintf(stderr, "[GL] anisotropic filtering %dx (RECOMP_GL_ANISO; driver"
+                            " maximum %.0f)\n", aniso, mx);
+                } else {
+                    if (aniso > 1)
+                        fprintf(stderr, "[GL] anisotropic filtering not offered by the driver\n");
+                    aniso = 1;
+                }
+            }
+            want_a = mips ? aniso : 1;
+            if (aniso > 1 && e->p_aniso != want_a) {
+                active_unit(bt_unit);
+                glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY, (GLfloat)want_a);
+                e->p_aniso = want_a;
+            }
         }
         if (e->p_ws != ws) {
             active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_WRAP_S, ws);

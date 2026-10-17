@@ -33,6 +33,10 @@ RECOMP_QUIET=1
 ;     2 suits the Steam Deck's 1280x800 screen.
 RECOMP_GL_SCALE=2
 
+; --- Anisotropic filtering: sharper ground and walls seen at an angle.
+;     2, 4, 8 or 16 (off when not set, as on the Xbox).
+;RECOMP_GL_ANISO=16
+
 ; --- Start in full screen. F11 or Alt+Enter switches at any time.
 RECOMP_FULLSCREEN=1
 
