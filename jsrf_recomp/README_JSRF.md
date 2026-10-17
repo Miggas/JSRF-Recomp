@@ -468,6 +468,7 @@ next fix.
 - **v187k:** "untextured" and "stencil-tested" keep a full-width layer only when it is flat 2D or at most 6 vertices; frames (textured from a drawn surface) and camera quads as before.
 - **Run 187k (PC):** the strip on the left while boosting is still there; one-sided, so a shift rather than a squeeze.
 - **v187l:** the squeeze is about the middle of the area being drawn (the clip, window clip included), passed to the shaders as `u_wsc` (NDC), not about the middle of the surface: a pass drawing into part of a target (a half-size copy in a corner of a 512x512 one) came out shifted. Split screen's halves are now squeezed about their own middles too.
+- **v187m:** a flat untextured or stencil-tested quad across the whole width stays full width even when it overshoots the target by up to a width (it was 5%): boost draws the shadow-darkening quad 640 wide into its 512-wide image, and squeezed it missed the left ~12% -- the strip at the left while boosting. Found by a Discord user's own investigation. `RECOMP_WS_LOG=1` now also logs covering layers that were fitted.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

@@ -3538,11 +3538,17 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
          * for a quad, up to 4 widths for a triangle (the one big triangle
          * covering the screen). World geometry that merely crosses the
          * screen spans far more (shadow volumes, run 187g) and is fitted. */
+        /* v187m: a flat untextured/stencil quad may overshoot by a whole
+         * width: boost draws the shadow-darkening quad 640 wide into its
+         * 512-wide image (25% past the right edge); squeezed, it missed the
+         * left ~12% -- the strip at the left while boosting. */
+        int flat_plain = plain && (*is_2d || s_gpu.idx_count <= 6);
         float W = (float)st->width,
-              over = s_gpu.idx_count <= 3 ? 4.0f : rt ? 0.25f : 0.05f;  /* zoom blur: larger */
-        int full = ws_span(kind, st, 64u, &lo, &hi)
-                   && lo <= 0.02f * W && hi >= 0.98f * W
-                   && lo >= -over * W && hi <= (1.0f + over) * W;
+              over = s_gpu.idx_count <= 3 ? 4.0f : flat_plain ? 1.0f
+                     : rt ? 0.25f : 0.05f;  /* zoom blur: larger */
+        int covers = ws_span(kind, st, 64u, &lo, &hi)
+                     && lo <= 0.02f * W && hi >= 0.98f * W;
+        int full = covers && lo >= -over * W && hi <= (1.0f + over) * W;
         /* v187j: or a small 3D (perspective) quad that fills the screen
          * exactly -- an effect fixed to the camera (boost); menus and logos
          * are flat 2D and stay fitted */
@@ -3559,7 +3565,7 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         }
         /* RECOMP_WS_LOG=1: every distinct small full-width layer and what
          * was done with it */
-        if (logw && full) {
+        if (logw && covers) {
             static uint32_t seen[96];
             static int ns;
             uint32_t key = s_gpu.texs[0].offset ^ ((uint32_t)kind << 28)
