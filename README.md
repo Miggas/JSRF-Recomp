@@ -413,7 +413,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 | `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |
 | `RECOMP_USB_PADS=2` | How many players (1–4, default 1). With 1, every controller and the keyboard control player 1. With 2 or more, for the **multiplayer modes**, players join in the order they press a button: the first controller or keyboard to press one is player 1, the next player 2, and so on. |
 | `RECOMP_RUMBLE=50` | Controller rumble strength in percent (default 100); `0` turns it off. |
-| `RECOMP_SDL_PADS=0` | **PlayStation and other controllers** (DualSense, DualShock 4, Switch Pro and others XInput does not see) work on Windows out of the box, rumble included, alongside Xbox pads and the keyboard. This setting turns that off. |
+| `RECOMP_SDL_PADS=0` | **PlayStation and other controllers** (DualSense, DualShock 4, Switch Pro and others XInput does not see) work on Windows out of the box, rumble included, alongside Xbox pads and the keyboard. This setting turns that off. Buttons go by position (the bottom one is A on every pad); `RECOMP_PAD_LABELS=1` uses the letters printed on Nintendo pads instead. |
 | `RECOMP_APU_GAIN=0.5` | Master volume. |
 | `RECOMP_APU_REVERB=0` | Turns off the echo effect in some areas. |
 | `RECOMP_SAVE_DIR=…` | Where the `savegame` folder (the cache and partition images) goes, if not in the game folder. Your save itself stays in `UDATA`. |

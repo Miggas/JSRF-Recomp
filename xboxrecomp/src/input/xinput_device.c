@@ -200,6 +200,15 @@ static int sdl_poll(void)
             SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
             SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
             SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
+            /* v189b: by position, not by the letters printed on them: SDL
+             * 2.30 maps a Nintendo pad's labelled A (the right button) to
+             * A, so on a Switch Pro the right button jumped instead of the
+             * bottom one. RECOMP_PAD_LABELS=1 goes by the labels. */
+            {
+                const char *lb = getenv("RECOMP_PAD_LABELS");
+                SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS,
+                            lb && lb[0] == '1' ? "1" : "0");
+            }
             if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) == 0) {
                 SDL_GameControllerEventState(SDL_IGNORE);
                 SDL_JoystickEventState(SDL_IGNORE);
