@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>              /* v187p: getenv for the probe, above its first use */
 #include <math.h>               /* v187: the widescreen field of view */
 
 /* ── ICALL trace ring buffer ───────────────────────────────── */
