@@ -1380,6 +1380,24 @@ extern void sub_0007BDD0_gen(void);
 static uint32_t boot_state = 0xFFFFFFFFu;
 static DWORD    boot_since, boot_report;
 
+/* v187q: two more screens built for 4:3, found with RECOMP_WS_PROBE (run
+ * 187p): they are boot-task states of their own -- the VS setup menu
+ * (handler 0x7D100) and graffiti select (handler 0x7CFE0) -- so the
+ * picture is held at 4:3 while the boot task sits in them
+ * (jsrf_widescreen.c has the other 4:3 screens; RECOMP_WS_HOLD43=0: wide). */
+extern void xbox_WidescreenHold43(void);
+
+static void boot_ws_hold(uint32_t handler)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_WS_HOLD43");
+        on = !(e && e[0] == '0');
+    }
+    if (on && (handler == 0x0007D100u || handler == 0x0007CFE0u))
+        xbox_WidescreenHold43();
+}
+
 void sub_0007BDD0(void)
 {
     uint32_t self = g_ecx;
@@ -1387,6 +1405,8 @@ void sub_0007BDD0(void)
     {
         uint32_t st = MEM32(self + 0x48);
         DWORD now = GetTickCount();
+        if (st < 0x40)
+            boot_ws_hold(MEM32(0x0020D2B8u + 4 * st));
         if (st != boot_state) {
             fprintf(stderr, "[BOOT] state %d -> %u (handler 0x%08X) after %lu ms\n",
                     (int)boot_state, st, st < 0x40 ? MEM32(0x0020D2B8u + 4 * st) : 0,
