@@ -3397,6 +3397,71 @@ static double xbox_WidescreenK(void)    /* no presenter here: the harness */
 #endif
 /* v187b-e: the x span (guest pixels) of a batch of at most maxn vertices.
  * 0 when it has more, or a position cannot be read. */
+/* v187u: position (screen x, y, z, w) of index i of the batch, as ws_span */
+static int ws_pos(int kind, const NvGlState *st, uint32_t i, float q[4])
+{
+    uint32_t idx = s_gpu.idx[i];
+    Nv2aVshOutput o;
+    if (kind == XK_FIXED && !st->screen_space) {
+        ff_transform(idx, &o);
+    } else if (kind == XK_PROGRAM && !st->screen_space) {
+        if (i == 0)
+            nv2a_vsh_prepare();
+        if (!transform_vertex(idx, &o))
+            return 0;
+    } else {
+        float p[4] = { 0, 0, 0, 1 };
+        if (!fetch_attr(&s_gpu.attr[0], idx, p))
+            return 0;
+        q[0] = p[0]; q[1] = p[1]; q[2] = p[2]; q[3] = p[3];
+        return 1;
+    }
+    q[0] = o.pos[0]; q[1] = o.pos[1]; q[2] = o.pos[2]; q[3] = o.pos[3];
+    return 1;
+}
+
+/* v187u, after Piaka's widescreen patch: the title animation's black bars.
+ * Its 3D scene sweeps tall, flat, camera-facing quads across the screen,
+ * some coming to rest just outside the 4:3 edges -- inside the wider
+ * picture, where they stayed. Such a quad (an axis-aligned rectangle, flat,
+ * at least the screen's height but narrower than its width) is left
+ * unsqueezed, so its position is stretched with the picture: a bar resting
+ * just outside the 4:3 edge rests just outside the wide one. Corners are
+ * those within a pixel of an edge; a quad thinner than that (a 0.6-pixel
+ * hairline) is split at its middle. */
+static int ws_title_bar(int kind, const NvGlState *st)
+{
+    uint32_t i, n = s_gpu.idx_count;
+    float q[6][4], x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+    unsigned corners = 0;
+    if (n < 4 || n > 6 || st->width != 640 || st->height != 480)
+        return 0;
+    for (i = 0; i < n; i++) {
+        if (!ws_pos(kind, st, i, q[i]))
+            return 0;
+        if (!isfinite(q[i][0]) || !isfinite(q[i][1]))
+            return 0;
+        if (i && (fabsf(q[i][2] - q[0][2]) > 1e-4f * (1.0f + fabsf(q[0][2]))
+                  || fabsf(q[i][3] - q[0][3]) > 1e-4f * (1.0f + fabsf(q[0][3]))))
+            return 0;                          /* not flat, facing the screen */
+        if (!i || q[i][0] < x0) x0 = q[i][0];
+        if (!i || q[i][0] > x1) x1 = q[i][0];
+        if (!i || q[i][1] < y0) y0 = q[i][1];
+        if (!i || q[i][1] > y1) y1 = q[i][1];
+    }
+    if (!(y0 <= 1.0f && y1 >= 479.0f && x1 - x0 < 639.0f))
+        return 0;
+    for (i = 0; i < n; i++) {
+        float x = q[i][0], y = q[i][1];
+        int right = x1 - x0 > 2.0f ? fabsf(x - x1) <= 1.0f : x > (x0 + x1) * 0.5f;
+        int bottom = y1 - y0 > 2.0f ? fabsf(y - y1) <= 1.0f : y > (y0 + y1) * 0.5f;
+        if ((!right && fabsf(x - x0) > 1.0f) || (!bottom && fabsf(y - y0) > 1.0f))
+            return 0;                          /* not a rectangle */
+        corners |= 1u << (right + 2 * bottom);
+    }
+    return corners == 15;
+}
+
 static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, float *hi)
 {
     uint32_t i, n = s_gpu.idx_count;
@@ -3571,6 +3636,12 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
          * wider than the scene (an undarkened strip at one side, run 187j) */
         int flatish = *is_2d || s_gpu.idx_count <= 6;
         int keep = full && ((plain && flatish) || rt || camquad);
+        if (!keep && !full && ws_title_bar(kind, st)) {   /* v187u */
+            static int said;
+            if (logw > 0 && said++ < 8)
+                fprintf(stderr, "[WS] title bar x %.1f..%.1f: stretched with the picture\n", lo, hi);
+            return 1.0f;
+        }
         if (logw < 0) {
             const char *e = getenv("RECOMP_WS_LOG");
             logw = e && e[0] == '1';
