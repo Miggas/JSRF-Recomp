@@ -87,8 +87,71 @@ extern volatile uint64_t g_icall_count;
  *       g_eax = result;
  *   }
  */
+/* v187p: RECOMP_WS_PROBE=1 -- which game functions run each frame through
+ * indirect calls (the task updates of each screen: menus, gameplay, the
+ * logos are all tasks). Every second, the targets called at least 20 times
+ * in it; when that set changes, the ones that started and stopped are logged
+ * ([WSPROBE]). Entering a menu names its functions: how 4:3-only screens
+ * are found for jsrf_widescreen.c. */
+#define WSP_N 8192
+static struct { uint32_t va, n, on; } s_wsp[WSP_N];
+static int s_wsp_mode = -1;
+static volatile LONG s_wsp_t, s_wsp_busy;
+
+static void wsp_second(void)
+{
+    char up[1024], down[1024];
+    int lu = 0, ld = 0, nu = 0, nd = 0;
+    unsigned i;
+    up[0] = down[0] = 0;
+    for (i = 0; i < WSP_N; i++) {
+        int on;
+        if (!s_wsp[i].va) continue;
+        on = s_wsp[i].n >= 20;
+        if (on && !s_wsp[i].on) {
+            nu++;
+            if (lu < (int)sizeof up - 16) lu += sprintf(up + lu, " %06X", s_wsp[i].va);
+        } else if (!on && s_wsp[i].on) {
+            nd++;
+            if (ld < (int)sizeof down - 16) ld += sprintf(down + ld, " %06X", s_wsp[i].va);
+        }
+        s_wsp[i].on = on;
+        s_wsp[i].n = 0;
+    }
+    if (nu)
+        fprintf(stderr, "[WSPROBE] started (%d):%s\n", nu, up);
+    if (nd)
+        fprintf(stderr, "[WSPROBE] stopped (%d):%s\n", nd, down);
+}
+
+static void wsp_count(uint32_t va)
+{
+    unsigned h = (va * 2654435761u) >> 19, k;
+    DWORD now;
+    for (k = 0; k < 64; k++) {
+        unsigned i = (h + k) & (WSP_N - 1);
+        if (s_wsp[i].va == va) { s_wsp[i].n++; break; }
+        if (!s_wsp[i].va) { s_wsp[i].va = va; s_wsp[i].n = 1; break; }
+    }
+    now = GetTickCount();
+    if (now - (DWORD)s_wsp_t >= 1000 && !InterlockedExchange(&s_wsp_busy, 1)) {
+        s_wsp_t = (LONG)now;
+        wsp_second();                   /* counts from other threads: a probe */
+        InterlockedExchange(&s_wsp_busy, 0);
+    }
+}
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
+    if (s_wsp_mode) {
+        if (s_wsp_mode < 0) {
+            const char *e = getenv("RECOMP_WS_PROBE");
+            s_wsp_mode = e && e[0] == '1';
+            if (s_wsp_mode)
+                fprintf(stderr, "[WSPROBE] on: per-frame game functions logged as they change\n");
+        } else
+            wsp_count(xbox_va);
+    }
     /*
      * TODO: Add your overrides here. Examples:
      *
@@ -1860,7 +1923,7 @@ float recomp_rsqrtss(float x) { return recomp_rsqrtss_at(x, -1); }
  * projection itself, and the HUD and menus, drawn through other projections
  * that could not all be told apart, came out stretched in some maps and
  * fitted in others. RECOMP_WS_MODE=gpu leaves the culling alone (v137). */
-extern double xbox_WidescreenK(void);
+extern double xbox_PresentAspect(void);
 extern void sub_00153FE0_gen(void);
 void sub_00153A90(void);
 void sub_00153FE0(void)
@@ -1875,16 +1938,15 @@ void sub_00153FE0(void)
 
     if (mode < 0) {
         const char *m = getenv("RECOMP_WS_MODE");
-        k = xbox_WidescreenK();
+        k = (4.0 / 3.0) / xbox_PresentAspect();   /* v187p: the shape, not k now: the
+                                           * camera is often set up once, on a
+                                           * loading screen held at 4:3 */
         mode = (k > 0.2 && k < 0.999 && !(m && !strcmp(m, "gpu"))) ? 1 : 0;
     }
     cam = MEM32(g_esp + 4);
     fov = MEM32(g_esp + 8);
     sub_00153FE0_gen();                    /* the game's own setup, untouched */
     if (!mode || !cam)
-        return;
-    k = xbox_WidescreenK();                /* v187n: 1 on a screen held at 4:3 */
-    if (!(k > 0.2 && k < 0.999))
         return;
     w = MEM32(0x264ED8);
     half = (double)((int32_t)fov >> 1) * (3.14159265358979323846 * 2.0 / 65536.0);

@@ -405,7 +405,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 |---|---|
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480 (original), `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. Higher is sharper and needs a stronger GPU. |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
-| `RECOMP_WIDESCREEN=1` | **Widescreen** 16:9: more of the scene to the left and right instead of black bars; gameplay is shown wide with the HUD at the screen edges; menus, the title and the garage screens slide back to 4:3 (`RECOMP_WS_EVERYWHERE=1` keeps them wide, though some look wrong). `auto` uses your monitor's shape (16:10 on a Steam Deck), or set any shape with `RECOMP_ASPECT=21:9`. *HUD placement and the 4:3 menus from Piaka's widescreen work.* |
+| `RECOMP_WIDESCREEN=1` | **Widescreen** 16:9: more of the scene to the left and right instead of black bars; the HUD moves out to the screen edges, and the garage menus, map and character select are shown 4:3 while open. `auto` uses your monitor's shape (16:10 on a Steam Deck), or set any shape with `RECOMP_ASPECT=21:9`. *HUD placement and the 4:3 menus from Piaka's widescreen work.* |
 | `RECOMP_SKIP_INTRO=1` | Skip the logos and the graffiti warning at start-up, straight to the title. *By Piaka.* |
 | `RECOMP_GL_PRESENT=dxgi` | **Borderless window** (Windows, NVIDIA or AMD GPU): with full screen on, Alt+Tab is instant and overlays work, with no black flash. Needs a strong PC — switch it off again if frame times get worse. Leave it off on the Steam Deck. *Tip from Piaka.* |
 | `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |

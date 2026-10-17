@@ -22,10 +22,7 @@
  *
  * RECOMP_WS_HUD=0 leaves the HUD in the middle; RECOMP_WS_HOLD43=0 keeps
  * those screens wide.
- *
- * v187o: the HUD functions also tell the presenter that this is gameplay;
- * everything else (menus, title, VS setup, graffiti select) is shown 4:3
- * (fb_present.c, xbox_WidescreenGameplay; RECOMP_WS_EVERYWHERE=1 to not).
+
  */
 
 #include <stdio.h>
@@ -39,7 +36,6 @@
 extern double xbox_PresentAspect(void);
 extern double xbox_WidescreenK(void);
 extern void xbox_WidescreenHold43(void);
-extern void xbox_WidescreenGameplay(void);
 
 /* guest pixels added at each side by the shape shown now */
 static float ws_half_extra(void)
@@ -174,7 +170,6 @@ static void ws_leave(void)
     extern void name##_gen(void);                   \
     void name(void)                                 \
     {                                               \
-        xbox_WidescreenGameplay();  /* v187o */     \
         if (!ws_hud_on()) { name##_gen(); return; } \
         ws_enter(addr);                             \
         name##_gen();                               \
