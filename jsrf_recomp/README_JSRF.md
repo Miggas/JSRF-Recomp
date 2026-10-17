@@ -492,6 +492,8 @@ next fix.
 - **v187w:** a reported maximum under 2 is not believed (the request is used, at most 16; GL clamps it), and the first mipmapped texture's setting is read back and logged (`[GL] anisotropy on the first mipmapped texture: ...`).
 - **Run 187w:** maximum read as 16 this time, but the first texture's anisotropy read back as 0: still blurry.
 - **v187x:** the GL calls go to the GL thread only through the wrapped functions (nv2a_gl_thread.h); glGetFloatv, glTexParameterf and glGetTexParameterfv are not among them, so they ran on the executor thread, with no context, and did nothing. Now glGetIntegerv and glTexParameteri.
+- **Run 187x (Linux/NVIDIA, then Windows):** the loading screen after the tutorial never ends: the next mission (0x100C4) asks for stage 0x1889B927 (`CMission::InitStage1` reads it from the mission's data), so the stage never loads. The runs of 10 October loaded the same mission with stage 8 in an otherwise identical sequence: a regression.
+- **v187y (diagnostic):** `[MSSN]` logs the mission's data when it is loaded (`CMission::WaitMssnBin`, 0x520D0) and when the stage is requested (0x4AC80). `RECOMP_NO_E9C30=1` makes the call to v185's tutorial function a no-op again, to test it.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

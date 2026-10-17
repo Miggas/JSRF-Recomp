@@ -25,7 +25,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_001060B0", "sub_0010D480", "sub_0010DC60", "sub_00109B70",   # HUD, right
          "sub_000FFFD0", "sub_00101F20",                                   # HUD, left
          "sub_00077730", "sub_0011AC50",                                   # 4:3-only screens
-         "D3D8_D3DDevice_SetViewport")  # v187r: split screen seen (HUD not moved)
+         "D3D8_D3DDevice_SetViewport",  # v187r: split screen seen (HUD not moved)
+         "sub_000520D0", "sub_0004AC80")  # v187y: [MSSN] the mission's stage number
 
 
 def main():

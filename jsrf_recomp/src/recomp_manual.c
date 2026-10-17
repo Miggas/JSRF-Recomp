@@ -142,8 +142,63 @@ static void wsp_count(uint32_t va)
     }
 }
 
+/* v187y: the hang after the tutorial (runs 187x, Windows and Linux): the
+ * next mission (0x100C4) asks for stage 0x1889B927 instead of 8 (runs of
+ * 10 October), so its stage never loads. The stage number is the first
+ * dword of the mission's data (CMission::WaitMssnBin, 0x520D0, keeps the
+ * pointer at +0x1040; CMission::InitStage1, 0x4AC80, reads it). Both are
+ * logged ([MSSN]) to see whether the value is wrong from the start or
+ * changes in between. RECOMP_NO_E9C30=1 turns the tutorial function v185
+ * made callable (0xE9C30, Professor K's lock-on lesson) back into the
+ * no-op it was before, to test whether it is what changes it. */
+extern void sub_000520D0_gen(void);
+extern void sub_0004AC80_gen(void);
+
+static void mssn_log(const char *where, uint32_t self)
+{
+    uint32_t p = self ? MEM32(self + 0x1040) : 0;
+    if (p && p < 0x04000000u)
+        fprintf(stderr, "[MSSN] %s: mission 0x%05X data at %08X: %08X %08X %08X %08X (stage %08X)\n",
+                where, MEM32(self + 0x58), p, MEM32(p), MEM32(p + 4), MEM32(p + 8),
+                MEM32(p + 12), MEM32(p));
+    else
+        fprintf(stderr, "[MSSN] %s: mission 0x%05X, data pointer %08X\n",
+                where, self ? MEM32(self + 0x58) : 0, p);
+}
+
+void sub_000520D0(void)                     /* CMission::WaitMssnBin (thiscall) */
+{
+    uint32_t self = g_ecx, before = MEM32(self + 0x48);
+    sub_000520D0_gen();
+    if (!before && MEM32(self + 0x48) == 1)
+        mssn_log("mission data loaded", self);
+}
+
+void sub_0004AC80(void)                     /* CMission::InitStage1 (thiscall) */
+{
+    mssn_log("stage requested", g_ecx);
+    sub_0004AC80_gen();
+}
+
+static void e9c30_noop(void)
+{
+    g_esp += 4;                             /* its return address: as an */
+    g_eax = 0;                              /* unresolved call did before v185 */
+}
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
+    {
+        static int no_e9c30 = -1;
+        if (no_e9c30 < 0) {
+            const char *e = getenv("RECOMP_NO_E9C30");
+            no_e9c30 = e && e[0] == '1';
+            if (no_e9c30)
+                fprintf(stderr, "[MSSN] RECOMP_NO_E9C30: the call to 0xE9C30 does nothing\n");
+        }
+        if (no_e9c30 && xbox_va == 0x000E9C30u)
+            return e9c30_noop;
+    }
     if (s_wsp_mode) {
         if (s_wsp_mode < 0) {
             const char *e = getenv("RECOMP_WS_PROBE");
