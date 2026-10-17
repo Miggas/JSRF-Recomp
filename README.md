@@ -492,6 +492,7 @@ Your `jsrf.ini` and saves are kept.
 | The game is slow or stutters | Lower `RECOMP_GL_SCALE`; make sure `RECOMP_QUIET=1` is on; on a laptop, plug it in. |
 | Problems on the Steam Deck (or under Proton/Linux) with a Proton version other than 11 | Switch to **Proton 11** ([section 7](#7-playing-on-a-steam-deck)). Only Proton 11 is tested; older versions are not supported. |
 | Busy areas on the Deck drop below 50 fps for a few seconds | You set `RECOMP_SLEEP_WAITS=all` without the performance governor — do both steps of [Mode 2](#-mode-2--power-saving), or go back to Mode 1. |
+| Game opens up to a black screen | Add `RECOMP_GL_CPU_VERTEX=1`; There's a known bug in NVidia systems that causes this issue, a solution is already in the works. |
 
 ---
 
