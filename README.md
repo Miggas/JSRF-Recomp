@@ -408,6 +408,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 |---|---|
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480 (original), `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. Higher is sharper and needs a stronger GPU. |
 | `RECOMP_GL_ANISO=16` | **Anisotropic filtering** (`2`, `4`, `8` or `16`): sharper ground and walls seen at an angle. Off when not set, as on the Xbox. |
+| `RECOMP_GL_EDGE=0` | Turns off the edge fix: full-screen layers (shadow darkening, fades, cutscene bars) are pushed one pixel past the screen edges, so no line shows along the top and left. On by default. |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
 | `RECOMP_WIDESCREEN=1` | **Widescreen** 16:9: more of the scene to the left and right instead of black bars; the HUD moves out to the screen edges, and the garage menus, map, character select, VS setup and graffiti select are shown 4:3 while open. `auto` uses your monitor's shape (16:10 on a Steam Deck), or set any shape with `RECOMP_ASPECT=21:9`. *HUD placement and the 4:3 menus from Piaka's widescreen work.* |
 | `RECOMP_SKIP_INTRO=1` | Skip the logos and the graffiti warning at start-up, straight to the title. *By Piaka.* |

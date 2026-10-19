@@ -67,6 +67,8 @@ typedef struct {
     float    ws_c;                   /* v187l: ...about this x (NDC): the drawing area's centre */
     uint32_t ws_2d;                  /* v187: a 2D batch: vertices at the screen's
                                       * left/right edge stay there (fades) */
+    uint32_t ws_edge;                /* v191: a full-screen layer: corners at the
+                                      * surface edge pushed one pixel past it */
 
     int          rc_seen;
     Nv2aCombiner rc;

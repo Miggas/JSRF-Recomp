@@ -85,10 +85,10 @@ void xbox_PresentFit(int cw, int ch, int *dw, int *dh);
 typedef struct GlProg {
     GLuint id;
     GLint L_bmat, L_bls, L_osi;
-    GLint L_scr, L_wsk, L_wsc, L_ws2d, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
+    GLint L_scr, L_wsk, L_wsc, L_ws2d, L_wsedge, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
     GLint L_s2d[4], L_scube[4];
     /* What this program's uniforms were last set to (apply_state). */
-    int ap_valid, ap_w, ap_h, ap_zdirect, ap_scr, ap_ws2d;
+    int ap_valid, ap_w, ap_h, ap_zdirect, ap_scr, ap_ws2d, ap_wsedge;
     float ap_wsk, ap_wsc;
     NvGlState ap;
     float ap_poff[3];
@@ -116,6 +116,7 @@ static GlProg *P;                    /* the bound program */
 #define u_wsk (P->L_wsk)
 #define u_wsc (P->L_wsc)
 #define u_ws2d (P->L_ws2d)
+#define u_wsedge (P->L_wsedge)
 #define u_bmat (P->L_bmat)
 #define u_bls (P->L_bls)
 #define u_osi (P->L_osi)
@@ -204,7 +205,7 @@ static const char *VS_FF =
 "layout(location=10) in vec4 i10; layout(location=11) in vec4 i11;\n"
 "layout(location=12) in vec4 i12; layout(location=13) in vec4 i13;\n"
 "layout(location=14) in vec4 i14; layout(location=15) in vec4 i15;\n"
-"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d;\n"
+"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d; uniform int u_wsedge;\n"
 "uniform float u_zs;\n"
 "uniform uint u_present;\n"
 "uniform vec4 u_c[192];\n"
@@ -404,6 +405,20 @@ static const char *VS_FF =
 "  /* v187: widescreen: x squeezed by u_wsk (1 = none) about u_wsc, the\n"
 "   * drawing area's centre in NDC (v187l); which batches, the executor\n"
 "   * decides (ws_k_for) */\n"
+"  /* v191: a full-screen layer (shadow darkening, fades, letterbox bars):\n"
+"   * corners within a guest pixel of the surface edge go one pixel past\n"
+"   * it. The Xbox adds 0.53125 to every position (pixel-centre bias), so a\n"
+"   * layer drawn 0..640 starts half a pixel in; the console's rasteriser\n"
+"   * still covers column 0 and row 0, an upscaled GL picture does not (a\n"
+"   * line along the top and left, after Piaka's widescreen notes) */\n"
+"  if (u_wsedge != 0 && gl_Position.w != 0.0) {\n"
+"    vec2 n = gl_Position.xy / gl_Position.w, px = 2.0 / u_vp;\n"
+"    if (n.x <= -1.0 + px.x * 1.001) n.x -= px.x;\n"
+"    else if (n.x >= 1.0 - px.x * 1.001) n.x += px.x;\n"
+"    if (n.y >= 1.0 - px.y * 1.001) n.y += px.y;\n"
+"    else if (n.y <= -1.0 + px.y * 1.001) n.y -= px.y;\n"
+"    gl_Position.xy = n * gl_Position.w;\n"
+"  }\n"
 "  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
 "  v_z = pos.z;\n"
 "}\n"
@@ -418,7 +433,7 @@ static const char *VSH_HEAD =
 "layout(location=10) in vec4 i10; layout(location=11) in vec4 i11;\n"
 "layout(location=12) in vec4 i12; layout(location=13) in vec4 i13;\n"
 "layout(location=14) in vec4 i14; layout(location=15) in vec4 i15;\n"
-"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d;\n"
+"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d; uniform int u_wsedge;\n"
 "uniform float u_zs;\n"
 "uniform vec4 u_c[192];\n"
 "uniform int u_fog_en; uniform uint u_fog_mode; uniform vec2 u_fogp;\n"
@@ -525,6 +540,20 @@ static const char *VSH_TAIL =
 "  /* v187: widescreen: x squeezed by u_wsk (1 = none) about u_wsc, the\n"
 "   * drawing area's centre in NDC (v187l); which batches, the executor\n"
 "   * decides (ws_k_for) */\n"
+"  /* v191: a full-screen layer (shadow darkening, fades, letterbox bars):\n"
+"   * corners within a guest pixel of the surface edge go one pixel past\n"
+"   * it. The Xbox adds 0.53125 to every position (pixel-centre bias), so a\n"
+"   * layer drawn 0..640 starts half a pixel in; the console's rasteriser\n"
+"   * still covers column 0 and row 0, an upscaled GL picture does not (a\n"
+"   * line along the top and left, after Piaka's widescreen notes) */\n"
+"  if (u_wsedge != 0 && gl_Position.w != 0.0) {\n"
+"    vec2 n = gl_Position.xy / gl_Position.w, px = 2.0 / u_vp;\n"
+"    if (n.x <= -1.0 + px.x * 1.001) n.x -= px.x;\n"
+"    else if (n.x >= 1.0 - px.x * 1.001) n.x += px.x;\n"
+"    if (n.y >= 1.0 - px.y * 1.001) n.y += px.y;\n"
+"    else if (n.y <= -1.0 + px.y * 1.001) n.y -= px.y;\n"
+"    gl_Position.xy = n * gl_Position.w;\n"
+"  }\n"
 "  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
 "  v_z = pos.z;\n"
 "}\n"
@@ -542,7 +571,7 @@ static const char *VS_OLD =
 "layout(location=5) in vec4 a_t2;\n"
 "layout(location=6) in vec4 a_t3;\n"
 "layout(location=7) in float a_fog;\n"
-"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d;\n"
+"uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d; uniform int u_wsedge;\n"
 "uniform float u_zs;\n"
 "#ifdef OLD_CLIP\n"
 "out vec4 v_d0; out vec4 v_d1; out vec4 v_t0; out vec4 v_t1; out vec4 v_t2;\n"
@@ -592,6 +621,20 @@ static const char *VS_OLD =
 "  /* v187: widescreen: x squeezed by u_wsk (1 = none) about u_wsc, the\n"
 "   * drawing area's centre in NDC (v187l); which batches, the executor\n"
 "   * decides (ws_k_for) */\n"
+"  /* v191: a full-screen layer (shadow darkening, fades, letterbox bars):\n"
+"   * corners within a guest pixel of the surface edge go one pixel past\n"
+"   * it. The Xbox adds 0.53125 to every position (pixel-centre bias), so a\n"
+"   * layer drawn 0..640 starts half a pixel in; the console's rasteriser\n"
+"   * still covers column 0 and row 0, an upscaled GL picture does not (a\n"
+"   * line along the top and left, after Piaka's widescreen notes) */\n"
+"  if (u_wsedge != 0 && gl_Position.w != 0.0) {\n"
+"    vec2 n = gl_Position.xy / gl_Position.w, px = 2.0 / u_vp;\n"
+"    if (n.x <= -1.0 + px.x * 1.001) n.x -= px.x;\n"
+"    else if (n.x >= 1.0 - px.x * 1.001) n.x += px.x;\n"
+"    if (n.y >= 1.0 - px.y * 1.001) n.y += px.y;\n"
+"    else if (n.y <= -1.0 + px.y * 1.001) n.y -= px.y;\n"
+"    gl_Position.xy = n * gl_Position.w;\n"
+"  }\n"
 "  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
 "  v_z = a_pos.z;\n"
 "  v_behind = 0.0;\n"
@@ -1197,7 +1240,7 @@ static void get_locs(GlProg *p)
     glUseProgram(id);
 #define U(v) p->L_##v = glGetUniformLocation(id, "u_" #v)
     U(bmat); U(bls); U(osi);
-    U(scr); U(wsk); U(wsc); U(ws2d); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
+    U(scr); U(wsk); U(wsc); U(ws2d); U(wsedge); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
     U(aocw); U(f0); U(f1); U(final0); U(final1); U(fc0); U(fc1); U(control); U(sp);
     U(clipmode); U(fogc); U(atest); U(afunc); U(aref); U(tscale); U(iscube); U(tvalid);
     U(vsmode); U(present); U(c); U(prog); U(nins); U(comp); U(mv); U(imv0); U(texm);
@@ -4148,6 +4191,10 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
         if (all || P->ap_ws2d != d) {
             glUniform1i(u_ws2d, d);
             P->ap_ws2d = d;
+        }
+        if (all || P->ap_wsedge != (int)st->ws_edge) {    /* v191 */
+            glUniform1i(u_wsedge, (GLint)st->ws_edge);
+            P->ap_wsedge = (int)st->ws_edge;
         }
     }
     if (all || P->ap_w != (int)s->w || P->ap_h != (int)s->h || P->ap.zmax != st->zmax) {

@@ -2893,6 +2893,7 @@ static float s_gl_fog[NV_MAX_INDICES];
 enum { XK_PROGRAM, XK_FIXED, XK_PRE };
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d);   /* v187 */
 static float ws_centre(const NvGlState *st);                            /* v187l */
+static uint32_t ws_edge_for(int kind, const NvGlState *st);             /* v191 */
 
 /* Hand a transformed batch (s_xf[0..n)) to the GPU. Strip triangles are
  * re-wound so every one keeps the strip's facing, as the software path does. */
@@ -2994,6 +2995,8 @@ static void gl_submit(uint32_t n)
                        : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED,
                        &st, &st.ws_2d);
     st.ws_c = ws_centre(&st);                              /* v187l */
+    st.ws_edge = ws_edge_for(s_fog_direct ? XK_PRE
+                             : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
     nv2a_gl_draw(&st, s_xf, s_gl_fog, s_gl_idx, m);
     s_gpu.tris_drawn += m / 3;
     note_drawn();
@@ -3684,6 +3687,43 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
     return k;
 }
 
+/* v191: a full-screen layer whose corners the shader pushes one pixel past
+ * the surface edges (u_wsedge). The Xbox's D3D adds 0.53125 to every
+ * position (its pixel-centre bias), so a layer the game draws 0..640 x
+ * 0..480 begins half a pixel right of and below the corner. The console's
+ * rasteriser (positions snapped to 1/16 pixel, top-left fill rule) still
+ * covers column 0 and row 0; a picture drawn at a higher resolution leaves
+ * that half pixel uncovered: a line along the left and top where the shadow
+ * darkening, a fade or the letterbox bars are missing (after Piaka's
+ * widescreen notes; the same in 4:3, only wider once upscaled). The layers
+ * are the ones ws_k_for keeps full width: a batch of at most 8 vertices,
+ * flat, across the whole width, untextured, stencil-tested or showing a
+ * frame already drawn. RECOMP_GL_EDGE=0: not pushed. */
+static uint32_t ws_edge_for(int kind, const NvGlState *st)
+{
+    static int on = -1;
+    uint32_t i, n = s_gpu.idx_count;
+    float q[4], x0 = 0, x1 = 0, W = (float)st->width;
+    int flat = kind == XK_PRE || st->screen_space;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_GL_EDGE");
+        on = !(e && e[0] == '0');
+    }
+    if (!on || n < 3 || n > 8 || st->width < 64 || st->height < 64)
+        return 0;
+    if (s_gpu.texs[0].valid && !st->stencil_test && !ws_tex_is_target())
+        return 0;
+    for (i = 0; i < n; i++) {
+        if (!ws_pos(kind, st, i, q) || !isfinite(q[0]) || !isfinite(q[1]))
+            return 0;
+        if (!flat && !(q[3] > 0.0f))
+            return 0;
+        if (!i || q[0] < x0) x0 = q[0];
+        if (!i || q[0] > x1) x1 = q[0];
+    }
+    return x0 <= 1.0f && x1 >= W - 1.0f;
+}
+
 static int zdirect_wanted(int kind, const NvGlState *st)
 {
     static int mode = -1;
@@ -4035,6 +4075,7 @@ static void gl_draw_batch(void)
             st.zdirect_off = 1;
         st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);   /* v187 */
     st.ws_c = ws_centre(&st);                              /* v187l */
+        st.ws_edge = ws_edge_for(s_vx.kind, &st);         /* v191 */
         fast_qpc_li(&q1);
         s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
         if (s_ftrace == 2)
@@ -4045,6 +4086,7 @@ static void gl_draw_batch(void)
     st.zdirect_off = s_vx.behind || !zdirect_wanted(s_vx.kind, &st);
     st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);       /* v187 */
     st.ws_c = ws_centre(&st);                              /* v187l */
+    st.ws_edge = ws_edge_for(s_vx.kind, &st);             /* v191 */
     fast_qpc_li(&q1);
     s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
     if (s_ftrace == 2)
