@@ -3465,11 +3465,17 @@ static int ws_title_bar(int kind, const NvGlState *st)
     return corners == 15;
 }
 
+/* v193: set by ws_span when a transformed vertex of the batch lies behind
+ * the eye (w <= 0). Its screen x is then the mirror image of where the
+ * geometry is, so the span says nothing about the screen it covers. */
+static int s_ws_behind;
+
 static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, float *hi)
 {
     uint32_t i, n = s_gpu.idx_count;
     float p[4], x;
     *lo = 1.0e9f; *hi = -1.0e9f;
+    s_ws_behind = 0;
     if (n == 0 || n > maxn)
         return 0;
     for (i = 0; i < n; i++) {
@@ -3478,6 +3484,7 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
             Nv2aVshOutput o;
             ff_transform(idx, &o);
             x = o.pos[0];                      /* screen x, already over w */
+            if (!(o.pos[3] > 0.0f)) s_ws_behind = 1;
         } else if (kind == XK_PROGRAM && !st->screen_space) {
             Nv2aVshOutput o;                   /* v187g: run the program */
             if (i == 0)
@@ -3485,6 +3492,7 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
             if (!transform_vertex(idx, &o))
                 return 0;
             x = o.pos[0];
+            if (!(o.pos[3] > 0.0f)) s_ws_behind = 1;
         } else {
             if (!fetch_attr(&s_gpu.attr[0], idx, p))
                 return 0;
@@ -3638,7 +3646,13 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
          * reach both edges was kept unsqueezed, and the shadow marks came out
          * wider than the scene (an undarkened strip at one side, run 187j) */
         int flatish = *is_2d || s_gpu.idx_count <= 6;
-        int keep = full && ((plain && flatish) || rt || camquad);
+        /* v193: never for a batch reaching behind the eye. A big floor quad
+         * the camera stands on (the halfpipe area: 6 vertices, two corners
+         * ~45 units behind) projects those corners mirrored, its span came
+         * out "across the screen, within 5%" on some frames and not others,
+         * and it was drawn unsqueezed on those -- the floor jumping to the
+         * 4:3 shape and back as the camera moved. Only in widescreen. */
+        int keep = full && !s_ws_behind && ((plain && flatish) || rt || camquad);
         if (!keep && !full && ws_title_bar(kind, st)) {   /* v187u */
             static int said;
             if (logw > 0 && said++ < 8)
