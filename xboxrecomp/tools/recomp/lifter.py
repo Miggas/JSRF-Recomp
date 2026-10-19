@@ -3307,16 +3307,23 @@ class Lifter:
             if nops >= 2:
                 src = _fmt_operand_read(ops[1])
                 return [_sse_write(ops[0], f"(float)(int32_t){src}") + " /* cvtsi2ss */"]
+        # JSRF v192: float -> int32 as the CPU does it. A C cast truncates,
+        # but cvtss2si / cvtsd2si round by MXCSR.RC, round-to-nearest-even
+        # (the power-on value; the title never loads MXCSR), and a value out
+        # of range gives 0x80000000 (a cast is undefined there). The x87
+        # helper does both: RC 0 = nearest, 0x0C00 = toward zero (cvtt*).
         if m in ("cvtss2si", "cvttss2si"):
             if nops >= 2:
-                return [_fmt_operand_write(ops[0], f"(int32_t){_sse_read(ops[1])}") + f" /* {m} */"]
+                rc = "0x0C00u" if m == "cvttss2si" else "0x0000u"
+                return [_fmt_operand_write(ops[0], f"(uint32_t)(int32_t)recomp_fist((double){_sse_read(ops[1])}, {rc}, 32)") + f" /* {m} */"]
         if m == "cvtsi2sd":
             if nops >= 2:
                 src = _fmt_operand_read(ops[1])
                 return [_sse_write(ops[0], f"(double)(int32_t){src}") + " /* cvtsi2sd */"]
         if m in ("cvtsd2si", "cvttsd2si"):
             if nops >= 2:
-                return [_fmt_operand_write(ops[0], f"(int32_t){_sse_read(ops[1])}") + f" /* {m} */"]
+                rc = "0x0C00u" if m == "cvttsd2si" else "0x0000u"
+                return [_fmt_operand_write(ops[0], f"(uint32_t)(int32_t)recomp_fist((double){_sse_read(ops[1])}, {rc}, 32)") + f" /* {m} */"]
         if m == "cvtss2sd":
             if nops >= 2:
                 return [_sse_write(ops[0], f"(double){_sse_read(ops[1])}") + " /* cvtss2sd */"]
