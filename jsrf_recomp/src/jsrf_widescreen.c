@@ -91,6 +91,8 @@ static const struct { uint32_t addr; int anchor; } ws_hud[] = {
     { 0x00109B70u,  3 },    /* boost-ready icon (3D) */
     { 0x000FFFD0u, -1 },    /* trick count and score rows */
     { 0x00101F20u, -1 },    /* trick name */
+    { 0x000F7720u,  9 },    /* v191b: letterbox bars (cutscenes, dialogue) */
+    { 0x000F7990u,  9 },    /* v191b: the bars opening and closing */
 };
 
 extern void D3D8_D3DDevice_SetScreenSpaceOffset(void);
@@ -222,6 +224,34 @@ WS_HUD_SCOPE(sub_00109B70, 0x00109B70u)
 WS_HUD_SCOPE(sub_000FFFD0, 0x000FFFD0u)
 WS_HUD_SCOPE(sub_00101F20, 0x00101F20u)
 
+/* v191b, after Piaka's widescreen notes: the letterbox bars. The Xbox adds
+ * 0.53125 to every position (D3D's pixel-centre bias), so bars the game
+ * draws from x = 0 and y = 0 start half a pixel in; the console still fills
+ * column 0 and row 0, an upscaled picture does not, and the scene showed in
+ * a line above the top bar and left of both (in 4:3 too). Their corners on
+ * the screen's edges go one pixel past them (anchor 9, sub_0015A880).
+ * Independent of widescreen; RECOMP_GL_EDGE=0 turns it off with v191's. */
+static int ws_edge_on(void)
+{
+    static int on = -1;
+    if (on < 0)
+        on = ws_flag("RECOMP_GL_EDGE");
+    return on;
+}
+
+#define WS_EDGE_SCOPE(name, addr)                   \
+    extern void name##_gen(void);                   \
+    void name(void)                                 \
+    {                                               \
+        if (!ws_edge_on()) { name##_gen(); return; } \
+        ws_enter(addr);                             \
+        name##_gen();                               \
+        ws_leave();                                 \
+    }
+
+WS_EDGE_SCOPE(sub_000F7720, 0x000F7720u)
+WS_EDGE_SCOPE(sub_000F7990, 0x000F7990u)
+
 /* Sprite quad submission (the 0x1E144C quad-batch interface, +0x14): copies
  * one quad of 4 vertices, 32 bytes each, x first, to the batch's write
  * pointer at this+0x1C and advances it by 0x80. stdcall, `this` first. */
@@ -232,14 +262,31 @@ void sub_0015A880(void)
     uint32_t obj, before, v;
     int anchor;
     float extra;
-    if (!ws_hud_on() || ws_depth <= 0 || ws_depth > 32) {
+    if (ws_depth <= 0 || ws_depth > 32) {
         sub_0015A880_gen();
         return;
     }
     anchor = ws_stack[ws_depth - 1].anchor;
+    if (anchor != 9 && !ws_hud_on()) {
+        sub_0015A880_gen();
+        return;
+    }
     obj = MEM32(g_esp + 4);
     before = MEM32(obj + 0x1C);
     sub_0015A880_gen();
+    if (anchor == 9) {                  /* v191b: letterbox bars */
+        if (g_eax != 0 || MEM32(obj + 0x1C) - before != 0x80)
+            return;
+        for (v = 0; v < 4; ++v) {
+            uint32_t p = before + v * 32u;
+            float x = MEMF(p), y = MEMF(p + 4);
+            if (x <= 1.0f) x -= 1.0f; else if (x >= 639.0f) x += 1.0f;
+            if (y <= 1.0f) y -= 1.0f; else if (y >= 479.0f) y += 1.0f;
+            MEMF(p) = x;
+            MEMF(p + 4) = y;
+        }
+        return;
+    }
     if (anchor != 1 && anchor != -1)
         return;
     if (g_eax != 0 || MEM32(obj + 0x1C) - before != 0x80)
