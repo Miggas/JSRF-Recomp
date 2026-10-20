@@ -933,16 +933,59 @@ void xbox_Nv2aAckedWake(void)
     if (g_nv2a_ack_waiters && s_wba)
         s_wba((PVOID)&g_nv2a_ack_seq);
 }
+/* v196: the vblank DPC's acknowledgement completes at once, as on hardware.
+ *
+ * D3D's vblank DPC writes PCRTC_INTR (write-1-to-clear) and spins until
+ * PMC_INTR bit 24 drops, which on the console is immediate. Here the bit was
+ * cleared by the executor thread once per pass of its loop -- and a pass
+ * includes running the frame's pushbuffer and the frame cap's wait. The DPC
+ * runs on the kernel timer thread, which is also what raises vblank, so
+ * every vblank waited behind the GPU: the CRI vsync thread that runs the
+ * ADX server off D3DDevice_BlockUntilVerticalBlank got ~36 of 60 a second
+ * (audio debug log, title screen), each refill adds ~1040 samples while the
+ * music plays 44,100 a second, and the stream buffer drained until the
+ * decoder's writes ran into the voice: the crackle in the music (and the
+ * dialogue, streamed the same way). The bits are now cleared where the DPC
+ * acknowledges them. RECOMP_VBLANK_ACK=executor goes back to waiting for the
+ * executor thread (pre-v196). */
+static int s_vbl_ack_now = -1;
+static LONG s_vbl_waits;
+static double s_vbl_wait_max_ms;
+int xbox_Nv2aVblankAckStats(long *waits, double *max_ms)   /* for the [VBL] line */
+{
+    *waits = InterlockedExchange(&s_vbl_waits, 0);
+    *max_ms = s_vbl_wait_max_ms;
+    s_vbl_wait_max_ms = 0;
+    return s_vbl_ack_now;
+}
 void xbox_Nv2aWaitClear(volatile uint32_t *reg, uint32_t mask)
 {
     int i;
+    LARGE_INTEGER q0, q1, qf;
+    if (s_vbl_ack_now < 0) {
+        const char *e = getenv("RECOMP_VBLANK_ACK");
+        s_vbl_ack_now = !(e && !_stricmp(e, "executor"));
+        fprintf(stderr, "  NV2A vblank acknowledgement: %s (RECOMP_VBLANK_ACK=executor for the old wait)\n",
+                s_vbl_ack_now ? "at once, as on hardware" : "waits for the executor thread");
+    }
+    if (mask == 0x1000000u) {
+        InterlockedIncrement(&s_vbl_waits);
+        if (s_vbl_ack_now) {
+            /* reg is PMC_INTR_0 (NV2A base + 0x100); PCRTC_INTR_0 is at +0x600100 */
+            volatile uint32_t *pcrtc = (volatile uint32_t *)((volatile char *)reg - 0x100 + 0x600100);
+            *pcrtc &= ~1u;
+            *reg &= ~mask;
+            return;
+        }
+        QueryPerformanceCounter(&q0);
+    }
     if (s_spinwait < 0)
         nv2a_waitinit();
     if (!(mask == 0x10000u ? s_sleep_kick : s_sleep_vbl))
         return;                       /* the generated loop spins as before */
     for (i = 0; i < 64; i++) {
         if (!(*reg & mask))
-            return;
+            goto done;
         YieldProcessor();
     }
     while (*reg & mask) {
@@ -957,6 +1000,14 @@ void xbox_Nv2aWaitClear(volatile uint32_t *reg, uint32_t mask)
         } else {
             Sleep(0);
         }
+    }
+done:
+    if (mask == 0x1000000u) {
+        double ms;
+        QueryPerformanceCounter(&q1);
+        QueryPerformanceFrequency(&qf);
+        ms = (double)(q1.QuadPart - q0.QuadPart) * 1000.0 / (double)qf.QuadPart;
+        if (ms > s_vbl_wait_max_ms) s_vbl_wait_max_ms = ms;
     }
 }
 

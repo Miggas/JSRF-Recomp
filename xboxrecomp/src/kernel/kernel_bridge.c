@@ -2310,6 +2310,7 @@ static int kernel_raise_interrupt(uint32_t vector)
  * sleeps only until the next one is due. RECOMP_VBLANK_HZ overrides. */
 static LARGE_INTEGER s_vb_freq, s_vb_next;
 static long long     s_vb_period;
+static unsigned long s_vb_resets;   /* v196: vblanks lost to a stalled timer thread */
 
 /* Milliseconds until the next vblank is due (0 if due now), for the timer
  * thread's sleep. 10 when vblank is off. */
@@ -2356,8 +2357,10 @@ static void kernel_vblank_tick(void)
     QueryPerformanceCounter(&now);
     if (s_vb_next.QuadPart && now.QuadPart < s_vb_next.QuadPart)
         return;
-    if (!s_vb_next.QuadPart || now.QuadPart - s_vb_next.QuadPart > 4 * s_vb_period)
+    if (!s_vb_next.QuadPart || now.QuadPart - s_vb_next.QuadPart > 4 * s_vb_period) {
+        if (s_vb_next.QuadPart) s_vb_resets++;
         s_vb_next.QuadPart = now.QuadPart + s_vb_period;  /* start, or a long stall */
+    }
     else
         s_vb_next.QuadPart += s_vb_period;
 
@@ -2367,6 +2370,35 @@ static void kernel_vblank_tick(void)
     BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PCRTC_INTR_0) |= NV2A_PCRTC_INTR_VBLANK;
     BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0)   |= NV2A_PMC_INTR_PCRTC;
 
+    {   /* v196: RECOMP_AUDIO_DEBUG=1 -- vblanks a second, and how long D3D's
+         * vblank routine waited for its acknowledgement ([VBL] every 2 s) */
+        static int dbg = -1;
+        static unsigned long ticks, resets_seen;
+        static long long last_rep;
+        extern int xbox_Nv2aVblankAckStats(long *waits, double *max_ms);
+        LARGE_INTEGER t;
+        if (dbg < 0) {
+            const char *e = getenv("RECOMP_AUDIO_DEBUG");
+            dbg = e && e[0] == '1';
+        }
+        if (dbg) {
+            ticks++;
+            QueryPerformanceCounter(&t);
+            if (!last_rep) last_rep = t.QuadPart;
+            if (t.QuadPart - last_rep >= 2 * s_vb_freq.QuadPart) {
+                long w;
+                double mx;
+                int now_mode = xbox_Nv2aVblankAckStats(&w, &mx);
+                fprintf(stderr, "[VBL] %lu vblanks raised in %.1f s, %lu late-clock restarts; D3D's vblank"
+                        " routine acknowledged %ld times (%s, longest wait %.1f ms)\n", ticks,
+                        (double)(t.QuadPart - last_rep) / (double)s_vb_freq.QuadPart, s_vb_resets - resets_seen,
+                        w, now_mode > 0 ? "at once" : "waiting for the executor", mx);
+                ticks = 0;
+                resets_seen = s_vb_resets;
+                last_rep = t.QuadPart;
+            }
+        }
+    }
     {
         static unsigned n;
         int claimed = kernel_raise_interrupt(NV2A_VECTOR);
