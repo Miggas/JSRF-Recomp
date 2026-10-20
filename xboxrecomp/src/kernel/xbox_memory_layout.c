@@ -949,6 +949,7 @@ void xbox_Nv2aAckedWake(void)
  * acknowledges them. RECOMP_VBLANK_ACK=executor goes back to waiting for the
  * executor thread (pre-v196). */
 static int s_vbl_ack_now = -1;
+static int vbl_ack_mode(void);
 static LONG s_vbl_waits;
 static double s_vbl_wait_max_ms;
 int xbox_Nv2aVblankAckStats(long *waits, double *max_ms)   /* for the [VBL] line */
@@ -962,18 +963,9 @@ void xbox_Nv2aWaitClear(volatile uint32_t *reg, uint32_t mask)
 {
     int i;
     LARGE_INTEGER q0, q1, qf;
-    if (s_vbl_ack_now < 0) {
-        const char *e = getenv("RECOMP_VBLANK_ACK");
-        /* v196b: back to the executor's acknowledgement by default -- the
-         * immediate one did not raise the CRI thread's rate (run 196: still
-         * 45-53 ADX server runs a second); RECOMP_VBLANK_ACK=now tests it */
-        s_vbl_ack_now = e && !_stricmp(e, "now");
-        fprintf(stderr, "  NV2A vblank acknowledgement: %s (RECOMP_VBLANK_ACK=now|executor)\n",
-                s_vbl_ack_now ? "at once, as on hardware" : "waits for the executor thread");
-    }
     if (mask == 0x1000000u) {
         InterlockedIncrement(&s_vbl_waits);
-        if (s_vbl_ack_now) {
+        if (vbl_ack_mode()) {
             /* reg is PMC_INTR_0 (NV2A base + 0x100); PCRTC_INTR_0 is at +0x600100 */
             volatile uint32_t *pcrtc = (volatile uint32_t *)((volatile char *)reg - 0x100 + 0x600100);
             *pcrtc &= ~1u;
@@ -1014,6 +1006,28 @@ done:
     }
 }
 
+/* v196e: the vblank bits are D3D's to acknowledge. The executor thread used
+ * to zero every interrupt-status register on each pass, the vblank bits too:
+ * when a pass fell between the timer raising vblank and D3D's DPC reading
+ * PMC_INTR (it calls its vblank routine only while bit 24 is set, 0x194409),
+ * the vblank was skipped -- 40% of them in the audio debug run (120 claimed
+ * by the ISR, ~75 KeSetEvent on the vblank event every 2 s), so the CRI
+ * thread ran the ADX server ~37 times a second and the music crackled. Now
+ * PMC_INTR bit 24 and PCRTC_INTR bit 0 stay set until the DPC acknowledges
+ * them (xbox_Nv2aWaitClear clears them there, as the hardware's
+ * write-1-to-clear does). RECOMP_VBLANK_ACK=executor goes back to both. */
+static int vbl_ack_mode(void)
+{
+    if (s_vbl_ack_now < 0) {
+        const char *e = getenv("RECOMP_VBLANK_ACK");
+        s_vbl_ack_now = !(e && !_stricmp(e, "executor"));
+        fprintf(stderr, "  NV2A vblank acknowledgement: %s (RECOMP_VBLANK_ACK=executor for the old way)\n",
+                s_vbl_ack_now ? "by D3D's vblank routine, as on hardware"
+                              : "the executor thread clears the bits");
+    }
+    return s_vbl_ack_now;
+}
+
 /* v168: set by the title's profiler (RECOMP_PROFILE) to sample a thread */
 void (*g_thread_watch_hook)(const char *name);
 static DWORD WINAPI nv2a_ack_thread(LPVOID param)
@@ -1030,10 +1044,15 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
         for (size_t i = 0; i < sizeof(NV2A_ACK) / sizeof(NV2A_ACK[0]); i++) {
             volatile uint32_t *r =
                 (volatile uint32_t *)((char *)regs + NV2A_ACK[i].offset);
-            if (*r & NV2A_ACK[i].busy_mask) {
+            uint32_t m = NV2A_ACK[i].busy_mask;
+            if (vbl_ack_mode()) {            /* v196e: vblank bits left for D3D's DPC */
+                if (NV2A_ACK[i].offset == 0x000100) m &= ~0x01000000u;   /* PMC_INTR: PCRTC */
+                if (NV2A_ACK[i].offset == 0x600100) m &= ~0x00000001u;   /* PCRTC_INTR: vblank */
+            }
+            if (*r & m) {
                 if (g_kick_separate && NV2A_ACK[i].offset == 0x100410)
                     continue;                 /* nv2a_kick_ack_thread's */
-                *r &= ~NV2A_ACK[i].busy_mask;
+                *r &= ~m;
             }
         }
         xbox_Nv2aAckedWake();          /* v178: whoever sleeps on the acks */
