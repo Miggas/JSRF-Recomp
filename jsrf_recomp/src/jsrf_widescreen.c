@@ -275,12 +275,21 @@ void sub_0015A880(void)
     before = MEM32(obj + 0x1C);
     sub_0015A880_gen();
     if (anchor == 9) {                  /* v191b: letterbox bars */
+        /* v196f: and widened by 1/k about the middle while widescreen is
+         * on, so they reach the edges even when the renderer squeezes them
+         * with the picture (Rokkaku Dai Heights: the bars came out 4:3 --
+         * there they are not drawn as a plain full-width layer, which the
+         * renderer leaves unsqueezed). Unsqueezed they now overshoot the
+         * screen, which is clipped. After Piaka's patch. */
+        double k = xbox_WidescreenK();      /* 1 in 4:3 and on 4:3-held screens */
+        if (!(k > 0.2 && k < 0.9999)) k = 1.0;
         if (g_eax != 0 || MEM32(obj + 0x1C) - before != 0x80)
             return;
         for (v = 0; v < 4; ++v) {
             uint32_t p = before + v * 32u;
-            float x = MEMF(p), y = MEMF(p + 4);
-            if (x <= 1.0f) x -= 1.0f; else if (x >= 639.0f) x += 1.0f;
+            float x0 = MEMF(p), y = MEMF(p + 4);
+            float x = (float)(320.0 + (x0 - 320.0) / k);
+            if (x0 <= 1.0f) x -= 1.0f; else if (x0 >= 639.0f) x += 1.0f;
             if (y <= 1.0f) y -= 1.0f; else if (y >= 479.0f) y += 1.0f;
             MEMF(p) = x;
             MEMF(p + 4) = y;
