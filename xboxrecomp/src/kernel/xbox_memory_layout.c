@@ -964,8 +964,11 @@ void xbox_Nv2aWaitClear(volatile uint32_t *reg, uint32_t mask)
     LARGE_INTEGER q0, q1, qf;
     if (s_vbl_ack_now < 0) {
         const char *e = getenv("RECOMP_VBLANK_ACK");
-        s_vbl_ack_now = !(e && !_stricmp(e, "executor"));
-        fprintf(stderr, "  NV2A vblank acknowledgement: %s (RECOMP_VBLANK_ACK=executor for the old wait)\n",
+        /* v196b: back to the executor's acknowledgement by default -- the
+         * immediate one did not raise the CRI thread's rate (run 196: still
+         * 45-53 ADX server runs a second); RECOMP_VBLANK_ACK=now tests it */
+        s_vbl_ack_now = e && !_stricmp(e, "now");
+        fprintf(stderr, "  NV2A vblank acknowledgement: %s (RECOMP_VBLANK_ACK=now|executor)\n",
                 s_vbl_ack_now ? "at once, as on hardware" : "waits for the executor thread");
     }
     if (mask == 0x1000000u) {

@@ -1537,6 +1537,11 @@ int xbox_SignalGuestEvent(uint32_t guest_va)
 }
 
 /* ── KeSetEvent (ordinal 145) ────────────────────────────── */
+static void kev_note(uint32_t va, int is_set, double wait_ms);   /* v196b */
+static volatile LONG s_vb_claimed, s_vb_declined, s_dpc_queued, s_dpc_refused, s_dpc_run;
+static int kdbg_on(void);
+static double kev_ms(void);
+
 static void bridge_KeSetEvent(void)
 {
     uint32_t guest_va = STACK_ARG(0);
@@ -1550,6 +1555,7 @@ static void bridge_KeSetEvent(void)
     {   /* An event the title built itself (see ke_guest_event). */
         int type;
         HANDLE ge = ke_guest_event(guest_va, &type);
+        kev_note(guest_va, 1, 0);
         if (ge) {
             g_eax = BRIDGE_MEM32(guest_va + 4) != 0;   /* previous state */
             BRIDGE_MEM32(guest_va + 4) = 1;
@@ -1596,9 +1602,11 @@ static void bridge_KeWaitForSingleObject(void)
             } else {
                 SetEvent(ge);                          /* set by a header write */
             }
+            double t0 = kdbg_on() ? kev_ms() : 0;
             g_eax = (uint32_t)xbox_KeWaitForSingleObject(
                 ge, wait_reason, wait_mode,
                 (BOOLEAN)alertable, XBOX_TO_NATIVE(timeout_ptr));
+            if (t0 > 0) kev_note(object, 0, kev_ms() - t0);
             if (g_eax == 0 && type == 1)               /* synchronization: consumed */
                 BRIDGE_MEM32(object + 4) = 0;
             return;
@@ -1611,9 +1619,13 @@ static void bridge_KeWaitForSingleObject(void)
     if (!h)
         h = XBOX_TO_NATIVE(object);
 
-    g_eax = (uint32_t)xbox_KeWaitForSingleObject(
-        h, wait_reason, wait_mode,
-        (BOOLEAN)alertable, XBOX_TO_NATIVE(timeout_ptr));
+    {
+        double t0 = kdbg_on() ? kev_ms() : 0;
+        g_eax = (uint32_t)xbox_KeWaitForSingleObject(
+            h, wait_reason, wait_mode,
+            (BOOLEAN)alertable, XBOX_TO_NATIVE(timeout_ptr));
+        if (t0 > 0) kev_note(object, 0, kev_ms() - t0);
+    }
 }
 
 /* ── NtWaitForSingleObject (ordinal 233) ─────────────────── */
@@ -2196,6 +2208,7 @@ static void bridge_KeInsertQueueDpc(void)
     dpc_lock();
     if (BRIDGE_MEM8(dpc + 2)) {                 /* already queued */
         LeaveCriticalSection(&g_dpc_lock);
+        InterlockedIncrement(&s_dpc_refused);
         g_eax = 0;
         return;
     }
@@ -2214,6 +2227,7 @@ static void bridge_KeInsertQueueDpc(void)
     BRIDGE_MEM8(dpc + 2) = 1;
     g_dpc_tail = next;
     LeaveCriticalSection(&g_dpc_lock);
+    InterlockedIncrement(&s_dpc_queued);
     g_eax = 1;
 }
 
@@ -2311,6 +2325,80 @@ static int kernel_raise_interrupt(uint32_t vector)
 static LARGE_INTEGER s_vb_freq, s_vb_next;
 static long long     s_vb_period;
 static unsigned long s_vb_resets;   /* v196: vblanks lost to a stalled timer thread */
+/* v196b: RECOMP_AUDIO_DEBUG=1 -- every link from the vblank timer to the
+ * thread that waits for it, for the [VBL] / [KEV] lines every 2 s: vblanks
+ * raised, ISR claims, DPCs queued (and refused as already queued), DPCs run,
+ * and the events most waited on with their sets, waits and wait times. */
+static int kdbg_on(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("RECOMP_AUDIO_DEBUG");
+        v = e && e[0] == '1';
+    }
+    return v;
+}
+#define KEV_N 24
+static struct { uint32_t va; LONG sets, waits, quick; double sum_ms, max_ms; } s_kev[KEV_N];
+static CRITICAL_SECTION s_kev_cs;
+static int s_kev_init;
+static int kev_slot(uint32_t va)
+{
+    int i, free_i = -1;
+    for (i = 0; i < KEV_N; i++) {
+        if (s_kev[i].va == va) return i;
+        if (!s_kev[i].va && free_i < 0) free_i = i;
+    }
+    if (free_i >= 0) { memset(&s_kev[free_i], 0, sizeof s_kev[0]); s_kev[free_i].va = va; }
+    return free_i;
+}
+static void kev_note(uint32_t va, int is_set, double wait_ms)
+{
+    int i;
+    if (!kdbg_on() || !va) return;
+    if (!s_kev_init) { InitializeCriticalSection(&s_kev_cs); s_kev_init = 1; }
+    EnterCriticalSection(&s_kev_cs);
+    i = kev_slot(va);
+    if (i >= 0) {
+        if (is_set) s_kev[i].sets++;
+        else {
+            s_kev[i].waits++;
+            s_kev[i].sum_ms += wait_ms;
+            if (wait_ms > s_kev[i].max_ms) s_kev[i].max_ms = wait_ms;
+            if (wait_ms < 0.2) s_kev[i].quick++;
+        }
+    }
+    LeaveCriticalSection(&s_kev_cs);
+}
+static double kev_ms(void)
+{
+    static LARGE_INTEGER f;
+    LARGE_INTEGER c;
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
+}
+static void kev_report(void)
+{
+    int i, k, shown = 0;
+    if (!s_kev_init) return;
+    EnterCriticalSection(&s_kev_cs);
+    for (k = 0; k < 6; k++) {            /* the six most waited on */
+        int best = -1;
+        for (i = 0; i < KEV_N; i++)
+            if (s_kev[i].va && s_kev[i].waits >= 0 && (best < 0 || s_kev[i].waits > s_kev[best].waits))
+                best = i;
+        if (best < 0 || s_kev[best].waits <= 0) break;
+        fprintf(stderr, "[KEV]   object 0x%08X: %ld sets, %ld waits (%ld returned at once), wait avg %.1f ms,"
+                " longest %.1f ms\n", s_kev[best].va, s_kev[best].sets, s_kev[best].waits, s_kev[best].quick,
+                s_kev[best].sum_ms / s_kev[best].waits, s_kev[best].max_ms);
+        s_kev[best].waits = -s_kev[best].waits - 1;   /* mark shown */
+        shown++;
+    }
+    for (i = 0; i < KEV_N; i++) s_kev[i].va = 0;  /* fresh table each period */
+    LeaveCriticalSection(&s_kev_cs);
+    (void)shown;
+}
 
 /* Milliseconds until the next vblank is due (0 if due now), for the timer
  * thread's sleep. 10 when vblank is off. */
@@ -2389,10 +2477,15 @@ static void kernel_vblank_tick(void)
                 long w;
                 double mx;
                 int now_mode = xbox_Nv2aVblankAckStats(&w, &mx);
-                fprintf(stderr, "[VBL] %lu vblanks raised in %.1f s, %lu late-clock restarts; D3D's vblank"
-                        " routine acknowledged %ld times (%s, longest wait %.1f ms)\n", ticks,
+                fprintf(stderr, "[VBL] %lu vblanks raised in %.1f s, %lu late-clock restarts; ISR claimed %ld,"
+                        " declined %ld; DPCs queued %ld, refused (already queued) %ld, run %ld; D3D's vblank"
+                        " routine waited for its acknowledgement %ld times (%s, longest %.1f ms)\n", ticks,
                         (double)(t.QuadPart - last_rep) / (double)s_vb_freq.QuadPart, s_vb_resets - resets_seen,
-                        w, now_mode > 0 ? "at once" : "waiting for the executor", mx);
+                        InterlockedExchange(&s_vb_claimed, 0), InterlockedExchange(&s_vb_declined, 0),
+                        InterlockedExchange(&s_dpc_queued, 0), InterlockedExchange(&s_dpc_refused, 0),
+                        InterlockedExchange(&s_dpc_run, 0),
+                        w, now_mode > 0 ? "acknowledged at once" : "waiting for the executor", mx);
+                kev_report();
                 ticks = 0;
                 resets_seen = s_vb_resets;
                 last_rep = t.QuadPart;
@@ -2402,6 +2495,8 @@ static void kernel_vblank_tick(void)
     {
         static unsigned n;
         int claimed = kernel_raise_interrupt(NV2A_VECTOR);
+        if (claimed > 0) InterlockedIncrement(&s_vb_claimed);
+        else InterlockedIncrement(&s_vb_declined);
         if (n++ < 3)
             fprintf(stderr, "  [NV2A] vblank -> ISR %s\n",
                     claimed < 0 ? "not callable" :
@@ -2428,8 +2523,10 @@ static void kernel_drain_dpcs(void)
         if (d.dpc)
             BRIDGE_MEM8(d.dpc + 2) = 0;
         LeaveCriticalSection(&g_dpc_lock);
-        if (d.dpc)
+        if (d.dpc) {
+            InterlockedIncrement(&s_dpc_run);
             kernel_run_dpc(d.dpc, d.arg1, d.arg2);
+        }
     }
 }
 
