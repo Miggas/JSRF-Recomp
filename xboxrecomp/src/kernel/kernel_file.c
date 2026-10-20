@@ -19,6 +19,7 @@
 #include "xbox_memory_layout.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>   /* v196d: getenv returns a pointer; undeclared it was cut to 32 bits */
 
 #if !defined(_WIN32)
 #include <fcntl.h>
