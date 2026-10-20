@@ -247,6 +247,16 @@ NTSTATUS __stdcall xbox_NtReadFile(
      * write into a read-only page fails instead of faulting to the handler
      * (xbox_gw_*). Unprotected and pinned for the read, and counted as
      * written. */
+    {
+        /* v199: RECOMP_AUDIO_DEBUG=1 logs reads slower than 20 ms -- streamed
+         * dialogue and music are read from the disc while they play */
+        static int dbg = -1;
+        LARGE_INTEGER q0, q1, qf;
+        if (dbg < 0) {
+            const char *e = getenv("RECOMP_AUDIO_DEBUG");
+            dbg = e && e[0] == '1';
+        }
+        if (dbg) QueryPerformanceCounter(&q0);
     xbox_gw_host_write(Buffer, Length, 1);
     if (ByteOffset && ByteOffset->QuadPart >= 0) {
         memset(&ov, 0, sizeof(ov));
@@ -257,6 +267,17 @@ NTSTATUS __stdcall xbox_NtReadFile(
         result = ReadFile(FileHandle, Buffer, Length, &bytes_read, NULL);
     }
     xbox_gw_host_write(Buffer, Length, 0);
+        if (dbg) {
+            double ms;
+            QueryPerformanceCounter(&q1);
+            QueryPerformanceFrequency(&qf);
+            ms = (double)(q1.QuadPart - q0.QuadPart) * 1000.0 / (double)qf.QuadPart;
+            if (ms > 20.0)
+                fprintf(stderr, "[FILE] slow read: %.1f ms for %lu bytes (handle %p, offset %lld)\n",
+                        ms, (unsigned long)Length, FileHandle,
+                        ByteOffset ? (long long)ByteOffset->QuadPart : -1LL);
+        }
+    }
 
     if (result || GetLastError() == ERROR_HANDLE_EOF) {
         IoStatusBlock->Information = bytes_read;

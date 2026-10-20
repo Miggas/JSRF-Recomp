@@ -46,6 +46,47 @@ static const struct {
  * Notify status helper
  * ============================================================ */
 
+/* v199: RECOMP_AUDIO_DEBUG=1 -- the audio debug build's switch. Voice events
+ * ([AVOICE]), every looping PCM buffer watched for replays ([RING]), the
+ * frame thread's pacing ([APUT]), the game's ADX server timing ([ADX], in
+ * recomp_manual.c) and the output captured to WAV (RECOMP_APU_CAPTURE), all
+ * with t= milliseconds since start, so a crackle in the capture can be put
+ * against the lines around it. */
+int apu_audio_debug(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("RECOMP_AUDIO_DEBUG");
+        v = e && e[0] == '1';
+        if (v)
+            fprintf(stderr, "[APU] audio debug on (RECOMP_AUDIO_DEBUG): voice events, buffer"
+                    " watch, pacing, ADX timing, output capture\n");
+    }
+    return v;
+}
+long long apu_dbg_ms(void)
+{
+    static int64_t t0;
+    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    if (!t0) t0 = now;
+    return (long long)(now - t0);
+}
+static long s_adbg_lines, s_adbg_dropped;
+#define ADBG_MAX_LINES 40000
+static int adbg_line(void)
+{
+    if (s_adbg_lines < ADBG_MAX_LINES) {
+        s_adbg_lines++;
+        return 1;
+    }
+    if (!s_adbg_dropped++)
+        fprintf(stderr, "[AVOICE] line limit reached (%d); counting only from here\n", ADBG_MAX_LINES);
+    return 0;
+}
+static uint8_t s_adbg_dry[MCPX_HW_MAX_VOICES];   /* a stream voice found no segment */
+static int s_adbg_game_off;
+static void adbg_voice(MCPXAPUState *d, const char *what, uint16_t v);
+
 static void set_notify_status(MCPXAPUState *d, uint32_t v, int notifier,
                               int status)
 {
@@ -124,8 +165,57 @@ static void voice_set_mask(MCPXAPUState *d, uint16_t voice_handle,
  * Voice off / lock
  * ============================================================ */
 
+static void adbg_voice(MCPXAPUState *d, const char *what, uint16_t v)
+{
+    uint32_t f, ba, ebo, lbo, cbo, st;
+    int pitch;
+    const char *kind;
+    if (!apu_audio_debug() || v >= MCPX_HW_MAX_VOICES || !adbg_line())
+        return;
+    f = voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT, 0xFFFFFFFFu);
+    ba = voice_get_mask(d, v, NV_PAVS_VOICE_CUR_PSL_START, NV_PAVS_VOICE_CUR_PSL_START_BA);
+    ebo = voice_get_mask(d, v, NV_PAVS_VOICE_PAR_NEXT, NV_PAVS_VOICE_PAR_NEXT_EBO);
+    lbo = voice_get_mask(d, v, NV_PAVS_VOICE_CUR_PSH_SAMPLE, NV_PAVS_VOICE_CUR_PSH_SAMPLE_LBO);
+    cbo = voice_get_mask(d, v, NV_PAVS_VOICE_PAR_OFFSET, NV_PAVS_VOICE_PAR_OFFSET_CBO);
+    st = voice_get_mask(d, v, NV_PAVS_VOICE_PAR_STATE, 0xFFFFFFFFu);
+    pitch = (int16_t)voice_get_mask(d, v, NV_PAVS_VOICE_TAR_PITCH_LINK,
+                                    NV_PAVS_VOICE_TAR_PITCH_LINK_PITCH);
+    kind = ((f >> 30) & 3) == 2 ? "adpcm" : ((f >> 28) & 3) == 1 ? "s16"
+           : ((f >> 28) & 3) == 0 ? "u8" : "s24/32";
+    fprintf(stderr, "[AVOICE] t=%lld %-7s v%-3u %s%s%s%s %s, ba %06X ebo %u lbo %u cbo %u,"
+            " pitch %d (%.0f Hz), state %08X, fmt %08X\n", apu_dbg_ms(), what, v,
+            (f & NV_PAVS_VOICE_CFG_FMT_STEREO) ? "stereo" : "mono",
+            (f & NV_PAVS_VOICE_CFG_FMT_DATA_TYPE) ? " stream" : "",
+            (f & NV_PAVS_VOICE_CFG_FMT_LOOP) ? " loop" : "",
+            (f & NV_PAVS_VOICE_CFG_FMT_PERSIST) ? " persist" : "",
+            kind, ba, ebo, lbo, cbo, pitch, 48000.0 * pow(2.0, pitch / 4096.0), st, f);
+    /* another voice already playing the same memory: two copies of one sound
+     * (or one sound over another's leftovers) heard at once */
+    if (!strcmp(what, "on") && !(f & NV_PAVS_VOICE_CFG_FMT_DATA_TYPE)) {
+        uint16_t u;
+        for (u = 0; u < MCPX_HW_MAX_VOICES; u++) {
+            if (u == v || !voice_get_mask(d, u, NV_PAVS_VOICE_PAR_STATE,
+                                          NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE))
+                continue;
+            if (voice_get_mask(d, u, NV_PAVS_VOICE_CFG_FMT, NV_PAVS_VOICE_CFG_FMT_DATA_TYPE))
+                continue;
+            if (voice_get_mask(d, u, NV_PAVS_VOICE_CUR_PSL_START, NV_PAVS_VOICE_CUR_PSL_START_BA) == ba
+                    && adbg_line())
+                fprintf(stderr, "[AVOICE] t=%lld   v%u starts on buffer %06X that v%u is still"
+                        " playing (at %u of %u)\n", apu_dbg_ms(), v, ba, u,
+                        voice_get_mask(d, u, NV_PAVS_VOICE_PAR_OFFSET, NV_PAVS_VOICE_PAR_OFFSET_CBO),
+                        voice_get_mask(d, u, NV_PAVS_VOICE_PAR_NEXT, NV_PAVS_VOICE_PAR_NEXT_EBO));
+        }
+    }
+}
+
 static void voice_off(MCPXAPUState *d, uint16_t v)
 {
+    if (apu_audio_debug() && voice_get_mask(d, v, NV_PAVS_VOICE_PAR_STATE,
+                                            NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE))
+        adbg_voice(d, s_adbg_game_off ? "off" : "ended", v);
+    if (v < MCPX_HW_MAX_VOICES)
+        s_adbg_dry[v] = 0;
     voice_set_mask(d, v, NV_PAVS_VOICE_PAR_STATE,
                    NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE, 0);
 
@@ -275,6 +365,8 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
         voice_reset_filters(d, (uint16_t)selected_handle);
         voice_set_mask(d, (uint16_t)selected_handle, NV_PAVS_VOICE_PAR_STATE,
                        NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE, 1);
+        s_adbg_dry[selected_handle & 0xFF] = 0;
+        adbg_voice(d, "on", (uint16_t)selected_handle);
 
         if (!locked) voice_lock(d, (uint16_t)selected_handle, false);
         break;
@@ -302,19 +394,24 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
         voice_set_mask(d, (uint16_t)selected_handle, NV_PAVS_VOICE_PAR_STATE,
                        NV_PAVS_VOICE_PAR_STATE_EFCUR,
                        NV_PAVS_VOICE_PAR_STATE_EFCUR_RELEASE);
+        adbg_voice(d, "release", (uint16_t)selected_handle);
 
         if (!locked) voice_lock(d, (uint16_t)selected_handle, false);
         break;
     }
 
     case NV1BA0_PIO_VOICE_OFF:
+        s_adbg_game_off = 1;
         voice_off(d, (uint16_t)(argument & NV1BA0_PIO_VOICE_OFF_HANDLE));
+        s_adbg_game_off = 0;
         break;
 
     case NV1BA0_PIO_VOICE_PAUSE:
         voice_set_mask(d, (uint16_t)(argument & NV1BA0_PIO_VOICE_PAUSE_HANDLE),
                        NV_PAVS_VOICE_PAR_STATE, NV_PAVS_VOICE_PAR_STATE_PAUSED,
                        (argument & NV1BA0_PIO_VOICE_PAUSE_ACTION) != 0);
+        adbg_voice(d, (argument & NV1BA0_PIO_VOICE_PAUSE_ACTION) ? "pause" : "resume",
+                   (uint16_t)(argument & NV1BA0_PIO_VOICE_PAUSE_HANDLE));
         break;
 
     case NV1BA0_PIO_SET_CURRENT_HRTF_ENTRY:
@@ -748,81 +845,107 @@ static struct {
  * ADX server run (mcpx_apu_music_watch, from the vsync hook) the buffer is
  * compared with the previous run's copy to see where the new data went,
  * relative to where the voice was. Reported every 2 s with [BGM]. */
-typedef struct { volatile uint32_t v, ba, ebo, cbo, sge, frame; } MwVoice;
-static MwVoice s_mw[4];
+/* v199: every looping PCM voice, not just stereo 16-bit music: JSRF's
+ * dialogue (Professor K) is streamed the same way into a mono loop, and it is
+ * the one heard jumbled. bs = bytes a sample frame, kind bit 0 stereo, bit 1
+ * 8-bit. [RING] lines (were [BGM]); with RECOMP_AUDIO_DEBUG also each moment
+ * a voice plays past the newest data the title wrote -- it then replays the
+ * previous lap of the loop, old words over new. */
+#define MW_SLOTS 8
+typedef struct { volatile uint32_t v, ba, ebo, cbo, sge, frame, bs, kind; } MwVoice;
+static MwVoice s_mw[MW_SLOTS];
 static volatile uint32_t s_mw_frame;
-static void mw_note(uint32_t v, uint32_t ba, uint32_t ebo, uint32_t cbo, uint32_t sge)
+static void mw_note(uint32_t v, uint32_t ba, uint32_t ebo, uint32_t cbo, uint32_t sge,
+                    uint32_t bs, uint32_t kind)
 {
     int i, k = 0;
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < MW_SLOTS; i++) {
         if (s_mw[i].frame && s_mw[i].v == v) { k = i; break; }
         if (s_mw[i].frame < s_mw[k].frame) k = i;
     }
     s_mw[k].v = v; s_mw[k].ba = ba; s_mw[k].ebo = ebo; s_mw[k].sge = sge;
-    s_mw[k].cbo = cbo;
+    s_mw[k].cbo = cbo; s_mw[k].bs = bs; s_mw[k].kind = kind;
     s_mw[k].frame = ++s_mw_frame;
+}
+
+static double mw_left(const uint8_t *buf, long ix, long n, uint32_t bs, uint32_t kind)
+{
+    const uint8_t *q;
+    ix %= n;
+    if (ix < 0) ix += n;
+    q = buf + (size_t)ix * bs;
+    if (kind & 2) return ((double)q[0] - 128.0) * 256.0;
+    return (double)(int16_t)(q[0] | (q[1] << 8));
 }
 
 void mcpx_apu_music_watch(void)
 {
-    static uint32_t *prev[4], prev_n[4], prev_ba[4], prev_cbo[4], prev_v[4];
-    static uint32_t *cur;
+    static uint8_t *prev[MW_SLOTS];
+    static uint32_t prev_n[MW_SLOTS], prev_ba[MW_SLOTS], prev_cbo[MW_SLOTS], prev_v[MW_SLOTS];
+    static uint32_t prev_bs[MW_SLOTS], prev_kind[MW_SLOTS];
+    static uint8_t *cur;
     static size_t cur_cap;
-    static long runs[4], writes[4], s0min[4], s0max[4], s0sum[4], s1min[4], s1max[4], s1sum[4];
-    static long wsum[4], asum[4], over[4];
+    static long runs[MW_SLOTS], writes[MW_SLOTS], s0min[MW_SLOTS], s0max[MW_SLOTS], s0sum[MW_SLOTS];
+    static long s1min[MW_SLOTS], s1max[MW_SLOTS], s1sum[MW_SLOTS];
+    static long wsum[MW_SLOTS], asum[MW_SLOTS], over[MW_SLOTS];
     /* v175: is the new data continuous with the run before? */
-    static long pend[4] = {-1, -1, -1, -1}, contig[4], gaps[4], gmin[4], gmax[4], bseam[4], iseam[4];
+    static long pend[MW_SLOTS] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    static long contig[MW_SLOTS], gaps[MW_SLOTS], gmin[MW_SLOTS], gmax[MW_SLOTS];
+    static long bseam[MW_SLOTS], iseam[MW_SLOTS];
+    /* v199: fresh data still ahead of the voice; overruns of it */
+    static long fresh[MW_SLOTS], lead_min[MW_SLOTS], overruns[MW_SLOTS], over_most[MW_SLOTS];
+    static int in_over[MW_SLOTS];
     static int64_t last;
-    int k;
+    int k, dbg = apu_audio_debug();
     int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-    for (k = 0; k < 4; k++) {
+    for (k = 0; k < MW_SLOTS; k++) {
         uint32_t v = s_mw[k].v, ba = s_mw[k].ba, n = s_mw[k].ebo + 1, sge = s_mw[k].sge;
-        uint32_t cbo = s_mw[k].cbo, off, i;
-        if (!s_mw[k].frame || s_mw_frame - s_mw[k].frame > 3000 || n > (1u << 18))
+        uint32_t cbo = s_mw[k].cbo, bs = s_mw[k].bs, kind = s_mw[k].kind, off, i;
+        size_t bytes = (size_t)n * bs;
+        if (!s_mw[k].frame || s_mw_frame - s_mw[k].frame > 3000 || n > (1u << 18) || !bs)
             continue;
-        if ((size_t)n > cur_cap) {
+        if (bytes > cur_cap) {
             free(cur);
-            cur = (uint32_t *)malloc((size_t)n * 4);
-            cur_cap = cur ? n : 0;
+            cur = (uint8_t *)malloc(bytes);
+            cur_cap = cur ? bytes : 0;
             if (!cur) return;
         }
-        for (off = 0; off < n * 4; ) {
-            uint32_t a = ba + off, chunk = TARGET_PAGE_SIZE - (a % TARGET_PAGE_SIZE);
-            if (chunk > n * 4 - off) chunk = n * 4 - off;
-            memcpy((uint8_t *)cur + off, mcpx_apu_phys(get_data_ptr(sge, 0xFFFFFFFF, a)), chunk);
+        for (off = 0; off < bytes; ) {
+            uint32_t a2 = ba + off, chunk = TARGET_PAGE_SIZE - (a2 % TARGET_PAGE_SIZE);
+            if (chunk > bytes - off) chunk = (uint32_t)(bytes - off);
+            memcpy(cur + off, mcpx_apu_phys(get_data_ptr(sge, 0xFFFFFFFF, a2)), chunk);
             off += chunk;
         }
-        if (prev[k] && prev_n[k] == n && prev_ba[k] == ba && prev_v[k] == v) {
+        if (prev[k] && prev_n[k] == n && prev_ba[k] == ba && prev_v[k] == v && prev_bs[k] == bs) {
             long cnt = 0, d0 = -1, d1 = -1;
+            long adv = (long)((cbo + n - prev_cbo[k]) % n);   /* played since the last run */
             for (i = 0; i < n; i++)
-                if (cur[i] != prev[k][i]) {
+                if (memcmp(cur + (size_t)i * bs, prev[k] + (size_t)i * bs, bs)) {
                     long dd = (long)((i + n - cbo) % n);   /* samples ahead of the voice */
                     if (d0 < 0 || dd < d0) d0 = dd;
                     if (dd > d1) d1 = dd;
                     cnt++;
                 }
             runs[k]++;
-            asum[k] += (long)((cbo + n - prev_cbo[k]) % n);
+            asum[k] += adv;
+            fresh[k] -= adv;
             if (cnt) {
-                /* where the write began and ended in the buffer, and whether
-                 * its first sample follows on from the last write's end (the
-                 * left channel's second difference, against the chunk's own) */
-                long b = (long)((cbo + (uint32_t)d0) % n), e = (long)((cbo + (uint32_t)d1) % n);
+                long b2 = (long)((cbo + (uint32_t)d0) % n), e = (long)((cbo + (uint32_t)d1) % n);
                 long len = d1 - d0 + 1, j;
                 double acc = 0;
                 int nacc = 0;
-#define MW_L(ix) ((double)(int16_t)(cur[((ix) + n) % n] & 0xFFFF))
+#define MW_L(ix) mw_left(cur, (ix), (long)n, bs, kind)
                 for (j = 2; j < len; j++) {
-                    long ix = (b + j) % (long)n;
+                    long ix = (b2 + j) % (long)n;
                     acc += fabs(MW_L(ix) - 2 * MW_L(ix - 1) + MW_L(ix - 2));
                     nacc++;
                 }
                 if (pend[k] >= 0) {
-                    long g = (long)((b - pend[k] - 1 + (long)n) % (long)n);
+                    long g = (long)((b2 - pend[k] - 1 + (long)n) % (long)n);
                     if (g == 0) {
                         double avg = nacc ? acc / nacc : 0;
-                        double r = fabs(MW_L(b) - 2 * MW_L(b - 1) + MW_L(b - 2));
-                        double r1 = fabs(MW_L(b + 1) - 2 * MW_L(b) + MW_L(b - 1));
+                        double r = fabs(MW_L(b2) - 2 * MW_L(b2 - 1) + MW_L(b2 - 2));
+                        double r1 = fabs(MW_L(b2 + 1) - 2 * MW_L(b2) + MW_L(b2 - 1));
                         contig[k]++;
                         if ((r > 6 * avg + 300 || r1 > 6 * avg + 300) && avg < 4000)
                             bseam[k]++;
@@ -831,12 +954,17 @@ void mcpx_apu_music_watch(void)
                         if (!gaps[k] || g < gmin[k]) gmin[k] = g;
                         if (!gaps[k] || g > gmax[k]) gmax[k] = g;
                         gaps[k]++;
+                        if (dbg && adbg_line())
+                            fprintf(stderr, "[RING] t=%lld voice %u: new data %s the last write by"
+                                    " %ld samples (at %ld..%ld, voice at %u)\n", apu_dbg_ms(), v,
+                                    g < 0 ? "overlaps" : "leaves a hole after", g < 0 ? -g : g,
+                                    b2, e, cbo);
                     }
                 }
                 if (nacc > 8) {
                     double avg = acc / nacc;
                     for (j = 4; j < len - 2; j++) {
-                        long ix = (b + j) % (long)n;
+                        long ix = (b2 + j) % (long)n;
                         if (fabs(MW_L(ix) - 2 * MW_L(ix - 1) + MW_L(ix - 2)) > 8 * avg + 400) {
                             iseam[k]++;
                             break;
@@ -845,6 +973,7 @@ void mcpx_apu_music_watch(void)
                 }
 #undef MW_L
                 pend[k] = e;
+                fresh[k] = d1 + 1;                 /* fresh data now ahead of the voice */
                 if (!writes[k] || d0 < s0min[k]) s0min[k] = d0;
                 if (!writes[k] || d0 > s0max[k]) s0max[k] = d0;
                 if (!writes[k] || d1 < s1min[k]) s1min[k] = d1;
@@ -854,42 +983,71 @@ void mcpx_apu_music_watch(void)
                 if (d0 == 0 || d1 >= (long)n - 64) over[k]++;   /* written at or just behind the voice */
                 writes[k]++;
             }
+            if (writes[k] && (runs[k] == 1 || fresh[k] < lead_min[k])) lead_min[k] = fresh[k];
+            if (writes[k] && fresh[k] < 0) {
+                /* the voice is past everything new: playing the last lap again */
+                if (-fresh[k] > over_most[k]) over_most[k] = -fresh[k];
+                if (!in_over[k]) {
+                    in_over[k] = 1;
+                    overruns[k]++;
+                    if (dbg && adbg_line())
+                        fprintf(stderr, "[RING] t=%lld voice %u: played past the newest data --"
+                                " replaying the previous lap of its %u-sample loop\n",
+                                apu_dbg_ms(), v, n);
+                }
+            } else if (in_over[k] && cnt) {
+                in_over[k] = 0;
+                if (dbg && adbg_line())
+                    fprintf(stderr, "[RING] t=%lld voice %u: new data again (%ld samples ahead)\n",
+                            apu_dbg_ms(), v, fresh[k]);
+            }
         } else {
             free(prev[k]);
-            prev[k] = (uint32_t *)malloc((size_t)n * 4);
+            prev[k] = (uint8_t *)malloc(bytes);
             pend[k] = -1;
             contig[k] = gaps[k] = bseam[k] = iseam[k] = 0;
             runs[k] = writes[k] = wsum[k] = asum[k] = over[k] = 0;
             s0sum[k] = s1sum[k] = 0;
+            fresh[k] = lead_min[k] = overruns[k] = over_most[k] = 0;
+            in_over[k] = 0;
+            if (dbg && adbg_line())
+                fprintf(stderr, "[RING] t=%lld watching voice %u: %s %s loop of %u samples at %06X\n",
+                        apu_dbg_ms(), v, (kind & 1) ? "stereo" : "mono", (kind & 2) ? "u8" : "s16", n, ba);
         }
         if (prev[k])
-            memcpy(prev[k], cur, (size_t)n * 4);
+            memcpy(prev[k], cur, bytes);
         prev_n[k] = n; prev_ba[k] = ba; prev_cbo[k] = cbo; prev_v[k] = v;
+        prev_bs[k] = bs; prev_kind[k] = kind;
     }
     if (!last)
         last = now;
     if (now - last < 2000)
         return;
     last = now;
-    for (k = 0; k < 4; k++) {
+    for (k = 0; k < MW_SLOTS; k++) {
         if (!runs[k])
             continue;
         if (writes[k])
-            fprintf(stderr, "[BGM]   voice %u (loop of %u samples): %ld runs, %ld wrote; the new data"
+            fprintf(stderr, "[RING]   voice %u (%s loop of %u samples): %ld runs, %ld wrote; the new data"
                     " began %ld..%ld (avg %ld) and ended %ld..%ld (avg %ld) samples ahead of the voice;"
                     " %ld samples written and %ld played a run; %ld writes at or just behind the voice\n",
-                    prev_v[k], prev_n[k], runs[k], writes[k], s0min[k], s0max[k], s0sum[k] / writes[k],
+                    prev_v[k], (prev_kind[k] & 1) ? "stereo" : "mono", prev_n[k], runs[k], writes[k],
+                    s0min[k], s0max[k], s0sum[k] / writes[k],
                     s1min[k], s1max[k], s1sum[k] / writes[k], wsum[k] / writes[k], asum[k] / runs[k], over[k]);
         else
-            fprintf(stderr, "[BGM]   voice %u (loop of %u samples): %ld runs, nothing written\n",
-                    prev_v[k], prev_n[k], runs[k]);
+            fprintf(stderr, "[RING]   voice %u (%s loop of %u samples): %ld runs, nothing written\n",
+                    prev_v[k], (prev_kind[k] & 1) ? "stereo" : "mono", prev_n[k], runs[k]);
         if (writes[k])
-            fprintf(stderr, "[BGM]   voice %u: %ld writes followed on from the last one (%ld with a jump"
+            fprintf(stderr, "[RING]   voice %u: %ld writes followed on from the last one (%ld with a jump"
                     " where they joined), %ld did not (%ld..%ld samples apart); %ld writes with a jump"
-                    " inside\n", prev_v[k], contig[k], bseam[k], gaps[k], gmin[k], gmax[k], iseam[k]);
+                    " inside; fresh data ahead of the voice at least %ld; %ld times it played past the"
+                    " newest data (by up to %ld samples)\n", prev_v[k], contig[k], bseam[k], gaps[k],
+                    gmin[k], gmax[k], iseam[k], lead_min[k], overruns[k], over_most[k]);
         contig[k] = gaps[k] = bseam[k] = iseam[k] = 0;
         runs[k] = writes[k] = wsum[k] = asum[k] = over[k] = 0;
         s0sum[k] = s1sum[k] = 0;
+        overruns[k] = over_most[k] = 0;
+        lead_min[k] = fresh[k];
     }
 }
 
@@ -969,6 +1127,10 @@ static int voice_get_samples_inner(MCPXAPUState *d, uint32_t v, float samples[][
         count = d->vp.ssl[v].count[ssl_index];
 
         if (count == 0) {
+            if (!s_adbg_dry[v]) {          /* v199: the title fell behind */
+                s_adbg_dry[v] = 1;
+                adbg_voice(d, "dry", (uint16_t)v);
+            }
             voice_set_mask(d, (uint16_t)v, NV_PAVS_VOICE_PAR_OFFSET,
                            NV_PAVS_VOICE_PAR_OFFSET_CBO, 0);
             d->vp.ssl[v].ssl_seg = 0;
@@ -983,6 +1145,10 @@ static int voice_get_samples_inner(MCPXAPUState *d, uint32_t v, float samples[][
             return -1;
         }
 
+        if (s_adbg_dry[v]) {
+            s_adbg_dry[v] = 0;
+            adbg_voice(d, "fed", (uint16_t)v);
+        }
         hwaddr addr = d->regs[NV_PAPU_VPSSLADDR] + page * 8;
         segment_offset = ldl_le_phys(address_space_memory, addr);
         segment_length = ldl_le_phys(address_space_memory, addr + 4);
@@ -1119,8 +1285,10 @@ static int voice_get_samples_inner(MCPXAPUState *d, uint32_t v, float samples[][
 
     voice_set_mask(d, (uint16_t)v, NV_PAVS_VOICE_PAR_OFFSET,
                    NV_PAVS_VOICE_PAR_OFFSET_CBO, cbo);
-    if (!stream && loop && stereo && !adpcm && block_size == 4 && ebo >= 2047)
-        mw_note(v, ba, ebo, cbo, d->regs[NV_PAPU_VPSGEADDR]);
+    if (!stream && loop && !adpcm && ebo >= 1023
+            && (block_size == 4 || block_size == 2 || block_size == 1))   /* v199: mono, 8-bit too */
+        mw_note(v, ba, ebo, cbo, d->regs[NV_PAPU_VPSGEADDR], (uint32_t)block_size,
+                (stereo ? 1u : 0u) | (container_size == 1 ? 2u : 0u));
     return sample_count;
 }
 

@@ -426,6 +426,14 @@ void mcpx_apu_monitor_finalize(MCPXAPUState *d)
 
 /* v86: frames the front end held up, and frames output without the
  * pipeline (holes of silence), reported with the [APU] output line */
+/* v199: the frame thread's pacing, for the [APUT] line: how late each period
+ * started, how many ran back to back to catch up (each one consumes the
+ * titles' buffers early), and clock resets (time lost outright) */
+static int64_t s_pace_late_max, s_pace_lost_us;
+static unsigned long s_pace_periods, s_pace_late1, s_pace_late4, s_pace_resets;
+extern int apu_audio_debug(void);
+extern long long apu_dbg_ms(void);
+
 static unsigned long g_apu_trap_waits, g_apu_trap_timeouts, g_apu_silent_frames;
 static int64_t g_apu_trap_longest_us;
 
@@ -495,10 +503,19 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
             DWORD now = GetTickCount();
             if (!last_report)
                 last_report = now;
-            else if (now - last_report >= 10000) {
+            else if (now - last_report >= (apu_audio_debug() ? 2000u : 10000u)) {
                 static unsigned long l_u;
                 unsigned long u, sil;
                 xa2_get_stats(&u, &sil);
+                if (apu_audio_debug()) {
+                    fprintf(stderr, "[APUT] t=%lld pacing: %lu periods, latest start %.1f ms late,"
+                            " %lu over one period and %lu over four (caught up back to back),"
+                            " %lu clock resets (%.1f ms skipped)\n", apu_dbg_ms(), s_pace_periods,
+                            s_pace_late_max / 1000.0, s_pace_late1, s_pace_late4, s_pace_resets,
+                            s_pace_lost_us / 1000.0);
+                    s_pace_periods = s_pace_late1 = s_pace_late4 = s_pace_resets = 0;
+                    s_pace_late_max = s_pace_lost_us = 0;
+                }
                 fprintf(stderr, "[APU] output: %lu buffers played, %lu dropped (queue full),"
                                 " %lu underruns, loudest sample %d of 32767,"
                                 " limiter down to %.2f\n",
@@ -522,7 +539,7 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
                 l_u = u;
                 {   /* v173b: RECOMP_AUDIO_REPORT=1 keeps it under QUIET */
                     const char *ar = getenv("RECOMP_AUDIO_REPORT");
-                    if (!getenv("RECOMP_QUIET") || (ar && ar[0] == '1'))
+                    if (!getenv("RECOMP_QUIET") || (ar && ar[0] == '1') || apu_audio_debug())
                         mcpx_apu_vp_report();
                 }
                 last_report = now;
@@ -598,6 +615,20 @@ static void throttle(MCPXAPUState *d)
     }
 
     int64_t now_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+    if (d->next_frame_time_us) {
+        int64_t late = now_us - d->next_frame_time_us;
+        s_pace_periods++;
+        if (late > s_pace_late_max) s_pace_late_max = late;
+        if (late > EP_FRAME_US) s_pace_late1++;
+        if (late > 4 * EP_FRAME_US) s_pace_late4++;
+        if (late > 8 * EP_FRAME_US) {
+            s_pace_resets++;
+            s_pace_lost_us += late;
+            if (apu_audio_debug())
+                fprintf(stderr, "[APUT] t=%lld frame thread %.1f ms behind: clock reset, that"
+                        " much audio time skipped\n", apu_dbg_ms(), late / 1000.0);
+        }
+    }
 
     /* v86: behind by up to 8 periods (~43 ms) is caught up by running
      * frames back to back; only a longer gap resets the clock. A frame that

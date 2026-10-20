@@ -1274,13 +1274,73 @@ static volatile long cri_adx_runs, cri_adx_skips, cri_fs_runs;
 extern void sub_00141F10_gen(void);
 extern void sub_00140C30_gen(void);
 static void bgm_buffer_watch(void);
+/* v199 (RECOMP_AUDIO_DEBUG=1): the ADX server's timing. It runs from the
+ * vsync thread and refills every streamed loop (music, dialogue); a gap
+ * longer than the data a loop holds ahead is heard as the voice replaying
+ * its previous lap. [ADX] every 2 s: runs, the longest gap, gaps over 40
+ * and 100 ms; each gap over 100 ms also on its own line, with t=. */
+extern int apu_audio_debug(void);
+extern long long apu_dbg_ms(void);
+static double adx_ms_now(void)
+{
+    static LARGE_INTEGER f;
+    LARGE_INTEGER c;
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
+}
+static double s_adx_busy_max, s_adx_busy_sum;
+static void adx_timing(int skipped)
+{
+    static double last, last_report, gap_max;
+    static long runs, skips, g40, g100;
+    double now = adx_ms_now();
+    if (!apu_audio_debug())
+        return;
+    if (skipped) skips++;
+    if (last > 0) {
+        double g = now - last;
+        if (g > gap_max) gap_max = g;
+        if (g > 40) g40++;
+        if (g > 100) {
+            g100++;
+            fprintf(stderr, "[ADX] t=%lld no ADX server run for %.0f ms (streamed sound not"
+                    " refilled meanwhile)\n", apu_dbg_ms(), g);
+        }
+    }
+    last = now;
+    runs++;
+    if (!last_report) last_report = now;
+    if (now - last_report >= 2000) {
+        fprintf(stderr, "[ADX] t=%lld %ld server runs (%ld skipped by its guard), longest gap"
+                " %.1f ms, %ld over 40 ms, %ld over 100 ms; longest run %.2f ms, average %.2f\n",
+                apu_dbg_ms(), runs, skips, gap_max, g40, g100, s_adx_busy_max,
+                runs ? s_adx_busy_sum / runs : 0);
+        runs = skips = g40 = g100 = 0;
+        gap_max = s_adx_busy_max = s_adx_busy_sum = 0;
+        last_report = now;
+    }
+}
 void sub_00141F10(void)
 {
-    if (MEM32(0x0026173Cu))
+    double t0 = 0;
+    int skipped = MEM32(0x0026173Cu) != 0;
+    if (skipped)
         cri_adx_skips++;
     else
         cri_adx_runs++;
+    if (apu_audio_debug()) {
+        adx_timing(skipped);
+        t0 = adx_ms_now();
+    }
     sub_00141F10_gen();
+    if (t0 > 0) {
+        double b = adx_ms_now() - t0;
+        s_adx_busy_sum += b;
+        if (b > s_adx_busy_max) s_adx_busy_max = b;
+        if (b > 20)
+            fprintf(stderr, "[ADX] t=%lld one ADX server run took %.1f ms\n", apu_dbg_ms(), b);
+    }
     bgm_buffer_watch();
 }
 
@@ -1306,7 +1366,7 @@ static void bgm_buffer_watch(void)
          * the music can be watched with the GPU survey off (closer to how
          * the game runs when played) */
         const char *ar = getenv("RECOMP_AUDIO_REPORT");
-        quiet = getenv("RECOMP_QUIET") != NULL && !(ar && ar[0] == '1');
+        quiet = getenv("RECOMP_QUIET") != NULL && !(ar && ar[0] == '1') && !apu_audio_debug();
     }
     if (quiet)
         return;

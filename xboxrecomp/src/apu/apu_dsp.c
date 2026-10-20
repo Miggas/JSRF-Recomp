@@ -129,6 +129,10 @@ static void cap_frame(const int16_t (*out)[2], const float *fx)
     if (s_cap_on < 0) {
         const char *e = getenv("RECOMP_APU_CAPTURE");
         s_cap_on = e && e[0] && e[0] != '0';
+        {   /* v199: the audio debug build captures too, unless told not to */
+            extern int apu_audio_debug(void);
+            if (!e && apu_audio_debug()) s_cap_on = 1;
+        }
         if (s_cap_on)
             fprintf(stderr, "[APU] capturing the output to apu_capture_0.wav /"
                     " apu_capture_1.wav (30 s each, alternating)\n");
@@ -150,6 +154,10 @@ static void cap_frame(const int16_t (*out)[2], const float *fx)
             return;
         }
         cap_header(s_cap, 0);
+        {   /* v199: where this file starts, against the log's t= */
+            extern long long apu_dbg_ms(void);
+            fprintf(stderr, "[APU] capture %s starts at t=%lld\n", name, apu_dbg_ms());
+        }
     }
     for (i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
         float x = fx[i] * 32767.0f;
