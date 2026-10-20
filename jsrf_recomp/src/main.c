@@ -922,6 +922,33 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
             g_ebx, g_esi, g_edi);
         fprintf(stderr, "  Xbox VA of fault: 0x%08X\n",
             (uint32_t)(fault_addr - (uintptr_t)g_xbox_mem_offset));
+        {   /* v196c: enough to find the instruction without the player's build:
+             * where in the exe, the host registers and the code bytes there */
+            CONTEXT *c = ep->ContextRecord;
+            uintptr_t base = (uintptr_t)GetModuleHandleA(NULL), rip = (uintptr_t)c->Rip;
+            const uint8_t *code = (const uint8_t *)rip;
+            int i;
+            fprintf(stderr, "  exe offset: 0x%llX (exe at 0x%llX)\n",
+                    (unsigned long long)(rip - base), (unsigned long long)base);
+            fprintf(stderr, "  host regs: rax=%016llX rbx=%016llX rcx=%016llX rdx=%016llX\n",
+                    c->Rax, c->Rbx, c->Rcx, c->Rdx);
+            fprintf(stderr, "  host regs: rsi=%016llX rdi=%016llX rbp=%016llX rsp=%016llX\n",
+                    c->Rsi, c->Rdi, c->Rbp, c->Rsp);
+            fprintf(stderr, "  host regs: r8=%016llX r9=%016llX r10=%016llX r11=%016llX\n",
+                    c->R8, c->R9, c->R10, c->R11);
+            fprintf(stderr, "  host regs: r12=%016llX r13=%016llX r14=%016llX r15=%016llX\n",
+                    c->R12, c->R13, c->R14, c->R15);
+            fprintf(stderr, "  code at RIP-16:");
+            for (i = -16; i < 32; i++)
+                fprintf(stderr, "%s%02X", i == 0 ? " [" : " ", code[i]);
+            fprintf(stderr, "\n  stack:");
+            for (i = 0; i < 16; i++) {
+                uintptr_t v = ((const uintptr_t *)(uintptr_t)c->Rsp)[i];
+                if (v >= base && v < base + 0x10000000u)
+                    fprintf(stderr, " +0x%llX", (unsigned long long)(v - base));
+            }
+            fprintf(stderr, "  (exe offsets found on the host stack)\n");
+        }
         print_guest_context((void *)ep->ContextRecord->Rip);
 
         /*
@@ -976,7 +1003,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     fprintf(stderr, "[CONFIG] %s layout, game files in %s; %d setting(s) from %s\n",
             g_portable ? "portable" : "classic", g_game_dir, g_ini_count,
             g_ini_count ? g_ini_path : "no jsrf.ini");
-    fprintf(stderr, "[CONFIG] build v196b, compiled " __DATE__ " " __TIME__ "\n");
+    fprintf(stderr, "[CONFIG] build v196c, compiled " __DATE__ " " __TIME__ "\n");
 
     /* Install VEH handler (first handler in chain) */
     /* Load symbols up front rather than from inside the handler: at fault
@@ -1050,6 +1077,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             _putenv("RECOMP_DEFER_APC=1");
         else if (!strcmp(r, "0"))
             _putenv("RECOMP_DEFER_APC=");
+    }
+    {   /* v196c: read once here, on the only thread, before any other starts */
+        extern int apu_audio_debug(void);
+        apu_audio_debug();
     }
     if (!xbox_MemoryLayoutInit(xbe_data, xbe_size)) {
         MessageBoxA(NULL, "Failed to initialize Xbox memory layout.\n"

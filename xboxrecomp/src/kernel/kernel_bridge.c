@@ -2341,7 +2341,17 @@ static int kdbg_on(void)
 #define KEV_N 24
 static struct { uint32_t va; LONG sets, waits, quick; double sum_ms, max_ms; } s_kev[KEV_N];
 static CRITICAL_SECTION s_kev_cs;
-static int s_kev_init;
+static volatile LONG s_kev_state;      /* 0 none, 1 being set up, 2 ready (two threads may race to it) */
+static void kev_ready(void)
+{
+    if (s_kev_state == 2) return;
+    if (InterlockedCompareExchange(&s_kev_state, 1, 0) == 0) {
+        InitializeCriticalSection(&s_kev_cs);
+        InterlockedExchange(&s_kev_state, 2);
+    } else {
+        while (s_kev_state != 2) YieldProcessor();
+    }
+}
 static int kev_slot(uint32_t va)
 {
     int i, free_i = -1;
@@ -2356,7 +2366,7 @@ static void kev_note(uint32_t va, int is_set, double wait_ms)
 {
     int i;
     if (!kdbg_on() || !va) return;
-    if (!s_kev_init) { InitializeCriticalSection(&s_kev_cs); s_kev_init = 1; }
+    kev_ready();
     EnterCriticalSection(&s_kev_cs);
     i = kev_slot(va);
     if (i >= 0) {
@@ -2381,7 +2391,7 @@ static double kev_ms(void)
 static void kev_report(void)
 {
     int i, k, shown = 0;
-    if (!s_kev_init) return;
+    if (s_kev_state != 2) return;
     EnterCriticalSection(&s_kev_cs);
     for (k = 0; k < 6; k++) {            /* the six most waited on */
         int best = -1;
