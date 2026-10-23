@@ -934,11 +934,14 @@ static const char *FS =
 "#else\n"
 "    float zl = v_z * u_zs2, ww = (v_iw != 0.0) ? 1.0 / v_iw : 1.0;\n"
 "#endif\n"
-"    /* v197d: 2D and orthographic batches (every w 1: the HUD, menus, the\n"
-"     * map) have no distance to go by; they keep z, reversed, in 0.5..1,\n"
-"     * in front of the 3D scene's 0.001/w (kept under 0.5) */\n"
-"    gl_FragDepth = (v_flat > 0.5) ? 1.0 - 0.5 * clamp(zl, 0.0, 1.0)\n"
-"                                  : clamp(1.0e-3 / max(ww, 2.0e-3), 0.0, 0.5);\n"
+"    /* v197e: two bands. Nearer than WDEPTH_NEAR (and everything 2D or\n"
+"     * orthographic, every w 1): the title's own z, reversed, in 0.5..1, so\n"
+"     * close things -- menus, the map screen, the HUD -- order exactly as on\n"
+"     * the console whatever camera drew them. Further out: WDEPTH_NEAR/w in\n"
+"     * 0..0.5, where z/w had run out of precision. Any projection puts its\n"
+"     * near part in front of its far part, so the bands never disagree. */\n"
+"    gl_FragDepth = (v_flat > 0.5 || ww < WDEPTH_NEAR) ? 1.0 - 0.5 * clamp(zl, 0.0, 1.0)\n"
+"                                                    : 0.5 * WDEPTH_NEAR / ww;\n"
 "  }\n"
 "#endif\n"
 "}\n";
@@ -1020,6 +1023,22 @@ static int wdepth(void)
     return v;
 }
 
+/* v197e: RECOMP_GL_WDEPTH_NEAR, the distance (w) out to which the title's
+ * own z is kept (default 16) */
+static double wdepth_near(void)
+{
+    static double v = -1.0;
+    if (v < 0.0) {
+        const char *e = getenv("RECOMP_GL_WDEPTH_NEAR");
+        v = e ? atof(e) : 16.0;
+        if (v < 0.01) v = 0.01;
+        if (wdepth())
+            fprintf(stderr, "[GL] title's z kept out to w %g, 1/w beyond"
+                    " (RECOMP_GL_WDEPTH_NEAR)\n", v);
+    }
+    return v;
+}
+
 static GLenum wdepth_func(GLenum f)
 {
     if (!wdepth()) return f;
@@ -1059,7 +1078,10 @@ static GLuint compile(GLenum type, const char *src)
         srcs[0] = ver;
         {
             static char defs[192];
-            snprintf(defs, sizeof defs, "%s%s%s%s%s%s%s", wdepth() ? "#define WDEPTH 1\n" : "",
+            static char wd[64];
+            if (wdepth()) snprintf(wd, sizeof wd, "#define WDEPTH 1\n#define WDEPTH_NEAR %.6f\n", wdepth_near());
+            else wd[0] = 0;
+            snprintf(defs, sizeof defs, "%s%s%s%s%s%s%s", wd,
                      old_clip() ? "#define OLD_CLIP 1\n" : "",
                      no_zcull() ? "#define NO_ZCULL 1\n" : "",
                      no_zcheck() ? "#define ZTOL 1.0e30\n" : "",
@@ -1145,8 +1167,11 @@ static void cache_path(char *b, size_t n, const char *vsrc, const char *fsrc)
         h = fnv64(h, "BUMP_OLD_LOD");
     if (fog_vertex())
         h = fnv64(h, "FOG_PER_VERTEX");
-    if (wdepth())
-        h = fnv64(h, "WDEPTH");
+    if (wdepth()) {
+        char wd[48];
+        snprintf(wd, sizeof wd, "WDEPTH%.6f", wdepth_near());
+        h = fnv64(h, wd);
+    }
 #if defined(_WIN32)
     snprintf(b, n, "shader_cache\\%016llx.bin", (unsigned long long)h);
 #else
@@ -5414,7 +5439,7 @@ void nv2a_gl_clear(const NvGlState *st, uint32_t param, uint32_t argb,
         glDepthMask(GL_TRUE);
         {
             double d = st->zmax > 0.0f ? zclear / st->zmax : 1.0;
-            glClearDepth(wdepth() ? (d >= 0.999999 ? 0.0 : 1.0 - d) : d);
+            glClearDepth(wdepth() ? (d >= 0.999999 ? 0.0 : 1.0 - 0.5 * d) : d);
         }
         bits |= GL_DEPTH_BUFFER_BIT;
     }
