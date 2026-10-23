@@ -28,7 +28,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_00077730", "sub_0011AC50",                                   # 4:3-only screens
          "D3D8_D3DDevice_SetViewport",  # v187r: split screen seen (HUD not moved)
          "sub_000520D0", "sub_0004AC80",  # v187y: [MSSN] the mission's stage number
-         "D3D8_D3DDevice_DrawIndexedVertices", "D3D8_D3DDevice_DrawVertices")  # v198: [DRAWWHO]
+         "D3D8_D3DDevice_DrawIndexedVertices", "D3D8_D3DDevice_DrawVertices",  # v198: [DRAWWHO]
+         "sub_0006B6A0", "sub_0006B8F0", "sub_0006BA80", "sub_0006C360")  # v198c: all map areas
 
 
 def main():

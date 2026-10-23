@@ -2238,3 +2238,55 @@ void D3D8_D3DDevice_DrawVertices(void)
     draw_who("vertices", MEM32(g_esp + 4), MEM32(g_esp + 8), MEM32(g_esp + 12));
     D3D8_D3DDevice_DrawVertices_gen();
 }
+
+/* ── v198c: the map's area visibility (the pop-in) ───────────────────────
+ *
+ * v198b found it. A map is split into areas (up to 256). Every frame
+ * sub_0006A970 clears the bitset at 0x20C6C8 (8 words, in the object at
+ * 0x20C6C0) and sets the bits of the areas whose volume holds the given
+ * point (sub_0004A6F0), and of the areas listed as visible from them. The
+ * map's draw passes (sub_0006B6A0, sub_0006B8F0, sub_0006BA80, sub_0006C360)
+ * skip every area whose bit is clear, so a building appears when you cross
+ * into an area that lists it. The real Xbox does the same.
+ * RECOMP_DRAW_ALL_AREAS=1 sets every bit for the length of those passes and
+ * puts the bitset back afterwards, so only drawing changes: what the game
+ * uses the bitset for otherwise (objects, collision, triggers) is not
+ * touched. */
+extern void sub_0006B6A0_gen(void);
+extern void sub_0006B8F0_gen(void);
+extern void sub_0006BA80_gen(void);
+extern void sub_0006C360_gen(void);
+
+static int all_areas_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_DRAW_ALL_AREAS");
+        on = e && atoi(e);
+        fprintf(stderr, "[AREAS] map areas: %s (RECOMP_DRAW_ALL_AREAS)\n",
+                on ? "all drawn, whatever the game marks visible" : "as the game marks them");
+    }
+    return on;
+}
+
+#define AREA_PASS(name)                                                      \
+void name(void)                                                              \
+{                                                                            \
+    uint32_t keep[8], k;                                                     \
+    if (!all_areas_on()) {                                                   \
+        name##_gen();                                                        \
+        return;                                                              \
+    }                                                                        \
+    for (k = 0; k < 8; k++) {                                                \
+        keep[k] = MEM32(0x20C6C8u + 4 * k);                                  \
+        MEM32(0x20C6C8u + 4 * k) = 0xFFFFFFFFu;                              \
+    }                                                                        \
+    name##_gen();                                                            \
+    for (k = 0; k < 8; k++)                                                  \
+        MEM32(0x20C6C8u + 4 * k) = keep[k];                                  \
+}
+
+AREA_PASS(sub_0006B6A0)
+AREA_PASS(sub_0006B8F0)
+AREA_PASS(sub_0006BA80)
+AREA_PASS(sub_0006C360)
