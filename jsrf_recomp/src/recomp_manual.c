@@ -2140,3 +2140,97 @@ void sub_00153FE0(void)
     MEM32(cam + 0x48) = fov48;
     MEM32(cam + 0x54) = tan54;
 }
+
+/* ── v198: who draws what (the pop-in hunt) ──────────────────────────────
+ *
+ * RECOMP_DRAW_WHO=1 wraps D3DDevice_DrawIndexedVertices and
+ * D3DDevice_DrawVertices. Each draw's guest call chain (return addresses on
+ * the stack that follow a direct or an indirect call -- the level's objects
+ * draw through virtual functions) is hashed. A chain not seen in the last
+ * two seconds is logged as [DRAWWHO] new, with the time and the chain, so the
+ * draws that start when a building pops in can be told apart and followed
+ * up to the code that decided to draw them. F9 writes a [DRAWWHO] mark line.
+ * At most 4000 lines. */
+extern void D3D8_D3DDevice_DrawIndexedVertices_gen(void);
+extern void D3D8_D3DDevice_DrawVertices_gen(void);
+
+static int dw_is_ret(uint32_t v)
+{
+    if (v < 0x00011010u || v >= 0x0018C000u)
+        return 0;
+    if (MEM8(v - 5) == 0xE8)                             /* call rel32 */
+        return 1;
+    if (MEM8(v - 2) == 0xFF && ((MEM8(v - 1) >> 3) & 7) == 2)   /* call [reg], call reg */
+        return 1;
+    if (MEM8(v - 3) == 0xFF && ((MEM8(v - 2) >> 3) & 7) == 2)   /* call [reg+d8] */
+        return 1;
+    if (MEM8(v - 6) == 0xFF && ((MEM8(v - 5) >> 3) & 7) == 2)   /* call [reg+d32] */
+        return 1;
+    return 0;
+}
+
+static void draw_who(const char *what, uint32_t a0, uint32_t a1)
+{
+    static int on = -1;
+    static struct { uint64_t key; unsigned long long last; } tab[8192];
+    static unsigned lines;
+    static int f9_was;
+    uint32_t ret[14], n = 0, k;
+    uint64_t h = 0xCBF29CE484222325ull;
+    unsigned long long now;
+    uint32_t slot, i;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_DRAW_WHO");
+        on = e && atoi(e);
+        if (on)
+            fprintf(stderr, "[DRAWWHO] on: new draw call chains are logged (F9 = mark)\n");
+    }
+    if (!on || lines >= 4000)
+        return;
+    now = (unsigned long long)GetTickCount64();
+    {
+        int f9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+        if (f9 && !f9_was) {
+            fprintf(stderr, "[DRAWWHO] t=%llu ms ===== MARK (F9) =====\n", now);
+            lines++;
+        }
+        f9_was = f9;
+    }
+    for (k = 0; k < 160 && n < 14; k++) {
+        uint32_t v = MEM32(g_esp + 4 * k);
+        if (dw_is_ret(v))
+            ret[n++] = v;
+    }
+    for (k = 0; k < n; k++)
+        h = (h ^ ret[k]) * 0x100000001B3ull;
+    slot = (uint32_t)(h ^ (h >> 31)) & 8191;
+    for (i = 0; i < 8192; i++, slot = (slot + 1) & 8191) {
+        if (!tab[slot].key || tab[slot].key == h)
+            break;
+    }
+    if (i == 8192)
+        return;
+    if (tab[slot].key == h && now - tab[slot].last < 2000) {
+        tab[slot].last = now;
+        return;
+    }
+    tab[slot].key = h;
+    tab[slot].last = now;
+    fprintf(stderr, "[DRAWWHO] t=%llu ms new %s (%08X %08X); calls:", now, what, a0, a1);
+    for (k = 0; k < n; k++)
+        fprintf(stderr, " %08X", ret[k]);
+    fputc('\n', stderr);
+    lines++;
+}
+
+void D3D8_D3DDevice_DrawIndexedVertices(void)
+{
+    draw_who("indexed", MEM32(g_esp + 4), MEM32(g_esp + 8));
+    D3D8_D3DDevice_DrawIndexedVertices_gen();
+}
+
+void D3D8_D3DDevice_DrawVertices(void)
+{
+    draw_who("vertices", MEM32(g_esp + 4), MEM32(g_esp + 8));
+    D3D8_D3DDevice_DrawVertices_gen();
+}

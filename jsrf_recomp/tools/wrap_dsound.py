@@ -27,7 +27,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_000F7720", "sub_000F7990",   # v191b: letterbox bars, edge push
          "sub_00077730", "sub_0011AC50",                                   # 4:3-only screens
          "D3D8_D3DDevice_SetViewport",  # v187r: split screen seen (HUD not moved)
-         "sub_000520D0", "sub_0004AC80")  # v187y: [MSSN] the mission's stage number
+         "sub_000520D0", "sub_0004AC80",  # v187y: [MSSN] the mission's stage number
+         "D3D8_D3DDevice_DrawIndexedVertices", "D3D8_D3DDevice_DrawVertices")  # v198: [DRAWWHO]
 
 
 def main():
