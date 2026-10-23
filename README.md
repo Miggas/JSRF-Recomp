@@ -408,6 +408,7 @@ off — delete the `;` to switch it on. The full list with explanations is in
 |---|---|
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480 (original), `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. Higher is sharper and needs a stronger GPU. |
 | `RECOMP_GL_ANISO=16` | **Anisotropic filtering** (`2`, `4`, `8` or `16`): sharper ground and walls seen at an angle. Off when not set, as on the Xbox. |
+| `RECOMP_GL_WDEPTH=0` | Turns off the distance-precise depth buffer and goes back to the console's 24-bit z. On by default, it stops distant textures and shadows from flickering (surfaces a few centimetres apart fighting once they are far away). Up to `RECOMP_GL_WDEPTH_NEAR` (default `128`) the game's own depth is kept, so menus, the map screen and the HUD stack as on the console. |
 | `RECOMP_GL_EDGE=0` | Turns off the edge fix: full-screen layers (shadow darkening, fades, cutscene bars) are pushed one pixel past the screen edges, so no line shows along the top and left. On by default. |
 | `RECOMP_AUDIO_DEBUG=1` | Audio debugging: logs every voice, the streamed music and dialogue buffers, timing, slow file reads, and records the last 30-60 s of sound to `apu_capture_0.wav` / `apu_capture_1.wav`. Big log; for bug reports only. |
 | `RECOMP_VBLANK_ACK=executor` | Testing only: goes back to the pre-v196e vblank handling, which lost about 40% of vblanks (the music and dialogue crackle). |

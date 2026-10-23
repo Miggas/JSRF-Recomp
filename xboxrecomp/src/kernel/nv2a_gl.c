@@ -1005,7 +1005,7 @@ static int bump_old(void)
     return v;
 }
 
-/* v197b: RECOMP_GL_WDEPTH=1. Depth is stored as 0.001/w in a float depth
+/* v197b: RECOMP_GL_WDEPTH (on by default since v197f, =0 off). Depth is stored as 0.001/w in a float depth
  * buffer (reversed: near is large), with every depth func flipped to match
  * and "far" cleared to 0. The tests give the same answers as with z/w, but
  * distant surfaces keep their precision; with z/w everything past a few
@@ -1016,21 +1016,22 @@ static int wdepth(void)
     static int v = -1;
     if (v < 0) {
         const char *e = getenv("RECOMP_GL_WDEPTH");
-        v = e && atoi(e);
-        if (v)
-            fprintf(stderr, "[GL] reversed float depth from 1/w (RECOMP_GL_WDEPTH)\n");
+        v = !(e && !strcmp(e, "0"));                 /* v197f: on by default */
+        fprintf(stderr, "[GL] depth: %s (RECOMP_GL_WDEPTH)\n",
+                v ? "reversed float, 1/w beyond the near band"
+                  : "24-bit z, as the console stores it");
     }
     return v;
 }
 
 /* v197e: RECOMP_GL_WDEPTH_NEAR, the distance (w) out to which the title's
- * own z is kept (default 16) */
+ * own z is kept (default 128 since v197f) */
 static double wdepth_near(void)
 {
     static double v = -1.0;
     if (v < 0.0) {
         const char *e = getenv("RECOMP_GL_WDEPTH_NEAR");
-        v = e ? atof(e) : 16.0;
+        v = e ? atof(e) : 128.0;                      /* v197f: menus need 128 */
         if (v < 0.01) v = 0.01;
         if (wdepth())
             fprintf(stderr, "[GL] title's z kept out to w %g, 1/w beyond"
