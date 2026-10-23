@@ -2036,6 +2036,7 @@ typedef struct {
     uint8_t *sb;                  /* stencil plane, when the test is on */
     int minx, maxx, miny, maxy, use_rc, textured;
     int colour_noop;              /* blend/mask leave colour unchanged */
+    int wdepth;                   /* v197: depth is w (RECOMP_WBUFFER) */
 } XfTri;
 
 typedef struct { uint64_t depth_fail, pixels; uint32_t zpass; } XfCount;
@@ -2094,6 +2095,11 @@ static void xf_rows(const XfTri *T, int y0, int step, XfCount *cnt)
             /* w1 is opposite a, w2 opposite b, w0 opposite c. */
             l0 = w1 * T->inv_area; l1 = w2 * T->inv_area; l2 = w0 * T->inv_area;
             z = l0 * a[2] + l1 * b[2] + l2 * c[2];
+            if (T->wdepth) {
+                /* v197: w, from the perspective-interpolated 1/w */
+                float piw = l0 * T->iw[0] + l1 * T->iw[1] + l2 * T->iw[2];
+                z = piw > 0.0f ? 1.0f / piw : 3.0e38f;
+            }
             {
                 float *zp = T->zb ? &T->zb[(size_t)y * NV_ZBUF_W + x] : NULL;
                 uint8_t *sp = T->sb ? &T->sb[(size_t)y * NV_ZBUF_W + x] : NULL;
@@ -2433,6 +2439,24 @@ static void raster_xf_triangle(const Nv2aVshOutput *va, const Nv2aVshOutput *vb,
     s_gpu.xf_seeded = 1;
     if (!surface_begin_batch(T.mem))
         return;
+    {
+        /* v197: RECOMP_WBUFFER=1 (software rasteriser) stores and tests w
+         * instead of z/w. Both grow with distance, so every depth test gives
+         * the same answer, but a float w keeps the same relative precision at
+         * any distance, where z/w crowds everything past a few metres into the
+         * last few thousand steps of the 24-bit range (the distant flicker).
+         * Batches whose vertices all have w = 1 (2D, pre-transformed without
+         * perspective) keep z. */
+        static int wb = -1;
+        if (wb < 0) {
+            const char *e = getenv("RECOMP_WBUFFER");
+            wb = e && atoi(e);
+            if (wb)
+                fprintf(stderr, "[GPU] software rasteriser: depth is w (RECOMP_WBUFFER)\n");
+        }
+        T.wdepth = wb && !(v[0]->pos[3] == 1.0f && v[1]->pos[3] == 1.0f
+                           && v[2]->pos[3] == 1.0f);
+    }
     if (s_gpu.depth_test || s_gpu.depth_mask || s_gpu.stencil_test)
         T.zb = zbuf_current(1);
     if (s_gpu.stencil_test)
