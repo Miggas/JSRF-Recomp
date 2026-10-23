@@ -922,6 +922,11 @@ static const char *FS =
 "  } else {\n"
 "    gl_FragDepth = gl_FragCoord.z;\n"
 "  }\n"
+"#if defined(WDEPTH) && !defined(NO_FRAGDEPTH)\n"
+"  /* v197b: reversed depth from 1/w (RECOMP_GL_WDEPTH): a float buffer\n"
+"   * keeps the same relative precision at any distance */\n"
+"  gl_FragDepth = clamp(1.0e-3 * v_iw, 0.0, 1.0);\n"
+"#endif\n"
 "}\n";
 
 /* v94: RECOMP_GL_OLD_CLIP=1 builds every shader with OLD_CLIP defined: the
@@ -983,6 +988,36 @@ static int bump_old(void)
     return v;
 }
 
+/* v197b: RECOMP_GL_WDEPTH=1. Depth is stored as 0.001/w in a float depth
+ * buffer (reversed: near is large), with every depth func flipped to match
+ * and "far" cleared to 0. The tests give the same answers as with z/w, but
+ * distant surfaces keep their precision; with z/w everything past a few
+ * metres shares the last few thousand steps of the 24-bit range, and close
+ * layers fight (the distant flicker, v197 in the software rasteriser). */
+static int wdepth(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("RECOMP_GL_WDEPTH");
+        v = e && atoi(e);
+        if (v)
+            fprintf(stderr, "[GL] reversed float depth from 1/w (RECOMP_GL_WDEPTH)\n");
+    }
+    return v;
+}
+
+static GLenum wdepth_func(GLenum f)
+{
+    if (!wdepth()) return f;
+    switch (f) {
+    case GL_LESS:    return GL_GREATER;
+    case GL_LEQUAL:  return GL_GEQUAL;
+    case GL_GREATER: return GL_LESS;
+    case GL_GEQUAL:  return GL_LEQUAL;
+    default:         return f;
+    }
+}
+
 /* v130: RECOMP_GL_FOG_VERTEX=1 works the fog factor out per vertex (pre-v130) */
 static int fog_vertex(void)
 {
@@ -1001,7 +1036,7 @@ static GLuint compile(GLenum type, const char *src)
     GLint ok = 0;
     const char *srcs[3];
     const char *nl = strchr(src, '\n');
-    if ((old_clip() || no_zcull() || no_zcheck() || simple_fs() || bump_old() || fog_vertex()) && nl && !strncmp(src, "#version", 8)) {
+    if ((old_clip() || no_zcull() || no_zcheck() || simple_fs() || bump_old() || fog_vertex() || wdepth()) && nl && !strncmp(src, "#version", 8)) {
         /* after the #version line, which has to come first */
         static char ver[64];
         size_t n = (size_t)(nl - src) + 1;
@@ -1009,8 +1044,9 @@ static GLuint compile(GLenum type, const char *src)
         memcpy(ver, src, n); ver[n] = 0;
         srcs[0] = ver;
         {
-            static char defs[160];
-            snprintf(defs, sizeof defs, "%s%s%s%s%s%s", old_clip() ? "#define OLD_CLIP 1\n" : "",
+            static char defs[192];
+            snprintf(defs, sizeof defs, "%s%s%s%s%s%s%s", wdepth() ? "#define WDEPTH 1\n" : "",
+                     old_clip() ? "#define OLD_CLIP 1\n" : "",
                      no_zcull() ? "#define NO_ZCULL 1\n" : "",
                      no_zcheck() ? "#define ZTOL 1.0e30\n" : "",
                      simple_fs() ? "#define SIMPLE_FS 1\n" : "",
@@ -1095,6 +1131,8 @@ static void cache_path(char *b, size_t n, const char *vsrc, const char *fsrc)
         h = fnv64(h, "BUMP_OLD_LOD");
     if (fog_vertex())
         h = fnv64(h, "FOG_PER_VERTEX");
+    if (wdepth())
+        h = fnv64(h, "WDEPTH");
 #if defined(_WIN32)
     snprintf(b, n, "shader_cache\\%016llx.bin", (unsigned long long)h);
 #else
@@ -1571,7 +1609,7 @@ static GlProg *zvar(GlProg *p, const NvGlState *st)
         e = getenv("RECOMP_GL_NZ_TWINS");
         twins = !(e && !strcmp(e, "0"));
     }
-    if (!twins || !p || !p->id || !p->vsrc || (direct && !st->zdirect_off))
+    if (!twins || !p || !p->id || !p->vsrc || (direct && !st->zdirect_off) || wdepth())
         return p;
     if (!p->nz) {
         GlProg *q = (GlProg *)calloc(1, sizeof *q);
@@ -2458,7 +2496,8 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
     if (!s_zeta[lru].rb)
         glGenRenderbuffers(1, &s_zeta[lru].rb);
     glBindRenderbuffer(GL_RENDERBUFFER, s_zeta[lru].rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, (GLsizei)w, (GLsizei)h);
+    glRenderbufferStorage(GL_RENDERBUFFER, wdepth() ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8,
+                          (GLsizei)w, (GLsizei)h);
     s_zeta[lru].key = key; s_zeta[lru].w = w; s_zeta[lru].h = h;
     /* A new depth buffer starts at "far" with stencil 0, as the software
      * one does. */
@@ -2471,7 +2510,7 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
         glDisable(GL_SCISSOR_TEST);
         glDepthMask(GL_TRUE);
         glStencilMask(0xFF);
-        glClearDepth(1.0);
+        glClearDepth(wdepth() ? 0.0 : 1.0);
         glClearStencil(0);
         glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         glEnable(GL_SCISSOR_TEST);
@@ -4077,7 +4116,7 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
     if (FF_CH(depth_test, stencil_test)) {
         if (st->depth_test) {
             glEnable(GL_DEPTH_TEST);
-            glDepthFunc(st->depth_func ? st->depth_func : GL_LESS);
+            glDepthFunc(wdepth_func(st->depth_func ? st->depth_func : GL_LESS));
         } else {
             glDisable(GL_DEPTH_TEST);
         }
@@ -5359,7 +5398,10 @@ void nv2a_gl_clear(const NvGlState *st, uint32_t param, uint32_t argb,
     }
     if (param & 0x01) {
         glDepthMask(GL_TRUE);
-        glClearDepth(st->zmax > 0.0f ? zclear / st->zmax : 1.0);
+        {
+            double d = st->zmax > 0.0f ? zclear / st->zmax : 1.0;
+            glClearDepth(wdepth() ? (d >= 0.999999 ? 0.0 : 1.0 - d) : d);
+        }
         bits |= GL_DEPTH_BUFFER_BIT;
     }
     if (param & 0x02) {
