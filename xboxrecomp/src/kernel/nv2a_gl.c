@@ -925,7 +925,11 @@ static const char *FS =
 "#if defined(WDEPTH) && !defined(NO_FRAGDEPTH)\n"
 "  /* v197b: reversed depth from 1/w (RECOMP_GL_WDEPTH): a float buffer\n"
 "   * keeps the same relative precision at any distance */\n"
+"#ifdef OLD_CLIP\n"
+"  gl_FragDepth = clamp(1.0e-3 / max(v_zw.y, 1.0e-3), 0.0, 1.0);\n"
+"#else\n"
 "  gl_FragDepth = clamp(1.0e-3 * v_iw, 0.0, 1.0);\n"
+"#endif\n"
 "#endif\n"
 "}\n";
 
