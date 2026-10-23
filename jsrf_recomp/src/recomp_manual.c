@@ -2256,30 +2256,88 @@ extern void sub_0006B6A0_gen(void);
 extern void sub_0006B8F0_gen(void);
 extern void sub_0006BA80_gen(void);
 extern void sub_0006C360_gen(void);
+extern void sub_0006A970_gen(void);
 
-static int all_areas_on(void)
+/* v198d: RECOMP_DRAW_AREAS. "all" (or RECOMP_DRAW_ALL_AREAS=1) draws every
+ * area, which cost 99th Street about 10 fps. A number n widens the game's
+ * own set instead: n times over, every area listed as visible from an area
+ * already in the set joins it -- the areas you would see from the areas you
+ * can see. Pop-in then happens n crossings further away. */
+static int areas_mode(void)
 {
-    static int on = -1;
-    if (on < 0) {
-        const char *e = getenv("RECOMP_DRAW_ALL_AREAS");
-        on = e && atoi(e);
-        fprintf(stderr, "[AREAS] map areas: %s (RECOMP_DRAW_ALL_AREAS)\n",
-                on ? "all drawn, whatever the game marks visible" : "as the game marks them");
+    static int m = -2;
+    if (m == -2) {
+        const char *e = getenv("RECOMP_DRAW_AREAS"), *a = getenv("RECOMP_DRAW_ALL_AREAS");
+        m = 0;
+        if (e) m = (!strcmp(e, "all")) ? -1 : atoi(e);
+        else if (a && atoi(a)) m = -1;
+        if (m > 8) m = 8;
+        if (m < -1) m = 0;
+        if (m == -1)
+            fprintf(stderr, "[AREAS] map areas: all drawn (RECOMP_DRAW_AREAS=all)\n");
+        else if (m > 0)
+            fprintf(stderr, "[AREAS] map areas: the game's set widened by %d step(s)"
+                    " of its visible lists (RECOMP_DRAW_AREAS)\n", m);
+        else
+            fprintf(stderr, "[AREAS] map areas: as the game marks them (RECOMP_DRAW_AREAS)\n");
     }
-    return on;
+    return m;
+}
+
+static uint32_t s_area_draw[8];     /* the set the draw passes use */
+static int s_area_draw_ok;
+
+void sub_0006A970(void)
+{
+    uint32_t obj = g_ecx, map, areas, n, i, k, hop;
+    int m = areas_mode();
+    sub_0006A970_gen();
+    if (m <= 0 || obj != 0x20C6C0u)
+        return;
+    s_area_draw_ok = 0;
+    map = MEM32(obj + 4);
+    if (!map || !guest_range_ok(map, 12))
+        return;
+    areas = MEM32(map + 4);
+    n = MEM32(map + 8);
+    if (n > 256 || !areas || !guest_range_ok(areas, n * 0x154u))
+        return;
+    for (k = 0; k < 8; k++)
+        s_area_draw[k] = MEM32(obj + 8 + 4 * k);
+    for (hop = 0; hop < (uint32_t)m; hop++) {
+        uint32_t cur[8];
+        memcpy(cur, s_area_draw, sizeof cur);
+        for (i = 0; i < n; i++) {
+            uint32_t a = areas + i * 0x154u, list, cnt, j;
+            if (!(cur[i >> 5] & (1u << (i & 31))))
+                continue;
+            list = MEM32(a + 0x98);
+            cnt = MEM32(a + 0x9C);
+            if (!cnt || cnt > 256 || !guest_range_ok(list, cnt * 4u))
+                continue;
+            for (j = 0; j < cnt; j++) {
+                uint32_t v = MEM32(list + 4 * j);
+                if (v < 256)
+                    s_area_draw[v >> 5] |= 1u << (v & 31);
+            }
+        }
+    }
+    s_area_draw_ok = 1;
 }
 
 #define AREA_PASS(name)                                                      \
 void name(void)                                                              \
 {                                                                            \
     uint32_t keep[8], k;                                                     \
-    if (!all_areas_on()) {                                                   \
+    int m = areas_mode();                                                    \
+    if (m == 0 || (m > 0 && !s_area_draw_ok)) {                              \
         name##_gen();                                                        \
         return;                                                              \
     }                                                                        \
     for (k = 0; k < 8; k++) {                                                \
         keep[k] = MEM32(0x20C6C8u + 4 * k);                                  \
-        MEM32(0x20C6C8u + 4 * k) = 0xFFFFFFFFu;                              \
+        MEM32(0x20C6C8u + 4 * k) = m < 0 ? 0xFFFFFFFFu                       \
+                                 : (s_area_draw[k] | keep[k]);               \
     }                                                                        \
     name##_gen();                                                            \
     for (k = 0; k < 8; k++)                                                  \
