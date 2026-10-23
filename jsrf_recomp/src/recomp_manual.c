@@ -2169,7 +2169,7 @@ static int dw_is_ret(uint32_t v)
     return 0;
 }
 
-static void draw_who(const char *what, uint32_t a0, uint32_t a1)
+static void draw_who(const char *what, uint32_t a0, uint32_t a1, uint32_t a2)
 {
     static int on = -1;
     static struct { uint64_t key; unsigned long long last; } tab[8192];
@@ -2203,6 +2203,10 @@ static void draw_who(const char *what, uint32_t a0, uint32_t a1)
     }
     for (k = 0; k < n; k++)
         h = (h ^ ret[k]) * 0x100000001B3ull;
+    /* v198b: and the mesh itself -- every level object draws through the
+     * same chain, so v198 saw a popping building as nothing new */
+    h = (h ^ a1) * 0x100000001B3ull;
+    h = (h ^ a2) * 0x100000001B3ull;
     slot = (uint32_t)(h ^ (h >> 31)) & 8191;
     for (i = 0; i < 8192; i++, slot = (slot + 1) & 8191) {
         if (!tab[slot].key || tab[slot].key == h)
@@ -2216,7 +2220,7 @@ static void draw_who(const char *what, uint32_t a0, uint32_t a1)
     }
     tab[slot].key = h;
     tab[slot].last = now;
-    fprintf(stderr, "[DRAWWHO] t=%llu ms new %s (%08X %08X); calls:", now, what, a0, a1);
+    fprintf(stderr, "[DRAWWHO] t=%llu ms new %s (%08X %08X %08X); calls:", now, what, a0, a1, a2);
     for (k = 0; k < n; k++)
         fprintf(stderr, " %08X", ret[k]);
     fputc('\n', stderr);
@@ -2225,12 +2229,12 @@ static void draw_who(const char *what, uint32_t a0, uint32_t a1)
 
 void D3D8_D3DDevice_DrawIndexedVertices(void)
 {
-    draw_who("indexed", MEM32(g_esp + 4), MEM32(g_esp + 8));
+    draw_who("indexed", MEM32(g_esp + 4), MEM32(g_esp + 8), MEM32(g_esp + 12));
     D3D8_D3DDevice_DrawIndexedVertices_gen();
 }
 
 void D3D8_D3DDevice_DrawVertices(void)
 {
-    draw_who("vertices", MEM32(g_esp + 4), MEM32(g_esp + 8));
+    draw_who("vertices", MEM32(g_esp + 4), MEM32(g_esp + 8), MEM32(g_esp + 12));
     D3D8_D3DDevice_DrawVertices_gen();
 }
