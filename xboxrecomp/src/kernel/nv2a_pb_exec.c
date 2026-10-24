@@ -2869,6 +2869,13 @@ static int gl_state(NvGlState *st)
     st->poly_offset = s_gpu.poly_offset_fill;
     st->poly_factor = s_gpu.poly_offset_factor;
     st->poly_units = s_gpu.poly_offset_units;
+    /* v200d: a z-bias no title uses (recomp_manual.c sets it around JSRF's
+     * backdrop pass) marks the backdrop: drawn at the far plane instead */
+    if (s_gpu.poly_offset_fill && (fabsf(s_gpu.poly_offset_units) >= 1.0e5f
+                                   || fabsf(s_gpu.poly_offset_factor) >= 1.0e5f)) {
+        st->bg_far = 1;
+        st->poly_offset = 0;
+    }
     {
         static int no_cull = -1;
         if (no_cull < 0)

@@ -85,10 +85,10 @@ void xbox_PresentFit(int cw, int ch, int *dw, int *dh);
 typedef struct GlProg {
     GLuint id;
     GLint L_bmat, L_bls, L_osi;
-    GLint L_scr, L_wsk, L_wsc, L_ws2d, L_wsedge, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
+    GLint L_scr, L_bgfar, L_wsk, L_wsc, L_ws2d, L_wsedge, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
     GLint L_s2d[4], L_scube[4];
     /* What this program's uniforms were last set to (apply_state). */
-    int ap_valid, ap_w, ap_h, ap_zdirect, ap_scr, ap_ws2d, ap_wsedge;
+    int ap_valid, ap_w, ap_h, ap_zdirect, ap_scr, ap_ws2d, ap_wsedge, ap_bgfar;
     float ap_wsk, ap_wsc;
     NvGlState ap;
     float ap_poff[3];
@@ -659,7 +659,7 @@ static const char *FS =
 "#endif\n"
 "noperspective in float v_z;\n"
 "noperspective in float v_behind;\nflat in float v_flat;\n"
-"uniform float u_zs2; uniform int u_zdirect; uniform vec3 u_poff;\n"
+"uniform float u_zs2; uniform int u_zdirect; uniform vec3 u_poff; uniform int u_bgfar;\n"
 "#ifndef ZTOL\n#define ZTOL 1.0e-3\n#endif\n"
 "const float u_ztol = ZTOL;\n"
 "out vec4 o_col;\n"
@@ -925,6 +925,18 @@ static const char *FS =
 "  } else {\n"
 "    gl_FragDepth = gl_FragCoord.z;\n"
 "  }\n"
+"#if !defined(NO_FRAGDEPTH)\n"
+"  /* v200d: the backdrop at the far plane: behind every map piece, shown\n"
+"   * only where nothing has been drawn */\n"
+"  if (u_bgfar != 0) {\n"
+"#ifdef WDEPTH\n"
+"    gl_FragDepth = 0.0;\n"
+"#else\n"
+"    gl_FragDepth = 1.0;\n"
+"#endif\n"
+"    return;\n"
+"  }\n"
+"#endif\n"
 "#if defined(WDEPTH) && !defined(NO_FRAGDEPTH)\n"
 "  /* v197b: reversed depth from 1/w (RECOMP_GL_WDEPTH): a float buffer\n"
 "   * keeps the same relative precision at any distance */\n"
@@ -1318,7 +1330,7 @@ static void get_locs(GlProg *p)
     glUseProgram(id);
 #define U(v) p->L_##v = glGetUniformLocation(id, "u_" #v)
     U(bmat); U(bls); U(osi);
-    U(scr); U(wsk); U(wsc); U(ws2d); U(wsedge); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
+    U(scr); U(bgfar); U(wsk); U(wsc); U(ws2d); U(wsedge); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
     U(aocw); U(f0); U(f1); U(final0); U(final1); U(fc0); U(fc1); U(control); U(sp);
     U(clipmode); U(fogc); U(atest); U(afunc); U(aref); U(tscale); U(iscube); U(tvalid);
     U(vsmode); U(present); U(c); U(prog); U(nins); U(comp); U(mv); U(imv0); U(texm);
@@ -1649,7 +1661,8 @@ static GlProg *zvar(GlProg *p, const NvGlState *st)
         e = getenv("RECOMP_GL_NZ_TWINS");
         twins = !(e && !strcmp(e, "0"));
     }
-    if (!twins || !p || !p->id || !p->vsrc || (direct && !st->zdirect_off) || wdepth())
+    if (!twins || !p || !p->id || !p->vsrc || (direct && !st->zdirect_off) || wdepth()
+            || st->bg_far)
         return p;
     if (!p->nz) {
         GlProg *q = (GlProg *)calloc(1, sizeof *q);
@@ -4251,6 +4264,10 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
             glUniform3fv(u_poff, 1, po);
             memcpy(P->ap_poff, po, sizeof po);
         }
+    }
+    if (all || P->ap_bgfar != (int)st->bg_far) {             /* v200d */
+        glUniform1i(P->L_bgfar, (GLint)st->bg_far);
+        P->ap_bgfar = (int)st->bg_far;
     }
     if (all || P->ap_scr != (int)st->screen_space) {
         glUniform1i(u_scr, (GLint)st->screen_space);

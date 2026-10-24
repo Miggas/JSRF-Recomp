@@ -75,6 +75,7 @@ typedef struct {
     uint32_t     clip_plane_mode;
     float        fog_color[4];   /* r g b a */
     NvGlTexture  tex[4];
+    uint32_t     bg_far;         /* v200d: the backdrop, drawn at the far plane */
 } NvGlState;
 
 /* One vertex as the GL backend's shader reads it. */

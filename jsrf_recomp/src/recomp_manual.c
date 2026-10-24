@@ -2356,8 +2356,56 @@ static int area_pass_on(int bit)
     return (mask & bit) != 0;
 }
 
+/* v200d: the backdrop. The game draws a distant backdrop at a fixed
+ * distance; with every area drawn, map pieces further out than it end up
+ * behind it (Dogenzaka Hill). It is kept, but drawn at the far plane, so it
+ * only shows where no map piece is. The pass that draws it is marked for the
+ * renderer with a z-bias of 1000000 -- JSRF never uses z-bias -- set through
+ * the game's own D3DDevice_SetRenderState_ZBias, and the previous z-bias
+ * (D3D keeps it at 0x19E2E8) put back after. RECOMP_BACKDROP_PASSES is the
+ * bit mask of passes treated as backdrop (the bits of
+ * RECOMP_DRAW_AREAS_PASSES; default 4, sub_0006BA80); RECOMP_BACKDROP_FAR=0
+ * turns it off. Only with RECOMP_DRAW_AREAS=all. */
+extern void D3D8_D3DDevice_SetRenderState_ZBias(void);
+
+static int backdrop_pass(int bit)
+{
+    static int mask = -1;
+    if (mask < 0) {
+        const char *e = getenv("RECOMP_BACKDROP_PASSES"), *f = getenv("RECOMP_BACKDROP_FAR");
+        mask = e ? (int)strtol(e, NULL, 0) : 4;
+        if (f && f[0] == '0')
+            mask = 0;
+        if (areas_all())
+            fprintf(stderr, "[AREAS] backdrop at the far plane: passes mask %d"
+                    " (RECOMP_BACKDROP_PASSES)\n", mask);
+    }
+    return areas_all() && (mask & bit) != 0;
+}
+
+static void zbias_set(uint32_t v)
+{
+    uint32_t ra = g_eax, rb = g_ebx, rc = g_ecx, rd = g_edx, rsi = g_esi, rdi = g_edi, rbp = g_ebp;
+    g_esp -= 4; MEM32(g_esp) = v;
+    g_esp -= 4; MEM32(g_esp) = 0;          /* a return address for its ret 4 */
+    D3D8_D3DDevice_SetRenderState_ZBias();
+    g_eax = ra; g_ebx = rb; g_ecx = rc; g_edx = rd; g_esi = rsi; g_edi = rdi; g_ebp = rbp;
+}
+
 #define AREA_PASS(name, bit)                                                 \
+static void area_pass_body_##name(void);                                     \
 void name(void)                                                              \
+{                                                                            \
+    if (backdrop_pass(bit)) {                                                \
+        uint32_t zb = MEM32(0x19E2E8u);                                      \
+        zbias_set(1000000u);                                                 \
+        area_pass_body_##name();                                             \
+        zbias_set(zb);                                                       \
+        return;                                                              \
+    }                                                                        \
+    area_pass_body_##name();                                                 \
+}                                                                            \
+static void area_pass_body_##name(void)                                      \
 {                                                                            \
     uint32_t keep[8], add[8], k;                                             \
     if (!areas_all() || !area_pass_on(bit)) {                                \
