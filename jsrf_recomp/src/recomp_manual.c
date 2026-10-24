@@ -2704,3 +2704,99 @@ AREA_PASS(sub_0006B6A0, 1)
 AREA_PASS(sub_0006B8F0, 2)
 AREA_PASS(sub_0006BA80, 4)
 AREA_PASS(sub_0006C360, 8)
+
+/* ── v201: free camera (RECOMP_FREECAM=1) ────────────────────────────────
+ *
+ * sub_0001DAA0 is the game camera's apply: the renderer's view setup, then
+ * SetPerspective (75 deg, 1, 4000), then sub_001BAF70, a LookAt into the
+ * MMATRIX stack from the camera's eye (+0x44) and target (+0x5C). With the
+ * free camera on, both are swapped for the free camera's for the length of
+ * that call and put back after, so only what is drawn changes; the game's
+ * camera logic, the skater and the area visibility carry on as before.
+ *
+ * Keys (the game window has to have focus): F5 on/off (starts where the
+ * game camera is). Arrow keys look around, numpad 8/5 forward/back, 4/6
+ * left/right, 9/7 up/down; Shift faster, Ctrl slower.
+ * RECOMP_FREECAM_SPEED (default 2, units a frame). Y is up. */
+extern void sub_0001DAA0_gen(void);
+
+void sub_0001DAA0(void)
+{
+    static int on = -1, active, was;
+    static double pos[3], yaw, pitch, speed;
+    uint32_t cam = g_ecx, k;
+    float keep[6], eye[3], at[3];
+    if (on < 0) {
+        const char *e = getenv("RECOMP_FREECAM"), *sp = getenv("RECOMP_FREECAM_SPEED");
+        on = e && e[0] == '1';
+        speed = sp ? atof(sp) : 2.0;
+        if (speed <= 0.0) speed = 2.0;
+        if (on)
+            fprintf(stderr, "[FREECAM] F5 on/off; arrows look, numpad 8/5/4/6 move, 9/7 up/down,"
+                    " Shift faster, Ctrl slower (speed %g)\n", speed);
+    }
+    if (!on || !cam || !guest_range_ok(cam, 0x68)) {
+        sub_0001DAA0_gen();
+        return;
+    }
+    {
+        int f5 = (GetAsyncKeyState(VK_F5) & 0x8000) != 0;
+        if (f5 && !was) {
+            active = !active;
+            if (active) {
+                float e3[3], a3[3];
+                double d[3], len;
+                memcpy(e3, (const void *)XBOX_PTR(cam + 0x44), 12);
+                memcpy(a3, (const void *)XBOX_PTR(cam + 0x5C), 12);
+                for (k = 0; k < 3; k++) { pos[k] = e3[k]; d[k] = (double)a3[k] - e3[k]; }
+                len = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+                if (len > 1e-6) {
+                    yaw = atan2(d[0], d[2]);
+                    pitch = asin(d[1] / len);
+                } else {
+                    yaw = pitch = 0.0;
+                }
+            }
+            fprintf(stderr, "[FREECAM] %s at %.1f %.1f %.1f\n", active ? "on" : "off",
+                    pos[0], pos[1], pos[2]);
+            xbox_SetTitleExtra(active ? "FREE CAMERA (F5)" : "");
+        }
+        was = f5;
+    }
+    if (!active) {
+        sub_0001DAA0_gen();
+        return;
+    }
+    {
+        double s = speed, rs = 0.03, f[3], r[3];
+        if (GetAsyncKeyState(VK_SHIFT) & 0x8000) { s *= 5.0; rs *= 2.0; }
+        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) { s *= 0.2; rs *= 0.5; }
+        if (GetAsyncKeyState(VK_LEFT) & 0x8000)  yaw -= rs;
+        if (GetAsyncKeyState(VK_RIGHT) & 0x8000) yaw += rs;
+        if (GetAsyncKeyState(VK_UP) & 0x8000)    pitch += rs;
+        if (GetAsyncKeyState(VK_DOWN) & 0x8000)  pitch -= rs;
+        if (pitch > 1.55) pitch = 1.55;
+        if (pitch < -1.55) pitch = -1.55;
+        f[0] = sin(yaw) * cos(pitch); f[1] = sin(pitch); f[2] = cos(yaw) * cos(pitch);
+        r[0] = cos(yaw); r[1] = 0.0; r[2] = -sin(yaw);
+        for (k = 0; k < 3; k++) {
+            if (GetAsyncKeyState(VK_NUMPAD8) & 0x8000) pos[k] += f[k] * s;
+            if (GetAsyncKeyState(VK_NUMPAD5) & 0x8000) pos[k] -= f[k] * s;
+            if (GetAsyncKeyState(VK_NUMPAD6) & 0x8000) pos[k] += r[k] * s;
+            if (GetAsyncKeyState(VK_NUMPAD4) & 0x8000) pos[k] -= r[k] * s;
+        }
+        if (GetAsyncKeyState(VK_NUMPAD9) & 0x8000) pos[1] += s;
+        if (GetAsyncKeyState(VK_NUMPAD7) & 0x8000) pos[1] -= s;
+        for (k = 0; k < 3; k++) {
+            eye[k] = (float)pos[k];
+            at[k] = (float)(pos[k] + f[k] * 10.0);
+        }
+    }
+    memcpy(keep, (const void *)XBOX_PTR(cam + 0x44), 12);
+    memcpy(keep + 3, (const void *)XBOX_PTR(cam + 0x5C), 12);
+    memcpy((void *)XBOX_PTR(cam + 0x44), eye, 12);
+    memcpy((void *)XBOX_PTR(cam + 0x5C), at, 12);
+    sub_0001DAA0_gen();
+    memcpy((void *)XBOX_PTR(cam + 0x44), keep, 12);
+    memcpy((void *)XBOX_PTR(cam + 0x5C), keep + 3, 12);
+}
