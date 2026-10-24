@@ -3048,95 +3048,174 @@ static void snd_log(const char *what, uint32_t mgr, uint32_t bank, uint32_t ch, 
                 " listener %.0f %.0f %.0f -> %d\n", what, bank, ch, l[0], l[1], l[2], (int)result);
 }
 
-/* v203c: the game's cut-off, kept up. A positioned sound is checked
- * against 10x its max distance only when it starts (sub_001192E0) and when
- * its object moves it (sub_00118A60). The Chuo Street signs' buzz (bank 52
- * ch 35, shared by the signs) is started once, from the spawn point 646
- * units away (within its 800), and the signs never move it again, so
- * nothing stops it: DirectSound holds it at its quietest, -12 dB (rolloff
- * 0.2, min 5, max 80), wherever you go. Re-entering the map does not start
- * it (the listener is still at 0,0,0 then, 3339 away), which is why the
- * buzz was only there the first time (Miggas). Every positioned sound that
- * starts or moves is remembered with its last position, and each frame of
- * the sound manager (sub_00118610) stops, through the game's own stop
- * (sub_00117F40, bank and channel), any that the listener has left beyond
- * that cut-off -- what the game does when a sound is moved there.
- * RECOMP_SND_CULL=0 turns it off. */
-static struct { uint32_t h; float p[3]; float lim; } s_snd_trk[64];
+/* v203d: the stage's ambient loops (the Chuo Street buzz).
+ *
+ * A stage object of type 0x14 does not become an actor: it queues one of
+ * the stage cues (bank 52, sounds 0x20-0x23) at its position, all played
+ * once when the camera exists (jsrf-rustlang's notes, Gurten). Sound 0x23
+ * (35) is the signs' buzz, a loop; every sign queues it and they share one
+ * voice. Played once, it then runs for the whole visit: on the Xbox it is
+ * only heard near the signs, here DirectSound's fade stops at -12 dB
+ * (rolloff 0.2, min 5, max 80) and it was heard everywhere -- but only on
+ * the first entry from a save (Miggas): on re-entry the listener is still
+ * at 0,0,0 when the cues are played, 3339 away, past the game's cut-off,
+ * so it never starts. v203c stopped it once far away, and it never came
+ * back (Miggas): nothing plays it again.
+ *
+ * Now the positions every sign queues for such a sound are kept, and each
+ * frame of the sound manager (sub_00118610) plays the loop at the nearest
+ * one while the listener is within the sound's max distance, moves it when
+ * another sign becomes nearest, and stops it past that distance (a tenth
+ * more, so it does not flicker at the edge): heard near any sign, after a
+ * fresh load or a re-entry, and not elsewhere.
+ * RECOMP_SND_NEAR=<bank>:<ch>,... the sounds handled so (default 52:35;
+ * 0 for none), RECOMP_SND_NEAR_DIST=<units> instead of their max distance. */
+#define SND_NEAR_MAX 4
+#define SND_NEAR_POS 32
+static struct {
+    uint32_t bank, ch, n, playing, at;
+    float lim, p[SND_NEAR_POS][3];
+} s_snear[SND_NEAR_MAX];
+static unsigned s_snear_n;
+static int s_snear_init;
 
-static int snd_cull_on(void)
+static void snear_init(void)
 {
-    static int on = -1;
-    if (on < 0) {
-        const char *e = getenv("RECOMP_SND_CULL");
-        on = !(e && e[0] == '0');
-        fprintf(stderr, "[SNDDIST] far 3D sounds stopped past the game's cut-off: %s"
-                " (RECOMP_SND_CULL)\n", on ? "yes" : "no");
+    const char *e, *d, *q;
+    if (s_snear_init)
+        return;
+    s_snear_init = 1;
+    e = getenv("RECOMP_SND_NEAR");
+    if (!e) e = "52:35";
+    for (q = e; *q && s_snear_n < SND_NEAR_MAX; ) {
+        char *x;
+        unsigned long b = strtoul(q, &x, 10), c;
+        if (x == q || *x != ':') break;
+        c = strtoul(x + 1, &x, 10);
+        if (b) {
+            memset(&s_snear[s_snear_n], 0, sizeof s_snear[0]);
+            s_snear[s_snear_n].bank = (uint32_t)b;
+            s_snear[s_snear_n].ch = (uint32_t)c;
+            s_snear_n++;
+        }
+        q = (*x == ',' || *x == ';' || *x == ' ') ? x + 1 : x;
     }
-    return on;
+    d = getenv("RECOMP_SND_NEAR_DIST");
+    {
+        unsigned k;
+        for (k = 0; k < s_snear_n; k++) {
+            float mn = 0, mx = 0;
+            uint32_t fl = 0;
+            s_snear[k].lim = (d && atof(d) > 0.0) ? (float)atof(d)
+                           : snd_preset(s_snear[k].bank, s_snear[k].ch, &mn, &mx, &fl) ? mx : 80.0f;
+            fprintf(stderr, "[SNDDIST] ambient loop bank %u ch %u: heard within %.0f of its nearest"
+                    " source (RECOMP_SND_NEAR)\n", s_snear[k].bank, s_snear[k].ch, s_snear[k].lim);
+        }
+    }
 }
 
-static void snd_track(uint32_t mgr, uint32_t h, uint32_t pos)
+/* the game queues one of these: keep the position; 1 if it is ours */
+static int snear_note(uint32_t bank, uint32_t ch, uint32_t pos)
 {
-    uint32_t bank = (h >> 16) & 0xFFFF, ch = h & 0xFFFF, flags = 0, i, fr = 64;
-    float mn, mx, k = 10.0f;
-    (void)mgr;
-    if (!snd_cull_on() || !guest_range_ok(pos, 12) || !snd_preset(bank, ch, &mn, &mx, &flags))
-        return;
-    if ((flags & 0x10000u) || mx <= 0.0f)          /* 2D, or no distance */
-        return;
-    memcpy(&k, (const void *)XBOX_PTR(0x1CA81Cu), 4);
-    for (i = 0; i < 64; i++) {
-        if (s_snd_trk[i].h == h + 1) { fr = i; break; }
-        if (!s_snd_trk[i].h && fr == 64) fr = i;
+    unsigned k, i;
+    float p[3];
+    snear_init();
+    for (k = 0; k < s_snear_n; k++)
+        if (s_snear[k].bank == bank && s_snear[k].ch == ch)
+            break;
+    if (k == s_snear_n)
+        return 0;
+    if (!pos || !guest_range_ok(pos, 12))
+        return 1;
+    memcpy(p, (const void *)XBOX_PTR(pos), 12);
+    for (i = 0; i < s_snear[k].n; i++)
+        if (fabsf(s_snear[k].p[i][0] - p[0]) < 0.5f && fabsf(s_snear[k].p[i][1] - p[1]) < 0.5f
+                && fabsf(s_snear[k].p[i][2] - p[2]) < 0.5f)
+            return 1;
+    if (s_snear[k].n < SND_NEAR_POS) {
+        memcpy(s_snear[k].p[s_snear[k].n++], p, 12);
+        if (snd_dist_on())
+            fprintf(stderr, "[SNDDIST] ambient loop bank %u ch %u: source %u at %.0f %.0f %.0f\n",
+                    bank, ch, s_snear[k].n - 1, p[0], p[1], p[2]);
     }
-    if (fr == 64)
-        return;
-    s_snd_trk[fr].h = h + 1;
-    memcpy(s_snd_trk[fr].p, (const void *)XBOX_PTR(pos), 12);
-    s_snd_trk[fr].lim = mx * k;
+    return 1;
+}
+
+/* call a game sound function with this = mgr and the given stack words; a
+ * position, when given, is put on the guest stack and passed as the last */
+static uint32_t snd_call(void (*fn)(void), uint32_t mgr, int nargs, const uint32_t *args,
+                         const float *pos)
+{
+    uint32_t ra = g_eax, rb = g_ebx, rc = g_ecx, rd = g_edx, rsi = g_esi, rdi = g_edi,
+             rbp = g_ebp, sp0 = g_esp, ret, pp = 0;
+    int i;
+    if (pos) {
+        g_esp -= 16;
+        memcpy((void *)XBOX_PTR(g_esp), pos, 12);
+        pp = g_esp;
+        g_esp -= 4; MEM32(g_esp) = pp;
+    }
+    for (i = nargs - 1; i >= 0; i--) {
+        g_esp -= 4; MEM32(g_esp) = args[i];
+    }
+    g_esp -= 4; MEM32(g_esp) = 0;          /* return address; the callee pops its arguments */
+    g_ecx = mgr;
+    fn();
+    ret = g_eax;
+    g_esp = sp0;
+    g_eax = ra; g_ebx = rb; g_ecx = rc; g_edx = rd; g_esi = rsi; g_edi = rdi; g_ebp = rbp;
+    return ret;
 }
 
 extern void sub_00118610_gen(void);
 extern void sub_00117F40(void);
+extern void sub_001192E0_gen(void);
+extern void sub_00118A60_gen(void);
 
 void sub_00118610(void)
 {
-    uint32_t mgr = g_ecx, i;
+    uint32_t mgr = g_ecx;
+    unsigned k, i;
+    float l[3];
     sub_00118610_gen();
-    if (!snd_cull_on() || !mgr || !guest_range_ok(mgr + 0x3EBC, 12))
+    snear_init();
+    if (!s_snear_n || !mgr || !guest_range_ok(mgr + 0x3EBC, 12))
         return;
-    for (i = 0; i < 64; i++) {
-        float l[3];
-        double dx, dy, dz;
-        uint32_t h;
-        if (!s_snd_trk[i].h)
-            continue;
-        memcpy(l, (const void *)XBOX_PTR(mgr + 0x3EBC), 12);
-        if (l[0] == 0.0f && l[1] == 0.0f && l[2] == 0.0f)
-            return;                                    /* no listener yet */
-        dx = s_snd_trk[i].p[0] - l[0];
-        dy = s_snd_trk[i].p[1] - l[1];
-        dz = s_snd_trk[i].p[2] - l[2];
-        if (dx * dx + dy * dy + dz * dz <= (double)s_snd_trk[i].lim * s_snd_trk[i].lim)
-            continue;
-        h = s_snd_trk[i].h - 1;
-        s_snd_trk[i].h = 0;
-        {
-            uint32_t ra = g_eax, rb = g_ebx, rc = g_ecx, rd = g_edx, rsi = g_esi,
-                     rdi = g_edi, rbp = g_ebp;
-            g_esp -= 4; MEM32(g_esp) = h & 0xFFFF;        /* channel */
-            g_esp -= 4; MEM32(g_esp) = (h >> 16) & 0xFFFF; /* bank */
-            g_esp -= 4; MEM32(g_esp) = 0;                  /* return address, ret 8 */
-            g_ecx = mgr;
-            sub_00117F40();
-            g_eax = ra; g_ebx = rb; g_ecx = rc; g_edx = rd; g_esi = rsi; g_edi = rdi; g_ebp = rbp;
+    memcpy(l, (const void *)XBOX_PTR(mgr + 0x3EBC), 12);
+    if (l[0] == 0.0f && l[1] == 0.0f && l[2] == 0.0f)
+        return;                                        /* no listener yet */
+    for (k = 0; k < s_snear_n; k++) {
+        double best = 1e30;
+        unsigned bi = 0;
+        float lim = s_snear[k].lim;
+        for (i = 0; i < s_snear[k].n; i++) {
+            double dx = s_snear[k].p[i][0] - l[0], dy = s_snear[k].p[i][1] - l[1],
+                   dz = s_snear[k].p[i][2] - l[2], d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < best) { best = d2; bi = i; }
         }
-        if (snd_dist_on())
-            fprintf(stderr, "[SNDDIST] stopped bank %u ch %u at %.0f %.0f %.0f: the listener"
-                    " (%.0f %.0f %.0f) left its cut-off %.0f\n", (h >> 16) & 0xFFFF, h & 0xFFFF,
-                    s_snd_trk[i].p[0], s_snd_trk[i].p[1], s_snd_trk[i].p[2], l[0], l[1], l[2],
-                    s_snd_trk[i].lim);
+        if (!s_snear[k].n)
+            continue;
+        best = sqrt(best);
+        if (s_snear[k].playing && best > lim * 1.1) {
+            uint32_t a[2] = {s_snear[k].bank, s_snear[k].ch};
+            snd_call(sub_00117F40, mgr, 2, a, NULL);
+            s_snear[k].playing = 0;
+            if (snd_dist_on())
+                fprintf(stderr, "[SNDDIST] ambient loop bank %u ch %u off: nearest source %.0f away\n",
+                        s_snear[k].bank, s_snear[k].ch, best);
+        } else if (!s_snear[k].playing && best <= lim) {
+            uint32_t a[2] = {s_snear[k].bank, s_snear[k].ch};
+            int32_t r = (int32_t)snd_call(sub_001192E0_gen, mgr, 2, a, s_snear[k].p[bi]);
+            s_snear[k].playing = r > 0;
+            s_snear[k].at = bi;
+            if (snd_dist_on())
+                fprintf(stderr, "[SNDDIST] ambient loop bank %u ch %u on at source %u, %.0f away -> %d\n",
+                        s_snear[k].bank, s_snear[k].ch, bi, best, (int)r);
+        } else if (s_snear[k].playing && bi != s_snear[k].at) {
+            uint32_t a[1] = {(s_snear[k].bank << 16) | s_snear[k].ch};
+            snd_call(sub_00118A60_gen, mgr, 1, a, s_snear[k].p[bi]);
+            s_snear[k].at = bi;
+        }
     }
 }
 
@@ -3171,14 +3250,15 @@ static int snd_muted(uint32_t bank, uint32_t ch)
 void sub_001192E0(void)
 {
     uint32_t mgr = g_ecx, bank = MEM32(g_esp + 4), ch = MEM32(g_esp + 8), pos = MEM32(g_esp + 12);
-    if (snd_muted(bank, ch)) {
+    if (snd_muted(bank, ch) || snear_note(bank, ch, pos)) {
+        /* muted, or an ambient loop sub_00118610 plays near its sources */
         g_eax = 0xFFFFFFFFu;
         g_esp += 16;                       /* ret 12 */
+        if (snd_dist_on())
+            snd_log("play", mgr, bank, ch, pos, g_eax);
         return;
     }
     sub_001192E0_gen();
-    if ((int32_t)g_eax > 0 && pos)
-        snd_track(mgr, g_eax, pos);
     if (snd_dist_on()) {
         if ((int32_t)g_eax > 0) {          /* v203b: every start, not only the first */
             static unsigned n;
@@ -3199,8 +3279,6 @@ void sub_00118A60(void)
 {
     uint32_t mgr = g_ecx, h = MEM32(g_esp + 4), pos = MEM32(g_esp + 8);
     sub_00118A60_gen();
-    if (g_eax && pos)
-        snd_track(mgr, h, pos);
     if (snd_dist_on())
         snd_log("move", mgr, (h >> 16) & 0xFFFF, h & 0xFFFF, pos, g_eax);
 }
