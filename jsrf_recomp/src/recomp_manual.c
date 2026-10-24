@@ -2325,11 +2325,47 @@ static void areas_drawable(uint32_t out[8])
             }
             {
                 unsigned listed = 0;
+                const char *sk = getenv("RECOMP_DRAW_AREAS_SKIP");
                 for (k = 0; k < 8; k++)
                     for (j = 0; j < 32; j++)
                         listed += (mask[k] >> j) & 1;
                 fprintf(stderr, "[AREAS] map %08X: %u areas, %u of them in some visible list"
                         " (the rest are never drawn)\n", map, n, listed);
+                /* v200f: the table of areas, for finding pieces that only
+                 * belong to one view (Dogenzaka Hill: a copy of a street
+                 * hanging upside down in the sky) -- each area's volume
+                 * (min..max of its 6 plane points) and how many lists name it */
+                for (i = 0; i < n; i++) {
+                    uint32_t a = areas + i * 0x154u, q, by = 0, i2;
+                    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+                    for (q = 0; q < 6; q++) {
+                        float v[3];
+                        int c;
+                        memcpy(v, (const void *)XBOX_PTR(a + 12 * q), 12);
+                        for (c = 0; c < 3; c++) {
+                            if (v[c] < lo[c]) lo[c] = v[c];
+                            if (v[c] > hi[c]) hi[c] = v[c];
+                        }
+                    }
+                    for (i2 = 0; i2 < n; i2++) {
+                        uint32_t b = areas + i2 * 0x154u, l2 = MEM32(b + 0x98), c2 = MEM32(b + 0x9C), j2;
+                        if (!c2 || c2 > 256 || !guest_range_ok(l2, c2 * 4u)) continue;
+                        for (j2 = 0; j2 < c2; j2++)
+                            if (MEM32(l2 + 4 * j2) == i) { by++; break; }
+                    }
+                    fprintf(stderr, "[AREAS]   area %3u: x %.0f..%.0f y %.0f..%.0f z %.0f..%.0f,"
+                            " lists %u areas, listed by %u%s\n", i, lo[0], hi[0], lo[1], hi[1],
+                            lo[2], hi[2], MEM32(a + 0x9C), by,
+                            by ? "" : " (never drawn)");
+                }
+                /* RECOMP_DRAW_AREAS_SKIP=a,b,c: areas never added */
+                while (sk && *sk) {
+                    char *end;
+                    unsigned long v = strtoul(sk, &end, 10);
+                    if (end == sk) break;
+                    if (v < 256) mask[v >> 5] &= ~(1u << (v & 31));
+                    sk = *end ? end + 1 : end;
+                }
             }
         }
     }
