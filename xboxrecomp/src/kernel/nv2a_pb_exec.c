@@ -3501,12 +3501,17 @@ static int ws_title_bar(int kind, const NvGlState *st)
  * geometry is, so the span says nothing about the screen it covers. */
 static int s_ws_behind;
 
+/* v204: whether some vertex of the last ws_span lies away from both ends
+ * of the span (more than 2% of the width): boost's camera quad has every
+ * corner at a screen edge, a floor that happens to reach both edges does not */
+static int s_ws_inner;
 static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, float *hi)
 {
     uint32_t i, n = s_gpu.idx_count;
-    float p[4], x;
+    float p[4], x, xs[64];
     *lo = 1.0e9f; *hi = -1.0e9f;
     s_ws_behind = 0;
+    s_ws_inner = 0;
     if (n == 0 || n > maxn)
         return 0;
     for (i = 0; i < n; i++) {
@@ -3531,6 +3536,13 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
         }
         if (x < *lo) *lo = x;
         if (x > *hi) *hi = x;
+        if (i < 64) xs[i] = x;
+    }
+    {
+        float tol = 0.02f * (float)st->width;
+        for (i = 0; i < n && i < 64; i++)
+            if (xs[i] > *lo + tol && xs[i] < *hi - tol)
+                s_ws_inner = 1;
     }
     return 1;
 }
@@ -3686,7 +3698,14 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         /* v187j: or a small 3D (perspective) quad that fills the screen
          * exactly -- an effect fixed to the camera (boost); menus and logos
          * are flat 2D and stay fitted */
-        int camquad = !*is_2d && s_gpu.idx_count <= 8;
+        /* v204: the floor again (Chuo Street, the same floor from other
+         * angles, Miggas): with every corner in front of the eye it can
+         * still reach both edges within 5% and was kept unsqueezed. Boost's
+         * quad fills the screen exactly (x 1..641), every corner at an
+         * edge: so only a quad within 2% of both edges with no corner in
+         * between counts as fixed to the camera. */
+        int camquad = !*is_2d && s_gpu.idx_count <= 8 && !s_ws_inner
+                      && lo >= -0.02f * W && hi <= 1.02f * W;
         /* v187k: "untextured" and "stencil-tested" only count for flat 2D or
          * a tiny batch: stencil-tested 3D (shadow volumes) that happened to
          * reach both edges was kept unsqueezed, and the shadow marks came out
