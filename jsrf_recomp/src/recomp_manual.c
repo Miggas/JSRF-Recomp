@@ -3048,12 +3048,57 @@ static void snd_log(const char *what, uint32_t mgr, uint32_t bank, uint32_t ch, 
                 " listener %.0f %.0f %.0f -> %d\n", what, bank, ch, l[0], l[1], l[2], (int)result);
 }
 
+/* v203b: RECOMP_SND_MUTE=<bank>[:<ch>],... -- those sounds are never
+ * started (as if beyond the cut-off), to find a sound by ear */
+static int snd_muted(uint32_t bank, uint32_t ch)
+{
+    static int init;
+    static const char *lst;
+    const char *p;
+    if (!init) {
+        init = 1;
+        lst = getenv("RECOMP_SND_MUTE");
+        if (lst)
+            fprintf(stderr, "[SNDDIST] muted (RECOMP_SND_MUTE): %s\n", lst);
+    }
+    for (p = lst; p && *p; ) {
+        char *e;
+        unsigned long b = strtoul(p, &e, 10), c = 0xFFFFFFFFul;
+        if (e == p) break;
+        if (*e == ':') {
+            p = e + 1;
+            c = strtoul(p, &e, 10);
+        }
+        if (b == bank && (c == 0xFFFFFFFFul || c == ch))
+            return 1;
+        p = (*e == ',' || *e == ';' || *e == ' ') ? e + 1 : e;
+    }
+    return 0;
+}
+
 void sub_001192E0(void)
 {
     uint32_t mgr = g_ecx, bank = MEM32(g_esp + 4), ch = MEM32(g_esp + 8), pos = MEM32(g_esp + 12);
+    if (snd_muted(bank, ch)) {
+        g_eax = 0xFFFFFFFFu;
+        g_esp += 16;                       /* ret 12 */
+        return;
+    }
     sub_001192E0_gen();
-    if (snd_dist_on())
+    if (snd_dist_on()) {
+        if ((int32_t)g_eax > 0) {          /* v203b: every start, not only the first */
+            static unsigned n;
+            float p[3] = {0, 0, 0}, l[3] = {0, 0, 0};
+            if (n++ < 3000) {
+                if (pos && guest_range_ok(pos, 12)) memcpy(p, (const void *)XBOX_PTR(pos), 12);
+                if (mgr && guest_range_ok(mgr + 0x3EBC, 12)) memcpy(l, (const void *)XBOX_PTR(mgr + 0x3EBC), 12);
+                fprintf(stderr, "[SNDDIST] started bank %u ch %u handle %08X %s%.0f %.0f %.0f,"
+                        " listener %.0f %.0f %.0f\n", bank, ch, g_eax, pos ? "at " : "(no position) ",
+                        p[0], p[1], p[2], l[0], l[1], l[2]);
+            }
+        }
         snd_log("play", mgr, bank, ch, pos, g_eax);
+    }
 }
 
 void sub_00118A60(void)
