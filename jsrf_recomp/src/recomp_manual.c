@@ -2281,17 +2281,61 @@ void sub_0006A970(void)
     sub_0006A970_gen();
 }
 
+/* v199b: not every area is scenery. The garage has one drawn as a white
+ * wall across the road -- an invisible-wall or placeholder piece the game
+ * never shows. Only areas that appear in some area's visible list are ones
+ * the game ever draws, so "all" means all of those: the union of every
+ * area's list (an area record is 0x154 bytes; its list at +0x98, the count
+ * at +0x9C), worked out once per map. */
+static void areas_drawable(uint32_t out[8])
+{
+    static uint32_t map_seen, mask[8];
+    uint32_t map = MEM32(0x20C6C0u + 4), areas, n, i, j, k;
+    if (map && map == map_seen) {
+        memcpy(out, mask, sizeof mask);
+        return;
+    }
+    memset(mask, 0, sizeof mask);
+    if (map && guest_range_ok(map, 12)) {
+        areas = MEM32(map + 4);
+        n = MEM32(map + 8);
+        if (n <= 256 && areas && guest_range_ok(areas, n * 0x154u)) {
+            for (i = 0; i < n; i++) {
+                uint32_t a = areas + i * 0x154u, list = MEM32(a + 0x98), cnt = MEM32(a + 0x9C);
+                if (!cnt || cnt > 256 || !guest_range_ok(list, cnt * 4u))
+                    continue;
+                for (j = 0; j < cnt; j++) {
+                    uint32_t v = MEM32(list + 4 * j);
+                    if (v < 256)
+                        mask[v >> 5] |= 1u << (v & 31);
+                }
+            }
+            {
+                unsigned listed = 0;
+                for (k = 0; k < 8; k++)
+                    for (j = 0; j < 32; j++)
+                        listed += (mask[k] >> j) & 1;
+                fprintf(stderr, "[AREAS] map %08X: %u areas, %u of them in some visible list"
+                        " (the rest are never drawn)\n", map, n, listed);
+            }
+        }
+    }
+    map_seen = map;
+    memcpy(out, mask, sizeof mask);
+}
+
 #define AREA_PASS(name)                                                      \
 void name(void)                                                              \
 {                                                                            \
-    uint32_t keep[8], k;                                                     \
+    uint32_t keep[8], add[8], k;                                             \
     if (!areas_all()) {                                                      \
         name##_gen();                                                        \
         return;                                                              \
     }                                                                        \
+    areas_drawable(add);                                                     \
     for (k = 0; k < 8; k++) {                                                \
         keep[k] = MEM32(0x20C6C8u + 4 * k);                                  \
-        MEM32(0x20C6C8u + 4 * k) = 0xFFFFFFFFu;                              \
+        MEM32(0x20C6C8u + 4 * k) = keep[k] | add[k];                         \
     }                                                                        \
     name##_gen();                                                            \
     for (k = 0; k < 8; k++)                                                  \
