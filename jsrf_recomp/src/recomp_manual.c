@@ -2295,6 +2295,10 @@ static int areas_all(void)
     if (on < 0) {
         const char *e = getenv("RECOMP_DRAW_AREAS"), *a = getenv("RECOMP_DRAW_ALL_AREAS");
         on = (e && !strcmp(e, "all")) || (a && atoi(a));
+        /* v201e: hops2 is the default; RECOMP_DRAW_AREAS=game (or off, 0)
+         * leaves the areas to the game, as on the Xbox */
+        if (!e && !a)
+            e = "hops";
         if (!on && e && !strncmp(e, "hops", 4)) {
             s_area_hops = e[4] ? atoi(e + 4) : 2;
             if (s_area_hops < 1) s_area_hops = 1;

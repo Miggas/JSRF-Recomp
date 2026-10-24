@@ -45,17 +45,18 @@ RECOMP_GL_SCALE=2
 ;     distant walls and shadows. 0 = the console's 24-bit depth, as before.
 ;RECOMP_GL_WDEPTH=0
 
-; --- No pop-in: draw every part of the map at all times. The game normally
-;     shows only the areas visible from where you are, so some buildings
-;     appear as you get close (as on the Xbox). Costs frame rate in busy
-;     maps: 99th Street can drop to about 50 fps. Off by default.
-;     Recommended: hops. Only what is visible from the areas the game
+; --- No pop-in. The game normally shows only the areas visible from where
+;     you are, so some buildings appear as you get close (as on the Xbox).
+;     The default is hops: only what is visible from the areas the game
 ;     draws, 2 steps out (hops3, hops4, ... for further). Almost no pop-in,
 ;     without drawing the other end of a looping map (Dogenzaka Hill's
-;     "copy in the sky"). Leftovers can be hidden with RECOMP_DRAW_AREAS_SKIP.
-;RECOMP_DRAW_AREAS=hops
-;     Or all: every area, always (also draws the other end of loops).
+;     "copy in the sky"). game = only what the game draws, as on the Xbox;
+;     all = every area, always (also draws the other end of loops).
+;RECOMP_DRAW_AREAS=game
 ;RECOMP_DRAW_AREAS=all
+;     Areas never added, per map ID:area,area;ID:area (RECOMP_AREA_PICKER=1
+;     finds them: F6/F7 select, F8 skip, the list is in the log)
+RECOMP_DRAW_AREAS_SKIP=EE7A:96,105
 
 ; --- Start in full screen. F11 or Alt+Enter switches at any time.
 RECOMP_FULLSCREEN=1
