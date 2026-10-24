@@ -140,7 +140,8 @@ def ws_undo(gen):
 # generated definitions are given their plain names back (v166 wrapped D3D's
 # vblank DPC, sub_00193D90; reverted with the rest of the RECOMP_ACK_FAST work).
 UNWRAP = ("sub_00193D90",
-          "D3D8_D3DDevice_SetTransform")   # v187c wrapped it, v187d does not
+          "D3D8_D3DDevice_SetTransform",   # v187c wrapped it, v187d does not
+          "sub_00153A90", "sub_0006AC10")  # wrapped by the scrapped v202 tests
 
 
 def unwrap_pass(gen):
@@ -247,7 +248,8 @@ def sig_pass(gen):
             continue
         path = os.path.join(gen, fn)
         with open(path, encoding="utf-8", errors="surrogateescape") as f:
-            lines = f.read().split("\n")
+            orig = f.read()
+        lines = orig.split("\n")
         out, n, since = [], 0, 1000
         for ln in lines:
             if "RECOMP_ABI_CALL(0x00146BE7u," in ln:
@@ -265,8 +267,13 @@ def sig_pass(gen):
             if SIG_PROTO not in src:
                 i = src.find("\n", src.find("#include")) + 1
                 src = src[:i] + SIG_PROTO + src[i:]
-            with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
-                f.write(src)
+            # v202: only when something changed -- rewriting an already
+            # patched file gave it a new date, and every build recompiled
+            # recomp_0002/0004/0019.c
+            if src != orig:
+                with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                    f.write(src)
+                print("sig: patched", fn)
             total += n
     print("sig: %d save-signature compares" % total)
     if total != 21:
