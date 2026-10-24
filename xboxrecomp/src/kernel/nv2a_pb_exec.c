@@ -3555,7 +3555,9 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
 /* addresses compared without the aperture bits: the tiled window at
  * 0xF0000000 and the contiguous one at 0x80000000 alias the same memory */
 #define WS_ADDR(a) ((a) & 0x0FFFFFFFu)
-static struct { uint32_t base, bytes; int screen; } s_ws_rt[WS_RT_N];
+/* v205: fresh = marked a copy of the screen, but what it holds was drawn
+ * before that, unsqueezed (the 4:3 view) */
+static struct { uint32_t base, bytes; int screen, fresh; } s_ws_rt[WS_RT_N];
 static unsigned s_ws_rt_next;
 static void ws_note_target(uint32_t base, uint32_t bytes)
 {
@@ -3640,6 +3642,7 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         int t = ws_target_at(st->surf_va);
         if (t < 0 || !s_ws_rt[t].screen)
             return 1.0f;
+        s_ws_rt[t].fresh = 0;                /* v205: now drawn squeezed */
     }
     if (kind == XK_PRE || st->screen_space)
         *is_2d = 1;
@@ -3755,10 +3758,19 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
                 int t = ws_target_at(s_gpu.texs[0].offset);
                 if (t >= 0 && !s_ws_rt[t].screen) {
                     s_ws_rt[t].screen = 1;
+                    s_ws_rt[t].fresh = 1;
                     if (logw)
                         fprintf(stderr, "[WS] surface %08X is a copy of the screen: squeezed "
                                 "from now on\n", s_ws_rt[t].base);
                 }
+                /* v205: the first boost of a run flashed the stretched 4:3
+                 * view for a frame (Miggas): the scene had gone into boost's
+                 * target unsqueezed, before the paste showed it is a copy of
+                 * the screen, and the paste kept it full width. Until the
+                 * target is drawn into again, squeezed, its pastes are
+                 * squeezed like the rest, so that frame shows the right shape */
+                if (t >= 0 && s_ws_rt[t].fresh)
+                    return k;
             }
             return 1.0f;
         }
