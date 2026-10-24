@@ -2337,11 +2337,30 @@ static void areas_drawable(uint32_t out[8])
     memcpy(out, mask, sizeof mask);
 }
 
-#define AREA_PASS(name)                                                      \
+/* v200c: which of the four passes get every area. On Dogenzaka Hill the
+ * distant backdrop covered far map pieces: the pass sub_0006BA80 (after the
+ * objects, 16 draws there) looks like the per-area backdrop, which the game
+ * only draws for areas you are not near. RECOMP_DRAW_AREAS_PASSES is a bit
+ * mask over sub_0006B6A0 (1), sub_0006B8F0 (2), sub_0006BA80 (4),
+ * sub_0006C360 (8); the default 11 leaves sub_0006BA80 to the game. */
+static int area_pass_on(int bit)
+{
+    static int mask = -1;
+    if (mask < 0) {
+        const char *e = getenv("RECOMP_DRAW_AREAS_PASSES");
+        mask = e ? (int)strtol(e, NULL, 0) : 11;
+        if (areas_all())
+            fprintf(stderr, "[AREAS] passes given every area: mask %d"
+                    " (RECOMP_DRAW_AREAS_PASSES)\n", mask);
+    }
+    return (mask & bit) != 0;
+}
+
+#define AREA_PASS(name, bit)                                                 \
 void name(void)                                                              \
 {                                                                            \
     uint32_t keep[8], add[8], k;                                             \
-    if (!areas_all()) {                                                      \
+    if (!areas_all() || !area_pass_on(bit)) {                                \
         name##_gen();                                                        \
         return;                                                              \
     }                                                                        \
@@ -2355,7 +2374,7 @@ void name(void)                                                              \
         MEM32(0x20C6C8u + 4 * k) = keep[k];                                  \
 }
 
-AREA_PASS(sub_0006B6A0)
-AREA_PASS(sub_0006B8F0)
-AREA_PASS(sub_0006BA80)
-AREA_PASS(sub_0006C360)
+AREA_PASS(sub_0006B6A0, 1)
+AREA_PASS(sub_0006B8F0, 2)
+AREA_PASS(sub_0006BA80, 4)
+AREA_PASS(sub_0006C360, 8)
