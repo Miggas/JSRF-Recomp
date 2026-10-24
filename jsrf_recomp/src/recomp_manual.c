@@ -2241,156 +2241,57 @@ void D3D8_D3DDevice_DrawVertices(void)
 
 /* ── v198c: the map's area visibility (the pop-in) ───────────────────────
  *
- * v198b found it. A map is split into areas (up to 256). Every frame
- * sub_0006A970 clears the bitset at 0x20C6C8 (8 words, in the object at
- * 0x20C6C0) and sets the bits of the areas whose volume holds the given
- * point (sub_0004A6F0), and of the areas listed as visible from them. The
- * map's draw passes (sub_0006B6A0, sub_0006B8F0, sub_0006BA80, sub_0006C360)
- * skip every area whose bit is clear, so a building appears when you cross
- * into an area that lists it. The real Xbox does the same.
- * RECOMP_DRAW_ALL_AREAS=1 sets every bit for the length of those passes and
- * puts the bitset back afterwards, so only drawing changes: what the game
- * uses the bitset for otherwise (objects, collision, triggers) is not
- * touched. */
+ * A map is split into areas (up to 256). Every frame sub_0006A970 clears the
+ * bitset at 0x20C6C8 (8 words, in the object at 0x20C6C0) and sets the
+ * areas whose volume holds the given point (sub_0004A6F0) plus the areas
+ * listed as visible from them. The map's draw passes (sub_0006B6A0,
+ * sub_0006B8F0, sub_0006BA80, sub_0006C360) skip every area whose bit is
+ * clear, so buildings appear as you cross into an area that lists them --
+ * on the real Xbox too.
+ *
+ * RECOMP_DRAW_AREAS=all (v198f; RECOMP_DRAW_ALL_AREAS=1 also works) sets
+ * every bit for the length of those passes and puts the bitset back
+ * afterwards, so only drawing changes: objects, collision and triggers keep
+ * the game's own set. No pop-in, at a cost: 99th Street drops to about
+ * 50 fps. Off by default. (v198d/e tried widening the set by its lists and
+ * by distance; the lists reach nearly every area in one step, and the towers
+ * on the road to Highway Zero needed a radius that also drew nearly all.)
+ * sub_0006A970 stays wrapped, as a pass-through, so a gen folder renamed by
+ * v198d/e still links. */
 extern void sub_0006B6A0_gen(void);
 extern void sub_0006B8F0_gen(void);
 extern void sub_0006BA80_gen(void);
 extern void sub_0006C360_gen(void);
 extern void sub_0006A970_gen(void);
 
-/* v198d: RECOMP_DRAW_AREAS. "all" (or RECOMP_DRAW_ALL_AREAS=1) draws every
- * area, which cost 99th Street about 10 fps. A number n widens the game's
- * own set instead: n times over, every area listed as visible from an area
- * already in the set joins it -- the areas you would see from the areas you
- * can see. Pop-in then happens n crossings further away. */
-static int areas_mode(void)
+static int areas_all(void)
 {
-    static int m = -2;
-    if (m == -2) {
+    static int on = -1;
+    if (on < 0) {
         const char *e = getenv("RECOMP_DRAW_AREAS"), *a = getenv("RECOMP_DRAW_ALL_AREAS");
-        m = 0;
-        if (e) m = (!strcmp(e, "all")) ? -1 : atoi(e);
-        else if (a && atoi(a)) m = -1;
-        if (m > 8) m = 8;
-        if (m < -1) m = 0;
-        if (m == -1)
-            fprintf(stderr, "[AREAS] map areas: all drawn (RECOMP_DRAW_AREAS=all)\n");
-        else if (m > 0)
-            fprintf(stderr, "[AREAS] map areas: the game's set widened by %d step(s)"
-                    " of its visible lists (RECOMP_DRAW_AREAS)\n", m);
-        else
-            fprintf(stderr, "[AREAS] map areas: as the game marks them (RECOMP_DRAW_AREAS)\n");
+        on = (e && !strcmp(e, "all")) || (a && atoi(a));
+        fprintf(stderr, "[AREAS] map areas: %s (RECOMP_DRAW_AREAS)\n",
+                on ? "all drawn (no pop-in)" : "as the game marks them");
     }
-    return m;
-}
-
-static uint32_t s_area_draw[8];     /* the set the draw passes use */
-static int s_area_draw_ok;
-
-/* v198e: RECOMP_DRAW_AREAS_RADIUS=<units>: areas whose middle is within
- * that distance of the point the game tests (the camera or the skater) are
- * drawn too, whatever the lists say. An area is a convex volume of 6 planes
- * (a point at +0x00 and a normal at +0x48 for each, 12 bytes apart); its
- * middle is taken as the average of the 6 points. */
-static double areas_radius(void)
-{
-    static double r = -1.0;
-    if (r < 0.0) {
-        const char *e = getenv("RECOMP_DRAW_AREAS_RADIUS");
-        r = e ? atof(e) : 0.0;
-        if (r < 0.0) r = 0.0;
-        if (r > 0.0)
-            fprintf(stderr, "[AREAS] areas within %g of the camera are drawn too"
-                    " (RECOMP_DRAW_AREAS_RADIUS)\n", r);
-    }
-    return r;
+    return on;
 }
 
 void sub_0006A970(void)
 {
-    uint32_t obj = g_ecx, pos = MEM32(g_esp + 4), map, areas, n, i, k, hop;
-    int m = areas_mode();
-    double rad = areas_radius();
     sub_0006A970_gen();
-    if (obj != 0x20C6C0u || (m <= 0 && rad <= 0.0))
-        return;
-    s_area_draw_ok = 0;
-    map = MEM32(obj + 4);
-    if (!map || !guest_range_ok(map, 12))
-        return;
-    areas = MEM32(map + 4);
-    n = MEM32(map + 8);
-    if (n > 256 || !areas || !guest_range_ok(areas, n * 0x154u))
-        return;
-    for (k = 0; k < 8; k++)
-        s_area_draw[k] = MEM32(obj + 8 + 4 * k);
-    if (rad > 0.0 && pos && guest_range_ok(pos, 12)) {
-        float p[3];
-        static unsigned long long last;
-        unsigned long long now = (unsigned long long)GetTickCount64();
-        unsigned game = 0, added = 0;
-        memcpy(p, (const void *)XBOX_PTR(pos), 12);
-        for (i = 0; i < n; i++) {
-            uint32_t a = areas + i * 0x154u, q;
-            double c[3] = {0, 0, 0}, d2;
-            if (s_area_draw[i >> 5] & (1u << (i & 31))) { game++; continue; }
-            for (q = 0; q < 6; q++) {
-                float v[3];
-                memcpy(v, (const void *)XBOX_PTR(a + 12 * q), 12);
-                c[0] += v[0]; c[1] += v[1]; c[2] += v[2];
-            }
-            c[0] /= 6; c[1] /= 6; c[2] /= 6;
-            d2 = (c[0] - p[0]) * (c[0] - p[0]) + (c[1] - p[1]) * (c[1] - p[1])
-               + (c[2] - p[2]) * (c[2] - p[2]);
-            if (d2 <= rad * rad) {
-                s_area_draw[i >> 5] |= 1u << (i & 31);
-                added++;
-            }
-        }
-        if (now - last >= 2000) {
-            last = now;
-            fprintf(stderr, "[AREAS] %u areas: %u marked by the game, %u added within %g"
-                    " (camera %.0f %.0f %.0f)\n", n, game, added, rad, p[0], p[1], p[2]);
-        }
-        if (m <= 0) {
-            s_area_draw_ok = 1;
-            return;
-        }
-    }
-    for (hop = 0; hop < (uint32_t)(m > 0 ? m : 0); hop++) {
-        uint32_t cur[8];
-        memcpy(cur, s_area_draw, sizeof cur);
-        for (i = 0; i < n; i++) {
-            uint32_t a = areas + i * 0x154u, list, cnt, j;
-            if (!(cur[i >> 5] & (1u << (i & 31))))
-                continue;
-            list = MEM32(a + 0x98);
-            cnt = MEM32(a + 0x9C);
-            if (!cnt || cnt > 256 || !guest_range_ok(list, cnt * 4u))
-                continue;
-            for (j = 0; j < cnt; j++) {
-                uint32_t v = MEM32(list + 4 * j);
-                if (v < 256)
-                    s_area_draw[v >> 5] |= 1u << (v & 31);
-            }
-        }
-    }
-    s_area_draw_ok = 1;
 }
 
 #define AREA_PASS(name)                                                      \
 void name(void)                                                              \
 {                                                                            \
     uint32_t keep[8], k;                                                     \
-    int m = areas_mode();                                                    \
-    if ((m == 0 && areas_radius() <= 0.0) || (m >= 0 && !s_area_draw_ok)) { \
+    if (!areas_all()) {                                                      \
         name##_gen();                                                        \
         return;                                                              \
     }                                                                        \
     for (k = 0; k < 8; k++) {                                                \
         keep[k] = MEM32(0x20C6C8u + 4 * k);                                  \
-        MEM32(0x20C6C8u + 4 * k) = m < 0 ? 0xFFFFFFFFu                       \
-                                 : (s_area_draw[k] | keep[k]);               \
+        MEM32(0x20C6C8u + 4 * k) = 0xFFFFFFFFu;                              \
     }                                                                        \
     name##_gen();                                                            \
     for (k = 0; k < 8; k++)                                                  \

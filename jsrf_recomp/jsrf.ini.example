@@ -45,6 +45,12 @@ RECOMP_GL_SCALE=2
 ;     distant walls and shadows. 0 = the console's 24-bit depth, as before.
 ;RECOMP_GL_WDEPTH=0
 
+; --- No pop-in: draw every part of the map at all times. The game normally
+;     shows only the areas visible from where you are, so some buildings
+;     appear as you get close (as on the Xbox). Costs frame rate in busy
+;     maps: 99th Street can drop to about 50 fps. Off by default.
+;RECOMP_DRAW_AREAS=all
+
 ; --- Start in full screen. F11 or Alt+Enter switches at any time.
 RECOMP_FULLSCREEN=1
 
