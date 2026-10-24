@@ -3658,7 +3658,22 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         float W = (float)st->width,
               over = s_gpu.idx_count <= 3 ? 4.0f : flat_plain ? 1.0f
                      : rt ? 0.25f : 0.05f;  /* zoom blur: larger */
-        int covers = ws_span(kind, st, 64u, &lo, &hi)
+        /* v199: the span only decides batches that could be kept full
+         * width (see `keep` below); for the rest -- nearly all of the 3D --
+         * running up to 64 vertices through the CPU interpreter per draw was
+         * wasted work (5-8% of the executor in 99th Street). */
+        int could_keep = (plain && *is_2d) || rt || s_gpu.idx_count <= 8;
+        /* (any batch of up to 8 vertices keeps its span, so the title-bar
+         * test below sees the same `full` as before) */
+        int covers = 0;
+        if (logw < 0) {
+            const char *e = getenv("RECOMP_WS_LOG");
+            logw = e && e[0] == '1';
+        }
+        lo = hi = 0.0f;
+        s_ws_behind = 0;
+        if (could_keep || logw)
+            covers = ws_span(kind, st, 64u, &lo, &hi)
                      && lo <= 0.02f * W && hi >= 0.98f * W;
         int full = covers && lo >= -over * W && hi <= (1.0f + over) * W;
         /* v187j: or a small 3D (perspective) quad that fills the screen
