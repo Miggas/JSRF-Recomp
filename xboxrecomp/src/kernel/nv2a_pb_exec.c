@@ -2796,7 +2796,7 @@ int nv2a_exec_decode_texture(int stage, uint32_t face, uint32_t *out)
 
 /* Everything nv2a_gl.c needs to draw what the executor would. Returns 0 when
  * there is no drawable surface. */
-static void ws_note_target(uint32_t base, uint32_t bytes);   /* v187e */
+static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h);   /* v187e */
 
 static int gl_state(NvGlState *st)
 {
@@ -2814,7 +2814,8 @@ static int gl_state(NvGlState *st)
     st->height = s_gpu.clip_y + s_gpu.clip_h;
     /* v187e/h: every surface drawn into, any size: boost's blur shrinks the
      * frame into 512x512 and 256x256 targets and pastes those back */
-    ws_note_target(base, st->pitch * (st->width == 640 && st->height < 480 ? 480 : st->height));
+    ws_note_target(base, st->pitch * (st->width == 640 && st->height < 480 ? 480 : st->height),
+                   st->width, st->height);
     /* A surface the size of the screen is the screen: keep one GL target
      * for it however the title narrows the clip. */
     if (st->width == 640 && st->height < 480)
@@ -3555,11 +3556,29 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
 /* addresses compared without the aperture bits: the tiled window at
  * 0xF0000000 and the contiguous one at 0x80000000 alias the same memory */
 #define WS_ADDR(a) ((a) & 0x0FFFFFFFu)
-/* v205: fresh = marked a copy of the screen, but what it holds was drawn
- * before that, unsqueezed (the 4:3 view) */
-static struct { uint32_t base, bytes; int screen, fresh; } s_ws_rt[WS_RT_N];
+static struct { uint32_t base, bytes; int screen; } s_ws_rt[WS_RT_N];
 static unsigned s_ws_rt_next;
-static void ws_note_target(uint32_t base, uint32_t bytes)
+/* v206: boost's blur target. The first boost of a run flashed the stretched
+ * 4:3 view for a frame (Miggas): the scene goes into a 512x512 target that
+ * was only known to be a copy of the screen once its paste across the
+ * screen was seen, so that first frame's scene went into it unsqueezed.
+ * (v205 squeezed that first paste instead: black bars, since the 256x256
+ * copy made from it was squeezed too.) A 512x512 target is now taken for a
+ * copy of the screen from the start; nothing else in play draws into one
+ * (the garage's graffiti previews, the other user of that memory, are other
+ * sizes and drawn while the picture is 4:3). RECOMP_WS_BOOST_TARGET=0 goes
+ * back to finding it at the paste. */
+static int ws_premark(uint32_t w, uint32_t h)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_WS_BOOST_TARGET");
+        on = !(e && e[0] == '0');
+    }
+    return on && w == 512 && h == 512;
+}
+
+static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h)
 {
     unsigned i;
     base = WS_ADDR(base);
@@ -3568,7 +3587,7 @@ static void ws_note_target(uint32_t base, uint32_t bytes)
             /* v187o: the same memory as a target of another size is another
              * use of it: no longer known as a copy of the screen */
             if (s_ws_rt[i].bytes != bytes)
-                s_ws_rt[i].screen = 0;
+                s_ws_rt[i].screen = ws_premark(w, h);
             s_ws_rt[i].bytes = bytes;
             return;
         }
@@ -3583,7 +3602,7 @@ static void ws_note_target(uint32_t base, uint32_t bytes)
     i = s_ws_rt_next % WS_RT_N;
     s_ws_rt[i].base = base;
     s_ws_rt[i].bytes = bytes;
-    s_ws_rt[i].screen = 0;
+    s_ws_rt[i].screen = ws_premark(w, h);
     s_ws_rt_next++;
 }
 /* the remembered surface holding address a, or -1 */
@@ -3642,7 +3661,6 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         int t = ws_target_at(st->surf_va);
         if (t < 0 || !s_ws_rt[t].screen)
             return 1.0f;
-        s_ws_rt[t].fresh = 0;                /* v205: now drawn squeezed */
     }
     if (kind == XK_PRE || st->screen_space)
         *is_2d = 1;
@@ -3758,19 +3776,10 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
                 int t = ws_target_at(s_gpu.texs[0].offset);
                 if (t >= 0 && !s_ws_rt[t].screen) {
                     s_ws_rt[t].screen = 1;
-                    s_ws_rt[t].fresh = 1;
                     if (logw)
                         fprintf(stderr, "[WS] surface %08X is a copy of the screen: squeezed "
                                 "from now on\n", s_ws_rt[t].base);
                 }
-                /* v205: the first boost of a run flashed the stretched 4:3
-                 * view for a frame (Miggas): the scene had gone into boost's
-                 * target unsqueezed, before the paste showed it is a copy of
-                 * the screen, and the paste kept it full width. Until the
-                 * target is drawn into again, squeezed, its pastes are
-                 * squeezed like the rest, so that frame shows the right shape */
-                if (t >= 0 && s_ws_rt[t].fresh)
-                    return k;
             }
             return 1.0f;
         }
