@@ -2373,7 +2373,7 @@ static int backdrop_pass(int bit)
     static int mask = -1;
     if (mask < 0) {
         const char *e = getenv("RECOMP_BACKDROP_PASSES"), *f = getenv("RECOMP_BACKDROP_FAR");
-        mask = e ? (int)strtol(e, NULL, 0) : 4;
+        mask = e ? (int)strtol(e, NULL, 0) : 0;   /* v200e: 0, see bg_loop below */
         if (f && f[0] == '0')
             mask = 0;
         if (areas_all())
@@ -2392,10 +2392,62 @@ static void zbias_set(uint32_t v)
     g_eax = ra; g_ebx = rb; g_ecx = rc; g_edx = rd; g_esi = rsi; g_edi = rdi; g_ebp = rbp;
 }
 
+/* v200e: v200d's result: marking pass 1 (sub_0006B6A0) pushes the backdrop
+ * back -- with the whole map. The backdrop is that pass's first loop: up to
+ * 5 layers drawn with blending on, before the map loop turns blending off
+ * through the renderer's blend-enable method (vtable 0x1E0F00 +0x124,
+ * sub_00150890: SetRenderState_Simple, method 0x304). So inside pass 1 the
+ * mark is set from the start (or when blending is turned on) and cleared
+ * when blending is turned off. RECOMP_BACKDROP_LOOP=0 turns it off. */
+extern void sub_00150890_gen(void);
+static int s_in_pass1, s_bg_marked;
+static uint32_t s_bg_zb;
+
+static int bg_loop_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_BACKDROP_LOOP");
+        on = !(e && e[0] == '0');
+        if (areas_all())
+            fprintf(stderr, "[AREAS] backdrop layers of the map pass at the far plane: %s"
+                    " (RECOMP_BACKDROP_LOOP)\n", on ? "on" : "off");
+    }
+    return on && areas_all();
+}
+
+static void bg_mark(int on)
+{
+    if (on && !s_bg_marked) {
+        s_bg_zb = MEM32(0x19E2E8u);
+        zbias_set(1000000u);
+        s_bg_marked = 1;
+    } else if (!on && s_bg_marked) {
+        zbias_set(s_bg_zb);
+        s_bg_marked = 0;
+    }
+}
+
+void sub_00150890(void)
+{
+    uint32_t v = MEM32(g_esp + 8);            /* (this, value), ret 8 */
+    sub_00150890_gen();
+    if (s_in_pass1)
+        bg_mark(v != 0);
+}
+
 #define AREA_PASS(name, bit)                                                 \
 static void area_pass_body_##name(void);                                     \
 void name(void)                                                              \
 {                                                                            \
+    if ((bit) == 1 && bg_loop_on()) {                                        \
+        s_in_pass1 = 1;                                                      \
+        bg_mark(MEM32(0x1FA1D0u) == 1);                                      \
+        area_pass_body_##name();                                             \
+        bg_mark(0);                                                          \
+        s_in_pass1 = 0;                                                      \
+        return;                                                              \
+    }                                                                        \
     if (backdrop_pass(bit)) {                                                \
         uint32_t zb = MEM32(0x19E2E8u);                                      \
         zbias_set(1000000u);                                                 \

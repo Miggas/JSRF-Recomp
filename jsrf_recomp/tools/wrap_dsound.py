@@ -30,7 +30,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_000520D0", "sub_0004AC80",  # v187y: [MSSN] the mission's stage number
          "D3D8_D3DDevice_DrawIndexedVertices", "D3D8_D3DDevice_DrawVertices",  # v198: [DRAWWHO]
          "sub_0006B6A0", "sub_0006B8F0", "sub_0006BA80", "sub_0006C360",  # v198c: all map areas
-         "sub_0006A970")                # v198d: the area set, widened
+         "sub_0006A970",                # v198d: the area set, widened
+         "sub_00150890")                # v200e: blend enable, the backdrop layers
 
 
 def main():
