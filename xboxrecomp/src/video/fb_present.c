@@ -24,6 +24,15 @@
 
 extern ptrdiff_t xbox_GetMemoryOffset(void);
 
+/* v200i: text the game side adds to the window title (the area picker) */
+static char s_title_extra[96];
+void xbox_SetTitleExtra(const char *t)
+{
+    if (!t) t = "";
+    strncpy(s_title_extra, t, sizeof s_title_extra - 1);
+    s_title_extra[sizeof s_title_extra - 1] = 0;
+}
+
 static volatile LONG s_fb_running;
 static uint32_t      s_fb_va, s_fb_pitch, s_fb_width = 640, s_fb_height = 480;
 static uint32_t     *s_rgb;           /* converted 32-bit copy for GDI */
@@ -632,13 +641,14 @@ static DWORD WINAPI fb_thread(LPVOID unused)
             static DWORD t0;
             static LONG f0;
             DWORD now = GetTickCount();
-            if (now - t0 >= 1000) {
+            if (now - t0 >= (s_title_extra[0] ? 250u : 1000u)) {
                 LONG f = s_flips;
-                wchar_t tb[128];
-                _snwprintf(tb, 127, L"%ls | FPS: %.1f | draws: %ld", s_title,
+                wchar_t tb[256];
+                _snwprintf(tb, 255, L"%ls | FPS: %.1f | draws: %ld%hs%hs", s_title,
                            t0 ? (f - f0) * 1000.0 / (now - t0) : 0.0,
-                           (long)s_frame_draws);
-                tb[127] = 0;
+                           (long)s_frame_draws, s_title_extra[0] ? " | " : "",
+                           s_title_extra);
+                tb[255] = 0;
                 SetWindowTextW(hwnd, tb);
                 t0 = now; f0 = f;
             }

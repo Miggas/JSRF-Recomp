@@ -2311,6 +2311,58 @@ static int areas_all(void)
 
 static uint32_t s_area_near[8];
 static int s_area_near_ok;
+/* v200i: the area picker (RECOMP_AREA_PICKER=1). F6 / F7 step to the
+ * previous / next area (Shift: 10 at a time), F8 skips or restores the
+ * selected one, F10 restores them all. The window title shows the selected
+ * area, whether the game, the distance or nothing adds it, and the skip
+ * list; every change is logged as [AREAS] skips: ..., ready to copy into
+ * RECOMP_DRAW_AREAS_SKIP. */
+static uint32_t s_area_skip_rt[8];
+static float s_area_dist[256];
+extern void xbox_SetTitleExtra(const char *t);
+
+static void area_picker(uint32_t obj, uint32_t n)
+{
+    static int on = -1, sel, was[4];
+    static const int vk[4] = {VK_F6, VK_F7, VK_F8, VK_F10};
+    int k, press[4], changed = 0, step;
+    char t[96], lst[200];
+    size_t L = 0;
+    uint32_t i, game, nr;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_AREA_PICKER");
+        on = e && e[0] == '1';
+        if (on)
+            fprintf(stderr, "[AREAS] area picker on: F6/F7 select (Shift: by 10), F8 skip/restore,"
+                    " F10 restore all\n");
+    }
+    if (!on || !n)
+        return;
+    for (k = 0; k < 4; k++) {
+        int down = (GetAsyncKeyState(vk[k]) & 0x8000) != 0;
+        press[k] = down && !was[k];
+        was[k] = down;
+    }
+    step = (GetAsyncKeyState(VK_SHIFT) & 0x8000) ? 10 : 1;
+    if (press[0]) { sel = (sel - step + (int)n * 10) % (int)n; changed = 1; }
+    if (press[1]) { sel = (sel + step) % (int)n; changed = 1; }
+    if (sel >= (int)n) sel = 0;
+    if (press[2]) { s_area_skip_rt[sel >> 5] ^= 1u << (sel & 31); changed = 2; }
+    if (press[3]) { memset(s_area_skip_rt, 0, sizeof s_area_skip_rt); changed = 2; }
+    lst[0] = 0;
+    for (i = 0; i < n && L + 6 < sizeof lst; i++)
+        if (s_area_skip_rt[i >> 5] & (1u << (i & 31)))
+            L += (size_t)snprintf(lst + L, sizeof lst - L, "%s%u", L ? "," : "", i);
+    if (changed == 2)
+        fprintf(stderr, "[AREAS] skips: %s\n", L ? lst : "(none)");
+    game = MEM32(obj + 8 + 4 * (sel >> 5)) & (1u << (sel & 31));
+    nr = s_area_near[sel >> 5] & (1u << (sel & 31));
+    snprintf(t, sizeof t, "area %d/%u: %s%s, %.0f away | skips: %.40s", sel, n,
+             game ? "game" : nr ? "distance" : "not drawn",
+             (s_area_skip_rt[sel >> 5] & (1u << (sel & 31))) ? " SKIPPED" : "",
+             (double)s_area_dist[sel < 256 ? sel : 0], L ? lst : "none");
+    xbox_SetTitleExtra(t);
+}
 static float s_area_dist[256];
 static void areas_drawable(uint32_t out[8]);
 
@@ -2318,8 +2370,14 @@ void sub_0006A970(void)
 {
     uint32_t obj = g_ecx, pos = MEM32(g_esp + 4), map, areas, n, i;
     sub_0006A970_gen();
-    if (!areas_all() || s_area_radius <= 0.0 || obj != 0x20C6C0u)
+    if (!areas_all() || obj != 0x20C6C0u)
         return;
+    if (s_area_radius <= 0.0) {               /* "all": only the picker */
+        map = MEM32(obj + 4);
+        if (map && guest_range_ok(map, 12) && MEM32(map + 8) <= 256)
+            area_picker(obj, MEM32(map + 8));
+        return;
+    }
     s_area_near_ok = 0;
     map = MEM32(obj + 4);
     if (!map || !guest_range_ok(map, 12) || !pos || !guest_range_ok(pos, 12))
@@ -2379,6 +2437,7 @@ void sub_0006A970(void)
         }
     }
     s_area_near_ok = 1;
+    area_picker(obj, n);
 }
 
 /* v199b: not every area is scenery. The garage has one drawn as a white
@@ -2588,6 +2647,8 @@ static void area_pass_body_##name(void)                                      \
         return;                                                              \
     }                                                                        \
     areas_drawable(add);                                                     \
+    for (k = 0; k < 8; k++)                                                  \
+        add[k] &= ~s_area_skip_rt[k];                                        \
     if (s_area_radius > 0.0) {                                               \
         for (k = 0; k < 8; k++)                                              \
             add[k] = s_area_near_ok ? (add[k] & s_area_near[k]) : 0;         \
