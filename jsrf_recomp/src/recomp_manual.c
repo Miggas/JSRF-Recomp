@@ -3086,7 +3086,7 @@ static void snear_init(void)
         return;
     s_snear_init = 1;
     e = getenv("RECOMP_SND_NEAR");
-    if (!e) e = "52:35";
+    if (!e) e = "";                        /* v203e: off by default, the buzz is muted */
     for (q = e; *q && s_snear_n < SND_NEAR_MAX; ) {
         char *x;
         unsigned long b = strtoul(q, &x, 10), c;
@@ -3228,9 +3228,14 @@ static int snd_muted(uint32_t bank, uint32_t ch)
     const char *p;
     if (!init) {
         init = 1;
+        /* v203e: the Chuo Street signs' buzz (bank 52 ch 35) is muted by
+         * default; RECOMP_SND_MUTE=none plays everything */
         lst = getenv("RECOMP_SND_MUTE");
-        if (lst)
-            fprintf(stderr, "[SNDDIST] muted (RECOMP_SND_MUTE): %s\n", lst);
+        if (!lst)
+            lst = "52:35";
+        if (!strcmp(lst, "none") || !strcmp(lst, "0") || !*lst)
+            lst = NULL;
+        fprintf(stderr, "[SNDDIST] muted (RECOMP_SND_MUTE): %s\n", lst ? lst : "none");
     }
     for (p = lst; p && *p; ) {
         char *e;
