@@ -2319,6 +2319,7 @@ static int s_area_near_ok;
  * RECOMP_DRAW_AREAS_SKIP. */
 static uint32_t s_area_skip_rt[8];
 static float s_area_dist[256];
+static uint32_t s_map_id;      /* v200j: the current map's ID */
 extern void xbox_SetTitleExtra(const char *t);
 
 static void area_picker(uint32_t obj, uint32_t n)
@@ -2354,10 +2355,10 @@ static void area_picker(uint32_t obj, uint32_t n)
         if (s_area_skip_rt[i >> 5] & (1u << (i & 31)))
             L += (size_t)snprintf(lst + L, sizeof lst - L, "%s%u", L ? "," : "", i);
     if (changed == 2)
-        fprintf(stderr, "[AREAS] skips: %s\n", L ? lst : "(none)");
+        fprintf(stderr, "[AREAS] skips: %04X:%s\n", s_map_id, L ? lst : "(none)");
     game = MEM32(obj + 8 + 4 * (sel >> 5)) & (1u << (sel & 31));
     nr = s_area_near[sel >> 5] & (1u << (sel & 31));
-    snprintf(t, sizeof t, "area %d/%u: %s%s, %.0f away | skips: %.40s", sel, n,
+    snprintf(t, sizeof t, "map %04X area %d/%u: %s%s, %.0f away | skips: %.32s", s_map_id, sel, n,
              game ? "game" : nr ? "distance" : "not drawn",
              (s_area_skip_rt[sel >> 5] & (1u << (sel & 31))) ? " SKIPPED" : "",
              (double)s_area_dist[sel < 256 ? sel : 0], L ? lst : "none");
@@ -2448,11 +2449,20 @@ void sub_0006A970(void)
  * at +0x9C), worked out once per map. */
 static void areas_drawable(uint32_t out[8])
 {
-    static uint32_t map_seen, mask[8];
+    static uint32_t map_seen, areas_seen, n_seen, a0_seen, mask[8];
     uint32_t map = MEM32(0x20C6C0u + 4), areas, n, i, j, k;
-    if (map && map == map_seen) {
+    /* v200j: the same map object can hold the next map, so the key is the
+     * map, its area table, the count and the first area's first word */
+    if (map && map == map_seen && guest_range_ok(map, 12)
+            && MEM32(map + 4) == areas_seen && MEM32(map + 8) == n_seen
+            && (!areas_seen || MEM32(areas_seen) == a0_seen)) {
         memcpy(out, mask, sizeof mask);
         return;
+    }
+    if (map && guest_range_ok(map, 12)) {
+        areas_seen = MEM32(map + 4);
+        n_seen = MEM32(map + 8);
+        a0_seen = (areas_seen && guest_range_ok(areas_seen, 4)) ? MEM32(areas_seen) : 0;
     }
     memset(mask, 0, sizeof mask);
     if (map && guest_range_ok(map, 12)) {
@@ -2504,13 +2514,41 @@ static void areas_drawable(uint32_t out[8])
                             lo[2], hi[2], MEM32(a + 0x9C), by,
                             by ? "" : " (never drawn)");
                 }
-                /* RECOMP_DRAW_AREAS_SKIP=a,b,c: areas never added */
+                /* v200j: the map's ID, from its own area layout (the count
+                 * and every area's 6 plane points), the same on every load */
+                {
+                    uint32_t h = 2166136261u, q, w;
+                    h = (h ^ n) * 16777619u;
+                    for (i = 0; i < n; i++)
+                        for (q = 0; q < 18; q++) {
+                            w = MEM32(areas + i * 0x154u + 4 * q);
+                            h = (h ^ w) * 16777619u;
+                        }
+                    s_map_id = ((h >> 16) ^ h) & 0xFFFFu;
+                    fprintf(stderr, "[AREAS] map ID %04X (for RECOMP_DRAW_AREAS_SKIP=%04X:a,b,c)\n",
+                            s_map_id, s_map_id);
+                }
+                /* RECOMP_DRAW_AREAS_SKIP: areas never added. "a,b,c" for
+                 * every map, or per map "ID:a,b,c;ID:d,e" (v200j); both can
+                 * be mixed, entries split by ';' */
                 while (sk && *sk) {
-                    char *end;
-                    unsigned long v = strtoul(sk, &end, 10);
-                    if (end == sk) break;
-                    if (v < 256) mask[v >> 5] &= ~(1u << (v & 31));
-                    sk = *end ? end + 1 : end;
+                    const char *semi = strchr(sk, ';'), *colon = strchr(sk, ':');
+                    const char *end = semi ? semi : sk + strlen(sk);
+                    const char *nums = sk;
+                    int applies = 1;
+                    if (colon && colon < end) {
+                        unsigned long id = strtoul(sk, NULL, 16);
+                        applies = (id == s_map_id);
+                        nums = colon + 1;
+                    }
+                    while (applies && nums < end) {
+                        char *e2;
+                        unsigned long v = strtoul(nums, &e2, 10);
+                        if (e2 == nums) break;
+                        if (v < 256) mask[v >> 5] &= ~(1u << (v & 31));
+                        nums = (*e2 == ',') ? e2 + 1 : e2;
+                    }
+                    sk = semi ? semi + 1 : end;
                 }
             }
         }
