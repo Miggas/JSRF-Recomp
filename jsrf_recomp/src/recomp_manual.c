@@ -2277,21 +2277,83 @@ extern void sub_0006BA80_gen(void);
 extern void sub_0006C360_gen(void);
 extern void sub_0006A970_gen(void);
 
+/* v200g: RECOMP_DRAW_AREAS=<distance> adds only the areas whose volume
+ * comes within that distance of the point the game tests (the camera or
+ * the skater), instead of all of them, so far-off pieces (Dogenzaka Hill's
+ * upside-down copy in the sky) stay hidden. "all" adds every listed area. */
+static double s_area_radius;
 static int areas_all(void)
 {
     static int on = -1;
     if (on < 0) {
         const char *e = getenv("RECOMP_DRAW_AREAS"), *a = getenv("RECOMP_DRAW_ALL_AREAS");
         on = (e && !strcmp(e, "all")) || (a && atoi(a));
-        fprintf(stderr, "[AREAS] map areas: %s (RECOMP_DRAW_AREAS)\n",
-                on ? "all drawn (no pop-in)" : "as the game marks them");
+        if (!on && e && atof(e) > 0.0) {
+            s_area_radius = atof(e);
+            on = 1;
+        }
+        {   /* RECOMP_DRAW_AREAS_RADIUS=<distance> (the v198e name) too */
+            const char *r = getenv("RECOMP_DRAW_AREAS_RADIUS");
+            if (!on && r && atof(r) > 0.0) {
+                s_area_radius = atof(r);
+                on = 1;
+            }
+        }
+        if (s_area_radius > 0.0)
+            fprintf(stderr, "[AREAS] map areas: also every area within %g of the camera"
+                    " (RECOMP_DRAW_AREAS)\n", s_area_radius);
+        else
+            fprintf(stderr, "[AREAS] map areas: %s (RECOMP_DRAW_AREAS)\n",
+                    on ? "all drawn (no pop-in)" : "as the game marks them");
     }
     return on;
 }
 
+static uint32_t s_area_near[8];
+static int s_area_near_ok;
+
 void sub_0006A970(void)
 {
+    uint32_t obj = g_ecx, pos = MEM32(g_esp + 4), map, areas, n, i;
     sub_0006A970_gen();
+    if (!areas_all() || s_area_radius <= 0.0 || obj != 0x20C6C0u)
+        return;
+    s_area_near_ok = 0;
+    map = MEM32(obj + 4);
+    if (!map || !guest_range_ok(map, 12) || !pos || !guest_range_ok(pos, 12))
+        return;
+    areas = MEM32(map + 4);
+    n = MEM32(map + 8);
+    if (n > 256 || !areas || !guest_range_ok(areas, n * 0x154u))
+        return;
+    {
+        float p[3];
+        double r2 = s_area_radius * s_area_radius;
+        memcpy(p, (const void *)XBOX_PTR(pos), 12);
+        memset(s_area_near, 0, sizeof s_area_near);
+        for (i = 0; i < n; i++) {
+            uint32_t a = areas + i * 0x154u, q;
+            float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+            double d2 = 0.0;
+            int c;
+            for (q = 0; q < 6; q++) {
+                float v[3];
+                memcpy(v, (const void *)XBOX_PTR(a + 12 * q), 12);
+                for (c = 0; c < 3; c++) {
+                    if (v[c] < lo[c]) lo[c] = v[c];
+                    if (v[c] > hi[c]) hi[c] = v[c];
+                }
+            }
+            /* distance from the point to the volume's box (0 inside) */
+            for (c = 0; c < 3; c++) {
+                double d = p[c] < lo[c] ? lo[c] - p[c] : p[c] > hi[c] ? p[c] - hi[c] : 0.0;
+                d2 += d * d;
+            }
+            if (d2 <= r2)
+                s_area_near[i >> 5] |= 1u << (i & 31);
+        }
+    }
+    s_area_near_ok = 1;
 }
 
 /* v199b: not every area is scenery. The garage has one drawn as a white
@@ -2501,6 +2563,10 @@ static void area_pass_body_##name(void)                                      \
         return;                                                              \
     }                                                                        \
     areas_drawable(add);                                                     \
+    if (s_area_radius > 0.0) {                                               \
+        for (k = 0; k < 8; k++)                                              \
+            add[k] = s_area_near_ok ? (add[k] & s_area_near[k]) : 0;         \
+    }                                                                        \
     for (k = 0; k < 8; k++) {                                                \
         keep[k] = MEM32(0x20C6C8u + 4 * k);                                  \
         MEM32(0x20C6C8u + 4 * k) = keep[k] | add[k];                         \
