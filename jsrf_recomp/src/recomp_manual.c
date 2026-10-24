@@ -2282,12 +2282,25 @@ extern void sub_0006A970_gen(void);
  * the skater), instead of all of them, so far-off pieces (Dogenzaka Hill's
  * upside-down copy in the sky) stay hidden. "all" adds every listed area. */
 static double s_area_radius;
+/* v201c: RECOMP_DRAW_AREAS=hops<N> (hops2 by default for "hops"): the
+ * game's own set, widened N times by the visible lists of the areas in it.
+ * Idea by Miggas: Dogenzaka Hill loops, downhill all the way, with the same
+ * stretch of city built at both ends; the game only ever draws the end
+ * you are at. "all" draws both, the "copy in the sky". Steps through the
+ * lists reach far without crossing to the other end of a loop. */
+static int s_area_hops;
 static int areas_all(void)
 {
     static int on = -1;
     if (on < 0) {
         const char *e = getenv("RECOMP_DRAW_AREAS"), *a = getenv("RECOMP_DRAW_ALL_AREAS");
         on = (e && !strcmp(e, "all")) || (a && atoi(a));
+        if (!on && e && !strncmp(e, "hops", 4)) {
+            s_area_hops = e[4] ? atoi(e + 4) : 2;
+            if (s_area_hops < 1) s_area_hops = 1;
+            if (s_area_hops > 16) s_area_hops = 16;
+            on = 1;
+        }
         if (!on && e && atof(e) > 0.0) {
             s_area_radius = atof(e);
             on = 1;
@@ -2299,7 +2312,10 @@ static int areas_all(void)
                 on = 1;
             }
         }
-        if (s_area_radius > 0.0)
+        if (s_area_hops)
+            fprintf(stderr, "[AREAS] map areas: the game's set widened %d times by the visible"
+                    " lists (RECOMP_DRAW_AREAS=hops%d)\n", s_area_hops, s_area_hops);
+        else if (s_area_radius > 0.0)
             fprintf(stderr, "[AREAS] map areas: also every area within %g of the camera"
                     " (RECOMP_DRAW_AREAS)\n", s_area_radius);
         else
@@ -2359,7 +2375,7 @@ static void area_picker(uint32_t obj, uint32_t n)
     game = MEM32(obj + 8 + 4 * (sel >> 5)) & (1u << (sel & 31));
     nr = s_area_near[sel >> 5] & (1u << (sel & 31));
     snprintf(t, sizeof t, "map %04X area %d/%u: %s%s, %.0f away | skips: %.32s", s_map_id, sel, n,
-             game ? "game" : nr ? "distance" : "not drawn",
+             game ? "game" : nr ? (s_area_hops ? "steps" : "distance") : "not drawn",
              (s_area_skip_rt[sel >> 5] & (1u << (sel & 31))) ? " SKIPPED" : "",
              (double)s_area_dist[sel < 256 ? sel : 0], L ? lst : "none");
     xbox_SetTitleExtra(t);
@@ -2373,6 +2389,68 @@ void sub_0006A970(void)
     sub_0006A970_gen();
     if (!areas_all() || obj != 0x20C6C0u)
         return;
+    if (s_area_hops) {                        /* v201c: by steps through the lists */
+        uint32_t cur[8], nxt[8], drawable[8], k2, j;
+        int h;
+        s_area_near_ok = 0;
+        map = MEM32(obj + 4);
+        if (!map || !guest_range_ok(map, 12))
+            return;
+        areas = MEM32(map + 4);
+        n = MEM32(map + 8);
+        if (n > 256 || !areas || !guest_range_ok(areas, n * 0x154u))
+            return;
+        for (k2 = 0; k2 < 8; k2++) cur[k2] = MEM32(obj + 8 + 4 * k2);
+        for (h = 0; h < s_area_hops; h++) {
+            memcpy(nxt, cur, sizeof cur);
+            for (i = 0; i < n; i++) {
+                uint32_t a = areas + i * 0x154u, list, cnt;
+                if (!(cur[i >> 5] & (1u << (i & 31))))
+                    continue;
+                list = MEM32(a + 0x98);
+                cnt = MEM32(a + 0x9C);
+                if (!cnt || cnt > 256 || !guest_range_ok(list, cnt * 4u))
+                    continue;
+                for (j = 0; j < cnt; j++) {
+                    uint32_t v = MEM32(list + 4 * j);
+                    if (v < 256) nxt[v >> 5] |= 1u << (v & 31);
+                }
+            }
+            if (!memcmp(nxt, cur, sizeof cur))
+                break;
+            memcpy(cur, nxt, sizeof cur);
+        }
+        memcpy(s_area_near, cur, sizeof cur);
+        s_area_near_ok = 1;
+        {   /* every 2 s: how many areas the game, the steps and "all" draw,
+             * and which ones "all" would add on top (the loop's other end) */
+            static unsigned long long last;
+            unsigned long long now = (unsigned long long)GetTickCount64();
+            if (now - last >= 2000) {
+                unsigned cg = 0, ch = 0, ca = 0, shown = 0;
+                last = now;
+                areas_drawable(drawable);
+                fprintf(stderr, "[AREAS] hops%d:", s_area_hops);
+                for (i = 0; i < n; i++) {
+                    uint32_t b = 1u << (i & 31), w = i >> 5;
+                    if (drawable[w] & b) ca++;
+                    if ((drawable[w] & b) && (cur[w] & b)) ch++;
+                    if (MEM32(obj + 8 + 4 * w) & b) cg++;
+                }
+                fprintf(stderr, " game %u, with the steps %u, all %u; left out:", cg, ch, ca);
+                for (i = 0; i < n && shown < 60; i++) {
+                    uint32_t b = 1u << (i & 31), w = i >> 5;
+                    if ((drawable[w] & b) && !(cur[w] & b)) {
+                        fprintf(stderr, " %u", i);
+                        shown++;
+                    }
+                }
+                fprintf(stderr, "%s\n", shown ? "" : " none");
+            }
+        }
+        area_picker(obj, n);
+        return;
+    }
     if (s_area_radius <= 0.0) {               /* "all": only the picker */
         map = MEM32(obj + 4);
         if (map && guest_range_ok(map, 12) && MEM32(map + 8) <= 256)
@@ -2687,7 +2765,7 @@ static void area_pass_body_##name(void)                                      \
     areas_drawable(add);                                                     \
     for (k = 0; k < 8; k++)                                                  \
         add[k] &= ~s_area_skip_rt[k];                                        \
-    if (s_area_radius > 0.0) {                                               \
+    if (s_area_radius > 0.0 || s_area_hops) {                                \
         for (k = 0; k < 8; k++)                                              \
             add[k] = s_area_near_ok ? (add[k] & s_area_near[k]) : 0;         \
     }                                                                        \
