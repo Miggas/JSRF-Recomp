@@ -835,6 +835,8 @@ static struct {
     int      lpf; int16_t fc; uint16_t q;
     uint8_t  bin[8]; uint16_t vol[8];
     float    peak, clipped;
+    uint32_t ba; uint16_t hrtf;      /* v200: buffer and HRTF entry, for the report */
+    uint16_t vmin[8], vmax[8];       /* v200: the level range over the period */
 } s_vst[MCPX_HW_MAX_VOICES];
 
 /* v174: the music watch (RECOMP_AUDIO_REPORT / QUIET off). JSRF streams its
@@ -1590,8 +1592,15 @@ static void voice_process(MCPXAPUState *d,
         dbg->bin[i] = (uint8_t)bin[i];
         dbg->vol[i] = vol[i];
         s_vst[v].bin[i] = (uint8_t)bin[i];
+        if (s_vst[v].frames <= 1 || vol[i] < s_vst[v].vmin[i]) s_vst[v].vmin[i] = vol[i];
+        if (s_vst[v].frames <= 1 || vol[i] > s_vst[v].vmax[i]) s_vst[v].vmax[i] = vol[i];
         s_vst[v].vol[i] = vol[i];
     }
+
+    s_vst[v].ba = voice_get_mask(d, v, NV_PAVS_VOICE_CUR_PSL_START, NV_PAVS_VOICE_CUR_PSL_START_BA);
+    s_vst[v].hrtf = v < MCPX_HW_MAX_3D_VOICES
+        ? (uint16_t)voice_get_mask(d, v, NV_PAVS_VOICE_CFG_HRTF_TARGET,
+                                   NV_PAVS_VOICE_CFG_HRTF_TARGET_HANDLE) : 0xFFFFu;
 
     if (voice_should_mute(v)) return;
 
@@ -1814,6 +1823,28 @@ void mcpx_apu_vp_report(void)
                     f, s_vst[v].ea, s_vst[v].peak, s_vst[v].lpf, s_vst[v].fc, s_vst[v].q,
                     s_vst[v].clipped, s_vst[v].bin[0], s_vst[v].bin[1],
                     s_vst[v].vol[0], s_vst[v].vol[1]);
+        }
+        {
+            /* v200: where each voice goes and how loud, all 8 bins -- volume
+             * is attenuation in 1/64 dB steps (0 = full, 0xFFF = silent) --
+             * and the range over the period, so a 3D sound DirectSound does
+             * or does not fade with distance shows as a range or a constant */
+            static int full = -1;
+            if (full < 0) {
+                const char *e = getenv("RECOMP_AUDIO_VOICES");
+                full = e && e[0] == '1';
+            }
+            if (full && shown <= 48) {
+                int b;
+                fprintf(stderr, "[VOICE3D] %3d: %s, buffer %06X, %s, HRTF %s%u; bins/attenuation dB (min..max):",
+                        v, v < MCPX_HW_MAX_3D_VOICES ? "3D" : "2D", s_vst[v].ba,
+                        (s_vst[v].fmt & NV_PAVS_VOICE_CFG_FMT_LOOP) ? "loop" : "one-shot",
+                        s_vst[v].hrtf == 0xFFFFu ? "-" : "", s_vst[v].hrtf == 0xFFFFu ? 0 : s_vst[v].hrtf);
+                for (b = 0; b < 8; b++)
+                    fprintf(stderr, " %u:%.1f..%.1f", s_vst[v].bin[b],
+                            s_vst[v].vmin[b] / 64.0, s_vst[v].vmax[b] / 64.0);
+                fputc('\n', stderr);
+            }
         }
         memset(&s_vst[v], 0, sizeof s_vst[v]);
     }
