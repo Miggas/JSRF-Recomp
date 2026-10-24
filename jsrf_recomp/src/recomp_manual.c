@@ -2175,6 +2175,7 @@ static void draw_who(const char *what, uint32_t a0, uint32_t a1, uint32_t a2)
     static struct { uint64_t key; unsigned long long last; } tab[8192];
     static unsigned lines;
     static int f9_was;
+    static unsigned snap_left, snap_i;     /* v200b: F9 = log the next draws, all of them */
     uint32_t ret[14], n = 0, k;
     uint64_t h = 0xCBF29CE484222325ull;
     unsigned long long now;
@@ -2185,14 +2186,15 @@ static void draw_who(const char *what, uint32_t a0, uint32_t a1, uint32_t a2)
         if (on)
             fprintf(stderr, "[DRAWWHO] on: new draw call chains are logged (F9 = mark)\n");
     }
-    if (!on || lines >= 4000)
+    if (!on)
         return;
     now = (unsigned long long)GetTickCount64();
     {
         int f9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
         if (f9 && !f9_was) {
-            fprintf(stderr, "[DRAWWHO] t=%llu ms ===== MARK (F9) =====\n", now);
-            lines++;
+            fprintf(stderr, "[DRAWWHO] t=%llu ms ===== MARK (F9): the next 2500 draws in order =====\n", now);
+            snap_left = 2500;
+            snap_i = 0;
         }
         f9_was = f9;
     }
@@ -2201,6 +2203,17 @@ static void draw_who(const char *what, uint32_t a0, uint32_t a1, uint32_t a2)
         if (dw_is_ret(v))
             ret[n++] = v;
     }
+    if (snap_left) {
+        snap_left--;
+        fprintf(stderr, "[DRAWSNAP] %4u %s (%08X %08X %08X); calls:", snap_i++, what, a0, a1, a2);
+        for (k = 0; k < n && k < 10; k++)
+            fprintf(stderr, " %08X", ret[k]);
+        fputc('\n', stderr);
+        if (!snap_left)
+            fprintf(stderr, "[DRAWWHO] snapshot done\n");
+    }
+    if (lines >= 4000)
+        return;
     for (k = 0; k < n; k++)
         h = (h ^ ret[k]) * 0x100000001B3ull;
     /* v198b: and the mesh itself -- every level object draws through the
