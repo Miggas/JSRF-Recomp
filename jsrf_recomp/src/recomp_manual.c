@@ -2950,3 +2950,116 @@ void sub_001BAF70(void)
     memcpy((void *)XBOX_PTR(pe), keep, 12);
     memcpy((void *)XBOX_PTR(pt), keep + 3, 12);
 }
+
+/* ── v203: 3D sound distance (RECOMP_SND_DIST=1) ─────────────────────────
+ *
+ * The Chuo Street signs' buzz is heard all over the map, on the Xbox only
+ * near them. From jsrf-rustlang's notes (Gurten): the game sets DirectSound's
+ * listener to distance factor 0.1 and rolloff 0.2, so 3D sounds barely fade
+ * with distance even on the console; what keeps far ones silent is the game
+ * itself. Each sound's preset (0x14 bytes, tables at 0x224ED8 per bank:
+ * play mode, flags, 1.0, min distance, max distance) gives a threshold, and
+ * a sound farther than 10x it (the constant at 0x1CA81C) from the listener
+ * (CTrtSoundXbox +0x3EBC) is not started by sub_001192E0 (bank, channel,
+ * position) and is stopped by sub_00118A60 (handle bank<<16|channel,
+ * position) when it moves there. Both are wrapped to log, for each sound,
+ * its position, the listener, the distance and the limit, and what the
+ * game decided, so a run past a sign shows which part fails. Lines are
+ * printed when a sound's in/out state changes, or every 3 s per sound. */
+extern void sub_001192E0_gen(void);
+extern void sub_00118A60_gen(void);
+
+static int snd_dist_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_SND_DIST");
+        on = e && e[0] == '1';
+        if (on) {
+            float k;
+            memcpy(&k, (const void *)XBOX_PTR(0x1CA81Cu), 4);
+            fprintf(stderr, "[SNDDIST] on: the game's cut-off is %g x each sound's max distance\n", k);
+        }
+    }
+    return on;
+}
+
+/* the preset's min and max distance, or 0 when it cannot be read */
+static int snd_preset(uint32_t bank, uint32_t ch, float *mn, float *mx, uint32_t *flags)
+{
+    uint32_t t, e;
+    if (bank >= 0x39 || ch > 4096)
+        return 0;
+    t = MEM32(0x224ED8u + bank * 4);
+    if (!t || !guest_range_ok(t, 4))
+        return 0;
+    e = t + ch * 0x14u;
+    if (!guest_range_ok(e, 0x14))
+        return 0;
+    *flags = MEM32(e + 4);
+    memcpy(mn, (const void *)XBOX_PTR(e + 0xC), 4);
+    memcpy(mx, (const void *)XBOX_PTR(e + 0x10), 4);
+    return 1;
+}
+
+static void snd_log(const char *what, uint32_t mgr, uint32_t bank, uint32_t ch, uint32_t pos,
+                    uint32_t result)
+{
+    static struct { uint32_t key; int out; unsigned long long t; } tab[64];
+    static unsigned lines;
+    float p[3] = {0, 0, 0}, l[3] = {0, 0, 0}, mn = 0, mx = 0, k = 10.0f;
+    uint32_t flags = 0, key = (bank << 16) | (ch & 0xFFFF), i;
+    double d = -1.0, lim = -1.0;
+    int has = 0, out = 0;
+    unsigned long long now = (unsigned long long)GetTickCount64();
+    if (lines >= 4000)
+        return;
+    if (pos && guest_range_ok(pos, 12)) {
+        memcpy(p, (const void *)XBOX_PTR(pos), 12);
+        has = 1;
+    }
+    if (mgr && guest_range_ok(mgr + 0x3EBC, 12))
+        memcpy(l, (const void *)XBOX_PTR(mgr + 0x3EBC), 12);
+    memcpy(&k, (const void *)XBOX_PTR(0x1CA81Cu), 4);
+    if (has) {
+        d = sqrt((double)(p[0] - l[0]) * (p[0] - l[0]) + (double)(p[1] - l[1]) * (p[1] - l[1])
+                 + (double)(p[2] - l[2]) * (p[2] - l[2]));
+        if (snd_preset(bank, ch, &mn, &mx, &flags)) {
+            lim = (double)mx * k;
+            out = d > lim;
+        }
+    }
+    for (i = 0; i < 64 && tab[i].key && tab[i].key != key + 1; i++) ;
+    if (i < 64) {
+        if (tab[i].key == key + 1 && tab[i].out == out && now - tab[i].t < 3000)
+            return;
+        tab[i].key = key + 1;
+        tab[i].out = out;
+        tab[i].t = now;
+    }
+    lines++;
+    if (has)
+        fprintf(stderr, "[SNDDIST] %s bank %u ch %u at %.0f %.0f %.0f, listener %.0f %.0f %.0f,"
+                " distance %.0f, preset flags %X min %.1f max %.1f -> cut-off %.0f (%s) -> %d\n",
+                what, bank, ch, p[0], p[1], p[2], l[0], l[1], l[2], d, flags, mn, mx, lim,
+                lim < 0 ? "no preset" : out ? "BEYOND" : "within", (int)result);
+    else
+        fprintf(stderr, "[SNDDIST] %s bank %u ch %u, no position (plays at the camera),"
+                " listener %.0f %.0f %.0f -> %d\n", what, bank, ch, l[0], l[1], l[2], (int)result);
+}
+
+void sub_001192E0(void)
+{
+    uint32_t mgr = g_ecx, bank = MEM32(g_esp + 4), ch = MEM32(g_esp + 8), pos = MEM32(g_esp + 12);
+    sub_001192E0_gen();
+    if (snd_dist_on())
+        snd_log("play", mgr, bank, ch, pos, g_eax);
+}
+
+void sub_00118A60(void)
+{
+    uint32_t mgr = g_ecx, h = MEM32(g_esp + 4), pos = MEM32(g_esp + 8);
+    sub_00118A60_gen();
+    if (snd_dist_on())
+        snd_log("move", mgr, (h >> 16) & 0xFFFF, h & 0xFFFF, pos, g_eax);
+}

@@ -33,7 +33,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_0006A970",                # v198d: the area set, widened
          "sub_00150890",                # v200e: blend enable, the backdrop layers
          "sub_0001DAA0",                # v201: kept wrapped (a pass-through now)
-         "sub_001BAF70")                # v201b: the free camera (the LookAt)
+         "sub_001BAF70",                # v201b: the free camera (the LookAt)
+         "sub_001192E0", "sub_00118A60")  # v203: [SNDDIST] play / move a sound
 
 
 def main():
