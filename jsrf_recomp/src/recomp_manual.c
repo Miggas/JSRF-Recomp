@@ -2707,96 +2707,164 @@ AREA_PASS(sub_0006C360, 8)
 
 /* ── v201: free camera (RECOMP_FREECAM=1) ────────────────────────────────
  *
- * sub_0001DAA0 is the game camera's apply: the renderer's view setup, then
- * SetPerspective (75 deg, 1, 4000), then sub_001BAF70, a LookAt into the
- * MMATRIX stack from the camera's eye (+0x44) and target (+0x5C). With the
- * free camera on, both are swapped for the free camera's for the length of
- * that call and put back after, so only what is drawn changes; the game's
- * camera logic, the skater and the area visibility carry on as before.
+ * sub_001BAF70 is the game's LookAt: it takes an eye (ecx) and a target
+ * (edx), both pointers to three floats, and a roll on the stack, and turns
+ * the top of the MMATRIX stack into the view. Every camera class calls it
+ * the same way, with the eye at its object +0x44 and the target at +0x5C
+ * (sub_0001DAA0, sub_0001E1A0, sub_00050180, ...).
  *
- * Keys (the game window has to have focus): F5 on/off (starts where the
- * game camera is). Arrow keys look around, numpad 8/5 forward/back, 4/6
- * left/right, 9/7 up/down; Shift faster, Ctrl slower.
- * RECOMP_FREECAM_SPEED (default 2, units a frame). Y is up. */
+ * v201 hooked sub_0001DAA0, the apply of only one of those classes, and
+ * not the one used in play: its eye is 0,0,0. v201b hooks the LookAt and
+ * takes over any call laid out like that (target 0x18 bytes after the eye),
+ * whichever camera is running. With the free camera on, the floats behind
+ * the two pointers are replaced for the length of the call and put back
+ * after (the roll too), so only what is drawn changes; the game's camera
+ * logic, the skater and the area visibility carry on as before. Turning it
+ * on starts from the game camera's eye and direction.
+ *
+ * Controls (the game window has to have focus): F5 on/off. W/S forward and
+ * back, A/D left and right, Shift up, Ctrl down, mouse to look around,
+ * mouse wheel for the speed (shown in the title). While it flies, the game
+ * sees no keys and the cursor is hidden and held in the window.
+ * RECOMP_FREECAM_SPEED (start speed, default 2 units a 60th of a second),
+ * RECOMP_FREECAM_SENS (mouse, default 0.003 radians a pixel). Y is up. */
+extern void sub_001BAF70_gen(void);
 extern void sub_0001DAA0_gen(void);
+/* v201's hook; stays wrapped so code already wrapped by v201 still links */
+void sub_0001DAA0(void) { sub_0001DAA0_gen(); }
+extern int  xbox_FramebufferKeyRaw(int vk);
+extern void xbox_FreecamInput(int capture, int *dx, int *dy, int *wheel);
 
-void sub_0001DAA0(void)
+static int    s_fc_on = -1, s_fc_active, s_fc_start, s_fc_f5;
+static double s_fc_pos[3], s_fc_yaw, s_fc_pitch, s_fc_speed, s_fc_sens;
+
+static void freecam_title(void)
 {
-    static int on = -1, active, was;
-    static double pos[3], yaw, pitch, speed;
-    uint32_t cam = g_ecx, k;
-    float keep[6], eye[3], at[3];
-    if (on < 0) {
-        const char *e = getenv("RECOMP_FREECAM"), *sp = getenv("RECOMP_FREECAM_SPEED");
-        on = e && e[0] == '1';
-        speed = sp ? atof(sp) : 2.0;
-        if (speed <= 0.0) speed = 2.0;
-        if (on)
-            fprintf(stderr, "[FREECAM] F5 on/off; arrows look, numpad 8/5/4/6 move, 9/7 up/down,"
-                    " Shift faster, Ctrl slower (speed %g)\n", speed);
+    char t[64];
+    if (s_fc_active)
+        snprintf(t, sizeof t, "FREE CAMERA (F5) speed %.2f", s_fc_speed);
+    else
+        t[0] = 0;
+    xbox_SetTitleExtra(t);
+}
+
+/* seconds since the last call, at most a tenth */
+static double freecam_dt(void)
+{
+    static LARGE_INTEGER fq, last;
+    LARGE_INTEGER now;
+    double dt;
+    if (!fq.QuadPart)
+        QueryPerformanceFrequency(&fq);
+    QueryPerformanceCounter(&now);
+    dt = last.QuadPart ? (double)(now.QuadPart - last.QuadPart) / (double)fq.QuadPart : 0.0;
+    last = now;
+    return dt < 0.0 ? 0.0 : dt > 0.1 ? 0.1 : dt;
+}
+
+void sub_001BAF70(void)
+{
+    uint32_t pe = g_ecx, pt = g_edx, ra, roll, k;
+    float keep[6], eye[3], at[3], e3[3], a3[3];
+    int f5, dx, dy, wh;
+    double s, f[3], r[3];
+    if (s_fc_on < 0) {
+        const char *e = getenv("RECOMP_FREECAM"), *sp = getenv("RECOMP_FREECAM_SPEED"),
+                   *se = getenv("RECOMP_FREECAM_SENS");
+        s_fc_on = e && e[0] == '1';
+        s_fc_speed = sp ? atof(sp) : 2.0;
+        if (s_fc_speed <= 0.0) s_fc_speed = 2.0;
+        s_fc_sens = se ? atof(se) : 0.003;
+        if (s_fc_sens <= 0.0) s_fc_sens = 0.003;
+        if (s_fc_on)
+            fprintf(stderr, "[FREECAM] F5 on/off; WASD move, Shift up, Ctrl down, mouse look,"
+                    " wheel speed (speed %g, sens %g)\n", s_fc_speed, s_fc_sens);
     }
-    if (!on || !cam || !guest_range_ok(cam, 0x68)) {
-        sub_0001DAA0_gen();
+    if (!s_fc_on || pt != pe + 0x18 || !guest_range_ok(pe, 0x24)) {
+        sub_001BAF70_gen();
         return;
     }
-    {
-        int f5 = (GetAsyncKeyState(VK_F5) & 0x8000) != 0;
-        if (f5 && !was) {
-            active = !active;
-            if (active) {
-                float e3[3], a3[3];
-                double d[3], len;
-                memcpy(e3, (const void *)XBOX_PTR(cam + 0x44), 12);
-                memcpy(a3, (const void *)XBOX_PTR(cam + 0x5C), 12);
-                for (k = 0; k < 3; k++) { pos[k] = e3[k]; d[k] = (double)a3[k] - e3[k]; }
-                len = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-                if (len > 1e-6) {
-                    yaw = atan2(d[0], d[2]);
-                    pitch = asin(d[1] / len);
-                } else {
-                    yaw = pitch = 0.0;
-                }
+    ra = MEM32(g_esp);
+    memcpy(e3, (const void *)XBOX_PTR(pe), 12);
+    memcpy(a3, (const void *)XBOX_PTR(pt), 12);
+    {   /* each camera once, so a log shows which ones ran */
+        static uint32_t seen[16];
+        static unsigned nseen;
+        for (k = 0; k < nseen && seen[k] != ra; k++) ;
+        if (k == nseen && nseen < 16) {
+            seen[nseen++] = ra;
+            fprintf(stderr, "[FREECAM] camera from %08X obj %08X eye %.1f %.1f %.1f target %.1f %.1f %.1f\n",
+                    ra, pe - 0x44, e3[0], e3[1], e3[2], a3[0], a3[1], a3[2]);
+        }
+    }
+    f5 = (GetAsyncKeyState(VK_F5) & 0x8000) || xbox_FramebufferKeyRaw(VK_F5);
+    if (f5 && !s_fc_f5) {
+        s_fc_active = !s_fc_active;
+        s_fc_start = s_fc_active;
+        if (!s_fc_active)
+            fprintf(stderr, "[FREECAM] off\n");
+        freecam_title();
+    }
+    s_fc_f5 = f5;
+    xbox_FreecamInput(s_fc_active, &dx, &dy, &wh);
+    if (!s_fc_active) {
+        sub_001BAF70_gen();
+        return;
+    }
+    if (s_fc_start) {
+        /* start where this camera is, unless it is a blank one */
+        double d[3], len;
+        for (k = 0; k < 3; k++) d[k] = (double)a3[k] - e3[k];
+        len = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (len > 1e-3 || e3[0] != 0.0f || e3[1] != 0.0f || e3[2] != 0.0f) {
+            s_fc_start = 0;
+            for (k = 0; k < 3; k++) s_fc_pos[k] = e3[k];
+            if (len > 1e-6) {
+                s_fc_yaw = atan2(d[0], d[2]);
+                s_fc_pitch = asin(d[1] / len);
+            } else {
+                s_fc_yaw = s_fc_pitch = 0.0;
             }
-            fprintf(stderr, "[FREECAM] %s at %.1f %.1f %.1f\n", active ? "on" : "off",
-                    pos[0], pos[1], pos[2]);
-            xbox_SetTitleExtra(active ? "FREE CAMERA (F5)" : "");
-        }
-        was = f5;
-    }
-    if (!active) {
-        sub_0001DAA0_gen();
-        return;
-    }
-    {
-        double s = speed, rs = 0.03, f[3], r[3];
-        if (GetAsyncKeyState(VK_SHIFT) & 0x8000) { s *= 5.0; rs *= 2.0; }
-        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) { s *= 0.2; rs *= 0.5; }
-        if (GetAsyncKeyState(VK_LEFT) & 0x8000)  yaw -= rs;
-        if (GetAsyncKeyState(VK_RIGHT) & 0x8000) yaw += rs;
-        if (GetAsyncKeyState(VK_UP) & 0x8000)    pitch += rs;
-        if (GetAsyncKeyState(VK_DOWN) & 0x8000)  pitch -= rs;
-        if (pitch > 1.55) pitch = 1.55;
-        if (pitch < -1.55) pitch = -1.55;
-        f[0] = sin(yaw) * cos(pitch); f[1] = sin(pitch); f[2] = cos(yaw) * cos(pitch);
-        r[0] = cos(yaw); r[1] = 0.0; r[2] = -sin(yaw);
-        for (k = 0; k < 3; k++) {
-            if (GetAsyncKeyState(VK_NUMPAD8) & 0x8000) pos[k] += f[k] * s;
-            if (GetAsyncKeyState(VK_NUMPAD5) & 0x8000) pos[k] -= f[k] * s;
-            if (GetAsyncKeyState(VK_NUMPAD6) & 0x8000) pos[k] += r[k] * s;
-            if (GetAsyncKeyState(VK_NUMPAD4) & 0x8000) pos[k] -= r[k] * s;
-        }
-        if (GetAsyncKeyState(VK_NUMPAD9) & 0x8000) pos[1] += s;
-        if (GetAsyncKeyState(VK_NUMPAD7) & 0x8000) pos[1] -= s;
-        for (k = 0; k < 3; k++) {
-            eye[k] = (float)pos[k];
-            at[k] = (float)(pos[k] + f[k] * 10.0);
+            fprintf(stderr, "[FREECAM] on at %.1f %.1f %.1f (camera from %08X)\n",
+                    s_fc_pos[0], s_fc_pos[1], s_fc_pos[2], ra);
+            freecam_dt();
         }
     }
-    memcpy(keep, (const void *)XBOX_PTR(cam + 0x44), 12);
-    memcpy(keep + 3, (const void *)XBOX_PTR(cam + 0x5C), 12);
-    memcpy((void *)XBOX_PTR(cam + 0x44), eye, 12);
-    memcpy((void *)XBOX_PTR(cam + 0x5C), at, 12);
-    sub_0001DAA0_gen();
-    memcpy((void *)XBOX_PTR(cam + 0x44), keep, 12);
-    memcpy((void *)XBOX_PTR(cam + 0x5C), keep + 3, 12);
+    if (wh) {
+        s_fc_speed *= pow(1.25, wh / 120.0);
+        if (s_fc_speed < 0.05) s_fc_speed = 0.05;
+        if (s_fc_speed > 500.0) s_fc_speed = 500.0;
+        freecam_title();
+    }
+    s = s_fc_speed * 60.0 * freecam_dt();
+    s_fc_yaw += dx * s_fc_sens;
+    s_fc_pitch -= dy * s_fc_sens;
+    if (s_fc_pitch > 1.55) s_fc_pitch = 1.55;
+    if (s_fc_pitch < -1.55) s_fc_pitch = -1.55;
+    f[0] = sin(s_fc_yaw) * cos(s_fc_pitch); f[1] = sin(s_fc_pitch);
+    f[2] = cos(s_fc_yaw) * cos(s_fc_pitch);
+    r[0] = cos(s_fc_yaw); r[1] = 0.0; r[2] = -sin(s_fc_yaw);
+    for (k = 0; k < 3; k++) {
+        if (xbox_FramebufferKeyRaw('W')) s_fc_pos[k] += f[k] * s;
+        if (xbox_FramebufferKeyRaw('S')) s_fc_pos[k] -= f[k] * s;
+        if (xbox_FramebufferKeyRaw('D')) s_fc_pos[k] += r[k] * s;
+        if (xbox_FramebufferKeyRaw('A')) s_fc_pos[k] -= r[k] * s;
+    }
+    if (xbox_FramebufferKeyRaw(VK_SHIFT))   s_fc_pos[1] += s;
+    if (xbox_FramebufferKeyRaw(VK_CONTROL)) s_fc_pos[1] -= s;
+    for (k = 0; k < 3; k++) {
+        eye[k] = (float)s_fc_pos[k];
+        at[k] = (float)(s_fc_pos[k] + f[k] * 10.0);
+    }
+    memcpy(keep, e3, 12);
+    memcpy(keep + 3, a3, 12);
+    roll = MEM32(g_esp + 4);
+    memcpy((void *)XBOX_PTR(pe), eye, 12);
+    memcpy((void *)XBOX_PTR(pt), at, 12);
+    MEM32(g_esp + 4) = 0;
+    sub_001BAF70_gen();
+    /* the LookAt pops its argument, so the roll is back below the stack */
+    MEM32(g_esp - 4) = roll;
+    memcpy((void *)XBOX_PTR(pe), keep, 12);
+    memcpy((void *)XBOX_PTR(pt), keep + 3, 12);
 }

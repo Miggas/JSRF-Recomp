@@ -304,11 +304,57 @@ void xbox_FramebufferWindowFrameStats(uint32_t draws)
     InterlockedExchange(&s_frame_draws, (LONG)draws);
 }
 
+/* v201b: while the free camera flies, the game sees no keys (WASD, Shift
+ * and Ctrl would also move the skater) and the mouse is held in the window */
+static volatile LONG s_key_mask, s_mouse_cap, s_wheel;
+
 int xbox_FramebufferKeyDown(int vk)
+{
+    if ((unsigned)vk > 255 || s_key_mask)
+        return 0;
+    return s_key_down[vk] != 0;
+}
+
+int xbox_FramebufferKeyRaw(int vk)
 {
     if ((unsigned)vk > 255)
         return 0;
     return s_key_down[vk] != 0;
+}
+
+/* Free camera input, called from the game thread once a frame. capture=1
+ * hides the cursor over the window, keeps it centred and reports how far it
+ * moved since the last call; wheel is in notches (120 = 1). Only while the
+ * window has the focus, so alt-tabbing away gives the mouse back. */
+void xbox_FreecamInput(int capture, int *dx, int *dy, int *wheel)
+{
+    static int had;
+    HWND h = s_hwnd;
+    *dx = *dy = 0;
+    *wheel = 0;
+    InterlockedExchange(&s_key_mask, capture);
+    if (!capture || !h || GetForegroundWindow() != h) {
+        InterlockedExchange(&s_mouse_cap, 0);
+        InterlockedExchange(&s_wheel, 0);
+        had = 0;
+        return;
+    }
+    InterlockedExchange(&s_mouse_cap, 1);
+    {
+        RECT r;
+        POINT c, p;
+        GetClientRect(h, &r);
+        c.x = (r.right - r.left) / 2;
+        c.y = (r.bottom - r.top) / 2;
+        ClientToScreen(h, &c);
+        if (had && GetCursorPos(&p)) {
+            *dx = p.x - c.x;
+            *dy = p.y - c.y;
+        }
+        SetCursorPos(c.x, c.y);
+        had = 1;
+    }
+    *wheel = (int)InterlockedExchange(&s_wheel, 0);
 }
 
 /* v139: borderless full screen on the window's monitor (RECOMP_FULLSCREEN=1
@@ -392,6 +438,17 @@ static LRESULT CALLBACK fb_wndproc(HWND h, UINT m, WPARAM w, LPARAM l)
         if ((unsigned)w < 256)
             s_key_down[w] = 0;
         return m == WM_SYSKEYUP ? DefWindowProcA(h, m, w, l) : 0;
+
+    case WM_MOUSEWHEEL:
+        InterlockedExchangeAdd(&s_wheel, (short)HIWORD(w));
+        return 0;
+
+    case WM_SETCURSOR:
+        if (s_mouse_cap && LOWORD(l) == HTCLIENT) {
+            SetCursor(NULL);
+            return TRUE;
+        }
+        break;
 
     /* Alt-tabbing away with a key held would leave it held for ever. */
     case WM_KILLFOCUS:
