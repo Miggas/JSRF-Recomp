@@ -2287,12 +2287,32 @@ static int areas_mode(void)
 static uint32_t s_area_draw[8];     /* the set the draw passes use */
 static int s_area_draw_ok;
 
+/* v198e: RECOMP_DRAW_AREAS_RADIUS=<units>: areas whose middle is within
+ * that distance of the point the game tests (the camera or the skater) are
+ * drawn too, whatever the lists say. An area is a convex volume of 6 planes
+ * (a point at +0x00 and a normal at +0x48 for each, 12 bytes apart); its
+ * middle is taken as the average of the 6 points. */
+static double areas_radius(void)
+{
+    static double r = -1.0;
+    if (r < 0.0) {
+        const char *e = getenv("RECOMP_DRAW_AREAS_RADIUS");
+        r = e ? atof(e) : 0.0;
+        if (r < 0.0) r = 0.0;
+        if (r > 0.0)
+            fprintf(stderr, "[AREAS] areas within %g of the camera are drawn too"
+                    " (RECOMP_DRAW_AREAS_RADIUS)\n", r);
+    }
+    return r;
+}
+
 void sub_0006A970(void)
 {
-    uint32_t obj = g_ecx, map, areas, n, i, k, hop;
+    uint32_t obj = g_ecx, pos = MEM32(g_esp + 4), map, areas, n, i, k, hop;
     int m = areas_mode();
+    double rad = areas_radius();
     sub_0006A970_gen();
-    if (m <= 0 || obj != 0x20C6C0u)
+    if (obj != 0x20C6C0u || (m <= 0 && rad <= 0.0))
         return;
     s_area_draw_ok = 0;
     map = MEM32(obj + 4);
@@ -2304,7 +2324,40 @@ void sub_0006A970(void)
         return;
     for (k = 0; k < 8; k++)
         s_area_draw[k] = MEM32(obj + 8 + 4 * k);
-    for (hop = 0; hop < (uint32_t)m; hop++) {
+    if (rad > 0.0 && pos && guest_range_ok(pos, 12)) {
+        float p[3];
+        static unsigned long long last;
+        unsigned long long now = (unsigned long long)GetTickCount64();
+        unsigned game = 0, added = 0;
+        memcpy(p, (const void *)XBOX_PTR(pos), 12);
+        for (i = 0; i < n; i++) {
+            uint32_t a = areas + i * 0x154u, q;
+            double c[3] = {0, 0, 0}, d2;
+            if (s_area_draw[i >> 5] & (1u << (i & 31))) { game++; continue; }
+            for (q = 0; q < 6; q++) {
+                float v[3];
+                memcpy(v, (const void *)XBOX_PTR(a + 12 * q), 12);
+                c[0] += v[0]; c[1] += v[1]; c[2] += v[2];
+            }
+            c[0] /= 6; c[1] /= 6; c[2] /= 6;
+            d2 = (c[0] - p[0]) * (c[0] - p[0]) + (c[1] - p[1]) * (c[1] - p[1])
+               + (c[2] - p[2]) * (c[2] - p[2]);
+            if (d2 <= rad * rad) {
+                s_area_draw[i >> 5] |= 1u << (i & 31);
+                added++;
+            }
+        }
+        if (now - last >= 2000) {
+            last = now;
+            fprintf(stderr, "[AREAS] %u areas: %u marked by the game, %u added within %g"
+                    " (camera %.0f %.0f %.0f)\n", n, game, added, rad, p[0], p[1], p[2]);
+        }
+        if (m <= 0) {
+            s_area_draw_ok = 1;
+            return;
+        }
+    }
+    for (hop = 0; hop < (uint32_t)(m > 0 ? m : 0); hop++) {
         uint32_t cur[8];
         memcpy(cur, s_area_draw, sizeof cur);
         for (i = 0; i < n; i++) {
@@ -2330,7 +2383,7 @@ void name(void)                                                              \
 {                                                                            \
     uint32_t keep[8], k;                                                     \
     int m = areas_mode();                                                    \
-    if (m == 0 || (m > 0 && !s_area_draw_ok)) {                              \
+    if ((m == 0 && areas_radius() <= 0.0) || (m >= 0 && !s_area_draw_ok)) { \
         name##_gen();                                                        \
         return;                                                              \
     }                                                                        \
