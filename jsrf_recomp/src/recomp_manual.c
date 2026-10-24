@@ -3048,6 +3048,98 @@ static void snd_log(const char *what, uint32_t mgr, uint32_t bank, uint32_t ch, 
                 " listener %.0f %.0f %.0f -> %d\n", what, bank, ch, l[0], l[1], l[2], (int)result);
 }
 
+/* v203c: the game's cut-off, kept up. A positioned sound is checked
+ * against 10x its max distance only when it starts (sub_001192E0) and when
+ * its object moves it (sub_00118A60). The Chuo Street signs' buzz (bank 52
+ * ch 35, shared by the signs) is started once, from the spawn point 646
+ * units away (within its 800), and the signs never move it again, so
+ * nothing stops it: DirectSound holds it at its quietest, -12 dB (rolloff
+ * 0.2, min 5, max 80), wherever you go. Re-entering the map does not start
+ * it (the listener is still at 0,0,0 then, 3339 away), which is why the
+ * buzz was only there the first time (Miggas). Every positioned sound that
+ * starts or moves is remembered with its last position, and each frame of
+ * the sound manager (sub_00118610) stops, through the game's own stop
+ * (sub_00117F40, bank and channel), any that the listener has left beyond
+ * that cut-off -- what the game does when a sound is moved there.
+ * RECOMP_SND_CULL=0 turns it off. */
+static struct { uint32_t h; float p[3]; float lim; } s_snd_trk[64];
+
+static int snd_cull_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_SND_CULL");
+        on = !(e && e[0] == '0');
+        fprintf(stderr, "[SNDDIST] far 3D sounds stopped past the game's cut-off: %s"
+                " (RECOMP_SND_CULL)\n", on ? "yes" : "no");
+    }
+    return on;
+}
+
+static void snd_track(uint32_t mgr, uint32_t h, uint32_t pos)
+{
+    uint32_t bank = (h >> 16) & 0xFFFF, ch = h & 0xFFFF, flags = 0, i, fr = 64;
+    float mn, mx, k = 10.0f;
+    (void)mgr;
+    if (!snd_cull_on() || !guest_range_ok(pos, 12) || !snd_preset(bank, ch, &mn, &mx, &flags))
+        return;
+    if ((flags & 0x10000u) || mx <= 0.0f)          /* 2D, or no distance */
+        return;
+    memcpy(&k, (const void *)XBOX_PTR(0x1CA81Cu), 4);
+    for (i = 0; i < 64; i++) {
+        if (s_snd_trk[i].h == h + 1) { fr = i; break; }
+        if (!s_snd_trk[i].h && fr == 64) fr = i;
+    }
+    if (fr == 64)
+        return;
+    s_snd_trk[fr].h = h + 1;
+    memcpy(s_snd_trk[fr].p, (const void *)XBOX_PTR(pos), 12);
+    s_snd_trk[fr].lim = mx * k;
+}
+
+extern void sub_00118610_gen(void);
+extern void sub_00117F40(void);
+
+void sub_00118610(void)
+{
+    uint32_t mgr = g_ecx, i;
+    sub_00118610_gen();
+    if (!snd_cull_on() || !mgr || !guest_range_ok(mgr + 0x3EBC, 12))
+        return;
+    for (i = 0; i < 64; i++) {
+        float l[3];
+        double dx, dy, dz;
+        uint32_t h;
+        if (!s_snd_trk[i].h)
+            continue;
+        memcpy(l, (const void *)XBOX_PTR(mgr + 0x3EBC), 12);
+        if (l[0] == 0.0f && l[1] == 0.0f && l[2] == 0.0f)
+            return;                                    /* no listener yet */
+        dx = s_snd_trk[i].p[0] - l[0];
+        dy = s_snd_trk[i].p[1] - l[1];
+        dz = s_snd_trk[i].p[2] - l[2];
+        if (dx * dx + dy * dy + dz * dz <= (double)s_snd_trk[i].lim * s_snd_trk[i].lim)
+            continue;
+        h = s_snd_trk[i].h - 1;
+        s_snd_trk[i].h = 0;
+        {
+            uint32_t ra = g_eax, rb = g_ebx, rc = g_ecx, rd = g_edx, rsi = g_esi,
+                     rdi = g_edi, rbp = g_ebp;
+            g_esp -= 4; MEM32(g_esp) = h & 0xFFFF;        /* channel */
+            g_esp -= 4; MEM32(g_esp) = (h >> 16) & 0xFFFF; /* bank */
+            g_esp -= 4; MEM32(g_esp) = 0;                  /* return address, ret 8 */
+            g_ecx = mgr;
+            sub_00117F40();
+            g_eax = ra; g_ebx = rb; g_ecx = rc; g_edx = rd; g_esi = rsi; g_edi = rdi; g_ebp = rbp;
+        }
+        if (snd_dist_on())
+            fprintf(stderr, "[SNDDIST] stopped bank %u ch %u at %.0f %.0f %.0f: the listener"
+                    " (%.0f %.0f %.0f) left its cut-off %.0f\n", (h >> 16) & 0xFFFF, h & 0xFFFF,
+                    s_snd_trk[i].p[0], s_snd_trk[i].p[1], s_snd_trk[i].p[2], l[0], l[1], l[2],
+                    s_snd_trk[i].lim);
+    }
+}
+
 /* v203b: RECOMP_SND_MUTE=<bank>[:<ch>],... -- those sounds are never
  * started (as if beyond the cut-off), to find a sound by ear */
 static int snd_muted(uint32_t bank, uint32_t ch)
@@ -3085,6 +3177,8 @@ void sub_001192E0(void)
         return;
     }
     sub_001192E0_gen();
+    if ((int32_t)g_eax > 0 && pos)
+        snd_track(mgr, g_eax, pos);
     if (snd_dist_on()) {
         if ((int32_t)g_eax > 0) {          /* v203b: every start, not only the first */
             static unsigned n;
@@ -3105,6 +3199,8 @@ void sub_00118A60(void)
 {
     uint32_t mgr = g_ecx, h = MEM32(g_esp + 4), pos = MEM32(g_esp + 8);
     sub_00118A60_gen();
+    if (g_eax && pos)
+        snd_track(mgr, h, pos);
     if (snd_dist_on())
         snd_log("move", mgr, (h >> 16) & 0xFFFF, h & 0xFFFF, pos, g_eax);
 }
