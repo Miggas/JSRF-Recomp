@@ -2311,6 +2311,8 @@ static int areas_all(void)
 
 static uint32_t s_area_near[8];
 static int s_area_near_ok;
+static float s_area_dist[256];
+static void areas_drawable(uint32_t out[8]);
 
 void sub_0006A970(void)
 {
@@ -2351,6 +2353,29 @@ void sub_0006A970(void)
             }
             if (d2 <= r2)
                 s_area_near[i >> 5] |= 1u << (i & 31);
+            s_area_dist[i] = (float)sqrt(d2);
+        }
+        {   /* v200h: every 2 s, the areas the distance adds beyond the game's
+             * own set, with their distances: which one is the sky copy */
+            static unsigned long long last;
+            unsigned long long now = (unsigned long long)GetTickCount64();
+            if (now - last >= 2000) {
+                uint32_t game[8], drawable[8], k2;
+                int shown = 0;
+                last = now;
+                for (k2 = 0; k2 < 8; k2++) game[k2] = MEM32(obj + 8 + 4 * k2);
+                areas_drawable(drawable);
+                fprintf(stderr, "[AREAS] at %.0f %.0f %.0f, added by distance (area:distance):",
+                        p[0], p[1], p[2]);
+                for (i = 0; i < n; i++) {
+                    uint32_t b = 1u << (i & 31), w = i >> 5;
+                    if ((s_area_near[w] & b) && (drawable[w] & b) && !(game[w] & b)) {
+                        fprintf(stderr, " %u:%.0f", i, s_area_dist[i]);
+                        shown++;
+                    }
+                }
+                fprintf(stderr, "%s\n", shown ? "" : " none");
+            }
         }
     }
     s_area_near_ok = 1;
