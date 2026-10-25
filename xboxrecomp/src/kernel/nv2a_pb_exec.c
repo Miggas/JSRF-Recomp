@@ -3545,11 +3545,13 @@ static int s_ws_behind;
  * of the span (more than 2% of the width): boost's camera quad has every
  * corner at a screen edge, a floor that happens to reach both edges does not */
 static int s_ws_inner;
+static float s_ws_ylo, s_ws_yhi;           /* v217: the span's y range too */
 static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, float *hi)
 {
     uint32_t i, n = s_gpu.idx_count;
-    float p[4], x, xs[64];
+    float p[4], x, y = 0.0f, xs[64];
     *lo = 1.0e9f; *hi = -1.0e9f;
+    s_ws_ylo = 1.0e9f; s_ws_yhi = -1.0e9f;
     s_ws_behind = 0;
     s_ws_inner = 0;
     if (n == 0 || n > maxn)
@@ -3560,6 +3562,7 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
             Nv2aVshOutput o;
             ff_transform(idx, &o);
             x = o.pos[0];                      /* screen x, already over w */
+            y = o.pos[1];
             if (!(o.pos[3] > 0.0f)) s_ws_behind = 1;
         } else if (kind == XK_PROGRAM && !st->screen_space) {
             Nv2aVshOutput o;                   /* v187g: run the program */
@@ -3568,12 +3571,16 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
             if (!transform_vertex(idx, &o))
                 return 0;
             x = o.pos[0];
+            y = o.pos[1];
             if (!(o.pos[3] > 0.0f)) s_ws_behind = 1;
         } else {
             if (!fetch_attr(&s_gpu.attr[0], idx, p))
                 return 0;
             x = p[0];
+            y = p[1];
         }
+        if (y < s_ws_ylo) s_ws_ylo = y;
+        if (y > s_ws_yhi) s_ws_yhi = y;
         if (x < *lo) *lo = x;
         if (x > *hi) *hi = x;
         if (i < 64) xs[i] = x;
@@ -3820,7 +3827,12 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
          * width (see `keep` below); for the rest -- nearly all of the 3D --
          * running up to 64 vertices through the CPU interpreter per draw was
          * wasted work (5-8% of the executor in 99th Street). */
-        int could_keep = (plain && *is_2d) || rt || s_gpu.idx_count <= 8;
+        /* v217: on a menu screen, an untextured mesh of up to 64 vertices
+         * that covers the whole screen (Roboy's options menu draws its
+         * background as two, 48 and 60 indices: squeezed, black at the
+         * sides, Miggas) */
+        int menu_bg = plain && !st->stencil_test && s_gpu.idx_count <= 64 && xbox_MenuScreenNow();
+        int could_keep = (plain && *is_2d) || rt || s_gpu.idx_count <= 8 || menu_bg;
         /* (any batch of up to 8 vertices keeps its span, so the title-bar
          * test below sees the same `full` as before) */
         int covers = 0;
@@ -3856,7 +3868,9 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
          * out "across the screen, within 5%" on some frames and not others,
          * and it was drawn unsqueezed on those -- the floor jumping to the
          * 4:3 shape and back as the camera moved. Only in widescreen. */
-        int keep = full && !s_ws_behind && ((plain && flatish) || rt || camquad);
+        int fullscreen = menu_bg && full && s_ws_ylo <= 0.02f * (float)st->height
+                         && s_ws_yhi >= 0.98f * (float)st->height;
+        int keep = full && !s_ws_behind && ((plain && flatish) || rt || camquad || fullscreen);
         if (!keep && !full && ws_title_bar(kind, st)) {   /* v187u */
             static int said;
             if (logw > 0 && said++ < 8)

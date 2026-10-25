@@ -568,6 +568,7 @@ next fix.
 - **v214:** Roboy's garage menu (Miggas's run: drawn by sub_0011C070, wrapped) gets the save menu's treatment, as Miggas asked: shown wide, no longer held at 4:3, nothing moved.
 - **v215:** Roboy's system menu (drawn by sub_0011FEB0, wrapped; Miggas's run): the same, shown wide, nothing moved.
 - **v216:** Roboy's options menu (drawn by sub_0011CF10, wrapped; Miggas's run): the same, shown wide, nothing moved.
+- **v217:** Roboy's options menu, shown wide, kept black bars at the sides (Miggas): its yellow background is two untextured meshes of 48 and 60 indices covering the whole screen, and the renderer only kept such a layer full width when it is a quad (at most 6-8 vertices), so they were squeezed. On a menu screen (`xbox_MenuScreenNow`), an untextured mesh of up to 64 vertices that covers the whole screen, edge to edge in both directions, now stays full width too (`ws_span` keeps the y range as well).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
