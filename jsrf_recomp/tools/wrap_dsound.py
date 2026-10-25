@@ -157,7 +157,8 @@ def ws_undo(gen):
 # vblank DPC, sub_00193D90; reverted with the rest of the RECOMP_ACK_FAST work).
 UNWRAP = ("sub_00193D90",
           "D3D8_D3DDevice_SetTransform",   # v187c wrapped it, v187d does not
-          "sub_00153A90", "sub_0006AC10")  # wrapped by the scrapped v202 tests
+          "sub_00153A90", "sub_0006AC10",  # wrapped by the scrapped v202 tests
+          "sub_00120180")                  # v228 wrapped it, v228c does not
 
 
 def unwrap_pass(gen):
