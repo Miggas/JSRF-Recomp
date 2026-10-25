@@ -614,6 +614,19 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
 {
     int where = 0;
     unsigned k;
+    /* v209d: the scrolling title in the top bar ("Cover Rokkaku-dai Heights
+     * in graffiti!"), a text object (sub_00115F40, x at +0x54) that runs
+     * from x 640 to past x 0 and starts again: in widescreen it appeared and
+     * vanished inside the picture (Miggas). Its x is spread about the middle
+     * by 1/k, so the run covers the whole wide screen, edge to edge (a
+     * third faster at 16:9); 1/k is 1 on a 4:3 screen. */
+    if (MEM32(g_esp) == 0x00115F79u && wsm_map_active()) {
+        double kk = xbox_WidescreenK();
+        if (kk > 0.2 && kk < 0.9999)
+            MEMF(g_esp + 4) = (float)(320.0 + (MEMF(g_esp + 4) - 320.0) / kk);
+        sub_0003D5D0_gen();
+        return;
+    }
     if (wsm_in_header)
         where = -1;
     else if (wsm_in_map) {
