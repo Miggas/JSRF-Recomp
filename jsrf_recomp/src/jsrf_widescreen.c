@@ -531,6 +531,7 @@ static const WsmScreen wsm_screens[] = {
     { "music",    0x0011F7D0u, 0x0011F7D0u, NULL, 0, NULL, 0 },   /* v219: not held */
     { "graffiti", 0x00127080u, 0x00127080u, NULL, 0, NULL, 0 },   /* v220: not held */
     { "test run", 0x0011C750u, 0x0011C750u, NULL, 0, NULL, 0 },   /* v221: not held */
+    { "test run course", 0x0011A490u, 0x0011A490u, NULL, 0, NULL, 0 },   /* v222 */
 };
 #define WSM_NSCREENS WSM_N(wsm_screens)
 static volatile DWORD s_wsm_ms[WSM_NSCREENS];
@@ -544,7 +545,7 @@ static int wsm_on(void)
         double a = xbox_PresentAspect();
         on = a > 4.0 / 3.0 + 1e-6 && ws_flag("RECOMP_WS_MENU_MAP");
         if (on)
-            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system, options, practice, music, graffiti, test run"
+            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system, options, practice, music, graffiti, test run, test run course"
                     " (RECOMP_WS_MENU_MAP=0: 4:3)\n");
     }
     return on;
@@ -728,6 +729,9 @@ WSM_SCREEN(sub_0011F7D0, 8)
 WSM_SCREEN(sub_00127080, 9)
 /* v221: the test run menu (sub_0011C750, Miggas's run): the same */
 WSM_SCREEN(sub_0011C750, 10)
+/* v222: the test run's course screen (sub_0011A490: route, rankings; the
+ * same for all four kinds of test run, Miggas's run): the same */
+WSM_SCREEN(sub_0011A490, 11)
 
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);

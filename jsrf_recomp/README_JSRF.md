@@ -574,6 +574,7 @@ next fix.
 - **v219:** the music selection menu (drawn by sub_0011F7D0, wrapped; Miggas's run): shown wide, nothing moved, the edges extended to the screen sides.
 - **v220:** the garage's graffiti menu (drawn by sub_00127080, wrapped; Miggas's run): shown wide like the other yellow menus, the sides filled row by row; the boot task's graffiti-select hold at 4:3 is skipped while it is shown. The icons keep the menu depth.
 - **v221:** the test run menu (drawn by sub_0011C750, wrapped; Miggas's run): shown wide like the other yellow menus, the sides filled row by row.
+- **v222:** the test run's course screen (route and rankings, the same for all four test runs; drawn by sub_0011A490, wrapped; Miggas's run): shown wide like the other yellow menus, the sides filled row by row.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
