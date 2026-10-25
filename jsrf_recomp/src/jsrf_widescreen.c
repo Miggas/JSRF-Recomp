@@ -716,13 +716,15 @@ static void wsm_draw(void (*gen)(void), int where)
  * 2 fill (a menu's own screen function: wins over 3), 3 no fill (graffiti
  * select's 3D scene; v227), 4 no fill (graffiti select's scene is drawn in
  * this frame: wins over 2; v228), 5 the scene function's end (v228b: the
- * scene counts only if something was drawn between 4 and 5) */
+ * scene counts only if something was drawn between 4 and 5), 6 a menu's
+ * screen function has returned (v229: what it drew between 2 and 6 is
+ * counted) */
 static void wsm_fill_mark(int fill)
 {
-    static const uint32_t v[6] = { 200000000u, 20000000u, 50000000u, 2000000000u,
-                                   100000000u, 130000000u };
+    static const uint32_t v[7] = { 200000000u, 20000000u, 50000000u, 2000000000u,
+                                   100000000u, 130000000u, 500000000u };
     uint32_t zb;
-    if (!MEM32(0x19DCE0u) || fill < 0 || fill > 5)
+    if (!MEM32(0x19DCE0u) || fill < 0 || fill > 6)
         return;                             /* no device yet */
     zb = MEM32(0x19E2E8u);
     wsm_zbias(v[fill]);
@@ -760,6 +762,7 @@ void sub_00124BD0(void)
         was = wsm_cur;                              \
         wsm_cur = idx;                              \
         name##_gen();                               \
+        if (idx >= 3) wsm_fill_mark(6);             \
         wsm_cur = was;                              \
     }
 
