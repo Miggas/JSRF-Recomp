@@ -572,6 +572,7 @@ next fix.
 - **v217c:** the same menus: the bars scanning along the top no longer flash the whole corner when they cross the 4:3 edge (only the background layers across the whole width colour the column the sides are filled from), and the small grey square in the top-left corner is no longer drawn (Miggas's run).
 - **v218:** the practice menu (drawn by sub_0011D740, wrapped; Miggas's run): shown wide like the save and Roboy's menus, nothing moved, the sides filled row by row. Only strips reaching the top or bottom (the scanning bars) are now kept off the fill column, so a bar starting at the 4:3 edge carries on to the side.
 - **v219:** the music selection menu (drawn by sub_0011F7D0, wrapped; Miggas's run): shown wide, nothing moved, the edges extended to the screen sides.
+- **v220:** the garage's graffiti menu (drawn by sub_00127080, wrapped; Miggas's run): shown wide like the other yellow menus, the sides filled row by row; the boot task's graffiti-select hold at 4:3 is skipped while it is shown. The icons keep the menu depth.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

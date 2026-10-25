@@ -529,6 +529,7 @@ static const WsmScreen wsm_screens[] = {
     { "options",  0x0011CF10u, 0x0011CF10u, NULL, 0, NULL, 0 },   /* v216: not held */
     { "practice", 0x0011D740u, 0x0011D740u, NULL, 0, NULL, 0 },   /* v218: not held */
     { "music",    0x0011F7D0u, 0x0011F7D0u, NULL, 0, NULL, 0 },   /* v219: not held */
+    { "graffiti", 0x00127080u, 0x00127080u, NULL, 0, NULL, 0 },   /* v220: not held */
 };
 #define WSM_NSCREENS WSM_N(wsm_screens)
 static volatile DWORD s_wsm_ms[WSM_NSCREENS];
@@ -542,7 +543,7 @@ static int wsm_on(void)
         double a = xbox_PresentAspect();
         on = a > 4.0 / 3.0 + 1e-6 && ws_flag("RECOMP_WS_MENU_MAP");
         if (on)
-            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system, options, practice, music"
+            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system, options, practice, music, graffiti"
                     " (RECOMP_WS_MENU_MAP=0: 4:3)\n");
     }
     return on;
@@ -559,6 +560,13 @@ static int wsm_map_active(void)
         if (s_wsm_ms[i] && now - s_wsm_ms[i] < 200)
             return 1;
     return 0;
+}
+
+/* v220: for recomp_manual.c's boot-task screens (graffiti select): not held
+ * at 4:3 while a menu made wide is shown */
+int jsrf_WideMenuNow(void)
+{
+    return wsm_map_active();
 }
 
 extern void D3D8_D3DDevice_SetRenderState_ZBias(void);
@@ -715,6 +723,8 @@ WSM_SCREEN(sub_0011CF10, 6)
 WSM_SCREEN(sub_0011D740, 7)
 /* v219: the music selection menu (sub_0011F7D0, Miggas's run): the same */
 WSM_SCREEN(sub_0011F7D0, 8)
+/* v220: the garage's graffiti menu (sub_00127080, Miggas's run): the same */
+WSM_SCREEN(sub_00127080, 9)
 
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);

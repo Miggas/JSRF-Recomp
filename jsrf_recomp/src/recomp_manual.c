@@ -1525,6 +1525,7 @@ static DWORD    boot_since, boot_report;
  * (jsrf_widescreen.c has the other 4:3 screens; RECOMP_WS_HOLD43=0: wide). */
 extern void xbox_WidescreenHold43(void);
 extern void xbox_MenuScreen(void);     /* v207c */
+extern int  jsrf_WideMenuNow(void);    /* v220: jsrf_widescreen.c */
 
 static void boot_ws_hold(uint32_t handler)
 {
@@ -1533,8 +1534,8 @@ static void boot_ws_hold(uint32_t handler)
         const char *e = getenv("RECOMP_WS_HOLD43");
         on = !(e && e[0] == '0');
     }
-    if (on && (handler == 0x0007D100u || handler == 0x0007CFE0u))
-        xbox_WidescreenHold43();
+    if (on && (handler == 0x0007D100u || handler == 0x0007CFE0u) && !jsrf_WideMenuNow())
+        xbox_WidescreenHold43();   /* v220: not while a menu made wide is shown */
     /* v207c: these two are menu screens for the renderer's depth too (the
      * graffiti menu's icons; v207b only told it about jsrf_widescreen.c's) */
     if (handler == 0x0007D100u || handler == 0x0007CFE0u)

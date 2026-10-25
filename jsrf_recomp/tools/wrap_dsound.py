@@ -45,7 +45,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_0011FEB0",                # v215: Roboy's system menu, not held at 4:3
          "sub_0011CF10",                # v216: Roboy's options menu, not held at 4:3
          "sub_0011D740",                # v218: the practice menu, not held at 4:3
-         "sub_0011F7D0")                # v219: the music selection menu, not held at 4:3
+         "sub_0011F7D0",                # v219: the music selection menu, not held at 4:3
+         "sub_00127080")                # v220: the graffiti menu, not held at 4:3
 
 
 def main():
