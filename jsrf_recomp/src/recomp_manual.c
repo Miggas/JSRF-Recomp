@@ -1526,6 +1526,8 @@ static DWORD    boot_since, boot_report;
 extern void xbox_WidescreenHold43(void);
 extern void xbox_MenuScreen(void);     /* v207c */
 extern int  jsrf_WideMenuNow(void);    /* v220: jsrf_widescreen.c */
+extern int  jsrf_MenuHold43(void);     /* v223 */
+extern void xbox_WidescreenRowFill(void);
 
 static void boot_ws_hold(uint32_t handler)
 {
@@ -1534,8 +1536,15 @@ static void boot_ws_hold(uint32_t handler)
         const char *e = getenv("RECOMP_WS_HOLD43");
         on = !(e && e[0] == '0');
     }
-    if (on && (handler == 0x0007D100u || handler == 0x0007CFE0u) && !jsrf_WideMenuNow())
-        xbox_WidescreenHold43();   /* v220: not while a menu made wide is shown */
+    /* v223: wide, the sides filled row by row from the 4:3 edge (the same
+     * picture without the jump to 4:3 and back); RECOMP_WS_MENU_HOLD43=1:
+     * held at 4:3 as before */
+    if (on && (handler == 0x0007D100u || handler == 0x0007CFE0u) && !jsrf_WideMenuNow()) {
+        if (jsrf_MenuHold43())
+            xbox_WidescreenHold43();   /* v220: not while a menu made wide is shown */
+        else
+            xbox_WidescreenRowFill();
+    }
     /* v207c: these two are menu screens for the renderer's depth too (the
      * graffiti menu's icons; v207b only told it about jsrf_widescreen.c's) */
     if (handler == 0x0007D100u || handler == 0x0007CFE0u)

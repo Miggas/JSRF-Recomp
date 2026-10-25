@@ -155,10 +155,21 @@ void xbox_WidescreenRowFill(void)
 {
     s_ws_rowfill_ms = GetTickCount64();
 }
+/* v223: a wide menu that places its own parts at the sides (the map, the
+ * notebook, the start menu's character select): no row fill while it is
+ * shown, whatever else asked for it */
+static volatile ULONGLONG s_ws_rowfill_off_ms;
+void xbox_WidescreenRowFillOff(void)
+{
+    s_ws_rowfill_off_ms = GetTickCount64();
+}
 double xbox_PresentRowFillK(void)
 {
     double k;
-    if (s_ws_n > 0.5 || !s_ws_rowfill_ms || GetTickCount64() - s_ws_rowfill_ms > 100)
+    ULONGLONG now = GetTickCount64();
+    if (s_ws_n > 0.5 || !s_ws_rowfill_ms || now - s_ws_rowfill_ms > 100)
+        return 0.0;
+    if (s_ws_rowfill_off_ms && now - s_ws_rowfill_off_ms <= 100)
         return 0.0;
     k = xbox_WidescreenK();
     return k < 0.999 ? k : 0.0;

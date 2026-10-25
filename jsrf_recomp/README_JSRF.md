@@ -575,6 +575,7 @@ next fix.
 - **v220:** the garage's graffiti menu (drawn by sub_00127080, wrapped; Miggas's run): shown wide like the other yellow menus, the sides filled row by row; the boot task's graffiti-select hold at 4:3 is skipped while it is shown. The icons keep the menu depth.
 - **v221:** the test run menu (drawn by sub_0011C750, wrapped; Miggas's run): shown wide like the other yellow menus, the sides filled row by row.
 - **v222:** the test run's course screen (route and rankings, the same for all four test runs; drawn by sub_0011A490, wrapped; Miggas's run): shown wide like the other yellow menus, the sides filled row by row.
+- **v223:** no more shrinking to 4:3 and stretching back between menus (Miggas): the menu frame start (sub_00077730), the garage's character select and the boot task's VS setup and graffiti select no longer hold the picture at 4:3. They stay wide with their sides filled row by row from the 4:3 edge; the map, the notebook and the start menu's character select keep their own sides. RECOMP_WS_MENU_HOLD43=1 brings the old hold back. *Idea by Miggas*
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

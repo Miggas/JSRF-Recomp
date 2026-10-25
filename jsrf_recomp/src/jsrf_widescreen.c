@@ -391,30 +391,53 @@ static void ws_sprite_queue(void)
  *   sub_0011AC50: character select. */
 /* v209: a 4:3 screen that has been made wide (the map screen) is not held */
 static int wsm_map_active(void);
+static int wsm_on(void);   /* v223 */
 
-#define WS_HOLD_43(name)                            \
-    extern void name##_gen(void);                   \
-    void name(void)                                 \
-    {                                               \
-        if (ws_hold_on() && !wsm_map_active())      \
-            xbox_WidescreenHold43();                \
-        xbox_MenuScreen();      /* v207b: depth */  \
-        name##_gen();                               \
+/* v223: the menu frame start no longer holds the picture at 4:3 (Miggas:
+ * with nearly every menu made wide, the hold only showed as the picture
+ * shrinking to 4:3 and stretching back between menus, on the frames before
+ * a wide menu's own function had run). Every menu frame is wide; its sides
+ * are filled row by row from the 4:3 edge, as for the save and Roboy's
+ * menus, unless the menu shown places its own parts there (the map, the
+ * notebook, the start menu's character select: xbox_WidescreenRowFillOff).
+ * RECOMP_WS_MENU_HOLD43=1 brings the old hold back. */
+extern void xbox_WidescreenRowFill(void);
+static int ws_menu_hold_on(void);
+int jsrf_MenuHold43(void) { return ws_menu_hold_on(); }   /* recomp_manual.c */
+static int ws_menu_hold_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_WS_MENU_HOLD43");
+        on = e && e[0] == '1';
     }
-
-WS_HOLD_43(sub_00077730)
+    return on;
+}
+extern void sub_00077730_gen(void);
+void sub_00077730(void)
+{
+    if (ws_hold_on() && ws_menu_hold_on() && !wsm_map_active())
+        xbox_WidescreenHold43();
+    else if (wsm_on())
+        xbox_WidescreenRowFill();
+    xbox_MenuScreen();      /* v207b: depth */
+    sub_00077730_gen();
+}
 
 /* v213: the garage's character select stays 4:3 (its panels slide in from
  * just outside the 4:3 edges), but its side bars are its own grey, not
  * black (Miggas) */
 extern void xbox_WidescreenEdgeBars(void);
 extern void sub_0011AC50_gen(void);
+/* v223: wide too, its sides filled row by row from its own grey edge: the
+ * same picture without the jump to 4:3 and back */
 void sub_0011AC50(void)
 {
-    if (ws_hold_on() && !wsm_map_active()) {
+    if (ws_hold_on() && ws_menu_hold_on() && !wsm_map_active()) {
         xbox_WidescreenHold43();
         xbox_WidescreenEdgeBars();
-    }
+    } else if (wsm_on())
+        xbox_WidescreenRowFill();
     xbox_MenuScreen();
     sub_0011AC50_gen();
 }
@@ -686,6 +709,7 @@ static void wsm_draw(void (*gen)(void), int where)
 /* v217b: the menus shown wide as they are (save/load, Roboy's): the sides
  * are filled by carrying each row's colour at the 4:3 edge outwards */
 extern void xbox_WidescreenRowFill(void);
+extern void xbox_WidescreenRowFillOff(void);   /* v223 */
 
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
  * strings placed while it runs */
@@ -697,6 +721,7 @@ extern void xbox_WidescreenRowFill(void);
         if (!wsm_on()) { name##_gen(); return; }    \
         s_wsm_ms[idx] = GetTickCount();             \
         if (idx >= 3) xbox_WidescreenRowFill();     \
+        else xbox_WidescreenRowFillOff();           \
         was = wsm_cur;                              \
         wsm_cur = idx;                              \
         name##_gen();                               \
