@@ -566,6 +566,7 @@ next fix.
 - **v212:** the start menu's character select in widescreen (Miggas's run and layout): drawn by sub_00115A40 (wrapped); the background grid and the bars across the width, the "Press the B Button" bar and its text to the right, the grid of characters and their icons left as they are. The widened menus are now one table in jsrf_widescreen.c (each screen's function, its parts and strings by call site), the function wrapped with `WSM_SCREEN`.
 - **v213:** the garage's character select (sub_0011AC50) stays 4:3 -- its panels slide in from just outside the 4:3 edges -- but its side bars are its own grey instead of black, as Miggas asked: while it is shown (`xbox_WidescreenEdgeBars`, fb_present.c) the GL presenter clears the bars with the colour of the picture's left edge (one pixel, halfway down) instead of black.
 - **v214:** Roboy's garage menu (Miggas's run: drawn by sub_0011C070, wrapped) gets the save menu's treatment, as Miggas asked: shown wide, no longer held at 4:3, nothing moved.
+- **v215:** Roboy's system menu (drawn by sub_0011FEB0, wrapped; Miggas's run): the same, shown wide, nothing moved.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
