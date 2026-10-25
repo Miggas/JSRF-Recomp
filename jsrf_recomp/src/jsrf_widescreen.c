@@ -674,6 +674,7 @@ static int wsm_part(uint32_t esp)
 }
 
 /* draw one part placed as `where` says */
+static RECOMP_TLS float wsm_dy;         /* v232: the street sign's move down */
 static void wsm_draw(void (*gen)(void), int where)
 {
     float extra = ws_half_extra();
@@ -701,7 +702,7 @@ static void wsm_draw(void (*gen)(void), int where)
         }
         x = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
         y = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
-        ws_set_screen_offset(x + dx, y);
+        ws_set_screen_offset(x + dx, y + wsm_dy);   /* v232: wsm_dy, the street sign */
         gen();
         ws_set_screen_offset(x, y);
     }
@@ -802,12 +803,22 @@ extern void sub_00048570_gen(void);
 extern void sub_000488B0_gen(void);
 extern void sub_0003D5D0_gen(void);
 
+/* v232: the same header is the sign in the streets that names where a
+ * path leads ("Garage"). In widescreen it stayed in the 4:3 middle, under
+ * the trick names; it now goes to the left like the rest of the HUD, and
+ * 28 guest pixels down, clear of the trick counter there (Miggas, at 21:9).
+ * A menu screen not made wide keeps it where it was. */
+extern int xbox_MenuScreenNow(void);
+#define WSM_SIGN_DY 28.0f
 void sub_000FD190(void)             /* the garage menus' header */
 {
     int on = wsm_map_active();
-    if (on) wsm_in_header++;
+    int sign = !on && ws_hud_on() && !xbox_MenuScreenNow();
+    if (on || sign) wsm_in_header++;
+    if (sign) wsm_dy = WSM_SIGN_DY;
     sub_000FD190_gen();
-    if (on) wsm_in_header--;
+    if (sign) wsm_dy = 0.0f;
+    if (on || sign) wsm_in_header--;
 }
 
 void sub_00048570(void)             /* the game's object draw */
@@ -857,6 +868,8 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
     if (where) {
         float extra = ws_half_extra();
         MEMF(g_esp + 4) += (float)where * extra;
+        if (wsm_in_header)
+            MEMF(g_esp + 8) += wsm_dy;      /* v232: the street sign, down */
     }
     sub_0003D5D0_gen();
 }
