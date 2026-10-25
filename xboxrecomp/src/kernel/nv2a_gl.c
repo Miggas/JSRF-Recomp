@@ -104,10 +104,19 @@ static void present_bar_color(GLint sw, GLint sh)
  * outside the 4:3 middle are filled with the column just inside its edge,
  * stretched sideways: each row keeps its own colour out to the screen side.
  * Source rect sw x sh, shown at dx..dx+dw, y0..y1 (y1 < y0 when flipped). */
-double xbox_PresentRowFillK(void);
+/* v224: k as it was for the frame being shown, taken when that frame was
+ * flipped (xbox_PresentRowFillLatch), not the moment it is shown: the sides
+ * stopped one frame after the menu did (the garage's character select,
+ * Miggas) */
+double xbox_PresentRowFillLatch(void);
+static double s_rf_k;                   /* the latched k for the paths without a GwFrame */
+static void present_row_fill_k(double k, GLint sw, GLint sh, int dx, int y0, int dw, int y1);
 static void present_row_fill(GLint sw, GLint sh, int dx, int y0, int dw, int y1)
 {
-    double k = xbox_PresentRowFillK();
+    present_row_fill_k(s_rf_k, sw, sh, dx, y0, dw, y1);
+}
+static void present_row_fill_k(double k, GLint sw, GLint sh, int dx, int y0, int dw, int y1)
+{
     GLint el, in, ex;
     if (k <= 0.0 || sw < 16 || sh < 16 || dw < 16)
         return;
@@ -3430,7 +3439,7 @@ static int gl_window_present_impl(GlSurf *s)
 /* v172: with the GL thread, a frame into the game window once that is set
  * up: the blit and SwapBuffers on the GL thread (queued); the caches of
  * what is bound are dropped here, where they are kept */
-typedef struct { GLuint fbo; uint32_t w, h; uint64_t queued; } GwFrame;
+typedef struct { GLuint fbo; uint32_t w, h; uint64_t queued; double rowk; } GwFrame;
 /* v172b: how long a finished frame waited in the queue before SwapBuffers --
  * the delay the GL thread adds to what the player sees */
 static volatile uint64_t s_gt_lat_sum, s_gt_lat_max, s_gt_lat_n;
@@ -3459,7 +3468,7 @@ static void gw_present_gl(void *arg)
     glClear(GL_COLOR_BUFFER_BIT);
     glBlitFramebuffer(0, 0, SC(f->w), SC(f->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
-    present_row_fill(SC(f->w), SC(f->h), dx, dy, dw, dy + dh);   /* v217b */
+    present_row_fill_k(f->rowk, SC(f->w), SC(f->h), dx, dy, dw, dy + dh);   /* v224 */
     s_gw.swap(s_gw.hdc);
     {
         uint64_t d = TM_NOW() - f->queued;
@@ -3483,6 +3492,7 @@ static int gl_window_present(GlSurf *s)
         if (s_gw.state == 1) {
             GwFrame f;
             f.fbo = s->fbo; f.w = s->w; f.h = s->h;
+            f.rowk = s_rf_k;
             f.queued = TM_NOW();
             gt_call(gw_present_gl, &f, sizeof f);
             s_bound_fbo = (GLuint)-1;
@@ -3520,6 +3530,7 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
 
     if (s_state != 1)
         return surf_va;
+    s_rf_k = xbox_PresentRowFillLatch();   /* v224: the row fill of this frame */
     if (sync < 0)
         sync = getenv("RECOMP_GL_SYNC_PRESENT") != NULL;
     for (i = 0; i < NV_GL_SURFS; i++)

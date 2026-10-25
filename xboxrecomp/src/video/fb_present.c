@@ -150,29 +150,43 @@ int xbox_PresentEdgeBars(void)
  * frame it is shown. xbox_PresentRowFillK: the squeeze k while it applies,
  * else 0. */
 double xbox_WidescreenK(void);
-static volatile ULONGLONG s_ws_rowfill_ms;
+/* v224: per frame, not per 100 ms: the marks are set while a frame is drawn
+ * and taken when it is flipped (xbox_PresentRowFillLatch, nv2a_gl.c), so
+ * the sides stop with the frame the menu stops in (they lasted a frame or
+ * more after the garage's character select closed, Miggas). */
+static volatile LONG s_rf_set, s_rf_off, s_rf_prev;
 void xbox_WidescreenRowFill(void)
 {
-    s_ws_rowfill_ms = GetTickCount64();
+    s_rf_set = 1;
 }
 /* v223: a wide menu that places its own parts at the sides (the map, the
- * notebook, the start menu's character select): no row fill while it is
- * shown, whatever else asked for it */
-static volatile ULONGLONG s_ws_rowfill_off_ms;
+ * notebook, the start menu's character select): no row fill in that frame */
 void xbox_WidescreenRowFillOff(void)
 {
-    s_ws_rowfill_off_ms = GetTickCount64();
+    s_rf_off = 1;
 }
-double xbox_PresentRowFillK(void)
+static double rf_k(void)
 {
     double k;
-    ULONGLONG now = GetTickCount64();
-    if (s_ws_n > 0.5 || !s_ws_rowfill_ms || now - s_ws_rowfill_ms > 100)
-        return 0.0;
-    if (s_ws_rowfill_off_ms && now - s_ws_rowfill_off_ms <= 100)
+    if (s_ws_n > 0.5)
         return 0.0;
     k = xbox_WidescreenK();
     return k < 0.999 ? k : 0.0;
+}
+/* at the flip: the k of the frame just finished, or 0 */
+double xbox_PresentRowFillLatch(void)
+{
+    int on = s_rf_set && !s_rf_off;
+    s_rf_set = s_rf_off = 0;
+    s_rf_prev = on;
+    return on ? rf_k() : 0.0;
+}
+/* while drawing (the renderer's cuts, nv2a_pb_exec.c): this frame's marks,
+ * or the last frame's before the screen function has run in this one */
+double xbox_PresentRowFillK(void)
+{
+    int on = s_rf_off ? 0 : (s_rf_set || s_rf_prev);
+    return on ? rf_k() : 0.0;
 }
 
 /* v207b: the same menu screens report here whatever the aspect, for the
