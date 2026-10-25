@@ -493,18 +493,53 @@ static void wsm_zbias(uint32_t v)
     g_fp_top = top; g_fp_cmp = cmp; g_fp_cc = cc; g_fp_control_word = cw;
 }
 
-/* where the part drawn from this return address goes: 0 = as it is */
-static int wsm_part(uint32_t ret)
+/* where the part being drawn goes: 0 = as it is. v209b: the call site is
+ * looked for up the stack, not only at the return address: the buttons,
+ * the TOTAL panel and the left column are drawn through an object's method
+ * that reaches the object draw a step further down, so the first return
+ * address was not sub_001129E0's (Miggas's run: only the header, the text
+ * and the stretched parts moved). The first address on the stack inside
+ * sub_001129E0 is its call site. RECOMP_WS_MENU_DEBUG=1 logs each one. */
+static int wsm_part(uint32_t esp)
 {
-    unsigned k;
+    unsigned k, i;
+    uint32_t site = 0;
+    int where = 0;
     if (wsm_in_header)
         return -1;
     if (!wsm_in_map)
         return 0;
-    for (k = 0; k < sizeof wsm_map_parts / sizeof wsm_map_parts[0]; k++)
-        if (wsm_map_parts[k].ret == ret)
-            return wsm_map_parts[k].where;
-    return 0;
+    for (i = 0; i < 96; i++) {
+        uint32_t w = MEM32(esp + 4u * i);
+        if (w > 0x001129E0u && w < 0x00113100u) {
+            site = w;
+            break;
+        }
+    }
+    for (k = 0; site && k < sizeof wsm_map_parts / sizeof wsm_map_parts[0]; k++)
+        if (wsm_map_parts[k].ret == site)
+            where = wsm_map_parts[k].where;
+    {
+        static int dbg = -1;
+        static uint32_t seen[64];
+        static unsigned nseen;
+        unsigned j;
+        if (dbg < 0) {
+            const char *e = getenv("RECOMP_WS_MENU_DEBUG");
+            dbg = e && e[0] == '1';
+        }
+        if (dbg) {
+            uint32_t key = site ^ (MEM32(esp) << 8);
+            for (j = 0; j < nseen && seen[j] != key; j++) ;
+            if (j == nseen && nseen < 64) {
+                seen[nseen++] = key;
+                fprintf(stderr, "[WSMENU] map part: return %08X, call site %08X -> %s\n", MEM32(esp),
+                        site, where == 2 ? "across the width" : where == 1 ? "right"
+                        : where == -1 ? "left" : "as it is");
+            }
+        }
+    }
+    return where;
 }
 
 /* draw one part placed as `where` says */
@@ -565,13 +600,13 @@ void sub_000FD190(void)             /* the garage menus' header */
 
 void sub_00048570(void)             /* the game's object draw */
 {
-    int where = (wsm_in_map || wsm_in_header) ? wsm_part(MEM32(g_esp)) : 0;
+    int where = (wsm_in_map || wsm_in_header) ? wsm_part(g_esp) : 0;
     wsm_draw(sub_00048570_gen, where);
 }
 
 void sub_000488B0(void)             /* ...and its plain quads */
 {
-    int where = (wsm_in_map || wsm_in_header) ? wsm_part(MEM32(g_esp)) : 0;
+    int where = (wsm_in_map || wsm_in_header) ? wsm_part(g_esp) : 0;
     wsm_draw(sub_000488B0_gen, where);
 }
 
