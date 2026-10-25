@@ -85,7 +85,7 @@ void xbox_PresentFit(int cw, int ch, int *dw, int *dh);
 typedef struct GlProg {
     GLuint id;
     GLint L_bmat, L_bls, L_osi;
-    GLint L_scr, L_bgfar, L_wsk, L_wsc, L_ws2d, L_wsedge, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
+    GLint L_zbase, L_zfr, L_scr, L_bgfar, L_wsk, L_wsc, L_ws2d, L_wsedge, L_vp, L_zs, L_zs2, L_zdirect, L_poff, L_rc_on, L_cicw, L_aicw, L_cocw, L_aocw, L_f0, L_f1, L_final0, L_final1, L_fc0, L_fc1, L_control, L_sp, L_clipmode, L_fogc, L_atest, L_afunc, L_aref, L_tscale, L_iscube, L_tvalid, L_vsmode, L_present, L_c, L_prog, L_nins, L_comp, L_mv, L_imv0, L_texm, L_skin, L_light, L_texm_on, L_texgen, L_texpl, L_samb, L_emis, L_malpha, L_cmat, L_lmask, L_spec, L_lamb, L_ldif, L_lspc, L_lhalf, L_ldir, L_lpos, L_latt, L_lrange, L_fog_en, L_fog_mode, L_fogp;
     GLint L_s2d[4], L_scube[4];
     /* What this program's uniforms were last set to (apply_state). */
     int ap_valid, ap_w, ap_h, ap_zdirect, ap_scr, ap_ws2d, ap_wsedge, ap_bgfar;
@@ -122,6 +122,8 @@ static GlProg *P;                    /* the bound program */
 #define u_osi (P->L_osi)
 #define u_zs (P->L_zs)
 #define u_zs2 (P->L_zs2)
+#define u_zbase (P->L_zbase)   /* v207d */
+#define u_zfr (P->L_zfr)
 #define u_zdirect (P->L_zdirect)
 #define u_poff (P->L_poff)
 #define u_rc_on (P->L_rc_on)
@@ -206,7 +208,7 @@ static const char *VS_FF =
 "layout(location=12) in vec4 i12; layout(location=13) in vec4 i13;\n"
 "layout(location=14) in vec4 i14; layout(location=15) in vec4 i15;\n"
 "uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d; uniform int u_wsedge;\n"
-"uniform float u_zs;\n"
+"uniform float u_zs; uniform float u_zbase;\n"
 "uniform uint u_present;\n"
 "uniform vec4 u_c[192];\n"
 "uniform mat4 u_comp; uniform mat4 u_mv[4]; uniform mat4 u_imv0; uniform mat4 u_texm[4];\n"
@@ -226,7 +228,7 @@ static const char *VS_FF =
 "noperspective out vec4 q_t1; noperspective out vec4 q_t2; noperspective out vec4 q_t3;\n"
 "noperspective out float q_fog; noperspective out float v_iw;\n"
 "#endif\n"
-"noperspective out float v_z;\n"
+"noperspective out float v_z; noperspective out float v_zr;\n"
 "noperspective out float v_behind;\nflat out float v_flat;\n"
 "vec4 V[16];\n"
 "bool has(int a) { return ((u_present >> uint(a)) & 1u) != 0u; }\n"
@@ -421,7 +423,7 @@ static const char *VS_FF =
 "    gl_Position.xy = n * gl_Position.w;\n"
 "  }\n"
 "  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
-"  v_z = pos.z;\n"
+"  v_z = pos.z; v_zr = pos.z - u_zbase;\n"
 "}\n"
 "\n";
 static const char *VSH_HEAD =
@@ -435,7 +437,7 @@ static const char *VSH_HEAD =
 "layout(location=12) in vec4 i12; layout(location=13) in vec4 i13;\n"
 "layout(location=14) in vec4 i14; layout(location=15) in vec4 i15;\n"
 "uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d; uniform int u_wsedge;\n"
-"uniform float u_zs;\n"
+"uniform float u_zs; uniform float u_zbase;\n"
 "uniform vec4 u_c[192];\n"
 "uniform int u_fog_en; uniform uint u_fog_mode; uniform vec2 u_fogp;\n"
 "#ifdef OLD_CLIP\n"
@@ -447,7 +449,7 @@ static const char *VSH_HEAD =
 "noperspective out vec4 q_t1; noperspective out vec4 q_t2; noperspective out vec4 q_t3;\n"
 "noperspective out float q_fog; noperspective out float v_iw;\n"
 "#endif\n"
-"noperspective out float v_z;\n"
+"noperspective out float v_z; noperspective out float v_zr;\n"
 "noperspective out float v_behind;\nflat out float v_flat;\n"
 "float fogf(float d) {\n"
 "  if (u_fog_en == 0) return 1.0;\n"
@@ -557,7 +559,7 @@ static const char *VSH_TAIL =
 "    gl_Position.xy = n * gl_Position.w;\n"
 "  }\n"
 "  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
-"  v_z = pos.z;\n"
+"  v_z = pos.z; v_zr = pos.z - u_zbase;\n"
 "}\n"
 "\n";
 
@@ -574,7 +576,7 @@ static const char *VS_OLD =
 "layout(location=6) in vec4 a_t3;\n"
 "layout(location=7) in float a_fog;\n"
 "uniform vec2 u_vp; uniform int u_scr; uniform float u_wsk; uniform float u_wsc; uniform int u_ws2d; uniform int u_wsedge;\n"
-"uniform float u_zs;\n"
+"uniform float u_zs; uniform float u_zbase;\n"
 "#ifdef OLD_CLIP\n"
 "out vec4 v_d0; out vec4 v_d1; out vec4 v_t0; out vec4 v_t1; out vec4 v_t2;\n"
 "out vec4 v_t3; out float v_fog;\n"
@@ -584,7 +586,7 @@ static const char *VS_OLD =
 "noperspective out vec4 q_t1; noperspective out vec4 q_t2; noperspective out vec4 q_t3;\n"
 "noperspective out float q_fog; noperspective out float v_iw;\n"
 "#endif\n"
-"noperspective out float v_z;\n"
+"noperspective out float v_z; noperspective out float v_zr;\n"
 "noperspective out float v_behind;\nflat out float v_flat;\n"
 "void main() {\n"
 "#ifdef OLD_CLIP\n"
@@ -638,7 +640,7 @@ static const char *VS_OLD =
 "    gl_Position.xy = n * gl_Position.w;\n"
 "  }\n"
 "  gl_Position.x = gl_Position.x * u_wsk + u_wsc * (1.0 - u_wsk) * gl_Position.w;\n"
-"  v_z = a_pos.z;\n"
+"  v_z = a_pos.z; v_zr = a_pos.z - u_zbase;\n"
 "  v_behind = 0.0;\n"
 "  v_flat = (u_scr != 0 || abs(a_pos.w - 1.0) < 1.0e-6) ? 1.0 : 0.0;\n"
 "}\n";
@@ -657,7 +659,7 @@ static const char *FS =
 "noperspective in float q_fog; noperspective in float v_iw;\n"
 "vec4 v_d0, v_d1, v_t0, v_t1, v_t2, v_t3; float v_fog;\n"
 "#endif\n"
-"noperspective in float v_z;\n"
+"noperspective in float v_z; noperspective in float v_zr; uniform float u_zfr;\n"
 "noperspective in float v_behind;\nflat in float v_flat;\n"
 "uniform float u_zs2; uniform int u_zdirect; uniform vec3 u_poff; uniform int u_bgfar;\n"
 "#ifndef ZTOL\n#define ZTOL 1.0e-3\n#endif\n"
@@ -955,8 +957,12 @@ static const char *FS =
 "    /* v207b: u_bgfar 2, a menu screen: the depth RECOMP_GL_WDEPTH=0\n"
 "     * writes (worked out above), reversed over the whole range, 1 - d:\n"
 "     * 1 - d/2 loses the last bit, and menu models sit a step apart */\n"
+"     * v207d: from v_zr, the title's z less a base near the menu's range,\n"
+"     * and u_zfr = zmax - base: small numbers, so equal z stays exactly\n"
+"     * equal and ties go to the later draw as on the console (the third\n"
+"     * graffiti button's icon drawn at its body's z); 1 - d over the range */\n"
 "    if (u_bgfar == 2)\n"
-"      gl_FragDepth = 1.0 - clamp(gl_FragDepth, 0.0, 1.0);\n"
+"      gl_FragDepth = clamp((u_zfr - v_zr) * u_zs2, 0.0, 1.0);\n"
 "    else\n"
 "    gl_FragDepth = (v_flat > 0.5 || ww < WDEPTH_NEAR) ? 1.0 - 0.5 * clamp(zl, 0.0, 1.0)\n"
 "                                                    : 0.5 * WDEPTH_NEAR / ww;\n"
@@ -1336,6 +1342,7 @@ static void get_locs(GlProg *p)
     glUseProgram(id);
 #define U(v) p->L_##v = glGetUniformLocation(id, "u_" #v)
     U(bmat); U(bls); U(osi);
+    U(zbase); U(zfr);
     U(scr); U(bgfar); U(wsk); U(wsc); U(ws2d); U(wsedge); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
     U(aocw); U(f0); U(f1); U(final0); U(final1); U(fc0); U(fc1); U(control); U(sp);
     U(clipmode); U(fogc); U(atest); U(afunc); U(aref); U(tscale); U(iscube); U(tvalid);
@@ -4302,6 +4309,13 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
     if (all || P->ap_w != (int)s->w || P->ap_h != (int)s->h || P->ap.zmax != st->zmax) {
         glUniform2f(u_vp, (float)s->w, (float)s->h);
         glUniform1f(u_zs, st->zmax > 0.0f ? 1.0f / st->zmax : 1.0f / 16777215.0f);
+        {   /* v207d: the base for the menus' exact depth: 0.999 of the range,
+             * an integer, so pos.z - base is exact for the title's z there */
+            float zm = st->zmax > 0.0f ? st->zmax : 16777215.0f;
+            float base = floorf(zm * 0.999f);
+            glUniform1f(u_zbase, base);
+            glUniform1f(u_zfr, zm - base);
+        }
         glUniform1f(u_zs2, st->zmax > 0.0f ? 1.0f / st->zmax : 1.0f / 16777215.0f);
     }
     /* Combiners, fog and alpha test: alpha_test through fog_color, each
