@@ -35,7 +35,9 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_0001DAA0",                # v201: kept wrapped (a pass-through now)
          "sub_001BAF70",                # v201b: the free camera (the LookAt)
          "sub_001192E0", "sub_00118A60",  # v203: [SNDDIST] play / move a sound
-         "sub_00118610")                # v203c: the sound manager's frame (the cut-off)
+         "sub_00118610",                # v203c: the sound manager's frame (the cut-off)
+         "sub_001129E0", "sub_000FD190", "sub_00048570", "sub_000488B0",
+         "sub_0003D5D0")                # v209: the map screen in widescreen
 
 
 def main():

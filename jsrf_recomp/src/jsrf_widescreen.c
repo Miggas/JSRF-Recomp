@@ -389,11 +389,14 @@ static void ws_sprite_queue(void)
  *   sub_00077730: menu frame start (viewport 0,0,640,480 and a clear), every
  *                 frame of the Roboy/garage menus, the music menu and the map;
  *   sub_0011AC50: character select. */
+/* v209: a 4:3 screen that has been made wide (the map screen) is not held */
+static int wsm_map_active(void);
+
 #define WS_HOLD_43(name)                            \
     extern void name##_gen(void);                   \
     void name(void)                                 \
     {                                               \
-        if (ws_hold_on())                           \
+        if (ws_hold_on() && !wsm_map_active())      \
             xbox_WidescreenHold43();                \
         xbox_MenuScreen();      /* v207b: depth */  \
         name##_gen();                               \
@@ -401,3 +404,192 @@ static void ws_sprite_queue(void)
 
 WS_HOLD_43(sub_00077730)
 WS_HOLD_43(sub_0011AC50)
+
+/* ── v209: menus in widescreen, one at a time: the map screen ────────────
+ *
+ * From Miggas's RECOMP_MENU_LOG run (v208) of the pause menu's map: nearly
+ * every part of it is drawn by sub_001129E0, each from a call site of its
+ * own -- through the game's object draw (sub_00048570, or sub_000488B0 for
+ * the plain quads), so the return address says which part it is -- and
+ * every string through sub_0003D5D0 (x, y, depth, colour, scale x, scale y,
+ * text), drawn later in one pass. The header ("Rokkaku-dai Heights" and
+ * the line above it) comes from sub_000FD190, the garage menus' header,
+ * from the menu frame start sub_00077730. The 3D map itself (sub_00114A80
+ * and the functions under it) stays in the middle, squeezed like any 3D.
+ *
+ * While the map screen is shown and widescreen is on, the screen is no
+ * longer held at 4:3, and each part is placed as in Miggas's mockup:
+ *   left  (-1): moved left by half the added width, as the HUD's left items
+ *   right (+1): moved right likewise
+ *   wide  ( 2): drawn unsqueezed, stretched across the whole width (the
+ *               background grid and the bars): marked for the renderer with
+ *               a z-bias no title uses (4000000; nv2a_pb_exec.c), as the
+ *               backdrop is (1000000)
+ * Models are moved through the device's screen-space offset (as the HUD's
+ * 3D icons), text by its x when it is added. RECOMP_WS_MENU_MAP=0 keeps
+ * the map screen at 4:3 as before. */
+static const struct { uint32_t ret; int where; } wsm_map_parts[] = {
+    { 0x00112AFEu,  2 },    /* the background grid (4086 indices) */
+    { 0x00112B21u,  2 },    /* top bar */
+    { 0x00112B31u,  1 },    /* RETURN TO GAME bar */
+    { 0x00112B45u,  2 },    /* bottom bar and its marks */
+    { 0x00112B7Cu,  1 },    /* the four buttons on the right */
+    { 0x00112C18u,  1 },
+    { 0x00112C7Du,  1 },
+    { 0x00112CE1u,  1 },
+    { 0x00112D21u,  1 },    /* TOTAL panel and its icon */
+    { 0x00112D7Du, -1 },    /* the counter box */
+    { 0x00112E65u, -1 },    /* ROTATE MAP's stick */
+    { 0x00112EECu, -1 },    /* CHANGE MAP's L and R */
+    { 0x00112F2Du, -1 },
+};
+static const struct { uint32_t ret; int where; } wsm_map_text[] = {
+    { 0x00112D5Cu,  1 },    /* the graffiti soul count, x 540 */
+    { 0x00112DB8u, -1 },    /* the counter's two lines, x 116 */
+    { 0x00112DFAu, -1 },
+    { 0x00112E9Fu, -1 },    /* ROTATE MAP, x 48 */
+    { 0x00112F67u, -1 },    /* CHANGE MAP, x 48 */
+    { 0x00113003u,  1 },    /* RETURN TO GAME, y 410 */
+};
+
+static volatile DWORD s_wsm_map_ms;
+static RECOMP_TLS int wsm_in_map, wsm_in_header;
+
+static int wsm_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        double a = xbox_PresentAspect();
+        on = a > 4.0 / 3.0 + 1e-6 && ws_flag("RECOMP_WS_MENU_MAP");
+        if (on)
+            fprintf(stderr, "[WS] the map screen in widescreen (RECOMP_WS_MENU_MAP=0: 4:3)\n");
+    }
+    return on;
+}
+
+static int wsm_map_active(void)
+{
+    return wsm_on() && s_wsm_map_ms && GetTickCount() - s_wsm_map_ms < 200;
+}
+
+extern void D3D8_D3DDevice_SetRenderState_ZBias(void);
+
+/* the game's own SetRenderState_ZBias, registers kept (it runs between two
+ * guest instructions); the value in effect is kept at 0x19E2E8 */
+static void wsm_zbias(uint32_t v)
+{
+    uint32_t r[10] = { g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_edi, g_ebp, g_seh_ebp,
+                       (uint32_t)g_df };
+    double fp[8];
+    int top = g_fp_top, cmp = g_fp_cmp;
+    uint16_t cc = g_fp_cc, cw = g_fp_control_word;
+    memcpy(fp, g_fp_stack, sizeof fp);
+    PUSH32(g_esp, v);
+    PUSH32(g_esp, 0);                       /* return address slot */
+    D3D8_D3DDevice_SetRenderState_ZBias();
+    g_eax = r[0]; g_ecx = r[1]; g_edx = r[2]; g_esp = r[3]; g_ebx = r[4];
+    g_esi = r[5]; g_edi = r[6]; g_ebp = r[7]; g_seh_ebp = r[8]; g_df = (int)r[9];
+    memcpy(g_fp_stack, fp, sizeof fp);
+    g_fp_top = top; g_fp_cmp = cmp; g_fp_cc = cc; g_fp_control_word = cw;
+}
+
+/* where the part drawn from this return address goes: 0 = as it is */
+static int wsm_part(uint32_t ret)
+{
+    unsigned k;
+    if (wsm_in_header)
+        return -1;
+    if (!wsm_in_map)
+        return 0;
+    for (k = 0; k < sizeof wsm_map_parts / sizeof wsm_map_parts[0]; k++)
+        if (wsm_map_parts[k].ret == ret)
+            return wsm_map_parts[k].where;
+    return 0;
+}
+
+/* draw one part placed as `where` says */
+static void wsm_draw(void (*gen)(void), int where)
+{
+    float extra = ws_half_extra();
+    if (!where || extra == 0.0f) {
+        gen();
+        return;
+    }
+    if (where == 2) {
+        uint32_t zb = MEM32(0x19E2E8u);
+        wsm_zbias(4000000u);
+        gen();
+        wsm_zbias(zb);
+        return;
+    }
+    {
+        uint32_t device = MEM32(0x19DCE0u);
+        float x, y;
+        if (!device) {
+            gen();
+            return;
+        }
+        x = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
+        y = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
+        ws_set_screen_offset(x + (float)where * extra, y);
+        gen();
+        ws_set_screen_offset(x, y);
+    }
+}
+
+extern void sub_001129E0_gen(void);
+extern void sub_000FD190_gen(void);
+extern void sub_00048570_gen(void);
+extern void sub_000488B0_gen(void);
+extern void sub_0003D5D0_gen(void);
+
+void sub_001129E0(void)             /* the map screen's parts */
+{
+    if (!wsm_on()) {
+        sub_001129E0_gen();
+        return;
+    }
+    s_wsm_map_ms = GetTickCount();
+    wsm_in_map++;
+    sub_001129E0_gen();
+    wsm_in_map--;
+}
+
+void sub_000FD190(void)             /* the garage menus' header */
+{
+    int on = wsm_map_active();
+    if (on) wsm_in_header++;
+    sub_000FD190_gen();
+    if (on) wsm_in_header--;
+}
+
+void sub_00048570(void)             /* the game's object draw */
+{
+    int where = (wsm_in_map || wsm_in_header) ? wsm_part(MEM32(g_esp)) : 0;
+    wsm_draw(sub_00048570_gen, where);
+}
+
+void sub_000488B0(void)             /* ...and its plain quads */
+{
+    int where = (wsm_in_map || wsm_in_header) ? wsm_part(MEM32(g_esp)) : 0;
+    wsm_draw(sub_000488B0_gen, where);
+}
+
+void sub_0003D5D0(void)             /* add a string: x at esp+4 */
+{
+    int where = 0;
+    unsigned k;
+    if (wsm_in_header)
+        where = -1;
+    else if (wsm_in_map) {
+        uint32_t ret = MEM32(g_esp);
+        for (k = 0; k < sizeof wsm_map_text / sizeof wsm_map_text[0]; k++)
+            if (wsm_map_text[k].ret == ret)
+                where = wsm_map_text[k].where;
+    }
+    if (where) {
+        float extra = ws_half_extra();
+        MEMF(g_esp + 4) += (float)where * extra;
+    }
+    sub_0003D5D0_gen();
+}

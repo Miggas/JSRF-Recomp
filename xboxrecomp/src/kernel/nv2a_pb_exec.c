@@ -2872,7 +2872,13 @@ static int gl_state(NvGlState *st)
     st->poly_units = s_gpu.poly_offset_units;
     /* v200d: a z-bias no title uses (recomp_manual.c sets it around JSRF's
      * backdrop pass) marks the backdrop: drawn at the far plane instead */
-    if (s_gpu.poly_offset_fill && (fabsf(s_gpu.poly_offset_units) >= 1.0e5f
+    /* v209: a larger one (jsrf_widescreen.c sets 4000000 around them) marks
+     * a menu part that is drawn across the whole width in widescreen: the
+     * map screen's background and bars. Not drawn at the far plane. */
+    if (s_gpu.poly_offset_fill && fabsf(s_gpu.poly_offset_units) >= 3.0e6f) {
+        st->ws_stretch = 1;
+        st->poly_offset = 0;
+    } else if (s_gpu.poly_offset_fill && (fabsf(s_gpu.poly_offset_units) >= 1.0e5f
                                    || fabsf(s_gpu.poly_offset_factor) >= 1.0e5f)) {
         st->bg_far = 1;
         st->poly_offset = 0;
@@ -3759,6 +3765,8 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
     if (!(k > 0.2f && k <= 2.0f) || k > 0.9999f) k = 1.0f;
     *is_2d = 0;
     if (k == 1.0f)
+        return 1.0f;
+    if (st->ws_stretch)                      /* v209: a menu part across the width */
         return 1.0f;
     if (st->width < 640 || st->height < 480) {
         /* v187i: a smaller target is squeezed like the screen once it has

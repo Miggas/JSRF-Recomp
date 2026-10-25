@@ -76,6 +76,7 @@ typedef struct {
     float        fog_color[4];   /* r g b a */
     NvGlTexture  tex[4];
     uint32_t     bg_far;         /* v200d: the backdrop, drawn at the far plane */
+    uint32_t     ws_stretch;     /* v209: a menu part drawn across the whole width */
 } NvGlState;
 
 /* One vertex as the GL backend's shader reads it. */
