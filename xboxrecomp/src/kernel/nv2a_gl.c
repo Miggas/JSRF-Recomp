@@ -81,6 +81,24 @@ static void bind_ab(GLuint b)
  * The u_* names below are the current program's. */
 /* v187: the presented shape (video/fb_present.c) */
 void xbox_PresentFit(int cw, int ch, int *dw, int *dh);
+int  xbox_PresentEdgeBars(void);      /* v213 */
+
+/* v213: the colour the side bars are cleared with: black, or on a 4:3 screen
+ * that asks for it, the colour of the picture's own left edge (one pixel of
+ * the read framebuffer, halfway down) */
+static void present_bar_color(GLint sw, GLint sh)
+{
+    GLubyte px[4] = {0, 0, 0, 255};
+    if (xbox_PresentEdgeBars() && sw > 4 && sh > 4) {
+        GLint pb = 0;
+        glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pb);   /* read to memory, not a PBO */
+        if (pb) glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        glReadPixels(2, sh / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        if (pb) glBindBuffer(GL_PIXEL_PACK_BUFFER, (GLuint)pb);
+        glClearColor(px[0] / 255.0f, px[1] / 255.0f, px[2] / 255.0f, 1.0f);
+    } else
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+}
 
 typedef struct GlProg {
     GLuint id;
@@ -3201,7 +3219,7 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glViewport(0, 0, cw, ch);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    present_bar_color(SC(s->w), SC(s->h));   /* v213 */
     glClear(GL_COLOR_BUFFER_BIT);
     /* D3D's row 0 is the top: flip vertically on the way in */
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), dx, dy + dh, dx + dw, dy,
@@ -3358,7 +3376,7 @@ static int gl_window_present_impl(GlSurf *s)
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glViewport(0, 0, cw, ch);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    present_bar_color(SC(s->w), SC(s->h));   /* v213 */
     glClear(GL_COLOR_BUFFER_BIT);
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
@@ -3403,7 +3421,7 @@ static void gw_present_gl(void *arg)
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glViewport(0, 0, cw, ch);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    present_bar_color(SC(f->w), SC(f->h));   /* v213 */
     glClear(GL_COLOR_BUFFER_BIT);
     glBlitFramebuffer(0, 0, SC(f->w), SC(f->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);

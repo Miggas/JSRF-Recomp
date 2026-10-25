@@ -131,6 +131,19 @@ void xbox_WidescreenHold43(void)
     s_ws_hold_ms = GetTickCount64();
 }
 
+/* v213: a 4:3-held screen whose side bars take the colour of the picture's
+ * own edge instead of black (the garage's character select: grey). Called
+ * every frame it is shown, with xbox_WidescreenHold43. */
+static volatile ULONGLONG s_ws_edgebars_ms;
+void xbox_WidescreenEdgeBars(void)
+{
+    s_ws_edgebars_ms = GetTickCount64();
+}
+int xbox_PresentEdgeBars(void)
+{
+    return s_ws_n > 0.5 && s_ws_edgebars_ms && GetTickCount64() - s_ws_edgebars_ms <= 100;
+}
+
 /* v207b: the same menu screens report here whatever the aspect, for the
  * renderer's depth on them (nv2a_pb_exec.c) */
 static volatile ULONGLONG s_menu_ms;

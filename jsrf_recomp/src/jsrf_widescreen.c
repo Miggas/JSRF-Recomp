@@ -403,7 +403,21 @@ static int wsm_map_active(void);
     }
 
 WS_HOLD_43(sub_00077730)
-WS_HOLD_43(sub_0011AC50)
+
+/* v213: the garage's character select stays 4:3 (its panels slide in from
+ * just outside the 4:3 edges), but its side bars are its own grey, not
+ * black (Miggas) */
+extern void xbox_WidescreenEdgeBars(void);
+extern void sub_0011AC50_gen(void);
+void sub_0011AC50(void)
+{
+    if (ws_hold_on() && !wsm_map_active()) {
+        xbox_WidescreenHold43();
+        xbox_WidescreenEdgeBars();
+    }
+    xbox_MenuScreen();
+    sub_0011AC50_gen();
+}
 
 /* ── v209: menus in widescreen, one at a time: the map screen ────────────
  *
