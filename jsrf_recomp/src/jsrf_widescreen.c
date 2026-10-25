@@ -466,7 +466,8 @@ static const WsmPart wsm_nb_parts[] = {
     { 0x00115130u,  1, 0 },     /* "Press the B Button" bar */
     { 0x00115143u,  4, 86 },    /* "Graffiti" heading, above the rows */
     { 0x00115156u,  2, 0 },     /* the two arrows (one shape) */
-    { 0x001151C2u,  2, 0 },     /* the graffiti row */
+    { 0x001151C2u,  2, 0 },     /* the graffiti row, cleared */
+    { 0x00115224u,  2, 0 },     /* v210b: ...and not cleared yet (Miggas) */
     { 0x001152B1u,  4, 86 },    /* "Street Challenge" heading */
     { 0x0011536Fu,  2, 0 },     /* the challenge rows */
     { 0x001153CEu,  2, 0 },
