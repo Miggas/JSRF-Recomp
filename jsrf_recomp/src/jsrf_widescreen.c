@@ -431,30 +431,34 @@ WS_HOLD_43(sub_0011AC50)
 /* v210: where values 3 and up: 3 = the strings and parts of a column that
  * is widened (its rows drawn across the width): x spread about the middle
  * by 1/k, as the rows' own edges; 4 = moved with the left edge of such a
- * column, whose 4:3 left edge is `x` (headings above the rows) */
+ * column, whose 4:3 left edge is `x` (headings above the rows).
+ * v212: each menu made wide is one entry of wsm_screens (the function that
+ * draws it, its parts and its strings by call site); the menu's function
+ * is wrapped with WSM_SCREEN. */
 typedef struct { uint32_t ret; int where; float x; } WsmPart;
-static const struct { uint32_t ret; int where; } wsm_map_parts[] = {
-    { 0x00112AFEu,  2 },    /* the background grid (4086 indices) */
-    { 0x00112B21u,  2 },    /* top bar */
-    { 0x00112B31u,  1 },    /* RETURN TO GAME bar */
-    { 0x00112B45u,  2 },    /* bottom bar and its marks */
-    { 0x00112B7Cu,  1 },    /* the four buttons on the right */
-    { 0x00112C18u,  1 },
-    { 0x00112C7Du,  1 },
-    { 0x00112CE1u,  1 },
-    { 0x00112D21u,  1 },    /* TOTAL panel and its icon */
-    { 0x00112D7Du, -1 },    /* the counter box */
-    { 0x00112E65u, -1 },    /* ROTATE MAP's stick */
-    { 0x00112EECu, -1 },    /* CHANGE MAP's L and R */
-    { 0x00112F2Du, -1 },
+
+static const WsmPart wsm_map_parts[] = {
+    { 0x00112AFEu,  2, 0 },     /* the background grid (4086 indices) */
+    { 0x00112B21u,  2, 0 },     /* top bar */
+    { 0x00112B31u,  1, 0 },     /* RETURN TO GAME bar */
+    { 0x00112B45u,  2, 0 },     /* bottom bar and its marks */
+    { 0x00112B7Cu,  1, 0 },     /* the four buttons on the right */
+    { 0x00112C18u,  1, 0 },
+    { 0x00112C7Du,  1, 0 },
+    { 0x00112CE1u,  1, 0 },
+    { 0x00112D21u,  1, 0 },     /* TOTAL panel and its icon */
+    { 0x00112D7Du, -1, 0 },     /* the counter box */
+    { 0x00112E65u, -1, 0 },     /* ROTATE MAP's stick */
+    { 0x00112EECu, -1, 0 },     /* CHANGE MAP's L and R */
+    { 0x00112F2Du, -1, 0 },
 };
-static const struct { uint32_t ret; int where; } wsm_map_text[] = {
-    { 0x00112D5Cu,  1 },    /* the graffiti soul count, x 540 */
-    { 0x00112DB8u, -1 },    /* the counter's two lines, x 116 */
-    { 0x00112DFAu, -1 },
-    { 0x00112E9Fu, -1 },    /* ROTATE MAP, x 48 */
-    { 0x00112F67u, -1 },    /* CHANGE MAP, x 48 */
-    { 0x00113003u,  1 },    /* RETURN TO GAME, y 410 */
+static const WsmPart wsm_map_text[] = {
+    { 0x00112D5Cu,  1, 0 },     /* the graffiti soul count, x 540 */
+    { 0x00112DB8u, -1, 0 },     /* the counter's two lines, x 116 */
+    { 0x00112DFAu, -1, 0 },
+    { 0x00112E9Fu, -1, 0 },     /* ROTATE MAP, x 48 */
+    { 0x00112F67u, -1, 0 },     /* CHANGE MAP, x 48 */
+    { 0x00113003u,  1, 0 },     /* RETURN TO GAME, y 410 */
 };
 
 /* v210: the GG-notebook (start menu), sub_00115030, from Miggas's v209d
@@ -478,8 +482,39 @@ static const WsmPart wsm_nb_text[] = {
     { 0x001154E1u,  1, 0 },     /* "Press the B Button to go back." */
 };
 
-static volatile DWORD s_wsm_map_ms, s_wsm_nb_ms, s_wsm_save_ms;
-static RECOMP_TLS int wsm_in_map, wsm_in_header, wsm_in_nb;
+/* v212: the start menu's character select, sub_00115A40, from Miggas's
+ * run; the grid of characters and their icons stay as they are (Miggas),
+ * the background and the bars across the width, the B button's bar and
+ * text to the right */
+static const WsmPart wsm_cs_parts[] = {
+    { 0x00115AFCu,  2, 0 },     /* the background grid */
+    { 0x00115B2Cu,  2, 0 },     /* top and bottom bars and the bottom bar's marks */
+    { 0x00115B3Au,  1, 0 },     /* "Press the B Button" bar */
+};
+static const WsmPart wsm_cs_text[] = {
+    { 0x00115D9Du,  1, 0 },     /* "Press the B Button to go back." */
+};
+
+typedef struct {
+    const char *name;
+    uint32_t lo, hi;                        /* the screen function's code */
+    const WsmPart *parts; unsigned nparts;
+    const WsmPart *text; unsigned ntext;
+} WsmScreen;
+#define WSM_N(a) (sizeof (a) / sizeof (a)[0])
+static const WsmScreen wsm_screens[] = {
+    { "map",      0x001129E0u, 0x00113100u, wsm_map_parts, WSM_N(wsm_map_parts),
+                  wsm_map_text, WSM_N(wsm_map_text) },
+    { "notebook", 0x00115030u, 0x00115600u, wsm_nb_parts, WSM_N(wsm_nb_parts),
+                  wsm_nb_text, WSM_N(wsm_nb_text) },
+    { "character select", 0x00115A40u, 0x00115F40u, wsm_cs_parts, WSM_N(wsm_cs_parts),
+                  wsm_cs_text, WSM_N(wsm_cs_text) },
+    { "save",     0x0011DD10u, 0x0011DD10u, NULL, 0, NULL, 0 },   /* v211: not held */
+};
+#define WSM_NSCREENS WSM_N(wsm_screens)
+static volatile DWORD s_wsm_ms[WSM_NSCREENS];
+static RECOMP_TLS int wsm_cur = -1;         /* the screen being drawn, or -1 */
+static RECOMP_TLS int wsm_in_header;
 
 static int wsm_on(void)
 {
@@ -488,18 +523,23 @@ static int wsm_on(void)
         double a = xbox_PresentAspect();
         on = a > 4.0 / 3.0 + 1e-6 && ws_flag("RECOMP_WS_MENU_MAP");
         if (on)
-            fprintf(stderr, "[WS] the map screen in widescreen (RECOMP_WS_MENU_MAP=0: 4:3)\n");
+            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save"
+                    " (RECOMP_WS_MENU_MAP=0: 4:3)\n");
     }
     return on;
 }
 
+/* a menu made wide is being shown */
 static int wsm_map_active(void)
 {
-    /* v210: any menu made wide (the map screen, the GG-notebook) */
     DWORD now = GetTickCount();
-    return wsm_on() && ((s_wsm_map_ms && now - s_wsm_map_ms < 200)
-                        || (s_wsm_nb_ms && now - s_wsm_nb_ms < 200)
-                        || (s_wsm_save_ms && now - s_wsm_save_ms < 200));
+    unsigned i;
+    if (!wsm_on())
+        return 0;
+    for (i = 0; i < WSM_NSCREENS; i++)
+        if (s_wsm_ms[i] && now - s_wsm_ms[i] < 200)
+            return 1;
+    return 0;
 }
 
 extern void D3D8_D3DDevice_SetRenderState_ZBias(void);
@@ -520,56 +560,44 @@ static void wsm_zbias(uint32_t v)
     g_eax = r[0]; g_ecx = r[1]; g_edx = r[2]; g_esp = r[3]; g_ebx = r[4];
     g_esi = r[5]; g_edi = r[6]; g_ebp = r[7]; g_seh_ebp = r[8]; g_df = (int)r[9];
     memcpy(g_fp_stack, fp, sizeof fp);
-    g_fp_top = top; g_fp_cmp = cmp; g_fp_cc = cc; g_fp_control_word = cw;
+    g_fp_top = top; g_fp_cmp = cmp; g_fp_control_word = cw;
+    g_fp_cc = cc;
 }
 
 static RECOMP_TLS float wsm_part_x;     /* v210: the x of a where-4 part */
 
 /* where the part being drawn goes: 0 = as it is. v209b: the call site is
- * looked for up the stack, not only at the return address: the buttons,
- * the TOTAL panel and the left column are drawn through an object's method
- * that reaches the object draw a step further down, so the first return
- * address was not sub_001129E0's (Miggas's run: only the header, the text
- * and the stretched parts moved). The first address on the stack inside
- * sub_001129E0 is its call site. RECOMP_WS_MENU_DEBUG=1 logs each one. */
+ * looked for up the stack, not only at the return address: the parts reach
+ * the object draw through an object's method a step further down (0x476B5),
+ * so the first return address is not the screen function's. The first
+ * address on the stack inside the screen function is its call site.
+ * RECOMP_WS_MENU_DEBUG=1 logs each one. */
 static int wsm_part(uint32_t esp)
 {
+    const WsmScreen *sc;
     unsigned k, i;
     uint32_t site = 0;
     int where = 0;
     if (wsm_in_header)
         return -1;
-    if (wsm_in_nb) {                       /* v210: the GG-notebook */
-        for (i = 0; i < 96; i++) {
-            uint32_t w = MEM32(esp + 4u * i);
-            if (w > 0x00115030u && w < 0x00115600u) {
-                site = w;
-                break;
-            }
-        }
-        for (k = 0; site && k < sizeof wsm_nb_parts / sizeof wsm_nb_parts[0]; k++)
-            if (wsm_nb_parts[k].ret == site) {
-                where = wsm_nb_parts[k].where;
-                wsm_part_x = wsm_nb_parts[k].x;
-            }
-        goto dbg;
-    }
-    if (!wsm_in_map)
+    if (wsm_cur < 0)
         return 0;
+    sc = &wsm_screens[wsm_cur];
     for (i = 0; i < 96; i++) {
         uint32_t w = MEM32(esp + 4u * i);
-        if (w > 0x001129E0u && w < 0x00113100u) {
+        if (w > sc->lo && w < sc->hi) {
             site = w;
             break;
         }
     }
-    for (k = 0; site && k < sizeof wsm_map_parts / sizeof wsm_map_parts[0]; k++)
-        if (wsm_map_parts[k].ret == site)
-            where = wsm_map_parts[k].where;
-dbg:
+    for (k = 0; site && k < sc->nparts; k++)
+        if (sc->parts[k].ret == site) {
+            where = sc->parts[k].where;
+            wsm_part_x = sc->parts[k].x;
+        }
     {
         static int dbg = -1;
-        static uint32_t seen[64];
+        static uint32_t seen[96];
         static unsigned nseen;
         unsigned j;
         if (dbg < 0) {
@@ -579,11 +607,11 @@ dbg:
         if (dbg) {
             uint32_t key = site ^ (MEM32(esp) << 8);
             for (j = 0; j < nseen && seen[j] != key; j++) ;
-            if (j == nseen && nseen < 64) {
+            if (j == nseen && nseen < 96) {
                 seen[nseen++] = key;
                 fprintf(stderr, "[WSMENU] %s part: return %08X, call site %08X -> %s\n",
-                        wsm_in_nb ? "notebook" : "map", MEM32(esp),
-                        site, where == 2 ? "across the width" : where == 1 ? "right"
+                        sc->name, MEM32(esp), site,
+                        where == 2 ? "across the width" : where == 1 ? "right"
                         : where == -1 ? "left" : where == 4 ? "with the rows' left edge"
                         : "as it is");
             }
@@ -626,50 +654,35 @@ static void wsm_draw(void (*gen)(void), int where)
     }
 }
 
-extern void sub_001129E0_gen(void);
-extern void sub_00115030_gen(void);
-extern void sub_0011DD10_gen(void);
-
-/* v211: the save menu (sub_0011DD10, from the garage and the start menu),
- * from Miggas's run: the same screen as the title's load menu, which is
- * already shown wide (the title is never held at 4:3); the save menu was
- * held at 4:3 by the menu frame (sub_00077730). It is now shown wide like
- * the load menu, nothing moved: its background is one composite part that
- * also holds the logo's circle, which stretching would make an oval. */
-void sub_0011DD10(void)
-{
-    if (wsm_on())
-        s_wsm_save_ms = GetTickCount();
-    sub_0011DD10_gen();
-}
-
-void sub_00115030(void)             /* v210: the GG-notebook's parts */
-{
-    if (!wsm_on()) {
-        sub_00115030_gen();
-        return;
+/* the screen function of wsm_screens[idx]: shown this frame, its parts and
+ * strings placed while it runs */
+#define WSM_SCREEN(name, idx)                       \
+    extern void name##_gen(void);                   \
+    void name(void)                                 \
+    {                                               \
+        int was;                                    \
+        if (!wsm_on()) { name##_gen(); return; }    \
+        s_wsm_ms[idx] = GetTickCount();             \
+        was = wsm_cur;                              \
+        wsm_cur = idx;                              \
+        name##_gen();                               \
+        wsm_cur = was;                              \
     }
-    s_wsm_nb_ms = GetTickCount();
-    wsm_in_nb++;
-    sub_00115030_gen();
-    wsm_in_nb--;
-}
+
+WSM_SCREEN(sub_001129E0, 0)     /* v209: the map screen */
+WSM_SCREEN(sub_00115030, 1)     /* v210: the GG-notebook */
+WSM_SCREEN(sub_00115A40, 2)     /* v212: the start menu's character select */
+/* v211: the save menu (sub_0011DD10, from the garage and the start menu):
+ * the same screen as the title's load menu, already shown wide (the title
+ * is never held at 4:3); it is no longer held at 4:3 either, nothing moved:
+ * its background is one composite part that also holds the logo's circle,
+ * which stretching would make an oval. */
+WSM_SCREEN(sub_0011DD10, 3)
+
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);
 extern void sub_000488B0_gen(void);
 extern void sub_0003D5D0_gen(void);
-
-void sub_001129E0(void)             /* the map screen's parts */
-{
-    if (!wsm_on()) {
-        sub_001129E0_gen();
-        return;
-    }
-    s_wsm_map_ms = GetTickCount();
-    wsm_in_map++;
-    sub_001129E0_gen();
-    wsm_in_map--;
-}
 
 void sub_000FD190(void)             /* the garage menus' header */
 {
@@ -681,13 +694,13 @@ void sub_000FD190(void)             /* the garage menus' header */
 
 void sub_00048570(void)             /* the game's object draw */
 {
-    int where = (wsm_in_map || wsm_in_header || wsm_in_nb) ? wsm_part(g_esp) : 0;
+    int where = (wsm_cur >= 0 || wsm_in_header) ? wsm_part(g_esp) : 0;
     wsm_draw(sub_00048570_gen, where);
 }
 
 void sub_000488B0(void)             /* ...and its plain quads */
 {
-    int where = (wsm_in_map || wsm_in_header || wsm_in_nb) ? wsm_part(g_esp) : 0;
+    int where = (wsm_cur >= 0 || wsm_in_header) ? wsm_part(g_esp) : 0;
     wsm_draw(sub_000488B0_gen, where);
 }
 
@@ -710,22 +723,18 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
     }
     if (wsm_in_header)
         where = -1;
-    else if (wsm_in_nb) {                  /* v210 */
+    else if (wsm_cur >= 0) {
+        const WsmScreen *sc = &wsm_screens[wsm_cur];
         uint32_t ret = MEM32(g_esp);
-        for (k = 0; k < sizeof wsm_nb_text / sizeof wsm_nb_text[0]; k++)
-            if (wsm_nb_text[k].ret == ret)
-                where = wsm_nb_text[k].where;
+        for (k = 0; k < sc->ntext; k++)
+            if (sc->text[k].ret == ret)
+                where = sc->text[k].where;
         if (where == 3) {                  /* spread with the widened rows */
             double kk = xbox_WidescreenK();
             if (kk > 0.2 && kk < 0.9999)
                 MEMF(g_esp + 4) = (float)(320.0 + (MEMF(g_esp + 4) - 320.0) / kk);
             where = 0;
         }
-    } else if (wsm_in_map) {
-        uint32_t ret = MEM32(g_esp);
-        for (k = 0; k < sizeof wsm_map_text / sizeof wsm_map_text[0]; k++)
-            if (wsm_map_text[k].ret == ret)
-                where = wsm_map_text[k].where;
     }
     if (where) {
         float extra = ws_half_extra();

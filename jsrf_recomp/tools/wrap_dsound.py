@@ -39,7 +39,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_001129E0", "sub_000FD190", "sub_00048570", "sub_000488B0",
          "sub_0003D5D0",                # v209: the map screen in widescreen
          "sub_00115030",                # v210: the GG-notebook in widescreen
-         "sub_0011DD10")                # v211: the save menu, not held at 4:3
+         "sub_0011DD10",                # v211: the save menu, not held at 4:3
+         "sub_00115A40")                # v212: the start menu's character select
 
 
 def main():
