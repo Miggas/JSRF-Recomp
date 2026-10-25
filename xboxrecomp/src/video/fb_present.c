@@ -144,6 +144,26 @@ int xbox_PresentEdgeBars(void)
     return s_ws_n > 0.5 && s_ws_edgebars_ms && GetTickCount64() - s_ws_edgebars_ms <= 100;
 }
 
+/* v217b: a wide menu whose sides are filled row by row from the colour at
+ * the 4:3 edge (the save and Roboy's menus: the yellow and the darker orange
+ * bands carried out to the screen sides, nothing stretched). Called every
+ * frame it is shown. xbox_PresentRowFillK: the squeeze k while it applies,
+ * else 0. */
+double xbox_WidescreenK(void);
+static volatile ULONGLONG s_ws_rowfill_ms;
+void xbox_WidescreenRowFill(void)
+{
+    s_ws_rowfill_ms = GetTickCount64();
+}
+double xbox_PresentRowFillK(void)
+{
+    double k;
+    if (s_ws_n > 0.5 || !s_ws_rowfill_ms || GetTickCount64() - s_ws_rowfill_ms > 100)
+        return 0.0;
+    k = xbox_WidescreenK();
+    return k < 0.999 ? k : 0.0;
+}
+
 /* v207b: the same menu screens report here whatever the aspect, for the
  * renderer's depth on them (nv2a_pb_exec.c) */
 static volatile ULONGLONG s_menu_ms;

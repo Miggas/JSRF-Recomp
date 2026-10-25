@@ -100,6 +100,28 @@ static void present_bar_color(GLint sw, GLint sh)
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 }
 
+/* v217b: on a wide menu that asks for it, the parts of the shown picture
+ * outside the 4:3 middle are filled with the column just inside its edge,
+ * stretched sideways: each row keeps its own colour out to the screen side.
+ * Source rect sw x sh, shown at dx..dx+dw, y0..y1 (y1 < y0 when flipped). */
+double xbox_PresentRowFillK(void);
+static void present_row_fill(GLint sw, GLint sh, int dx, int y0, int dw, int y1)
+{
+    double k = xbox_PresentRowFillK();
+    GLint el, in, ex;
+    if (k <= 0.0 || sw < 16 || sh < 16 || dw < 16)
+        return;
+    el = (GLint)(sw * (1.0 - k) * 0.5 + 0.5);       /* source x of the 4:3 left edge */
+    in = sw / 320 > 1 ? sw / 320 : 1;               /* a pixel or two inside it */
+    if (el <= in || el + in >= sw / 2)
+        return;
+    ex = (GLint)((double)dw * (el + in) / sw + 0.5);  /* shown width to fill, each side */
+    glBlitFramebuffer(el + in, 0, el + in + 1, sh, dx, y0, dx + ex, y1,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitFramebuffer(sw - el - in - 1, 0, sw - el - in, sh, dx + dw - ex, y0, dx + dw, y1,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+}
+
 typedef struct GlProg {
     GLuint id;
     GLint L_bmat, L_bls, L_osi;
@@ -3224,6 +3246,7 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
     /* D3D's row 0 is the top: flip vertically on the way in */
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), dx, dy + dh, dx + dw, dy,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    present_row_fill(SC(s->w), SC(s->h), dx, dy + dh, dw, dy);   /* v217b */
     gq_mark();
     s_dx.unlock(s_dx.hdev, 1, &s_dx.hobj);
     if (SUCCEEDED(IDXGISwapChain1_GetBuffer(s_dx.sc, 0, &dxp_IID_ID3D11Texture2D, (void **)&bb))) {
@@ -3380,6 +3403,7 @@ static int gl_window_present_impl(GlSurf *s)
     glClear(GL_COLOR_BUFFER_BIT);
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    present_row_fill(SC(s->w), SC(s->h), dx, dy, dw, dy + dh);   /* v217b */
     gq_mark();
     s_gw.swap(s_gw.hdc);
     gw_timing_swap();
@@ -3425,6 +3449,7 @@ static void gw_present_gl(void *arg)
     glClear(GL_COLOR_BUFFER_BIT);
     glBlitFramebuffer(0, 0, SC(f->w), SC(f->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    present_row_fill(SC(f->w), SC(f->h), dx, dy, dw, dy + dh);   /* v217b */
     s_gw.swap(s_gw.hdc);
     {
         uint64_t d = TM_NOW() - f->queued;

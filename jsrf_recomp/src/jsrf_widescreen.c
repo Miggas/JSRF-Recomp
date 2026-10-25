@@ -671,6 +671,10 @@ static void wsm_draw(void (*gen)(void), int where)
     }
 }
 
+/* v217b: the menus shown wide as they are (save/load, Roboy's): the sides
+ * are filled by carrying each row's colour at the 4:3 edge outwards */
+extern void xbox_WidescreenRowFill(void);
+
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
  * strings placed while it runs */
 #define WSM_SCREEN(name, idx)                       \
@@ -680,6 +684,7 @@ static void wsm_draw(void (*gen)(void), int where)
         int was;                                    \
         if (!wsm_on()) { name##_gen(); return; }    \
         s_wsm_ms[idx] = GetTickCount();             \
+        if (idx >= 3) xbox_WidescreenRowFill();     \
         was = wsm_cur;                              \
         wsm_cur = idx;                              \
         name##_gen();                               \
