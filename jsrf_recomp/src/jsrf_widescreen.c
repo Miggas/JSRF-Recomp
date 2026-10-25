@@ -712,17 +712,21 @@ static void wsm_draw(void (*gen)(void), int where)
  * are filled row by row (fill 1) or that the menu places its own parts there
  * (fill 0): a z-bias no title uses, the real one put back at once, before
  * anything is drawn with it (nv2a_pb_exec.c, ws_fill_mark) */
+/* fill: 0 a menu with its own sides, 1 fill (a screen around the menus),
+ * 2 fill (a menu's own screen function: wins over 3), 3 no fill (graffiti
+ * select's 3D scene; v227) */
 static void wsm_fill_mark(int fill)
 {
+    static const uint32_t v[4] = { 200000000u, 20000000u, 50000000u, 2000000000u };
     uint32_t zb;
-    if (!MEM32(0x19DCE0u))
+    if (!MEM32(0x19DCE0u) || fill < 0 || fill > 3)
         return;                             /* no device yet */
     zb = MEM32(0x19E2E8u);
-    wsm_zbias(fill ? 20000000u : 200000000u);
+    wsm_zbias(v[fill]);
     wsm_zbias(zb);
 }
 void jsrf_RowFillMark(void) { wsm_fill_mark(1); }   /* recomp_manual.c */
-void jsrf_RowFillOff(void) { wsm_fill_mark(0); }    /* v225: recomp_manual.c */
+void jsrf_RowFillOff(void) { wsm_fill_mark(3); }    /* v225: recomp_manual.c */
 
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
  * strings placed while it runs */
@@ -733,7 +737,7 @@ void jsrf_RowFillOff(void) { wsm_fill_mark(0); }    /* v225: recomp_manual.c */
         int was;                                    \
         if (!wsm_on()) { name##_gen(); return; }    \
         s_wsm_ms[idx] = GetTickCount();             \
-        wsm_fill_mark(idx >= 3);                    \
+        wsm_fill_mark(idx >= 3 ? 2 : 0);            \
         was = wsm_cur;                              \
         wsm_cur = idx;                              \
         name##_gen();                               \

@@ -2973,31 +2973,41 @@ static float ws_cut_for(int kind, const NvGlState *st);                 /* v217c
  * knows exactly which frames have it: no frame before or after the menu is
  * filled, and none of its own is missed (v224 went by when the game set its
  * marks, which runs ahead of this and not in step: the fill flashed). */
-static int s_fill_mark, s_fill_off;
+/* v227: four marks, the stronger deciding: a menu's own screen function
+ * (5e7: fill; 2e8: its own sides, no fill) over the screens around it (2e7:
+ * the menu frame start, fill; 2e9: graffiti select's 3D scene, no fill --
+ * which the garage's graffiti menu is drawn inside of, Miggas) */
+static int s_fill_mark, s_fill_off, s_fill_strong, s_fill_weak_off;
 static void ws_fill_mark(float u)
 {
     float a = fabsf(u);
-    if (a >= 1.0e8f && a < 1.0e9f)
+    static int said;
+    if (a < 1.0e7f || a >= 1.0e10f)
+        return;
+    if (!said++)
+        fprintf(stderr, "[WS] menu side fill: marks seen in the command stream\n");
+    if (a >= 1.0e9f)
+        s_fill_weak_off = 1;
+    else if (a >= 1.0e8f)
         s_fill_off = 1;
-    else if (a >= 1.0e7f && a < 1.0e8f) {
-        static int said;
-        if (!said++)
-            fprintf(stderr, "[WS] menu side fill: marks seen in the command stream\n");
+    else if (a >= 3.0e7f)
+        s_fill_strong = 1;
+    else
         s_fill_mark = 1;
-    }
 }
 /* the k to fill this frame's sides with, or 0 (the renderer's cuts while it
  * is drawn) */
 double xbox_RowFillK(void);
 static double ws_fill_now(void)
 {
-    return s_fill_mark && !s_fill_off ? xbox_RowFillK() : 0.0;
+    int on = !s_fill_off && (s_fill_strong || (s_fill_mark && !s_fill_weak_off));
+    return on ? xbox_RowFillK() : 0.0;
 }
 /* at the flip: this frame's, and the marks start again for the next */
 double nv2a_ws_fill_latch(void)
 {
     double k = ws_fill_now();
-    s_fill_mark = s_fill_off = 0;
+    s_fill_mark = s_fill_off = s_fill_strong = s_fill_weak_off = 0;
     return k;
 }
 static float ws_centre(const NvGlState *st);                            /* v187l */
