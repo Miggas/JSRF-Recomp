@@ -1524,6 +1524,7 @@ static DWORD    boot_since, boot_report;
  * picture is held at 4:3 while the boot task sits in them
  * (jsrf_widescreen.c has the other 4:3 screens; RECOMP_WS_HOLD43=0: wide). */
 extern void xbox_WidescreenHold43(void);
+extern void xbox_MenuScreen(void);     /* v207c */
 
 static void boot_ws_hold(uint32_t handler)
 {
@@ -1534,6 +1535,10 @@ static void boot_ws_hold(uint32_t handler)
     }
     if (on && (handler == 0x0007D100u || handler == 0x0007CFE0u))
         xbox_WidescreenHold43();
+    /* v207c: these two are menu screens for the renderer's depth too (the
+     * graffiti menu's icons; v207b only told it about jsrf_widescreen.c's) */
+    if (handler == 0x0007D100u || handler == 0x0007CFE0u)
+        xbox_MenuScreen();
 }
 
 void sub_0007BDD0(void)
