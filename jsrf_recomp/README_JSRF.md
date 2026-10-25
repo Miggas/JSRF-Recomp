@@ -583,6 +583,7 @@ next fix.
 - **v227:** the garage's graffiti menu has its sides filled again (and the grey corner square gone): it is drawn while the boot task is in graffiti select, whose "no fill" (v225) won over it. The marks now rank: a menu's own screen function decides over the screens around it (Miggas's run).
 - **v228:** graffiti select's 3D scene unsmeared again: the garage's graffiti menu function also runs under it, and its fill (v227) won. The scene's own function (sub_00120180, wrapped) now marks its frames, and a frame that draws the scene is never filled (Miggas's run).
 - **v228b:** the scene function also runs under the garage's graffiti menu (which lost its fill again): it now marks its start and end, and the frame counts as graffiti select's scene only if something was drawn in between. Each change of a frame's fill marks is logged ([WS] fill marks, the first 60).
+- **v228c:** the scene marks now come from sub_00124BD0, graffiti select's scene draw callback (none of its draws in the graffiti menu's frames); v228's sub_00120180 is the task loop above it and never returns, so the scene never counted (the fill-marks log of Miggas's run).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

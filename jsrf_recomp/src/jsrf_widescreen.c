@@ -731,16 +731,18 @@ static void wsm_fill_mark(int fill)
 void jsrf_RowFillMark(void) { wsm_fill_mark(1); }   /* recomp_manual.c */
 void jsrf_RowFillOff(void) { wsm_fill_mark(3); }    /* v225: recomp_manual.c */
 
-/* v228: graffiti select's 3D scene (sub_00120180: the scene's draws come
- * from it, Miggas's run). The garage's graffiti menu function runs under it
- * too, and its fill (v227) smeared the scene's edges again: a frame that
- * draws the scene is never filled. */
-extern void sub_00120180_gen(void);
-void sub_00120180(void)
+/* v228: graffiti select's 3D scene. The garage's graffiti menu function runs
+ * under it too, and its fill (v227) smeared the scene's edges again: a frame
+ * that draws the scene is never filled. v228c: sub_00124BD0, the scene's
+ * draw callback (its draws come from 0x124E4F/0x124E88/0x124F64...; none in
+ * the menu's frames, Miggas's runs) -- v228 took sub_00120180, which is the
+ * task loop above it and never returns: its end mark never came. */
+extern void sub_00124BD0_gen(void);
+void sub_00124BD0(void)
 {
     if (wsm_on())
         wsm_fill_mark(4);                   /* the scene starts */
-    sub_00120180_gen();
+    sub_00124BD0_gen();
     if (wsm_on())
         wsm_fill_mark(5);                   /* v228b: and ends: drew anything? */
 }
