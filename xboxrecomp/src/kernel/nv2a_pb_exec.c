@@ -2960,6 +2960,11 @@ static float s_gl_fog[NV_MAX_INDICES];
 enum { XK_PROGRAM, XK_FIXED, XK_PRE };
 static void drawlog(int kind, const NvGlState *st);   /* v207 */
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d);   /* v187 */
+/* v226: the surface is the screen (640x480), not a texture drawn into */
+static int ws_is_screen(const NvGlState *st)
+{
+    return st->width >= 640 && st->height >= 480 && st->width <= 720 && st->height <= 576;
+}
 static float ws_cut_for(int kind, const NvGlState *st);                 /* v217c */
 /* v224b: the menus whose sides are filled row by row say so in the command
  * stream itself: jsrf_widescreen.c sets a z-bias no title uses (units 2e7:
@@ -3816,10 +3821,14 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         return 1.0f;
     if (st->ws_stretch)                      /* v209: a menu part across the width */
         return 1.0f;
-    if (st->width < 640 || st->height < 480) {
+    if (!ws_is_screen(st)) {
         /* v187i: a smaller target is squeezed like the screen once it has
          * been pasted across the screen (boost's blur draws the scene into a
-         * 512x512 target and pastes that; unsqueezed it held the 4:3 view) */
+         * 512x512 target and pastes that; unsqueezed it held the 4:3 view).
+         * v226: a larger one too (graffiti select builds each graffiti in a
+         * 1024x1024 target, then puts it on the walls and the big preview:
+         * squeezed, every graffiti came out 3/4 wide with black at its
+         * sides, Miggas's run). Only the 640x480 screen is squeezed as such. */
         int t = ws_target_at(st->surf_va);
         if (t < 0 || !s_ws_rt[t].screen)
             return 1.0f;
@@ -3934,7 +3943,7 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
         if (keep) {
             /* a smaller target pasted across a display-sized surface is a copy
              * of the screen from now on (v187i) */
-            if (rt && st->width >= 640 && st->height >= 480) {
+            if (rt && ws_is_screen(st)) {
                 int t = ws_target_at(s_gpu.texs[0].offset);
                 if (t >= 0 && !s_ws_rt[t].screen) {
                     s_ws_rt[t].screen = 1;
@@ -3962,7 +3971,7 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
 static float ws_cut_for(int kind, const NvGlState *st)
 {
     float k = (float)ws_fill_now(), lo, hi, W = (float)st->width, H = (float)st->height;
-    if (!(k > 0.2f && k < 0.9999f) || st->width < 640 || st->height < 480)
+    if (!(k > 0.2f && k < 0.9999f) || !ws_is_screen(st))
         return 0.0f;
     {
         int behind = s_ws_behind, inner = s_ws_inner, got;   /* as ws_k_for left them */
