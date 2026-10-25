@@ -3918,8 +3918,9 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
 /* v217c: on a menu whose sides are filled row by row from the column at the
  * 4:3 edge (the save and Roboy's menus, video/fb_present.c), only the
  * background layers across the whole width may colour that column: anything
- * narrower -- the bars scanning along the top, which flashed the whole
- * corner when they crossed it -- is kept off it (nv2a_gl.c, by the scissor).
+ * narrower that reaches the top or the bottom -- the bars scanning along
+ * the top, which flashed the whole corner when they crossed it -- is kept
+ * off it (nv2a_gl.c, by the scissor).
  * The small grey square in the top-left corner (an untextured piece of the
  * menu's backdrop within a dozen pixels of the corner, hidden by a TV's
  * overscan) is not drawn at all: it was carried out to the screen edge.
@@ -3942,7 +3943,12 @@ static float ws_cut_for(int kind, const NvGlState *st)
         return -k;                                  /* the grey corner square */
     if (lo <= 0.02f * W && hi >= 0.98f * W)
         return 0.0f;                                /* across the width: a backdrop layer */
-    return k;
+    /* v218: only the strips hanging from the top or standing on the bottom
+     * (the scanning bars) are kept off it; a bar that starts at the 4:3 edge
+     * (the practice menu's black title bar) is carried out to the side */
+    if (s_ws_ymin <= 0.02f * H || s_ws_ymax >= 0.98f * H)
+        return k;
+    return 0.0f;
 }
 
 /* v191: a full-screen layer whose corners the shader pushes one pixel past

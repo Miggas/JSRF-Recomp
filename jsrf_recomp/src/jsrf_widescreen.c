@@ -527,6 +527,7 @@ static const WsmScreen wsm_screens[] = {
     { "Roboy",    0x0011C070u, 0x0011C070u, NULL, 0, NULL, 0 },   /* v214: not held */
     { "system",   0x0011FEB0u, 0x0011FEB0u, NULL, 0, NULL, 0 },   /* v215: not held */
     { "options",  0x0011CF10u, 0x0011CF10u, NULL, 0, NULL, 0 },   /* v216: not held */
+    { "practice", 0x0011D740u, 0x0011D740u, NULL, 0, NULL, 0 },   /* v218: not held */
 };
 #define WSM_NSCREENS WSM_N(wsm_screens)
 static volatile DWORD s_wsm_ms[WSM_NSCREENS];
@@ -708,6 +709,9 @@ WSM_SCREEN(sub_0011C070, 4)
 WSM_SCREEN(sub_0011FEB0, 5)
 /* v216: Roboy's options menu (sub_0011CF10, Miggas's run): the same */
 WSM_SCREEN(sub_0011CF10, 6)
+/* v218: the practice menu (sub_0011D740, Miggas's run): the same, shown wide,
+ * nothing moved, the sides filled row by row */
+WSM_SCREEN(sub_0011D740, 7)
 
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);

@@ -570,6 +570,7 @@ next fix.
 - **v216:** Roboy's options menu (drawn by sub_0011CF10, wrapped; Miggas's run): the same, shown wide, nothing moved.
 - **v217b:** the save/load menu and Roboy's menus no longer show black side bars: each row of the picture is carried out to the screen sides with its own colour at the 4:3 edge, so the yellow and the darker orange bands reach the edges without anything being stretched (v217 stretched the background meshes and deformed the darker shapes; undone).
 - **v217c:** the same menus: the bars scanning along the top no longer flash the whole corner when they cross the 4:3 edge (only the background layers across the whole width colour the column the sides are filled from), and the small grey square in the top-left corner is no longer drawn (Miggas's run).
+- **v218:** the practice menu (drawn by sub_0011D740, wrapped; Miggas's run): shown wide like the save and Roboy's menus, nothing moved, the sides filled row by row. Only strips reaching the top or bottom (the scanning bars) are now kept off the fill column, so a bar starting at the 4:3 edge carries on to the side.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
