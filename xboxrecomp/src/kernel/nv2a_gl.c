@@ -2742,6 +2742,16 @@ static GlSurf *bind_surface(const NvGlState *st)
         if (!w || !h) { x = 0; y = 0; w = (int)s->w; h = (int)s->h; }
         sy = (int)s->h - (y + h);
         x = SC(x); sy = SC(sy); w = SC(w); h = SC(h);
+        if (st->ws_cut < 0.0f)
+            w = h = 0;                         /* v217c: left out */
+        else if (st->ws_cut > 0.0f) {
+            /* v217c: off the columns present_row_fill fills the sides from */
+            int sw = SC(s->w), in = sw / 320 > 1 ? sw / 320 : 1;
+            int el = (int)(sw * (1.0 - st->ws_cut) * 0.5 + 0.5);
+            int a = el + in + 1, b = sw - el - in - 1;
+            int x0 = x > a ? x : a, x1 = x + w < b ? x + w : b;
+            x = x0; w = x1 > x0 ? x1 - x0 : 0;
+        }
         if (s_bound_sc[0] != x || s_bound_sc[1] != sy || s_bound_sc[2] != w
                 || s_bound_sc[3] != h) {
             glScissor(x, sy, w, h);

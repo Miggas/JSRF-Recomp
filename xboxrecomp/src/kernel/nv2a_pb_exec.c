@@ -2960,6 +2960,7 @@ static float s_gl_fog[NV_MAX_INDICES];
 enum { XK_PROGRAM, XK_FIXED, XK_PRE };
 static void drawlog(int kind, const NvGlState *st);   /* v207 */
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d);   /* v187 */
+static float ws_cut_for(int kind, const NvGlState *st);                 /* v217c */
 static float ws_centre(const NvGlState *st);                            /* v187l */
 static uint32_t ws_edge_for(int kind, const NvGlState *st);             /* v191 */
 
@@ -3062,6 +3063,8 @@ static void gl_submit(uint32_t n)
     st.ws_k = ws_k_for(s_fog_direct ? XK_PRE                      /* v187 */
                        : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED,
                        &st, &st.ws_2d);
+    st.ws_cut = ws_cut_for(s_fog_direct ? XK_PRE : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM
+                           : XK_FIXED, &st);               /* v217c */
     st.ws_c = ws_centre(&st);                              /* v187l */
     st.ws_edge = ws_edge_for(s_fog_direct ? XK_PRE
                              : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
@@ -3545,11 +3548,13 @@ static int s_ws_behind;
  * of the span (more than 2% of the width): boost's camera quad has every
  * corner at a screen edge, a floor that happens to reach both edges does not */
 static int s_ws_inner;
+static float s_ws_ymin, s_ws_ymax;   /* v217c: the span's screen y range too */
 static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, float *hi)
 {
     uint32_t i, n = s_gpu.idx_count;
-    float p[4], x, xs[64];
+    float p[4], x, y, xs[64];
     *lo = 1.0e9f; *hi = -1.0e9f;
+    s_ws_ymin = 1.0e9f; s_ws_ymax = -1.0e9f;
     s_ws_behind = 0;
     s_ws_inner = 0;
     if (n == 0 || n > maxn)
@@ -3560,6 +3565,7 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
             Nv2aVshOutput o;
             ff_transform(idx, &o);
             x = o.pos[0];                      /* screen x, already over w */
+            y = o.pos[1];
             if (!(o.pos[3] > 0.0f)) s_ws_behind = 1;
         } else if (kind == XK_PROGRAM && !st->screen_space) {
             Nv2aVshOutput o;                   /* v187g: run the program */
@@ -3568,14 +3574,18 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
             if (!transform_vertex(idx, &o))
                 return 0;
             x = o.pos[0];
+            y = o.pos[1];
             if (!(o.pos[3] > 0.0f)) s_ws_behind = 1;
         } else {
             if (!fetch_attr(&s_gpu.attr[0], idx, p))
                 return 0;
             x = p[0];
+            y = p[1];
         }
         if (x < *lo) *lo = x;
         if (x > *hi) *hi = x;
+        if (y < s_ws_ymin) s_ws_ymin = y;
+        if (y > s_ws_ymax) s_ws_ymax = y;
         if (i < 64) xs[i] = x;
     }
     {
@@ -3902,6 +3912,36 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
             return 1.0f;
         }
     }
+    return k;
+}
+
+/* v217c: on a menu whose sides are filled row by row from the column at the
+ * 4:3 edge (the save and Roboy's menus, video/fb_present.c), only the
+ * background layers across the whole width may colour that column: anything
+ * narrower -- the bars scanning along the top, which flashed the whole
+ * corner when they crossed it -- is kept off it (nv2a_gl.c, by the scissor).
+ * The small grey square in the top-left corner (an untextured piece of the
+ * menu's backdrop within a dozen pixels of the corner, hidden by a TV's
+ * overscan) is not drawn at all: it was carried out to the screen edge.
+ * Returns k, -k for a draw left out, or 0. */
+double xbox_PresentRowFillK(void);
+static float ws_cut_for(int kind, const NvGlState *st)
+{
+    float k = (float)xbox_PresentRowFillK(), lo, hi, W = (float)st->width, H = (float)st->height;
+    if (!(k > 0.2f && k < 0.9999f) || st->width < 640 || st->height < 480)
+        return 0.0f;
+    {
+        int behind = s_ws_behind, inner = s_ws_inner, got;   /* as ws_k_for left them */
+        got = ws_span(kind, st, 64u, &lo, &hi);
+        s_ws_behind = behind; s_ws_inner = inner;
+        if (!got)
+            return k;                               /* a bigger batch: never a backdrop layer */
+    }
+    if (!s_gpu.texs[0].valid && hi <= 0.02f * W && lo >= -0.05f * W
+            && s_ws_ymax <= 0.03f * H && s_ws_ymin >= -0.05f * H)
+        return -k;                                  /* the grey corner square */
+    if (lo <= 0.02f * W && hi >= 0.98f * W)
+        return 0.0f;                                /* across the width: a backdrop layer */
     return k;
 }
 
@@ -4292,6 +4332,7 @@ static void gl_draw_batch(void)
         if (!zdirect_wanted(s_vx.kind, &st))
             st.zdirect_off = 1;
         st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);   /* v187 */
+        st.ws_cut = ws_cut_for(s_vx.kind, &st);           /* v217c */
     st.ws_c = ws_centre(&st);                              /* v187l */
         st.ws_edge = ws_edge_for(s_vx.kind, &st);         /* v191 */
         fast_qpc_li(&q1);
@@ -4304,6 +4345,7 @@ static void gl_draw_batch(void)
     } else {
     st.zdirect_off = s_vx.behind || !zdirect_wanted(s_vx.kind, &st);
     st.ws_k = ws_k_for(s_vx.kind, &st, &st.ws_2d);       /* v187 */
+    st.ws_cut = ws_cut_for(s_vx.kind, &st);               /* v217c */
     st.ws_c = ws_centre(&st);                              /* v187l */
     st.ws_edge = ws_edge_for(s_vx.kind, &st);             /* v191 */
     fast_qpc_li(&q1);

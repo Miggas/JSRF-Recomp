@@ -77,6 +77,8 @@ typedef struct {
     NvGlTexture  tex[4];
     uint32_t     bg_far;         /* v200d: the backdrop, drawn at the far plane */
     uint32_t     ws_stretch;     /* v209: a menu part drawn across the whole width */
+    float        ws_cut;         /* v217c: on a row-filled menu, k: kept off the columns the
+                                    sides are filled from (< 0: not drawn at all) */
 } NvGlState;
 
 /* One vertex as the GL backend's shader reads it. */
