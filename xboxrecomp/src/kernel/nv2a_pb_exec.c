@@ -2923,6 +2923,7 @@ static uint32_t s_gl_idx[NV_MAX_INDICES * 3];
 static float s_gl_fog[NV_MAX_INDICES];
 
 enum { XK_PROGRAM, XK_FIXED, XK_PRE };
+static void drawlog(int kind, const NvGlState *st);   /* v207 */
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d);   /* v187 */
 static float ws_centre(const NvGlState *st);                            /* v187l */
 static uint32_t ws_edge_for(int kind, const NvGlState *st);             /* v191 */
@@ -3029,6 +3030,7 @@ static void gl_submit(uint32_t n)
     st.ws_c = ws_centre(&st);                              /* v187l */
     st.ws_edge = ws_edge_for(s_fog_direct ? XK_PRE
                              : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
+    drawlog(s_fog_direct ? XK_PRE : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
     nv2a_gl_draw(&st, s_xf, s_gl_fog, s_gl_idx, m);
     s_gpu.tris_drawn += m / 3;
     note_drawn();
@@ -3546,6 +3548,82 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
                 s_ws_inner = 1;
     }
     return 1;
+}
+
+/* v207: RECOMP_GL_DRAWLOG=1 -- press F9 and the next RECOMP_GL_DRAWLOG_N
+ * draws (default 600) are logged one line each: what is drawn (kind,
+ * vertices, texture), where (screen box), its depth (z min..max in the
+ * zeta's range, w min..max), and the depth state (test, function, write,
+ * z-bias), stencil, blend and alpha test. For the graffiti menu's missing
+ * icons (Miggas's idea: find the menu's draws and see which one hides
+ * them): the icon and the button it should sit on show up as two lines over
+ * the same box. */
+static void drawlog(int kind, const NvGlState *st)
+{
+    static int on = -1, was;
+    static unsigned left, total, nmax;
+    uint32_t i, n = s_gpu.idx_count;
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, z0 = 1e9f, z1 = -1e9f,
+          w0 = 1e9f, w1 = -1e9f;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_GL_DRAWLOG"), *nn = getenv("RECOMP_GL_DRAWLOG_N");
+        on = e && e[0] == '1';
+        nmax = nn && atoi(nn) > 0 ? (unsigned)atoi(nn) : 600u;
+        if (on)
+            fprintf(stderr, "[DRAWLOG] on: F9 logs the next %u draws\n", nmax);
+    }
+    if (!on)
+        return;
+    {
+        int k = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+        if (k && !was && !left) {
+            left = nmax;
+            total++;
+            fprintf(stderr, "[DRAWLOG] ---- snapshot %u: kind 0=program 1=fixed 2=pre; z in zeta"
+                    " units of %g; box in 640x480 ----\n", total, (double)st->zmax);
+        }
+        was = k;
+    }
+    if (!left)
+        return;
+    left--;
+    for (i = 0; i < n && i < 64; i++) {
+        uint32_t idx = s_gpu.idx[i];
+        float p[4];
+        Nv2aVshOutput o;
+        if (kind == XK_FIXED && !st->screen_space) {
+            ff_transform(idx, &o);
+            memcpy(p, o.pos, sizeof p);
+        } else if (kind == XK_PROGRAM && !st->screen_space) {
+            if (i == 0)
+                nv2a_vsh_prepare();
+            if (!transform_vertex(idx, &o))
+                break;
+            memcpy(p, o.pos, sizeof p);
+        } else if (!fetch_attr(&s_gpu.attr[0], idx, p))
+            break;
+        if (p[0] < x0) x0 = p[0];
+        if (p[0] > x1) x1 = p[0];
+        if (p[1] < y0) y0 = p[1];
+        if (p[1] > y1) y1 = p[1];
+        if (p[2] < z0) z0 = p[2];
+        if (p[2] > z1) z1 = p[2];
+        if (p[3] < w0) w0 = p[3];
+        if (p[3] > w1) w1 = p[3];
+    }
+    fprintf(stderr, "[DRAWLOG] %3u: kind %d%s n %u tex %s%08X %ux%u box %.0f..%.0f x %.0f..%.0f"
+            " z %.1f..%.1f w %.3f..%.3f | depth test %u func %X write %u bias %u (%g, %g)"
+            " zdirect_off %u | stencil %u func %X ref %u | blend %u (%X %X) alpha %u (%X %u)"
+            " cmask %08X cull %u surf %08X %ux%u\n",
+            nmax - left, kind, st->screen_space ? " pre" : "", n,
+            s_gpu.texs[0].valid ? "" : "none ", s_gpu.texs[0].offset,
+            s_gpu.texs[0].width, s_gpu.texs[0].height, x0, x1, y0, y1, z0, z1, w0, w1,
+            st->depth_test, st->depth_func, st->depth_mask, st->poly_offset,
+            (double)st->poly_factor, (double)st->poly_units, st->zdirect_off,
+            st->stencil_test, st->stencil_func, st->stencil_ref,
+            st->blend_enable, st->blend_sfactor, st->blend_dfactor,
+            st->alpha_test, st->alpha_func, st->alpha_ref, st->color_mask, st->cull_enable,
+            st->surf_va, st->width, st->height);
 }
 
 /* v187e: the display-sized surfaces drawn into lately. A texture over one
@@ -4180,6 +4258,7 @@ static void gl_draw_batch(void)
         s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
         if (s_ftrace == 2)
             nv2a_gl_trace_draw((int)s_ftrace_draw + 1);
+        drawlog(s_vx.kind, &st);
         nv2a_gl_draw_raw(&st, &vs, s_vx.slots, s_vx.k, s_gl_idx, m);
         s_raw_active = 0;
     } else {
@@ -4191,6 +4270,7 @@ static void gl_draw_batch(void)
     s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
     if (s_ftrace == 2)
         nv2a_gl_trace_draw((int)s_ftrace_draw + 1);
+    drawlog(s_vx.kind, &st);
     nv2a_gl_draw_mapped(&st, s_gl_idx, m);
     }
     s_gpu.tris_drawn += m / 3;
