@@ -928,7 +928,7 @@ static const char *FS =
 "#if !defined(NO_FRAGDEPTH)\n"
 "  /* v200d: the backdrop at the far plane: behind every map piece, shown\n"
 "   * only where nothing has been drawn */\n"
-"  if (u_bgfar != 0) {\n"
+"  if (u_bgfar == 1) {\n"
 "#ifdef WDEPTH\n"
 "    gl_FragDepth = 0.0;\n"
 "#else\n"
@@ -952,6 +952,12 @@ static const char *FS =
 "     * the console whatever camera drew them. Further out: WDEPTH_NEAR/w in\n"
 "     * 0..0.5, where z/w had run out of precision. Any projection puts its\n"
 "     * near part in front of its far part, so the bands never disagree. */\n"
+"    /* v207b: u_bgfar 2, a menu screen: the depth RECOMP_GL_WDEPTH=0\n"
+"     * writes (worked out above), reversed over the whole range, 1 - d:\n"
+"     * 1 - d/2 loses the last bit, and menu models sit a step apart */\n"
+"    if (u_bgfar == 2)\n"
+"      gl_FragDepth = 1.0 - clamp(gl_FragDepth, 0.0, 1.0);\n"
+"    else\n"
 "    gl_FragDepth = (v_flat > 0.5 || ww < WDEPTH_NEAR) ? 1.0 - 0.5 * clamp(zl, 0.0, 1.0)\n"
 "                                                    : 0.5 * WDEPTH_NEAR / ww;\n"
 "  }\n"
@@ -1662,7 +1668,7 @@ static GlProg *zvar(GlProg *p, const NvGlState *st)
         twins = !(e && !strcmp(e, "0"));
     }
     if (!twins || !p || !p->id || !p->vsrc || (direct && !st->zdirect_off) || wdepth()
-            || st->bg_far)
+            || st->bg_far == 1)
         return p;
     if (!p->nz) {
         GlProg *q = (GlProg *)calloc(1, sizeof *q);
@@ -5457,7 +5463,8 @@ void nv2a_gl_clear(const NvGlState *st, uint32_t param, uint32_t argb,
         glDepthMask(GL_TRUE);
         {
             double d = st->zmax > 0.0f ? zclear / st->zmax : 1.0;
-            glClearDepth(wdepth() ? (d >= 0.999999 ? 0.0 : 1.0 - 0.5 * d) : d);
+            glClearDepth(wdepth() ? (d >= 0.999999 ? 0.0 : st->bg_far == 2 ? 1.0 - d   /* v207b */
+                                                               : 1.0 - 0.5 * d) : d);
         }
         bits |= GL_DEPTH_BUFFER_BIT;
     }

@@ -35,6 +35,7 @@
 
 extern double xbox_PresentAspect(void);
 extern double xbox_WidescreenK(void);
+extern void xbox_MenuScreen(void);   /* v207b */
 extern void xbox_WidescreenHold43(void);
 
 /* guest pixels added at each side by the shape shown now */
@@ -317,6 +318,7 @@ void sub_0015A880(void)
     {                                               \
         if (ws_hold_on())                           \
             xbox_WidescreenHold43();                \
+        xbox_MenuScreen();      /* v207b: depth */  \
         name##_gen();                               \
     }
 

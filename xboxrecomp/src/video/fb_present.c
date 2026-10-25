@@ -131,6 +131,18 @@ void xbox_WidescreenHold43(void)
     s_ws_hold_ms = GetTickCount64();
 }
 
+/* v207b: the same menu screens report here whatever the aspect, for the
+ * renderer's depth on them (nv2a_pb_exec.c) */
+static volatile ULONGLONG s_menu_ms;
+void xbox_MenuScreen(void)
+{
+    s_menu_ms = GetTickCount64();
+}
+int xbox_MenuScreenNow(void)
+{
+    return s_menu_ms && GetTickCount64() - s_menu_ms <= 100;
+}
+
 static void ws_tick(void)
 {
     static int said = -1;

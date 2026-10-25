@@ -2877,6 +2877,31 @@ static int gl_state(NvGlState *st)
         st->bg_far = 1;
         st->poly_offset = 0;
     }
+    /* v207b: on the screens kept at 4:3 (the garage menus, character
+     * select) depth is stored over the whole range (bg_far 2; nv2a_gl.c).
+     * The graffiti menu's buttons and icons are small 3D models, an icon
+     * 1-4 steps of 24-bit depth in front of its button (RECOMP_GL_DRAWLOG,
+     * Miggas's run); the near band stores 1 - z/2, and half a step is below
+     * what a float holds between 0.5 and 1, so icon and button tied and
+     * the one drawn last won: the selected icon, and the third, missing.
+     * RECOMP_GL_MENU_DEPTH=0 turns it off. */
+    else {
+        static int menu_on = -1, was = -1;
+        int now;
+        if (menu_on < 0) {
+            const char *e = getenv("RECOMP_GL_MENU_DEPTH");
+            menu_on = !(e && e[0] == '0');
+        }
+        if (menu_on && xbox_MenuScreenNow())
+            st->bg_far = 2;
+        now = st->bg_far == 2;
+        if (now != was) {
+            if (was >= 0)
+                fprintf(stderr, "[GL] %s\n", now ? "menu screen: depth over the whole range"
+                                                  : "gameplay depth again");
+            was = now;
+        }
+    }
     {
         static int no_cull = -1;
         if (no_cull < 0)
@@ -3425,7 +3450,9 @@ static uint32_t s_raw_present;
  * at the far left and right. k comes from the presenter (fb_present.c). */
 #if defined(_WIN32)
 extern double xbox_WidescreenK(void);
+extern int xbox_MenuScreenNow(void);     /* v207b */
 #else
+static int xbox_MenuScreenNow(void) { return 0; }
 static double xbox_WidescreenK(void)    /* no presenter here: the harness */
 {
     const char *e = getenv("RECOMP_GL_WS_K");
