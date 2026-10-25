@@ -714,12 +714,14 @@ static void wsm_draw(void (*gen)(void), int where)
  * anything is drawn with it (nv2a_pb_exec.c, ws_fill_mark) */
 /* fill: 0 a menu with its own sides, 1 fill (a screen around the menus),
  * 2 fill (a menu's own screen function: wins over 3), 3 no fill (graffiti
- * select's 3D scene; v227) */
+ * select's 3D scene; v227), 4 no fill (graffiti select's scene is drawn in
+ * this frame: wins over 2; v228) */
 static void wsm_fill_mark(int fill)
 {
-    static const uint32_t v[4] = { 200000000u, 20000000u, 50000000u, 2000000000u };
+    static const uint32_t v[5] = { 200000000u, 20000000u, 50000000u, 2000000000u,
+                                   100000000u };
     uint32_t zb;
-    if (!MEM32(0x19DCE0u) || fill < 0 || fill > 3)
+    if (!MEM32(0x19DCE0u) || fill < 0 || fill > 4)
         return;                             /* no device yet */
     zb = MEM32(0x19E2E8u);
     wsm_zbias(v[fill]);
@@ -727,6 +729,18 @@ static void wsm_fill_mark(int fill)
 }
 void jsrf_RowFillMark(void) { wsm_fill_mark(1); }   /* recomp_manual.c */
 void jsrf_RowFillOff(void) { wsm_fill_mark(3); }    /* v225: recomp_manual.c */
+
+/* v228: graffiti select's 3D scene (sub_00120180: the scene's draws come
+ * from it, Miggas's run). The garage's graffiti menu function runs under it
+ * too, and its fill (v227) smeared the scene's edges again: a frame that
+ * draws the scene is never filled. */
+extern void sub_00120180_gen(void);
+void sub_00120180(void)
+{
+    if (wsm_on())
+        wsm_fill_mark(4);
+    sub_00120180_gen();
+}
 
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
  * strings placed while it runs */
