@@ -105,10 +105,10 @@ static void present_bar_color(GLint sw, GLint sh)
  * stretched sideways: each row keeps its own colour out to the screen side.
  * Source rect sw x sh, shown at dx..dx+dw, y0..y1 (y1 < y0 when flipped). */
 /* v224: k as it was for the frame being shown, taken when that frame was
- * flipped (xbox_PresentRowFillLatch), not the moment it is shown: the sides
+ * flipped (nv2a_ws_fill_latch), not the moment it is shown: the sides
  * stopped one frame after the menu did (the garage's character select,
  * Miggas) */
-double xbox_PresentRowFillLatch(void);
+double nv2a_ws_fill_latch(void);      /* v224b: nv2a_pb_exec.c */
 static double s_rf_k;                   /* the latched k for the paths without a GwFrame */
 static void present_row_fill_k(double k, GLint sw, GLint sh, int dx, int y0, int dw, int y1);
 static void present_row_fill(GLint sw, GLint sh, int dx, int y0, int dw, int y1)
@@ -3530,7 +3530,7 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
 
     if (s_state != 1)
         return surf_va;
-    s_rf_k = xbox_PresentRowFillLatch();   /* v224: the row fill of this frame */
+    s_rf_k = nv2a_ws_fill_latch();         /* v224: the row fill of this frame */
     if (sync < 0)
         sync = getenv("RECOMP_GL_SYNC_PRESENT") != NULL;
     for (i = 0; i < NV_GL_SURFS; i++)

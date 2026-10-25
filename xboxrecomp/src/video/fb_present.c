@@ -145,48 +145,17 @@ int xbox_PresentEdgeBars(void)
 }
 
 /* v217b: a wide menu whose sides are filled row by row from the colour at
- * the 4:3 edge (the save and Roboy's menus: the yellow and the darker orange
- * bands carried out to the screen sides, nothing stretched). Called every
- * frame it is shown. xbox_PresentRowFillK: the squeeze k while it applies,
- * else 0. */
+ * the 4:3 edge (the save and Roboy's menus...). v224b: which frames are
+ * filled is marked in the command stream (nv2a_pb_exec.c, ws_fill_mark);
+ * this is the squeeze k to fill with, 0 when the picture is not wide. */
 double xbox_WidescreenK(void);
-/* v224: per frame, not per 100 ms: the marks are set while a frame is drawn
- * and taken when it is flipped (xbox_PresentRowFillLatch, nv2a_gl.c), so
- * the sides stop with the frame the menu stops in (they lasted a frame or
- * more after the garage's character select closed, Miggas). */
-static volatile LONG s_rf_set, s_rf_off, s_rf_prev;
-void xbox_WidescreenRowFill(void)
-{
-    s_rf_set = 1;
-}
-/* v223: a wide menu that places its own parts at the sides (the map, the
- * notebook, the start menu's character select): no row fill in that frame */
-void xbox_WidescreenRowFillOff(void)
-{
-    s_rf_off = 1;
-}
-static double rf_k(void)
+double xbox_RowFillK(void)
 {
     double k;
     if (s_ws_n > 0.5)
         return 0.0;
     k = xbox_WidescreenK();
     return k < 0.999 ? k : 0.0;
-}
-/* at the flip: the k of the frame just finished, or 0 */
-double xbox_PresentRowFillLatch(void)
-{
-    int on = s_rf_set && !s_rf_off;
-    s_rf_set = s_rf_off = 0;
-    s_rf_prev = on;
-    return on ? rf_k() : 0.0;
-}
-/* while drawing (the renderer's cuts, nv2a_pb_exec.c): this frame's marks,
- * or the last frame's before the screen function has run in this one */
-double xbox_PresentRowFillK(void)
-{
-    int on = s_rf_off ? 0 : (s_rf_set || s_rf_prev);
-    return on ? rf_k() : 0.0;
 }
 
 /* v207b: the same menu screens report here whatever the aspect, for the

@@ -399,9 +399,9 @@ static int wsm_on(void);   /* v223 */
  * a wide menu's own function had run). Every menu frame is wide; its sides
  * are filled row by row from the 4:3 edge, as for the save and Roboy's
  * menus, unless the menu shown places its own parts there (the map, the
- * notebook, the start menu's character select: xbox_WidescreenRowFillOff).
+ * notebook, the start menu's character select: wsm_fill_mark(0)).
  * RECOMP_WS_MENU_HOLD43=1 brings the old hold back. */
-extern void xbox_WidescreenRowFill(void);
+static void wsm_fill_mark(int fill);   /* v224b */
 static int ws_menu_hold_on(void);
 int jsrf_MenuHold43(void) { return ws_menu_hold_on(); }   /* recomp_manual.c */
 static int ws_menu_hold_on(void)
@@ -419,7 +419,7 @@ void sub_00077730(void)
     if (ws_hold_on() && ws_menu_hold_on() && !wsm_map_active())
         xbox_WidescreenHold43();
     else if (wsm_on())
-        xbox_WidescreenRowFill();
+        wsm_fill_mark(1);
     xbox_MenuScreen();      /* v207b: depth */
     sub_00077730_gen();
 }
@@ -437,7 +437,7 @@ void sub_0011AC50(void)
         xbox_WidescreenHold43();
         xbox_WidescreenEdgeBars();
     } else if (wsm_on())
-        xbox_WidescreenRowFill();
+        wsm_fill_mark(1);
     xbox_MenuScreen();
     sub_0011AC50_gen();
 }
@@ -708,8 +708,20 @@ static void wsm_draw(void (*gen)(void), int where)
 
 /* v217b: the menus shown wide as they are (save/load, Roboy's): the sides
  * are filled by carrying each row's colour at the 4:3 edge outwards */
-extern void xbox_WidescreenRowFill(void);
-extern void xbox_WidescreenRowFillOff(void);   /* v223 */
+/* v224b: tell the renderer, in the command stream, that this frame's sides
+ * are filled row by row (fill 1) or that the menu places its own parts there
+ * (fill 0): a z-bias no title uses, the real one put back at once, before
+ * anything is drawn with it (nv2a_pb_exec.c, ws_fill_mark) */
+static void wsm_fill_mark(int fill)
+{
+    uint32_t zb;
+    if (!MEM32(0x19DCE0u))
+        return;                             /* no device yet */
+    zb = MEM32(0x19E2E8u);
+    wsm_zbias(fill ? 20000000u : 200000000u);
+    wsm_zbias(zb);
+}
+void jsrf_RowFillMark(void) { wsm_fill_mark(1); }   /* recomp_manual.c */
 
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
  * strings placed while it runs */
@@ -720,8 +732,7 @@ extern void xbox_WidescreenRowFillOff(void);   /* v223 */
         int was;                                    \
         if (!wsm_on()) { name##_gen(); return; }    \
         s_wsm_ms[idx] = GetTickCount();             \
-        if (idx >= 3) xbox_WidescreenRowFill();     \
-        else xbox_WidescreenRowFillOff();           \
+        wsm_fill_mark(idx >= 3);                    \
         was = wsm_cur;                              \
         wsm_cur = idx;                              \
         name##_gen();                               \

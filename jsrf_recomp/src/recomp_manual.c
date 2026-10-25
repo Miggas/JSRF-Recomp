@@ -1527,7 +1527,7 @@ extern void xbox_WidescreenHold43(void);
 extern void xbox_MenuScreen(void);     /* v207c */
 extern int  jsrf_WideMenuNow(void);    /* v220: jsrf_widescreen.c */
 extern int  jsrf_MenuHold43(void);     /* v223 */
-extern void xbox_WidescreenRowFill(void);
+extern void jsrf_RowFillMark(void);    /* v224b */
 
 static void boot_ws_hold(uint32_t handler)
 {
@@ -1543,7 +1543,7 @@ static void boot_ws_hold(uint32_t handler)
         if (jsrf_MenuHold43())
             xbox_WidescreenHold43();   /* v220: not while a menu made wide is shown */
         else
-            xbox_WidescreenRowFill();
+            jsrf_RowFillMark();
     }
     /* v207c: these two are menu screens for the renderer's depth too (the
      * graffiti menu's icons; v207b only told it about jsrf_widescreen.c's) */

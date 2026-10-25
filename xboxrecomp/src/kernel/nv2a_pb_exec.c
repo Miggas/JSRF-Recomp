@@ -2961,6 +2961,40 @@ enum { XK_PROGRAM, XK_FIXED, XK_PRE };
 static void drawlog(int kind, const NvGlState *st);   /* v207 */
 static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d);   /* v187 */
 static float ws_cut_for(int kind, const NvGlState *st);                 /* v217c */
+/* v224b: the menus whose sides are filled row by row say so in the command
+ * stream itself: jsrf_widescreen.c sets a z-bias no title uses (units 2e7:
+ * fill, 2e8: a menu with its own sides, no fill) and puts the real one back
+ * before anything is drawn. Seen here in order, so the flip (nv2a_gl.c)
+ * knows exactly which frames have it: no frame before or after the menu is
+ * filled, and none of its own is missed (v224 went by when the game set its
+ * marks, which runs ahead of this and not in step: the fill flashed). */
+static int s_fill_mark, s_fill_off;
+static void ws_fill_mark(float u)
+{
+    float a = fabsf(u);
+    if (a >= 1.0e8f && a < 1.0e9f)
+        s_fill_off = 1;
+    else if (a >= 1.0e7f && a < 1.0e8f) {
+        static int said;
+        if (!said++)
+            fprintf(stderr, "[WS] menu side fill: marks seen in the command stream\n");
+        s_fill_mark = 1;
+    }
+}
+/* the k to fill this frame's sides with, or 0 (the renderer's cuts while it
+ * is drawn) */
+double xbox_RowFillK(void);
+static double ws_fill_now(void)
+{
+    return s_fill_mark && !s_fill_off ? xbox_RowFillK() : 0.0;
+}
+/* at the flip: this frame's, and the marks start again for the next */
+double nv2a_ws_fill_latch(void)
+{
+    double k = ws_fill_now();
+    s_fill_mark = s_fill_off = 0;
+    return k;
+}
 static float ws_centre(const NvGlState *st);                            /* v187l */
 static uint32_t ws_edge_for(int kind, const NvGlState *st);             /* v191 */
 
@@ -3925,10 +3959,9 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
  * menu's backdrop within a dozen pixels of the corner, hidden by a TV's
  * overscan) is not drawn at all: it was carried out to the screen edge.
  * Returns k, -k for a draw left out, or 0. */
-double xbox_PresentRowFillK(void);
 static float ws_cut_for(int kind, const NvGlState *st)
 {
-    float k = (float)xbox_PresentRowFillK(), lo, hi, W = (float)st->width, H = (float)st->height;
+    float k = (float)ws_fill_now(), lo, hi, W = (float)st->width, H = (float)st->height;
     if (!(k > 0.2f && k < 0.9999f) || st->width < 640 || st->height < 480)
         return 0.0f;
     {
@@ -6405,7 +6438,9 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
     case 0x0308: s_gpu.cull_enable = param; break;  /* CULL_FACE_ENABLE */
     case 0x0338: s_gpu.poly_offset_fill = param; break; /* POLY_OFFSET_FILL_ENABLE */
     case 0x0384: memcpy(&s_gpu.poly_offset_factor, &param, 4); break;
-    case 0x0388: memcpy(&s_gpu.poly_offset_units, &param, 4); break;
+    case 0x0388: memcpy(&s_gpu.poly_offset_units, &param, 4);
+        ws_fill_mark(s_gpu.poly_offset_units);   /* v224b */
+        break;
     case 0x032C: s_gpu.stencil_test = param; break; /* STENCIL_TEST_ENABLE */
     case 0x0360: s_gpu.stencil_wmask = param; break;/* STENCIL_MASK */
     case 0x0364: s_gpu.stencil_func = param; break; /* STENCIL_FUNC */
