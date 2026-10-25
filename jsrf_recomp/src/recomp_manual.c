@@ -1528,6 +1528,7 @@ extern void xbox_MenuScreen(void);     /* v207c */
 extern int  jsrf_WideMenuNow(void);    /* v220: jsrf_widescreen.c */
 extern int  jsrf_MenuHold43(void);     /* v223 */
 extern void jsrf_RowFillMark(void);    /* v224b */
+extern void jsrf_RowFillOff(void);     /* v225 */
 
 static void boot_ws_hold(uint32_t handler)
 {
@@ -1542,9 +1543,14 @@ static void boot_ws_hold(uint32_t handler)
     if (on && (handler == 0x0007D100u || handler == 0x0007CFE0u) && !jsrf_WideMenuNow()) {
         if (jsrf_MenuHold43())
             xbox_WidescreenHold43();   /* v220: not while a menu made wide is shown */
-        else
+        else if (handler == 0x0007D100u)
             jsrf_RowFillMark();
     }
+    /* v225: graffiti select is a 3D scene that goes on past the 4:3 edges:
+     * shown wide as it is, no side fill (the fill smeared the scene's edge
+     * pixels out to the sides, Miggas) */
+    if (on && handler == 0x0007CFE0u && !jsrf_MenuHold43())
+        jsrf_RowFillOff();
     /* v207c: these two are menu screens for the renderer's depth too (the
      * graffiti menu's icons; v207b only told it about jsrf_widescreen.c's) */
     if (handler == 0x0007D100u || handler == 0x0007CFE0u)

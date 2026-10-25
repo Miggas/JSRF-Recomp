@@ -722,6 +722,7 @@ static void wsm_fill_mark(int fill)
     wsm_zbias(zb);
 }
 void jsrf_RowFillMark(void) { wsm_fill_mark(1); }   /* recomp_manual.c */
+void jsrf_RowFillOff(void) { wsm_fill_mark(0); }    /* v225: recomp_manual.c */
 
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
  * strings placed while it runs */
