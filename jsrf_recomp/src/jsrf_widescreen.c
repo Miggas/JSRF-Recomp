@@ -526,6 +526,7 @@ static const WsmScreen wsm_screens[] = {
     { "save",     0x0011DD10u, 0x0011DD10u, NULL, 0, NULL, 0 },   /* v211: not held */
     { "Roboy",    0x0011C070u, 0x0011C070u, NULL, 0, NULL, 0 },   /* v214: not held */
     { "system",   0x0011FEB0u, 0x0011FEB0u, NULL, 0, NULL, 0 },   /* v215: not held */
+    { "options",  0x0011CF10u, 0x0011CF10u, NULL, 0, NULL, 0 },   /* v216: not held */
 };
 #define WSM_NSCREENS WSM_N(wsm_screens)
 static volatile DWORD s_wsm_ms[WSM_NSCREENS];
@@ -539,7 +540,7 @@ static int wsm_on(void)
         double a = xbox_PresentAspect();
         on = a > 4.0 / 3.0 + 1e-6 && ws_flag("RECOMP_WS_MENU_MAP");
         if (on)
-            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system"
+            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system, options"
                     " (RECOMP_WS_MENU_MAP=0: 4:3)\n");
     }
     return on;
@@ -700,6 +701,8 @@ WSM_SCREEN(sub_0011DD10, 3)
 WSM_SCREEN(sub_0011C070, 4)
 /* v215: Roboy's system menu (sub_0011FEB0, Miggas's run): the same */
 WSM_SCREEN(sub_0011FEB0, 5)
+/* v216: Roboy's options menu (sub_0011CF10, Miggas's run): the same */
+WSM_SCREEN(sub_0011CF10, 6)
 
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);
