@@ -956,7 +956,7 @@ static const char *FS =
 "     * near part in front of its far part, so the bands never disagree. */\n"
 "    /* v207b: u_bgfar 2, a menu screen: the depth RECOMP_GL_WDEPTH=0\n"
 "     * writes (worked out above), reversed over the whole range, 1 - d:\n"
-"     * 1 - d/2 loses the last bit, and menu models sit a step apart */\n"
+"     * 1 - d/2 loses the last bit, and menu models sit a step apart.\n"
 "     * v207d: from v_zr, the title's z less a base near the menu's range,\n"
 "     * and u_zfr = zmax - base: small numbers, so equal z stays exactly\n"
 "     * equal and ties go to the later draw as on the console (the third\n"
