@@ -524,6 +524,7 @@ static const WsmScreen wsm_screens[] = {
     { "character select", 0x00115A40u, 0x00115F40u, wsm_cs_parts, WSM_N(wsm_cs_parts),
                   wsm_cs_text, WSM_N(wsm_cs_text) },
     { "save",     0x0011DD10u, 0x0011DD10u, NULL, 0, NULL, 0 },   /* v211: not held */
+    { "Roboy",    0x0011C070u, 0x0011C070u, NULL, 0, NULL, 0 },   /* v214: not held */
 };
 #define WSM_NSCREENS WSM_N(wsm_screens)
 static volatile DWORD s_wsm_ms[WSM_NSCREENS];
@@ -537,7 +538,7 @@ static int wsm_on(void)
         double a = xbox_PresentAspect();
         on = a > 4.0 / 3.0 + 1e-6 && ws_flag("RECOMP_WS_MENU_MAP");
         if (on)
-            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save"
+            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy"
                     " (RECOMP_WS_MENU_MAP=0: 4:3)\n");
     }
     return on;
@@ -692,6 +693,10 @@ WSM_SCREEN(sub_00115A40, 2)     /* v212: the start menu's character select */
  * its background is one composite part that also holds the logo's circle,
  * which stretching would make an oval. */
 WSM_SCREEN(sub_0011DD10, 3)
+/* v214: Roboy's garage menu (sub_0011C070, Miggas's run): the same kind of
+ * screen as the save menu, given the same treatment -- shown wide, not held
+ * at 4:3, nothing moved */
+WSM_SCREEN(sub_0011C070, 4)
 
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);
