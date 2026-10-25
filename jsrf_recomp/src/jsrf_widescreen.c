@@ -258,7 +258,84 @@ WS_EDGE_SCOPE(sub_000F7990, 0x000F7990u)
  * pointer at this+0x1C and advances it by 0x80. stdcall, `this` first. */
 extern void sub_0015A880_gen(void);
 
+static void ws_sprite_queue(void);
+
+/* v208: RECOMP_MENU_LOG=1 (or RECOMP_SPRITE_LOG=1) -- F9 logs the next
+ * RECOMP_SPRITE_LOG_N sprite quads queued (default 1500), one [SPRITE] line
+ * each: the queue, the arguments, the quad's box in 640x480 (after any HUD
+ * move), its four corners, the first vertex's other words (colour, texture
+ * coordinates) and the code addresses found on the stack, nearest first --
+ * the game functions that drew it. With RECOMP_DRAW_WHO's and
+ * RECOMP_GL_DRAWLOG's snapshots (RECOMP_MENU_LOG turns all three on) a menu
+ * can be taken apart piece by piece: which function draws which part, and
+ * where, so each part can be moved to the edge it belongs to in widescreen
+ * (as the HUD is) instead of guessing. Idea by Miggas. */
+static void sprite_log(uint32_t obj, uint32_t a2, uint32_t a3, uint32_t before,
+                       const uint32_t *ret, int nret)
+{
+    static int on = -1, was;
+    static unsigned left, nmax, snap, idx;
+    int k, v;
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_SPRITE_LOG"), *m = getenv("RECOMP_MENU_LOG"),
+                   *n = getenv("RECOMP_SPRITE_LOG_N");
+        on = (e && e[0] == '1') || (m && m[0] == '1');
+        nmax = n && atoi(n) > 0 ? (unsigned)atoi(n) : 1500u;
+        if (on)
+            fprintf(stderr, "[SPRITE] on: F9 logs the next %u sprite quads\n", nmax);
+    }
+    if (!on)
+        return;
+    {
+        int f9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+        if (f9 && !was && !left) {
+            left = nmax;
+            idx = 0;
+            fprintf(stderr, "[SPRITE] ---- snapshot %u (screen held 4:3: %s) ----\n", ++snap,
+                    xbox_WidescreenK() > 0.9999 ? "yes or 4:3 display" : "no, wide");
+        }
+        was = f9;
+    }
+    if (!left)
+        return;
+    left--;
+    if (g_eax != 0 || MEM32(obj + 0x1C) - before != 0x80) {
+        fprintf(stderr, "[SPRITE] %4u queue %08X (%08X %08X) not queued (eax %08X)\n",
+                idx++, obj, a2, a3, g_eax);
+        return;
+    }
+    for (v = 0; v < 4; v++) {
+        float x = MEMF(before + v * 32u), y = MEMF(before + v * 32u + 4);
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+    }
+    fprintf(stderr, "[SPRITE] %4u queue %08X (%08X %08X) box %.1f..%.1f x %.1f..%.1f"
+            " | v0 %08X %08X %08X %08X %08X %08X | calls:", idx++, obj, a2, a3, x0, x1, y0, y1,
+            MEM32(before + 8), MEM32(before + 12), MEM32(before + 16), MEM32(before + 20),
+            MEM32(before + 24), MEM32(before + 28));
+    for (k = 0; k < nret; k++)
+        fprintf(stderr, " %08X", ret[k]);
+    fputc('\n', stderr);
+}
+
 void sub_0015A880(void)
+{
+    uint32_t obj = MEM32(g_esp + 4), a2 = MEM32(g_esp + 8), a3 = MEM32(g_esp + 12);
+    uint32_t before = MEM32(obj + 0x1C), ret[10];
+    int nret = 0, k;
+    for (k = 0; k < 128 && nret < 10; k++) {   /* code addresses on the stack */
+        uint32_t w = MEM32(g_esp + 4u * (uint32_t)k);
+        if (w >= 0x00011000u && w < 0x001D0000u)
+            ret[nret++] = w;
+    }
+    ws_sprite_queue();
+    sprite_log(obj, a2, a3, before, ret, nret);
+}
+
+static void ws_sprite_queue(void)
 {
     uint32_t obj, before, v;
     int anchor;

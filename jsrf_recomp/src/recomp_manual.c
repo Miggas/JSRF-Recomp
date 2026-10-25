@@ -2186,8 +2186,8 @@ static void draw_who(const char *what, uint32_t a0, uint32_t a1, uint32_t a2)
     unsigned long long now;
     uint32_t slot, i;
     if (on < 0) {
-        const char *e = getenv("RECOMP_DRAW_WHO");
-        on = e && atoi(e);
+        const char *e = getenv("RECOMP_DRAW_WHO"), *m = getenv("RECOMP_MENU_LOG");
+        on = (e && atoi(e)) || (m && m[0] == '1');   /* v208: RECOMP_MENU_LOG too */
         if (on)
             fprintf(stderr, "[DRAWWHO] on: new draw call chains are logged (F9 = mark)\n");
     }

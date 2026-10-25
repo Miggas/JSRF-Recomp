@@ -3593,9 +3593,10 @@ static void drawlog(int kind, const NvGlState *st)
     float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, z0 = 1e9f, z1 = -1e9f,
           w0 = 1e9f, w1 = -1e9f;
     if (on < 0) {
-        const char *e = getenv("RECOMP_GL_DRAWLOG"), *nn = getenv("RECOMP_GL_DRAWLOG_N");
-        on = e && e[0] == '1';
-        nmax = nn && atoi(nn) > 0 ? (unsigned)atoi(nn) : 600u;
+        const char *e = getenv("RECOMP_GL_DRAWLOG"), *nn = getenv("RECOMP_GL_DRAWLOG_N"),
+                   *m = getenv("RECOMP_MENU_LOG");
+        on = (e && e[0] == '1') || (m && m[0] == '1');   /* v208: RECOMP_MENU_LOG too */
+        nmax = nn && atoi(nn) > 0 ? (unsigned)atoi(nn) : 1500u;   /* v208: was 600 */
         if (on)
             fprintf(stderr, "[DRAWLOG] on: F9 logs the next %u draws\n", nmax);
     }
