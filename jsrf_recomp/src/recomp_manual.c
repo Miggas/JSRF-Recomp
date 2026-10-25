@@ -3308,3 +3308,36 @@ void sub_00118A60(void)
     if (snd_dist_on())
         snd_log("move", mgr, (h >> 16) & 0xFFFF, h & 0xFFFF, pos, g_eax);
 }
+
+/* ── v233: draw distance of the street objects (RECOMP_OBJ_DRAW_DIST) ──────
+ * Found from Miggas's F9 runs at Chuo Street's tanks (far: gone; middle:
+ * fading in; near: drawn): the tank is drawn by sub_000EDF40, which first
+ * asks sub_000C1340 (stdcall, 5 arguments) how to show it. That compares
+ * the object's distance (pos[2], the second argument) against three of its
+ * type's distances, a < b < c (arguments 3-5): beyond c, or out of view,
+ * not drawn (0); nearer than a, the near model (1); nearer than b, the
+ * middle one (2); between b and c, faded in by (c - d) / (c - b) (3). 22
+ * object kinds use it (the tanks, the police, the vehicles...); the map
+ * itself does not. b and c are scaled by RECOMP_OBJ_DRAW_DIST (default 2;
+ * 1 = as on the Xbox), so they are drawn and fade in further away. */
+extern void sub_000C1340_gen(void);
+void sub_000C1340(void)
+{
+    static float k = -1.0f;
+    if (k < 0.0f) {
+        const char *e = getenv("RECOMP_OBJ_DRAW_DIST");
+        k = e && *e ? (float)atof(e) : 2.0f;
+        if (!(k >= 1.0f && k <= 20.0f))
+            k = 1.0f;
+        fprintf(stderr, "[OBJDIST] objects drawn up to %g x the game's distance "
+                "(RECOMP_OBJ_DRAW_DIST)\n", k);
+    }
+    if (k != 1.0f) {
+        float a = MEMF(g_esp + 0x0C), b = MEMF(g_esp + 0x10), c = MEMF(g_esp + 0x14);
+        if (a > 0.0f && b >= a && c > b && c < 1.0e8f) {
+            MEMF(g_esp + 0x10) = b * k;
+            MEMF(g_esp + 0x14) = c * k;
+        }
+    }
+    sub_000C1340_gen();
+}

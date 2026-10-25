@@ -49,7 +49,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_00127080",                # v220: the graffiti menu, not held at 4:3
          "sub_0011C750",                # v221: the test run menu, not held at 4:3
          "sub_0011A490",                # v222: the test run course screen, not held at 4:3
-         "sub_00124BD0")                # v228c: graffiti select's 3D scene: no side fill
+         "sub_00124BD0",                # v228c: graffiti select's 3D scene: no side fill
+         "sub_000C1340")                # v233: street objects' draw distance
 
 
 def main():
