@@ -478,7 +478,7 @@ static const WsmPart wsm_nb_text[] = {
     { 0x001154E1u,  1, 0 },     /* "Press the B Button to go back." */
 };
 
-static volatile DWORD s_wsm_map_ms, s_wsm_nb_ms;
+static volatile DWORD s_wsm_map_ms, s_wsm_nb_ms, s_wsm_save_ms;
 static RECOMP_TLS int wsm_in_map, wsm_in_header, wsm_in_nb;
 
 static int wsm_on(void)
@@ -498,7 +498,8 @@ static int wsm_map_active(void)
     /* v210: any menu made wide (the map screen, the GG-notebook) */
     DWORD now = GetTickCount();
     return wsm_on() && ((s_wsm_map_ms && now - s_wsm_map_ms < 200)
-                        || (s_wsm_nb_ms && now - s_wsm_nb_ms < 200));
+                        || (s_wsm_nb_ms && now - s_wsm_nb_ms < 200)
+                        || (s_wsm_save_ms && now - s_wsm_save_ms < 200));
 }
 
 extern void D3D8_D3DDevice_SetRenderState_ZBias(void);
@@ -627,6 +628,20 @@ static void wsm_draw(void (*gen)(void), int where)
 
 extern void sub_001129E0_gen(void);
 extern void sub_00115030_gen(void);
+extern void sub_0011DD10_gen(void);
+
+/* v211: the save menu (sub_0011DD10, from the garage and the start menu),
+ * from Miggas's run: the same screen as the title's load menu, which is
+ * already shown wide (the title is never held at 4:3); the save menu was
+ * held at 4:3 by the menu frame (sub_00077730). It is now shown wide like
+ * the load menu, nothing moved: its background is one composite part that
+ * also holds the logo's circle, which stretching would make an oval. */
+void sub_0011DD10(void)
+{
+    if (wsm_on())
+        s_wsm_save_ms = GetTickCount();
+    sub_0011DD10_gen();
+}
 
 void sub_00115030(void)             /* v210: the GG-notebook's parts */
 {
