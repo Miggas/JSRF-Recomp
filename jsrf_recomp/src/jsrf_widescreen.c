@@ -428,6 +428,11 @@ WS_HOLD_43(sub_0011AC50)
  * Models are moved through the device's screen-space offset (as the HUD's
  * 3D icons), text by its x when it is added. RECOMP_WS_MENU_MAP=0 keeps
  * the map screen at 4:3 as before. */
+/* v210: where values 3 and up: 3 = the strings and parts of a column that
+ * is widened (its rows drawn across the width): x spread about the middle
+ * by 1/k, as the rows' own edges; 4 = moved with the left edge of such a
+ * column, whose 4:3 left edge is `x` (headings above the rows) */
+typedef struct { uint32_t ret; int where; float x; } WsmPart;
 static const struct { uint32_t ret; int where; } wsm_map_parts[] = {
     { 0x00112AFEu,  2 },    /* the background grid (4086 indices) */
     { 0x00112B21u,  2 },    /* top bar */
@@ -452,8 +457,28 @@ static const struct { uint32_t ret; int where; } wsm_map_text[] = {
     { 0x00113003u,  1 },    /* RETURN TO GAME, y 410 */
 };
 
-static volatile DWORD s_wsm_map_ms;
-static RECOMP_TLS int wsm_in_map, wsm_in_header;
+/* v210: the GG-notebook (start menu), sub_00115030, from Miggas's v209d
+ * run; laid out as Miggas asked: the rows widened with their text, as some
+ * challenges' text is long and scrolls */
+static const WsmPart wsm_nb_parts[] = {
+    { 0x001150EDu,  2, 0 },     /* the background grid */
+    { 0x0011511Du,  2, 0 },     /* top and bottom bars and the bottom bar's marks */
+    { 0x00115130u,  1, 0 },     /* "Press the B Button" bar */
+    { 0x00115143u,  4, 86 },    /* "Graffiti" heading, above the rows */
+    { 0x00115156u,  2, 0 },     /* the two arrows (one shape) */
+    { 0x001151C2u,  2, 0 },     /* the graffiti row */
+    { 0x001152B1u,  4, 86 },    /* "Street Challenge" heading */
+    { 0x0011536Fu,  2, 0 },     /* the challenge rows */
+    { 0x001153CEu,  2, 0 },
+};
+static const WsmPart wsm_nb_text[] = {
+    { 0x00115265u,  3, 0 },     /* the graffiti row's text, x 90 */
+    { 0x00115422u,  3, 0 },     /* the challenges' text, x 90 */
+    { 0x001154E1u,  1, 0 },     /* "Press the B Button to go back." */
+};
+
+static volatile DWORD s_wsm_map_ms, s_wsm_nb_ms;
+static RECOMP_TLS int wsm_in_map, wsm_in_header, wsm_in_nb;
 
 static int wsm_on(void)
 {
@@ -469,7 +494,10 @@ static int wsm_on(void)
 
 static int wsm_map_active(void)
 {
-    return wsm_on() && s_wsm_map_ms && GetTickCount() - s_wsm_map_ms < 200;
+    /* v210: any menu made wide (the map screen, the GG-notebook) */
+    DWORD now = GetTickCount();
+    return wsm_on() && ((s_wsm_map_ms && now - s_wsm_map_ms < 200)
+                        || (s_wsm_nb_ms && now - s_wsm_nb_ms < 200));
 }
 
 extern void D3D8_D3DDevice_SetRenderState_ZBias(void);
@@ -493,6 +521,8 @@ static void wsm_zbias(uint32_t v)
     g_fp_top = top; g_fp_cmp = cmp; g_fp_cc = cc; g_fp_control_word = cw;
 }
 
+static RECOMP_TLS float wsm_part_x;     /* v210: the x of a where-4 part */
+
 /* where the part being drawn goes: 0 = as it is. v209b: the call site is
  * looked for up the stack, not only at the return address: the buttons,
  * the TOTAL panel and the left column are drawn through an object's method
@@ -507,6 +537,21 @@ static int wsm_part(uint32_t esp)
     int where = 0;
     if (wsm_in_header)
         return -1;
+    if (wsm_in_nb) {                       /* v210: the GG-notebook */
+        for (i = 0; i < 96; i++) {
+            uint32_t w = MEM32(esp + 4u * i);
+            if (w > 0x00115030u && w < 0x00115600u) {
+                site = w;
+                break;
+            }
+        }
+        for (k = 0; site && k < sizeof wsm_nb_parts / sizeof wsm_nb_parts[0]; k++)
+            if (wsm_nb_parts[k].ret == site) {
+                where = wsm_nb_parts[k].where;
+                wsm_part_x = wsm_nb_parts[k].x;
+            }
+        goto dbg;
+    }
     if (!wsm_in_map)
         return 0;
     for (i = 0; i < 96; i++) {
@@ -519,6 +564,7 @@ static int wsm_part(uint32_t esp)
     for (k = 0; site && k < sizeof wsm_map_parts / sizeof wsm_map_parts[0]; k++)
         if (wsm_map_parts[k].ret == site)
             where = wsm_map_parts[k].where;
+dbg:
     {
         static int dbg = -1;
         static uint32_t seen[64];
@@ -533,9 +579,11 @@ static int wsm_part(uint32_t esp)
             for (j = 0; j < nseen && seen[j] != key; j++) ;
             if (j == nseen && nseen < 64) {
                 seen[nseen++] = key;
-                fprintf(stderr, "[WSMENU] map part: return %08X, call site %08X -> %s\n", MEM32(esp),
+                fprintf(stderr, "[WSMENU] %s part: return %08X, call site %08X -> %s\n",
+                        wsm_in_nb ? "notebook" : "map", MEM32(esp),
                         site, where == 2 ? "across the width" : where == 1 ? "right"
-                        : where == -1 ? "left" : "as it is");
+                        : where == -1 ? "left" : where == 4 ? "with the rows' left edge"
+                        : "as it is");
             }
         }
     }
@@ -559,20 +607,37 @@ static void wsm_draw(void (*gen)(void), int where)
     }
     {
         uint32_t device = MEM32(0x19DCE0u);
-        float x, y;
+        float x, y, dx = (float)where * extra;
         if (!device) {
             gen();
             return;
         }
+        if (where == 4) {                  /* v210: with a widened column's left edge */
+            double kk = xbox_WidescreenK();
+            dx = (float)((wsm_part_x - 320.0) * (1.0 / kk - 1.0));
+        }
         x = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
         y = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
-        ws_set_screen_offset(x + (float)where * extra, y);
+        ws_set_screen_offset(x + dx, y);
         gen();
         ws_set_screen_offset(x, y);
     }
 }
 
 extern void sub_001129E0_gen(void);
+extern void sub_00115030_gen(void);
+
+void sub_00115030(void)             /* v210: the GG-notebook's parts */
+{
+    if (!wsm_on()) {
+        sub_00115030_gen();
+        return;
+    }
+    s_wsm_nb_ms = GetTickCount();
+    wsm_in_nb++;
+    sub_00115030_gen();
+    wsm_in_nb--;
+}
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);
 extern void sub_000488B0_gen(void);
@@ -600,13 +665,13 @@ void sub_000FD190(void)             /* the garage menus' header */
 
 void sub_00048570(void)             /* the game's object draw */
 {
-    int where = (wsm_in_map || wsm_in_header) ? wsm_part(g_esp) : 0;
+    int where = (wsm_in_map || wsm_in_header || wsm_in_nb) ? wsm_part(g_esp) : 0;
     wsm_draw(sub_00048570_gen, where);
 }
 
 void sub_000488B0(void)             /* ...and its plain quads */
 {
-    int where = (wsm_in_map || wsm_in_header) ? wsm_part(g_esp) : 0;
+    int where = (wsm_in_map || wsm_in_header || wsm_in_nb) ? wsm_part(g_esp) : 0;
     wsm_draw(sub_000488B0_gen, where);
 }
 
@@ -629,7 +694,18 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
     }
     if (wsm_in_header)
         where = -1;
-    else if (wsm_in_map) {
+    else if (wsm_in_nb) {                  /* v210 */
+        uint32_t ret = MEM32(g_esp);
+        for (k = 0; k < sizeof wsm_nb_text / sizeof wsm_nb_text[0]; k++)
+            if (wsm_nb_text[k].ret == ret)
+                where = wsm_nb_text[k].where;
+        if (where == 3) {                  /* spread with the widened rows */
+            double kk = xbox_WidescreenK();
+            if (kk > 0.2 && kk < 0.9999)
+                MEMF(g_esp + 4) = (float)(320.0 + (MEMF(g_esp + 4) - 320.0) / kk);
+            where = 0;
+        }
+    } else if (wsm_in_map) {
         uint32_t ret = MEM32(g_esp);
         for (k = 0; k < sizeof wsm_map_text / sizeof wsm_map_text[0]; k++)
             if (wsm_map_text[k].ret == ret)

@@ -37,7 +37,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_001192E0", "sub_00118A60",  # v203: [SNDDIST] play / move a sound
          "sub_00118610",                # v203c: the sound manager's frame (the cut-off)
          "sub_001129E0", "sub_000FD190", "sub_00048570", "sub_000488B0",
-         "sub_0003D5D0")                # v209: the map screen in widescreen
+         "sub_0003D5D0",                # v209: the map screen in widescreen
+         "sub_00115030")                # v210: the GG-notebook in widescreen
 
 
 def main():
