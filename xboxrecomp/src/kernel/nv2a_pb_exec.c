@@ -4023,7 +4023,12 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
  * Returns k, -k for a draw left out, or 0. */
 static float ws_cut_for(int kind, const NvGlState *st)
 {
-    float k = (float)ws_fill_now(), lo, hi, W = (float)st->width, H = (float)st->height;
+    /* v231: the cuts only once a filled menu's own function has said so: the
+     * menu frame start's mark comes before everything, and the map screen's
+     * "own sides" only once its function runs -- its header, drawn before,
+     * was cut */
+    float k0 = (float)ws_fill_now();
+    float k = s_fill_strong ? k0 : 0.0f, lo, hi, W = (float)st->width, H = (float)st->height;
     if (!(k > 0.2f && k < 0.9999f) || !ws_is_screen(st))
         return 0.0f;
     {
@@ -4031,7 +4036,9 @@ static float ws_cut_for(int kind, const NvGlState *st)
         got = ws_span(kind, st, 64u, &lo, &hi);
         s_ws_behind = behind; s_ws_inner = inner;
         if (!got)
-            return k;                               /* a bigger batch: never a backdrop layer */
+            return 0.0f;    /* v231: a bigger batch: left alone (was kept off the
+                             * column: the start menu's map name, 279 vertices,
+                             * was cut at the 4:3 edge at 21:9, Miggas) */
     }
     if (!s_gpu.texs[0].valid && hi <= 0.02f * W && lo >= -0.05f * W
             && s_ws_ymax <= 0.03f * H && s_ws_ymin >= -0.05f * H)

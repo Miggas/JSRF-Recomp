@@ -587,6 +587,7 @@ next fix.
 - **v228d:** build fix: sub_00120180 (wrapped in v228, not in v228c) is put back to its own name in the generated code (unresolved external sub_00120180, Miggas's build).
 - **v229:** graffiti select's create and edit screens shown wide without the side fill too (Miggas): they draw their 3D scene from other functions while the garage graffiti menu's function still runs, and the fill came out black (the scene's draws are kept off the fill column). Inside graffiti select, the menu's fill now counts only when the menu itself drew most of the frame; its screen functions mark where they end, and the draws in between are counted.
 - **v230:** the GG-notebook's graffiti box is stretched on pages with no graffiti objective too (an empty box, drawn from call site 0x115283; Miggas's run).
+- **v231:** the start menu's map name is no longer cut at the 4:3 edge on ultrawide screens ("dai Heights" at 21:9, Miggas): the side fill's cut (draws kept off the fill column) applied to it, a big batch drawn before the map screen's own mark. The cut now waits for a filled menu's own mark and leaves big batches alone.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
