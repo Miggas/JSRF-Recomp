@@ -2890,8 +2890,12 @@ static int gl_state(NvGlState *st)
      * Miggas's run); the near band stores 1 - z/2, and half a step is below
      * what a float holds between 0.5 and 1, so icon and button tied and
      * the one drawn last won: the selected icon, and the third, missing.
-     * RECOMP_GL_MENU_DEPTH=0 turns it off. */
-    else {
+     * RECOMP_GL_MENU_DEPTH=0 turns it off. v209c: for the parts marked to
+     * be stretched too -- v209 left them out (this was the backdrop test's
+     * else), so the map screen's stretched background was drawn with the
+     * gameplay depth and came out in front of the 3D map and the buttons,
+     * which had the menu's (Miggas). */
+    if (!st->bg_far) {
         static int menu_on = -1, was = -1;
         int now;
         if (menu_on < 0) {
