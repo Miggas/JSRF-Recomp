@@ -2980,6 +2980,10 @@ static float ws_cut_for(int kind, const NvGlState *st);                 /* v217c
  * graffiti select's 3D scene drawn in this frame: no fill, over all but the
  * map's kind (the graffiti menu's function also runs under the scene). */
 static int s_fill_mark, s_fill_off, s_fill_strong, s_fill_weak_off, s_fill_scene;
+/* v228b: the scene mark only counts when the scene function drew something
+ * between its start and end marks (it also runs under the garage's
+ * graffiti menu, Miggas) */
+static int s_scene_open, s_scene_draws, s_frame_draws;
 static void ws_fill_mark(float u)
 {
     float a = fabsf(u);
@@ -2992,8 +2996,10 @@ static void ws_fill_mark(float u)
         s_fill_weak_off = 1;
     else if (a >= 1.5e8f)
         s_fill_off = 1;
+    else if (a >= 1.1e8f)
+        s_scene_open = 0;     /* v228b: the scene function has returned */
     else if (a >= 8.0e7f)
-        s_fill_scene = 1;     /* v228: graffiti select's 3D scene drawn this frame */
+        s_scene_open = 1;     /* v228: graffiti select's 3D scene function starts */
     else if (a >= 3.0e7f)
         s_fill_strong = 1;
     else
@@ -3004,13 +3010,34 @@ static void ws_fill_mark(float u)
 double xbox_RowFillK(void);
 static double ws_fill_now(void)
 {
+    s_frame_draws++;                       /* called once per draw (ws_cut_for) */
+    if (s_scene_open && ++s_scene_draws >= 1)
+        s_fill_scene = 1;
     int on = !s_fill_off && !s_fill_scene && (s_fill_strong || (s_fill_mark && !s_fill_weak_off));
     return on ? xbox_RowFillK() : 0.0;
 }
 /* at the flip: this frame's, and the marks start again for the next */
 double nv2a_ws_fill_latch(void)
 {
-    double k = ws_fill_now();
+    double k;
+    s_frame_draws--;                       /* not a draw */
+    k = ws_fill_now();
+    {
+        /* v228b: each change of the frame's marks, logged (the first 60) */
+        static int said, last = -1;
+        int key = s_fill_mark | s_fill_strong << 1 | s_fill_off << 2 | s_fill_weak_off << 3
+                  | s_fill_scene << 4 | (k > 0.0) << 5;
+        if (key != last && said < 60 && (s_fill_mark || s_fill_strong || s_fill_off
+                                         || s_fill_weak_off || s_fill_scene || last > 0)) {
+            said++;
+            fprintf(stderr, "[WS] fill marks: frame start %d, menu %d, own sides %d, "
+                    "graffiti select %d, its scene drew %d of %d draws -> %s\n",
+                    s_fill_mark, s_fill_strong, s_fill_off, s_fill_weak_off,
+                    s_scene_draws, s_frame_draws, k > 0.0 ? "filled" : "not filled");
+        }
+        last = key;
+    }
+    s_scene_draws = s_frame_draws = s_scene_open = 0;
     s_fill_mark = s_fill_off = s_fill_strong = s_fill_weak_off = s_fill_scene = 0;
     return k;
 }

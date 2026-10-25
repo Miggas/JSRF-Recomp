@@ -582,6 +582,7 @@ next fix.
 - **v226:** graffiti select's graffiti are full width again: they are built in 1024x1024 textures before going on the walls and the big preview, and textures larger than the screen were squeezed like the screen (3/4 wide, black at the sides; RECOMP_WS_LOG run by Miggas). Only the 640x480 screen, and textures pasted across it (boost), are squeezed now.
 - **v227:** the garage's graffiti menu has its sides filled again (and the grey corner square gone): it is drawn while the boot task is in graffiti select, whose "no fill" (v225) won over it. The marks now rank: a menu's own screen function decides over the screens around it (Miggas's run).
 - **v228:** graffiti select's 3D scene unsmeared again: the garage's graffiti menu function also runs under it, and its fill (v227) won. The scene's own function (sub_00120180, wrapped) now marks its frames, and a frame that draws the scene is never filled (Miggas's run).
+- **v228b:** the scene function also runs under the garage's graffiti menu (which lost its fill again): it now marks its start and end, and the frame counts as graffiti select's scene only if something was drawn in between. Each change of a frame's fill marks is logged ([WS] fill marks, the first 60).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

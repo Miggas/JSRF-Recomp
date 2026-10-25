@@ -715,13 +715,14 @@ static void wsm_draw(void (*gen)(void), int where)
 /* fill: 0 a menu with its own sides, 1 fill (a screen around the menus),
  * 2 fill (a menu's own screen function: wins over 3), 3 no fill (graffiti
  * select's 3D scene; v227), 4 no fill (graffiti select's scene is drawn in
- * this frame: wins over 2; v228) */
+ * this frame: wins over 2; v228), 5 the scene function's end (v228b: the
+ * scene counts only if something was drawn between 4 and 5) */
 static void wsm_fill_mark(int fill)
 {
-    static const uint32_t v[5] = { 200000000u, 20000000u, 50000000u, 2000000000u,
-                                   100000000u };
+    static const uint32_t v[6] = { 200000000u, 20000000u, 50000000u, 2000000000u,
+                                   100000000u, 130000000u };
     uint32_t zb;
-    if (!MEM32(0x19DCE0u) || fill < 0 || fill > 4)
+    if (!MEM32(0x19DCE0u) || fill < 0 || fill > 5)
         return;                             /* no device yet */
     zb = MEM32(0x19E2E8u);
     wsm_zbias(v[fill]);
@@ -738,8 +739,10 @@ extern void sub_00120180_gen(void);
 void sub_00120180(void)
 {
     if (wsm_on())
-        wsm_fill_mark(4);
+        wsm_fill_mark(4);                   /* the scene starts */
     sub_00120180_gen();
+    if (wsm_on())
+        wsm_fill_mark(5);                   /* v228b: and ends: drew anything? */
 }
 
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
