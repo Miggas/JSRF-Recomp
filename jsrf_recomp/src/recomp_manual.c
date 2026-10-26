@@ -2892,6 +2892,17 @@ AREA_PASS(sub_0006B8F0, 2)
 AREA_PASS(sub_0006BA80, 4)
 AREA_PASS(sub_0006C360, 8)
 
+/* v239b: the stage's light pillars are drawn by sub_0006A7C0, a fifth pass
+ * the stage task (0x74CF9) runs after the four map passes (Miggas's run:
+ * the 492-index additive beams come from 0x6A893): it is the map's too */
+extern void sub_0006A7C0_gen(void);
+void sub_0006A7C0(void)
+{
+    map_pass_mark(1);
+    sub_0006A7C0_gen();
+    map_pass_mark(0);
+}
+
 /* ── v201: free camera (RECOMP_FREECAM=1) ────────────────────────────────
  *
  * sub_001BAF70 is the game's LookAt: it takes an eye (ecx) and a target
