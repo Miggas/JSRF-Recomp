@@ -3236,6 +3236,158 @@ static int dxp_init(HWND hwnd, int cw, int ch)
     return 1;
 }
 
+/* v238: anti-aliasing on the way to the screen (RECOMP_GL_FXAA, default 1).
+ * The finished frame (its texture, at the internal resolution) goes once
+ * through FXAA into a texture of the same size; the presenting blits then
+ * read that instead of the frame. Every GL state it touches is read first
+ * and put back, so the renderer's caches stay true. 0 = off. */
+static const char *FXAA_VS =
+"#version 330 core\n"
+"out vec2 v_uv;\n"
+"void main() {\n"
+"  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+"  v_uv = p;\n"
+"  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+"}\n";
+static const char *FXAA_FS =
+"#version 330 core\n"
+"uniform sampler2D u_tex;\n"
+"uniform vec2 u_rcp;\n"
+"in vec2 v_uv;\n"
+"out vec4 o_col;\n"
+"float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }\n"
+"void main() {\n"
+"  vec4 m4 = texture(u_tex, v_uv);\n"
+"  vec3 nw = texture(u_tex, v_uv + vec2(-1.0, -1.0) * u_rcp).rgb;\n"
+"  vec3 ne = texture(u_tex, v_uv + vec2( 1.0, -1.0) * u_rcp).rgb;\n"
+"  vec3 sw = texture(u_tex, v_uv + vec2(-1.0,  1.0) * u_rcp).rgb;\n"
+"  vec3 se = texture(u_tex, v_uv + vec2( 1.0,  1.0) * u_rcp).rgb;\n"
+"  float lnw = luma(nw), lne = luma(ne), lsw = luma(sw), lse = luma(se);\n"
+"  float lm = luma(m4.rgb);\n"
+"  float lmin = min(lm, min(min(lnw, lne), min(lsw, lse)));\n"
+"  float lmax = max(lm, max(max(lnw, lne), max(lsw, lse)));\n"
+"  if (lmax - lmin < max(0.0312, lmax * 0.125)) { o_col = vec4(m4.rgb, 1.0); return; }\n"
+"  vec2 dir = vec2(-((lnw + lne) - (lsw + lse)), (lnw + lsw) - (lne + lse));\n"
+"  float red = max((lnw + lne + lsw + lse) * 0.03125, 1.0 / 128.0);\n"
+"  float rcpmin = 1.0 / (min(abs(dir.x), abs(dir.y)) + red);\n"
+"  dir = clamp(dir * rcpmin, vec2(-8.0), vec2(8.0)) * u_rcp;\n"
+"  vec3 a = 0.5 * (texture(u_tex, v_uv + dir * (1.0 / 3.0 - 0.5)).rgb +\n"
+"                  texture(u_tex, v_uv + dir * (2.0 / 3.0 - 0.5)).rgb);\n"
+"  vec3 b = a * 0.5 + 0.25 * (texture(u_tex, v_uv + dir * -0.5).rgb +\n"
+"                             texture(u_tex, v_uv + dir *  0.5).rgb);\n"
+"  float lb = luma(b);\n"
+"  o_col = vec4((lb < lmin || lb > lmax) ? a : b, 1.0);\n"
+"}\n";
+
+static GLuint compile(GLenum type, const char *src);
+static struct {
+    int state;                 /* 0 not tried, 1 ready, -1 off or failed */
+    GLuint prog, vao, samp, fbo, tex;
+    GLint l_tex, l_rcp;
+    int w, h;
+} s_fx;
+
+/* the frame in `src` (w x h) through FXAA; returns the framebuffer to read
+ * the result from, or 0 (off, or not possible: read the frame itself) */
+static GLuint present_fxaa(GLuint src, int w, int h)
+{
+    GLint prog, vao, unit, tex0, samp0, dfbo, rfbo, vp[4];
+    GLboolean cm[4], dm, en[9];
+    static const GLenum caps[9] = { GL_DEPTH_TEST, GL_BLEND, GL_CULL_FACE, GL_STENCIL_TEST,
+                                    GL_SCISSOR_TEST, GL_POLYGON_OFFSET_FILL,
+                                    GL_CLIP_DISTANCE0, GL_CLIP_DISTANCE1, GL_CLIP_DISTANCE2 };
+    int i;
+    if (s_fx.state < 0 || !src || w <= 0 || h <= 0)
+        return 0;
+    if (s_fx.state == 0) {
+        const char *e = getenv("RECOMP_GL_FXAA");
+        GLuint vs, fs;
+        GLint ok = 0;
+        s_fx.state = -1;
+        if (e && e[0] == '0') {
+            fprintf(stderr, "[GL] anti-aliasing off (RECOMP_GL_FXAA=0)\n");
+            return 0;
+        }
+        vs = compile(GL_VERTEX_SHADER, FXAA_VS);
+        fs = compile(GL_FRAGMENT_SHADER, FXAA_FS);
+        if (!vs || !fs)
+            return 0;
+        s_fx.prog = glCreateProgram();
+        glAttachShader(s_fx.prog, vs);
+        glAttachShader(s_fx.prog, fs);
+        glLinkProgram(s_fx.prog);
+        glGetProgramiv(s_fx.prog, GL_LINK_STATUS, &ok);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        if (!ok) {
+            fprintf(stderr, "[GL] anti-aliasing shader did not link: off\n");
+            return 0;
+        }
+        s_fx.l_tex = glGetUniformLocation(s_fx.prog, "u_tex");
+        s_fx.l_rcp = glGetUniformLocation(s_fx.prog, "u_rcp");
+        glGenVertexArrays(1, &s_fx.vao);
+        glGenSamplers(1, &s_fx.samp);
+        glSamplerParameteri(s_fx.samp, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glSamplerParameteri(s_fx.samp, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glSamplerParameteri(s_fx.samp, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(s_fx.samp, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glGenFramebuffers(1, &s_fx.fbo);
+        glGenTextures(1, &s_fx.tex);
+        s_fx.state = 1;
+        fprintf(stderr, "[GL] anti-aliasing: FXAA (RECOMP_GL_FXAA=0: off)\n");
+    }
+    /* what is bound now, to put back */
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &unit);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
+    glGetIntegerv(GL_SAMPLER_BINDING, &samp0);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dfbo);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfbo);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    glGetBooleanv(GL_COLOR_WRITEMASK, cm);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &dm);
+    for (i = 0; i < 9; i++) {
+        en[i] = glIsEnabled(caps[i]);
+        if (en[i]) glDisable(caps[i]);
+    }
+    if (w != s_fx.w || h != s_fx.h) {
+        glBindTexture(GL_TEXTURE_2D, s_fx.tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.fbo);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_fx.tex, 0);
+        s_fx.w = w; s_fx.h = h;
+    }
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.fbo);
+    glViewport(0, 0, w, h);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_FALSE);
+    glUseProgram(s_fx.prog);
+    glBindVertexArray(s_fx.vao);
+    glBindTexture(GL_TEXTURE_2D, src);
+    glBindSampler(0, s_fx.samp);
+    glUniform1i(s_fx.l_tex, 0);
+    glUniform2f(s_fx.l_rcp, 1.0f / (float)w, 1.0f / (float)h);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    /* put it all back */
+    glBindSampler(0, (GLuint)samp0);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
+    glActiveTexture((GLenum)unit);
+    glBindVertexArray((GLuint)vao);
+    glUseProgram((GLuint)prog);
+    glDepthMask(dm);
+    glColorMask(cm[0], cm[1], cm[2], cm[3]);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    for (i = 0; i < 9; i++)
+        if (en[i]) glEnable(caps[i]);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dfbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfbo);
+    return s_fx.fbo;
+}
+
 /* Present s through DXGI; 0 = not available (caller falls back). */
 static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int dw, int dh)
 {
@@ -3255,8 +3407,11 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
     }
     if (!s_dx.lock(s_dx.hdev, 1, &s_dx.hobj))
         return 1;
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dx.fbo);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s->fbo);
+    {
+        GLuint fx = present_fxaa(s->tex, SC(s->w), SC(s->h));   /* v238 */
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dx.fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : s->fbo);
+    }
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glViewport(0, 0, cw, ch);
@@ -3413,8 +3568,11 @@ static int gl_window_present_impl(GlSurf *s)
         s_gw.make(s_gw.own_hdc, s_gw.ctx);
         return 0;
     }
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s->fbo);
+    {
+        GLuint fx = present_fxaa(s->tex, SC(s->w), SC(s->h));   /* v238 */
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : s->fbo);
+    }
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glViewport(0, 0, cw, ch);
@@ -3439,7 +3597,7 @@ static int gl_window_present_impl(GlSurf *s)
 /* v172: with the GL thread, a frame into the game window once that is set
  * up: the blit and SwapBuffers on the GL thread (queued); the caches of
  * what is bound are dropped here, where they are kept */
-typedef struct { GLuint fbo; uint32_t w, h; uint64_t queued; double rowk; } GwFrame;
+typedef struct { GLuint fbo, tex; uint32_t w, h; uint64_t queued; double rowk; } GwFrame;
 /* v172b: how long a finished frame waited in the queue before SwapBuffers --
  * the delay the GL thread adds to what the player sees */
 static volatile uint64_t s_gt_lat_sum, s_gt_lat_max, s_gt_lat_n;
@@ -3459,8 +3617,11 @@ static void gw_present_gl(void *arg)
         s_gw.make(s_gw.own_hdc, s_gw.ctx);
         return;
     }
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, f->fbo);
+    {
+        GLuint fx = present_fxaa(f->tex, SC(f->w), SC(f->h));   /* v238 */
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : f->fbo);
+    }
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glViewport(0, 0, cw, ch);
@@ -3491,7 +3652,7 @@ static int gl_window_present(GlSurf *s)
     if (s_gt_on && t_gt_mode == 1) {
         if (s_gw.state == 1) {
             GwFrame f;
-            f.fbo = s->fbo; f.w = s->w; f.h = s->h;
+            f.fbo = s->fbo; f.tex = s->tex; f.w = s->w; f.h = s->h;
             f.rowk = s_rf_k;
             f.queued = TM_NOW();
             gt_call(gw_present_gl, &f, sizeof f);
