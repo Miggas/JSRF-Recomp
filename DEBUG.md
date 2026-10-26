@@ -20,7 +20,7 @@ Back to the main guide: [README.md](README.md#9-settings-jsrfini).
 | `RECOMP_RENDERER=sw` | Use the software renderer instead of OpenGL. Very slow; for comparing when the GPU renderer draws something wrong. |
 | `RECOMP_GL_WDEPTH=0` | Turn off the distance-precise depth buffer and go back to the console's 24-bit depth. On by default, it stops far-away textures and shadows from flickering. `RECOMP_GL_WDEPTH_NEAR` (default `128`) sets the distance up to which the game's own depth is kept. *Idea by Miggas.* |
 | `RECOMP_GL_EDGE=0` | Turn off the edge fix (full-screen layers pushed one pixel past the screen edges, so no line shows along the top and left). |
-| `RECOMP_GL_ADDITIVE_DEPTH=1` | Let glows and light beams write depth again, as the original does. Brings back the Skyscraper District bug where the chain-link floor disappears behind the light pillars. |
+| `RECOMP_GL_ADDITIVE_DEPTH=1` | Let the map's glows and light beams write depth again, as the original does. Brings back the Skyscraper District bug where the chain-link floor disappears behind the light pillars. |
 | `RECOMP_GL_MENU_DEPTH=0` | Turn off the menu depth fix (graffiti menu icons hidden behind their buttons). |
 | `RECOMP_GL_NO_WINDOW_CLIP=1` | Ignore the game's window clipping (used by split screen). |
 

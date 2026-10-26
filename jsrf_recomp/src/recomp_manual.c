@@ -2812,9 +2812,30 @@ void sub_00150890(void)
         bg_mark(v != 0);
 }
 
+/* v239: the map's own draw passes say so in the command stream (a z-bias no
+ * title uses at the start, 7e8, and the end, 9e8, the real one put back at
+ * once): the renderer keeps v237's "additive layers don't write depth" to
+ * the map (the Skyscraper District's light pillars). The graffiti souls and
+ * the secret tapes draw additively too, outside the passes, and need their
+ * depth writes: without them they came out black (Miggas). */
+static void map_pass_mark(int start)
+{
+    uint32_t zb = MEM32(0x19E2E8u);
+    if (!MEM32(0x19DCE0u))
+        return;
+    zbias_set(start ? 700000000u : 900000000u);
+    zbias_set(zb);
+}
 #define AREA_PASS(name, bit)                                                 \
 static void area_pass_body_##name(void);                                     \
+static void area_pass_outer_##name(void);                                    \
 void name(void)                                                              \
+{                                                                            \
+    map_pass_mark(1);                                                        \
+    area_pass_outer_##name();                                                \
+    map_pass_mark(0);                                                        \
+}                                                                            \
+static void area_pass_outer_##name(void)                                     \
 {                                                                            \
     if ((bit) == 1 && bg_loop_on()) {                                        \
         s_in_pass1 = 1;                                                      \

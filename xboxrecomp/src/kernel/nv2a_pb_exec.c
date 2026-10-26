@@ -2798,6 +2798,9 @@ int nv2a_exec_decode_texture(int stage, uint32_t face, uint32_t *out)
  * there is no drawable surface. */
 static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h);   /* v187e */
 
+/* v239: set while one of the map's own draw passes runs (marked in the
+ * command stream by recomp_manual.c; ws_fill_mark) */
+static int s_in_map_pass;
 static int gl_state(NvGlState *st)
 {
     uint32_t bpp = surface_bpp(), base, zf, i;
@@ -2871,7 +2874,8 @@ static int gl_state(NvGlState *st)
      * Xbox too; Miggas). Light added over the scene hides nothing on its
      * own. (ZERO, ONE -- colour left alone -- is a depth-only pass and keeps
  * its writes.) RECOMP_GL_ADDITIVE_DEPTH=1 keeps the game's depth writes. */
-    if (st->blend_enable && st->blend_dfactor == 1 && st->blend_sfactor != 0 && st->depth_mask) {
+    if (st->blend_enable && st->blend_dfactor == 1 && st->blend_sfactor != 0 && st->depth_mask
+            && s_in_map_pass) {   /* v239: the map's geometry only */
         static int keep = -1;
         if (keep < 0) {
             const char *e = getenv("RECOMP_GL_ADDITIVE_DEPTH");
@@ -3015,6 +3019,10 @@ static void ws_fill_mark(float u)
         fprintf(stderr, "[WS] menu side fill: marks seen in the command stream\n");
     if (a >= 1.0e9f)
         s_fill_weak_off = 1;
+    else if (a >= 8.0e8f)
+        s_in_map_pass = 0;    /* v239: the map's draw pass has ended */
+    else if (a >= 6.0e8f)
+        s_in_map_pass = 1;    /* v239: one of the map's draw passes starts */
     else if (a >= 3.0e8f)
         s_menu_open = 0;      /* v229: a menu's screen function has returned */
     else if (a >= 1.5e8f)
@@ -3066,6 +3074,7 @@ double nv2a_ws_fill_latch(void)
         last = key;
     }
     s_scene_draws = s_frame_draws = s_scene_open = s_menu_open = s_menu_draws = 0;
+    s_in_map_pass = 0;
     s_fill_mark = s_fill_off = s_fill_strong = s_fill_weak_off = s_fill_scene = 0;
     return k;
 }
