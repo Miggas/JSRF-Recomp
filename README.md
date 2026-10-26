@@ -62,6 +62,8 @@ Each section is marked with how much effort it takes:
 | 14 | [What's in the folders](#14-whats-in-the-folders) | — |
 | 15 | [Credits and licences](#15-credits-and-licences) | — |
 
+Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
+
 ---
 
 ## 1. What you need
@@ -401,40 +403,82 @@ controller. **The keyboard** works as controller 1:
 
 Settings live in `jsrf.ini`, next to `jsrf_recomp.exe`. Open it with Notepad.
 Each setting is one line, `NAME=value`. A line starting with `;` is switched
-off — delete the `;` to switch it on. The full list with explanations is in
-`jsrf_recomp\jsrf.ini.example`. The ones you are most likely to want:
+off: delete the `;` to switch it on. Steam launch options override the file.
+
+> [!CAUTION]
+> **Do not change** the first lines of the `[game]` section. The game needs
+> them to start.
+
+**`[game]`**
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480 (original), `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. Higher is sharper and needs a stronger GPU. |
-| `RECOMP_GL_ANISO=16` | **Anisotropic filtering** (`2`, `4`, `8` or `16`): sharper ground and walls seen at an angle. Off when not set, as on the Xbox. |
-| `RECOMP_GL_WDEPTH=0` | Turns off the distance-precise depth buffer and goes back to the console's 24-bit z. On by default, it stops distant textures and shadows from flickering (surfaces a few centimetres apart fighting once they are far away). Up to `RECOMP_GL_WDEPTH_NEAR` (default `128`) the game's own depth is kept, so menus, the map screen and the HUD stack as on the console. *Idea by Miggas: draw everything as if it were close.* |
-| `RECOMP_DRAW_AREAS=all` | Every part of the map is drawn at all times, including the far end of looping maps. `RECOMP_DRAW_AREAS=game` leaves it to the game, as on the Xbox (some buildings appear as you get close). |
-| `RECOMP_DRAW_AREAS=hops` | **The default: no pop-in.** Like `all`, but only what is visible from the areas the game draws, 2 steps out (`hops3` and so on for more). Reaches far ahead without drawing the other end of a looping map (Dogenzaka Hill's "copy in the sky"). *Idea by Miggas.* Leftover pieces can be hidden per map with `RECOMP_DRAW_AREAS_SKIP=ID:a,b;ID:c` (the ini ships with `EE7A:96,105`) (find them with `RECOMP_AREA_PICKER=1`). |
-| `RECOMP_GL_EDGE=0` | Turns off the edge fix: full-screen layers (shadow darkening, fades, cutscene bars) are pushed one pixel past the screen edges, so no line shows along the top and left. On by default. |
-| `RECOMP_AUDIO_DEBUG=1` | Audio debugging: logs every voice, the streamed music and dialogue buffers, timing, slow file reads, and records the last 30-60 s of sound to `apu_capture_0.wav` / `apu_capture_1.wav`. Big log; for bug reports only. |
-| `RECOMP_VBLANK_ACK=executor` | Testing only: goes back to the pre-v196e vblank handling, which lost about 40% of vblanks (the music and dialogue crackle). |
-| `RECOMP_FULLSCREEN=1` | Start in full screen. |
-| `RECOMP_WIDESCREEN=1` | **Widescreen** 16:9: more of the scene to the left and right instead of black bars; the HUD moves out to the screen edges, and the garage menus, map, character select, VS setup and graffiti select are shown 4:3 while open. `auto` uses your monitor's shape (16:10 on a Steam Deck), or set any shape with `RECOMP_ASPECT=21:9`. *HUD placement and the 4:3 menus from Piaka's widescreen work.* |
-| `RECOMP_SKIP_INTRO=1` | Skip the logos and the graffiti warning at start-up, straight to the title. *By Piaka.* |
-| `RECOMP_SAVE_STRICT=1` | Refuse save files whose signature does not match, as the Xbox does. By default the recomp accepts them, so saves from a real Xbox, another emulator or a save editor load instead of showing as damaged. |
-| `RECOMP_GL_PRESENT=dxgi` | **Borderless window** (Windows, NVIDIA or AMD GPU): with full screen on, Alt+Tab is instant and overlays work, with no black flash. Needs a strong PC — switch it off again if frame times get worse. Leave it off on the Steam Deck. *Tip from Piaka.* |
-| `RECOMP_GL_VSYNC=1` | Wait for the screen's refresh (no tearing). |
-| `RECOMP_USB_PADS=2` | How many players (1–4, default 1). With 1, every controller and the keyboard control player 1. With 2 or more, for the **multiplayer modes**, players join in the order they press a button: the first controller or keyboard to press one is player 1, the next player 2, and so on. |
-| `RECOMP_RUMBLE=50` | Controller rumble strength in percent (default 100); `0` turns it off. |
-| `RECOMP_SDL_PADS=0` | **PlayStation and other controllers** (DualSense, DualShock 4, Switch Pro and others XInput does not see) work on Windows out of the box, rumble included, alongside Xbox pads and the keyboard. This setting turns that off. Buttons go by position (the bottom one is A on every pad); `RECOMP_PAD_LABELS=1` uses the letters printed on Nintendo pads instead. |
-| `RECOMP_APU_GAIN=0.5` | Master volume. |
-| `RECOMP_APU_REVERB=0` | Turns off the echo effect in some areas. |
-| `RECOMP_SAVE_DIR=…` | Where the `savegame` folder (the cache and partition images) goes, if not in the game folder. Your save itself stays in `UDATA`. |
-| `RECOMP_SLEEP_WAITS=…` | Steam Deck power mode — see [section 7](#choose-a-power-mode). |
-| `RECOMP_QUIET=1` | Leave this on: it turns off diagnostics that cost speed. |
+| `RECOMP_QUIET=1` | Fewer log messages (faster). Put a `;` in front when making a log for a bug report. |
+| `RECOMP_SKIP_INTRO=1` | Skip the intro logos. *By Piaka.* |
+| `RECOMP_SAVE_STRICT=1` | Refuse saves from other sources (a real Xbox, emulators, save editors), as the Xbox does. Off by default, so those saves load. |
 
-> [!CAUTION]
-> **Do not change** the lines in the `[game]` section of `jsrf.ini` — the game
-> needs them to start.
+**`[display]`**
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. Higher is sharper and needs a stronger GPU. `2` is best for the Steam Deck. |
+| `RECOMP_GL_ANISO=16` | Anisotropic filtering: `2`, `4`, `8` or `16`. |
+| `RECOMP_GL_AA=smaa_high` | Anti-aliasing: `fxaa`, `smaa_low`, `smaa_medium`, `smaa_high` or `smaa_ultra`. Off when not set. A higher `RECOMP_GL_SCALE` also smooths edges. |
+| `RECOMP_FULLSCREEN=1` | Start in full screen. F11 or Alt+Enter switches. |
+| `RECOMP_GL_PRESENT=dxgi` | Borderless window (Windows only). May lower performance. *Tip from Piaka.* |
+| `RECOMP_WIDESCREEN=auto` | Widescreen: `1` = 16:9, `auto` = your monitor's shape. For other shapes use `RECOMP_ASPECT=w:h` instead (for example `RECOMP_ASPECT=21:9`). The HUD moves to the screen edges and the menus are wide too. *HUD placement from Piaka's widescreen work.* |
+| `RECOMP_GL_VSYNC=1` | VSync. |
+
+**`[input]`**
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_USB_PADS=1` | Number of players (1 to 4). With 2 or more, players join in the order they press a button. |
+| `RECOMP_RUMBLE=100` | Controller rumble: `0` = off, `1` to `100` = strength in percent. |
+
+**`[audio]`**
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_APU_GAIN=0.5` | Master volume (default `0.5`). |
+
+**`[files]`**
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_LOG=stderr.txt` | Write a log, for bug reports ([section 13](#13-reporting-a-problem)). |
+| `RECOMP_PROFILE=1` | Performance profiling in the log. Slows the game down. |
+
+**`[draw distance]`** — leave these alone unless you know what you're doing.
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_DRAW_AREAS=…` | Pop-in (buildings appearing as you get close). `hops` (the default) fixes almost all of it; `hops3`, `hops4`… reach further. `game` = original behaviour, as on the Xbox. `all` = draw everything (can show far-away copies on looping maps). *Idea by Miggas.* |
+| `RECOMP_DRAW_AREAS_SKIP=EE7A:96,105` | Map pieces that should never be drawn. Format: `MapID:area,area;MapID:area`. |
+| `RECOMP_DRAW_AREAS_ADD=` | Map pieces that should always be drawn. Same format. |
+| `RECOMP_AREA_PICKER=1` | Finds the numbers for the two lists above. `1` = skip mode, `2` = add mode. F6/F7 select an area (shown in the window title), F8 toggles it, F10 clears all. The list is written to the log, ready to copy. |
+| `RECOMP_OBJ_DRAW_DIST=2` | Draw distance of street objects (tanks, police, vehicles…). `1` = original. *Idea by Miggas.* |
+
+**`[tools]`**
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_FREECAM=1` | Free camera. F5 = on/off, WASD = move, Shift = up, Ctrl = down, mouse = look, mouse wheel = speed (shown in the window title). The game gets no keyboard input while the camera is flying. |
+| `RECOMP_FREECAM_SPEED=2` | The free camera's start speed (default `2`). |
+| `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity (default `0.003`). |
+
+**`[compatibility]`**
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_GL_TEX_WATCH=0` | Leave at `0` if the game stutters (for example on the Steam Deck). |
+| `RECOMP_SLEEP_WAITS=…` | GPU waits: `vblank` = default, `all` = lowest power use (may cause dips), `none` = highest CPU use. Steam Deck: see [section 7](#choose-a-power-mode). |
 
 If you play with **Option B** (`play_jsrf.bat`), its settings are inside the
 `.bat` file instead (same names).
+
+More settings, for testing and for finding problems, are listed in
+**[DEBUG.md](DEBUG.md)**. They aren't in `jsrf.ini`; add a line yourself to use one.
 
 ---
 
@@ -501,7 +545,7 @@ Your `jsrf.ini` and saves are kept.
 | The game is slow or stutters | Lower `RECOMP_GL_SCALE`; make sure `RECOMP_QUIET=1` is on; on a laptop, plug it in. |
 | Problems on the Steam Deck (or under Proton/Linux) with a Proton version other than 11 | Switch to **Proton 11** ([section 7](#7-playing-on-a-steam-deck)). Only Proton 11 is tested; older versions are not supported. |
 | Busy areas on the Deck drop below 50 fps for a few seconds | You set `RECOMP_SLEEP_WAITS=all` without the performance governor — do both steps of [Mode 2](#-mode-2--power-saving), or go back to Mode 1. |
-| Game opens up to a black screen | Add `RECOMP_GL_CPU_VERTEX=1`; There's a known bug in NVidia systems that causes this issue, a solution is already in the works. |
+| Game opens up to a black screen | Add `RECOMP_GL_CPU_VERTEX=1` to `jsrf.ini` ([DEBUG.md](DEBUG.md)). There's a known bug on NVIDIA systems that causes this; a fix is in the works. |
 
 ---
 
