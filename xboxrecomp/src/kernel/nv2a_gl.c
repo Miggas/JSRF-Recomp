@@ -3236,11 +3236,12 @@ static int dxp_init(HWND hwnd, int cw, int ch)
     return 1;
 }
 
-/* v238: anti-aliasing on the way to the screen (RECOMP_GL_FXAA, default 1).
+/* v238: anti-aliasing on the way to the screen (RECOMP_GL_FXAA=1; off by
+ * default, v238b).
  * The finished frame (its texture, at the internal resolution) goes once
  * through FXAA into a texture of the same size; the presenting blits then
  * read that instead of the frame. Every GL state it touches is read first
- * and put back, so the renderer's caches stay true. 0 = off. */
+ * and put back, so the renderer's caches stay true. */
 static const char *FXAA_VS =
 "#version 330 core\n"
 "out vec2 v_uv;\n"
@@ -3304,10 +3305,8 @@ static GLuint present_fxaa(GLuint src, int w, int h)
         GLuint vs, fs;
         GLint ok = 0;
         s_fx.state = -1;
-        if (e && e[0] == '0') {
-            fprintf(stderr, "[GL] anti-aliasing off (RECOMP_GL_FXAA=0)\n");
-            return 0;
-        }
+        if (!(e && e[0] == '1'))
+            return 0;                       /* off unless asked for */
         vs = compile(GL_VERTEX_SHADER, FXAA_VS);
         fs = compile(GL_FRAGMENT_SHADER, FXAA_FS);
         if (!vs || !fs)
@@ -3334,7 +3333,7 @@ static GLuint present_fxaa(GLuint src, int w, int h)
         glGenFramebuffers(1, &s_fx.fbo);
         glGenTextures(1, &s_fx.tex);
         s_fx.state = 1;
-        fprintf(stderr, "[GL] anti-aliasing: FXAA (RECOMP_GL_FXAA=0: off)\n");
+        fprintf(stderr, "[GL] anti-aliasing: FXAA (RECOMP_GL_FXAA=1)\n");
     }
     /* what is bound now, to put back */
     glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
