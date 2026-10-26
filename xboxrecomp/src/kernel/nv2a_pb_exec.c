@@ -2864,6 +2864,22 @@ static int gl_state(NvGlState *st)
                                                && s_gpu.blend_dfactor == 0);
     st->blend_sfactor = s_gpu.blend_sfactor; st->blend_dfactor = s_gpu.blend_dfactor;
     st->blend_equation = s_gpu.blend_equation; st->blend_color = s_gpu.blend_color;
+    /* v237: additive layers (blended onto the picture with a destination
+     * factor of ONE: glows, light beams) don't write depth. The Skyscraper
+     * District's light pillars write it, so the chain-link floor drawn after
+     * them is missing wherever a pillar is in front of it (on xemu and the
+     * Xbox too; Miggas). Light added over the scene hides nothing on its
+     * own. (ZERO, ONE -- colour left alone -- is a depth-only pass and keeps
+ * its writes.) RECOMP_GL_ADDITIVE_DEPTH=1 keeps the game's depth writes. */
+    if (st->blend_enable && st->blend_dfactor == 1 && st->blend_sfactor != 0 && st->depth_mask) {
+        static int keep = -1;
+        if (keep < 0) {
+            const char *e = getenv("RECOMP_GL_ADDITIVE_DEPTH");
+            keep = e && e[0] == '1';
+        }
+        if (!keep)
+            st->depth_mask = 0;
+    }
     st->color_mask = s_gpu.color_mask;
     st->cull_enable = s_gpu.cull_enable; st->cull_face = s_gpu.cull_face;
     st->front_face = s_gpu.front_face;
