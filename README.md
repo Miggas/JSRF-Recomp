@@ -83,9 +83,9 @@ Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
 > header (region, allowed media), which changes the file's SHA-256 but not the
 > game, and those work fine.
 >
-> To check your copy before building, open a terminal in `jsrf_recomp` and run
-> `py -3 tools\xbe_info.py` (or `py -3 tools\xbe_info.py path\to\default.xbe`).
-> It says whether the code matches and, if not, which part differs.
+> To check your copy before building, open the folder `debug` and insidethere's
+> a script called `check_xbe.bat`, double click it and if your copy is the right
+> one it'll say `The game's code matches: this copy works with the project.`.
 
 ---
 
