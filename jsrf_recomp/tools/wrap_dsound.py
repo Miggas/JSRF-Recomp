@@ -50,7 +50,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_0011C750",                # v221: the test run menu, not held at 4:3
          "sub_0011A490",                # v222: the test run course screen, not held at 4:3
          "sub_00124BD0",                # v228c: graffiti select's 3D scene: no side fill
-         "sub_000C1340")                # v233: street objects' draw distance
+         "sub_000C1340",                # v233: street objects' draw distance
+         "sub_001133A0")                # v235: the start menu in battles in widescreen
 
 
 def main():

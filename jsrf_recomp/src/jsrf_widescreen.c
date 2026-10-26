@@ -532,6 +532,21 @@ static const WsmPart wsm_cs_parts[] = {
 static const WsmPart wsm_cs_text[] = {
     { 0x00115D9Du,  1, 0 },     /* "Press the B Button to go back." */
 };
+/* v235: the start menu in battles (sub_001133A0, the map screen's twin,
+ * Miggas's run): the same layout from the same object's fields */
+static const WsmPart wsm_bt_parts[] = {
+    { 0x0011340Au,  2, 0 },     /* the background grid (4086 indices) */
+    { 0x0011342Du,  2, 0 },     /* top bar */
+    { 0x0011343Du,  1, 0 },     /* RETURN TO GAME bar */
+    { 0x00113451u,  2, 0 },     /* bottom bar and its marks */
+    { 0x001134A1u,  1, 0 },     /* the two buttons on the right */
+    { 0x00113505u,  1, 0 },
+    { 0x00113609u, -1, 0 },     /* ROTATE MAP's stick */
+};
+static const WsmPart wsm_bt_text[] = {
+    { 0x00113643u, -1, 0 },     /* ROTATE MAP, x 48 */
+    { 0x001136D5u,  1, 0 },     /* RETURN TO GAME, right-aligned */
+};
 
 typedef struct {
     const char *name;
@@ -556,6 +571,8 @@ static const WsmScreen wsm_screens[] = {
     { "graffiti", 0x00127080u, 0x00127080u, NULL, 0, NULL, 0 },   /* v220: not held */
     { "test run", 0x0011C750u, 0x0011C750u, NULL, 0, NULL, 0 },   /* v221: not held */
     { "test run course", 0x0011A490u, 0x0011A490u, NULL, 0, NULL, 0 },   /* v222 */
+    { "battle start menu", 0x001133A0u, 0x001136E0u, wsm_bt_parts, WSM_N(wsm_bt_parts),
+                  wsm_bt_text, WSM_N(wsm_bt_text) },                    /* v235 */
 };
 #define WSM_NSCREENS WSM_N(wsm_screens)
 static volatile DWORD s_wsm_ms[WSM_NSCREENS];
@@ -569,7 +586,7 @@ static int wsm_on(void)
         double a = xbox_PresentAspect();
         on = a > 4.0 / 3.0 + 1e-6 && ws_flag("RECOMP_WS_MENU_MAP");
         if (on)
-            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system, options, practice, music, graffiti, test run, test run course"
+            fprintf(stderr, "[WS] menus made wide: map, notebook, character select, save, Roboy, system, options, practice, music, graffiti, test run, test run course, battle start menu"
                     " (RECOMP_WS_MENU_MAP=0: 4:3)\n");
     }
     return on;
@@ -753,6 +770,10 @@ void sub_00124BD0(void)
 
 /* the screen function of wsm_screens[idx]: shown this frame, its parts and
  * strings placed while it runs */
+/* the screens shown as they are, their sides filled row by row; the
+ * others (map, notebook, start-menu character select, battle start menu)
+ * place their own parts at the sides */
+#define WSM_FILLS(idx) ((idx) >= 3 && (idx) != 12)
 #define WSM_SCREEN(name, idx)                       \
     extern void name##_gen(void);                   \
     void name(void)                                 \
@@ -760,11 +781,11 @@ void sub_00124BD0(void)
         int was;                                    \
         if (!wsm_on()) { name##_gen(); return; }    \
         s_wsm_ms[idx] = GetTickCount();             \
-        wsm_fill_mark(idx >= 3 ? 2 : 0);            \
+        wsm_fill_mark(WSM_FILLS(idx) ? 2 : 0);      \
         was = wsm_cur;                              \
         wsm_cur = idx;                              \
         name##_gen();                               \
-        if (idx >= 3) wsm_fill_mark(6);             \
+        if (WSM_FILLS(idx)) wsm_fill_mark(6);       \
         wsm_cur = was;                              \
     }
 
@@ -797,6 +818,8 @@ WSM_SCREEN(sub_0011C750, 10)
 /* v222: the test run's course screen (sub_0011A490: route, rankings; the
  * same for all four kinds of test run, Miggas's run): the same */
 WSM_SCREEN(sub_0011A490, 11)
+/* v235: the start menu in battles (sub_001133A0, Miggas's run) */
+WSM_SCREEN(sub_001133A0, 12)
 
 extern void sub_000FD190_gen(void);
 extern void sub_00048570_gen(void);

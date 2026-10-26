@@ -590,6 +590,7 @@ next fix.
 - **v231:** the start menu's map name is no longer cut at the 4:3 edge on ultrawide screens ("dai Heights" at 21:9, Miggas): the side fill's cut (draws kept off the fill column) applied to it, a big batch drawn before the map screen's own mark. The cut now waits for a filled menu's own mark and leaves big batches alone.
 - **v232:** the street sign that names where a path leads ("Garage"; the menus' header object, sub_000FD190) goes to the left like the rest of the HUD in widescreen, and 28 guest pixels down, clear of the trick counter (*Idea by Miggas*).
 - **v233:** street objects drawn further away (RECOMP_OBJ_DRAW_DIST, default 2): the tanks, the police, vehicles... are shown by sub_000C1340, which culls and fades them by distance against three distances of the object's kind; the last two (fade start and end) are scaled (found from Miggas's F9 runs at Chuo Street's tanks; *Idea by Miggas*).
+- **v235:** the start menu in battles (sub_001133A0, the map screen's twin, wrapped; Miggas's run): background grid and top and bottom bars across the width, the buttons and RETURN TO GAME to the right, ROTATE MAP and the header to the left.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
