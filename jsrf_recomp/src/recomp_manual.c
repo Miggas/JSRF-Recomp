@@ -2359,6 +2359,33 @@ static int s_area_near_ok;
  * list; every change is logged as [AREAS] skips: ..., ready to copy into
  * RECOMP_DRAW_AREAS_SKIP. */
 static uint32_t s_area_skip_rt[8];
+/* v236: areas always drawn: RECOMP_DRAW_AREAS_ADD (this map's, read with
+ * the map) and the picker's in mode 2 (RECOMP_AREA_PICKER=2: F8 adds) */
+static uint32_t s_area_add_ini[8], s_area_add_rt[8];
+static int s_area_picker_mode;            /* 1 skips, 2 adds */
+/* "a,b,c" for every map, or per map "ID:a,b,c;ID:d,e", as for the skips:
+ * sets the bits of the entries for map `id` (areas below n) */
+static void areas_parse_list(const char *sk, uint32_t id, uint32_t n, uint32_t out[8])
+{
+    while (sk && *sk) {
+        const char *semi = strchr(sk, ';'), *colon = strchr(sk, ':');
+        const char *end = semi ? semi : sk + strlen(sk);
+        const char *nums = sk;
+        int applies = 1;
+        if (colon && colon < end) {
+            applies = (strtoul(sk, NULL, 16) == id);
+            nums = colon + 1;
+        }
+        while (applies && nums < end) {
+            char *e2;
+            unsigned long v = strtoul(nums, &e2, 10);
+            if (e2 == nums) break;
+            if (v < n && v < 256) out[v >> 5] |= 1u << (v & 31);
+            nums = (*e2 == ',') ? e2 + 1 : e2;
+        }
+        sk = semi ? semi + 1 : end;
+    }
+}
 static float s_area_dist[256];
 static uint32_t s_map_id;      /* v200j: the current map's ID */
 extern void xbox_SetTitleExtra(const char *t);
@@ -2373,10 +2400,14 @@ static void area_picker(uint32_t obj, uint32_t n)
     uint32_t i, game, nr;
     if (on < 0) {
         const char *e = getenv("RECOMP_AREA_PICKER");
-        on = e && e[0] == '1';
-        if (on)
+        on = e && (e[0] == '1' || e[0] == '2');
+        s_area_picker_mode = on ? e[0] - '0' : 0;
+        if (s_area_picker_mode == 1)
             fprintf(stderr, "[AREAS] area picker on: F6/F7 select (Shift: by 10), F8 skip/restore,"
                     " F10 restore all\n");
+        else if (s_area_picker_mode == 2)   /* v236 */
+            fprintf(stderr, "[AREAS] area picker on (adding): F6/F7 select (Shift: by 10), F8 always"
+                    " draw / back to normal, F10 clear all\n");
     }
     if (!on || !n)
         return;
@@ -2389,20 +2420,30 @@ static void area_picker(uint32_t obj, uint32_t n)
     if (press[0]) { sel = (sel - step + (int)n * 10) % (int)n; changed = 1; }
     if (press[1]) { sel = (sel + step) % (int)n; changed = 1; }
     if (sel >= (int)n) sel = 0;
-    if (press[2]) { s_area_skip_rt[sel >> 5] ^= 1u << (sel & 31); changed = 2; }
-    if (press[3]) { memset(s_area_skip_rt, 0, sizeof s_area_skip_rt); changed = 2; }
-    lst[0] = 0;
-    for (i = 0; i < n && L + 6 < sizeof lst; i++)
-        if (s_area_skip_rt[i >> 5] & (1u << (i & 31)))
-            L += (size_t)snprintf(lst + L, sizeof lst - L, "%s%u", L ? "," : "", i);
-    if (changed == 2)
-        fprintf(stderr, "[AREAS] skips: %04X:%s\n", s_map_id, L ? lst : "(none)");
+    {
+        /* v236: mode 2 edits the always-drawn list instead of the skips */
+        uint32_t *edit = s_area_picker_mode == 2 ? s_area_add_rt : s_area_skip_rt;
+        if (press[2]) { edit[sel >> 5] ^= 1u << (sel & 31); changed = 2; }
+        if (press[3]) { memset(edit, 0, 8 * sizeof(uint32_t)); changed = 2; }
+        lst[0] = 0;
+        for (i = 0; i < n && L + 6 < sizeof lst; i++)
+            if (edit[i >> 5] & (1u << (i & 31)))
+                L += (size_t)snprintf(lst + L, sizeof lst - L, "%s%u", L ? "," : "", i);
+        if (changed == 2)
+            fprintf(stderr, "[AREAS] %s: %04X:%s\n", s_area_picker_mode == 2 ? "adds" : "skips",
+                    s_map_id, L ? lst : "(none)");
+    }
     game = MEM32(obj + 8 + 4 * (sel >> 5)) & (1u << (sel & 31));
     nr = s_area_near[sel >> 5] & (1u << (sel & 31));
-    snprintf(t, sizeof t, "map %04X area %d/%u: %s%s, %.0f away | skips: %.32s", s_map_id, sel, n,
-             game ? "game" : nr ? (s_area_hops ? "steps" : "distance") : "not drawn",
-             (s_area_skip_rt[sel >> 5] & (1u << (sel & 31))) ? " SKIPPED" : "",
-             (double)s_area_dist[sel < 256 ? sel : 0], L ? lst : "none");
+    {
+        uint32_t b = 1u << (sel & 31), w = (uint32_t)sel >> 5;
+        int added = ((s_area_add_rt[w] | s_area_add_ini[w]) & b) != 0;
+        snprintf(t, sizeof t, "map %04X area %d/%u: %s%s%s, %.0f away | %s: %.32s", s_map_id, sel, n,
+                 game ? "game" : nr ? (s_area_hops ? "steps" : "distance") : "not drawn",
+                 (s_area_skip_rt[w] & b) ? " SKIPPED" : "", added ? " ADDED" : "",
+                 (double)s_area_dist[sel < 256 ? sel : 0],
+                 s_area_picker_mode == 2 ? "adds" : "skips", L ? lst : "none");
+    }
     xbox_SetTitleExtra(t);
 }
 static float s_area_dist[256];
@@ -2631,6 +2672,18 @@ static void areas_drawable(uint32_t out[8])
                     fprintf(stderr, "[AREAS] map ID %04X (for RECOMP_DRAW_AREAS_SKIP=%04X:a,b,c)\n",
                             s_map_id, s_map_id);
                 }
+                /* v236: RECOMP_DRAW_AREAS_ADD: areas always drawn here */
+                memset(s_area_add_ini, 0, sizeof s_area_add_ini);
+                areas_parse_list(getenv("RECOMP_DRAW_AREAS_ADD"), s_map_id, n, s_area_add_ini);
+                {
+                    unsigned c = 0;
+                    for (i = 0; i < n && i < 256; i++)
+                        if (s_area_add_ini[i >> 5] & (1u << (i & 31))) {
+                            if (!c++) fprintf(stderr, "[AREAS] always drawn here (RECOMP_DRAW_AREAS_ADD):");
+                            fprintf(stderr, " %u", i);
+                        }
+                    if (c) fputc('\n', stderr);
+                }
                 /* RECOMP_DRAW_AREAS_SKIP: areas never added. "a,b,c" for
                  * every map, or per map "ID:a,b,c;ID:d,e" (v200j); both can
                  * be mixed, entries split by ';' */
@@ -2782,18 +2835,28 @@ void name(void)                                                              \
 }                                                                            \
 static void area_pass_body_##name(void)                                      \
 {                                                                            \
-    uint32_t keep[8], add[8], k;                                             \
-    if (!areas_all() || !area_pass_on(bit)) {                                \
+    uint32_t keep[8], add[8], k, forced = 0;                                 \
+    if (!area_pass_on(bit)) {                                                \
         name##_gen();                                                        \
         return;                                                              \
     }                                                                        \
     areas_drawable(add);                                                     \
     for (k = 0; k < 8; k++)                                                  \
+        forced |= s_area_add_ini[k] | s_area_add_rt[k];                      \
+    if (!areas_all() && !forced) {                                           \
+        name##_gen();                                                        \
+        return;                                                              \
+    }                                                                        \
+    for (k = 0; k < 8; k++)                                                  \
         add[k] &= ~s_area_skip_rt[k];                                        \
-    if (s_area_radius > 0.0 || s_area_hops) {                                \
+    if (!areas_all())                                                        \
+        memset(add, 0, sizeof add);    /* "game": only the forced ones */   \
+    else if (s_area_radius > 0.0 || s_area_hops) {                           \
         for (k = 0; k < 8; k++)                                              \
             add[k] = s_area_near_ok ? (add[k] & s_area_near[k]) : 0;         \
     }                                                                        \
+    for (k = 0; k < 8; k++)            /* v236: always drawn */             \
+        add[k] |= s_area_add_ini[k] | s_area_add_rt[k];                      \
     for (k = 0; k < 8; k++) {                                                \
         keep[k] = MEM32(0x20C6C8u + 4 * k);                                  \
         MEM32(0x20C6C8u + 4 * k) = keep[k] | add[k];                         \
