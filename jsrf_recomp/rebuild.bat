@@ -46,6 +46,11 @@ echo Building (Release)...
 "%CMAKE%" --build build --config Release --parallel
 if errorlevel 1 goto fail
 
+rem The new exe may build its shaders differently: old compiled ones are
+rem cleared (in both places the game can run from), recipes.bin is kept.
+call :clear_cache "%~dp0shader_cache"
+call :clear_cache "%~dp0game\shader_cache"
+
 echo.
 echo Build OK: build\Release\jsrf_recomp.exe
 if /i "%~1"=="nopause" exit /b 0
@@ -70,3 +75,11 @@ echo BUILD FAILED - scroll up for the first error.
 if /i "%~1"=="nopause" exit /b 1
 pause
 exit /b 1
+
+rem v242b: empty a shader cache folder, keeping recipes.bin (the list of
+rem shaders the game used, so the new build compiles them again in menus)
+:clear_cache
+if not exist "%~1\" exit /b 0
+for %%F in ("%~1\*.bin") do if /i not "%%~nxF"=="recipes.bin" del /q "%%F" 2>nul
+echo Cleared the shader cache in "%~1" ^(kept recipes.bin^).
+exit /b 0

@@ -34,6 +34,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem Old compiled shaders cleared, recipes.bin kept (rebuild.bat does the
+rem game\ folder; this is for a game folder somewhere else).
+call :clear_cache "%DEST%\shader_cache"
+
 rem Your jsrf.ini is never overwritten.
 if not exist "%DEST%\jsrf.ini" (
   copy /y "portable\jsrf.ini" "%DEST%\jsrf.ini" > nul
@@ -45,4 +49,12 @@ if not exist "%DEST%\jsrf.ini" (
 echo.
 echo Release build ready: "%DEST%\jsrf_recomp.exe"
 pause
+exit /b 0
+
+rem v242b: empty a shader cache folder, keeping recipes.bin (the list of
+rem shaders the game used, so the new build compiles them again in menus)
+:clear_cache
+if not exist "%~1\" exit /b 0
+for %%F in ("%~1\*.bin") do if /i not "%%~nxF"=="recipes.bin" del /q "%%F" 2>nul
+echo Cleared the shader cache in "%~1" ^(kept recipes.bin^).
 exit /b 0
