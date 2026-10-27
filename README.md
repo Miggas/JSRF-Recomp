@@ -454,8 +454,8 @@ off: delete the `;` to switch it on. Steam launch options override the file.
 | Setting | What it does |
 |---|---|
 | `RECOMP_DRAW_AREAS=…` | Pop-in (buildings appearing as you get close). `hops` (the default) fixes almost all of it; `hops3`, `hops4`… reach further. `game` = original behaviour, as on the Xbox. `all` = draw everything (can show far-away copies on looping maps). *Idea by Miggas.* |
-| `RECOMP_DRAW_AREAS_SKIP=EE7A:96,105` | Map pieces that should never be drawn. Format: `MapID:area,area;MapID:area`. |
-| `RECOMP_DRAW_AREAS_ADD=` | Map pieces that should always be drawn. Same format. |
+| `RECOMP_DRAW_AREAS_SKIP=EE7A:96,105` | Map pieces that should never be drawn. Format: `MapID:area,area;MapID:area`. A map ID alone (`EE7A`) means the whole map: no pop-in fix there. |
+| `RECOMP_DRAW_AREAS_ADD=` | Map pieces that should always be drawn. Same format; a map ID alone draws the whole map. |
 | `RECOMP_AREA_PICKER=1` | Finds the numbers for the two lists above. `1` = skip mode, `2` = add mode. F6/F7 select an area (shown in the window title), F8 toggles it, F10 clears all. The list is written to the log, ready to copy. |
 | `RECOMP_OBJ_DRAW_DIST=2` | Draw distance of street objects (tanks, police, vehicles…). `1` = original. *Idea by Miggas.* |
 

@@ -2362,16 +2362,39 @@ static uint32_t s_area_skip_rt[8];
 /* v236: areas always drawn: RECOMP_DRAW_AREAS_ADD (this map's, read with
  * the map) and the picker's in mode 2 (RECOMP_AREA_PICKER=2: F8 adds) */
 static uint32_t s_area_add_ini[8], s_area_add_rt[8];
+static int s_area_add_map;                /* v242: the whole map is in RECOMP_DRAW_AREAS_ADD */
 static int s_area_picker_mode;            /* 1 skips, 2 adds */
 /* "a,b,c" for every map, or per map "ID:a,b,c;ID:d,e", as for the skips:
  * sets the bits of the entries for map `id` (areas below n) */
-static void areas_parse_list(const char *sk, uint32_t id, uint32_t n, uint32_t out[8])
+/* v242: an entry that is only a map ID ("EE7A", four hex digits; area
+ * numbers are at most three) stands for every area of that map. *Idea by
+ * Miggas.* */
+static int areas_whole_map(const char *sk, const char *end, uint32_t id)
 {
+    char buf[8];
+    while (sk < end && (*sk == ' ' || *sk == '\t')) sk++;
+    while (end > sk && (end[-1] == ' ' || end[-1] == '\t')) end--;
+    if (end - sk != 4)
+        return -1;                          /* not a map ID */
+    memcpy(buf, sk, 4); buf[4] = 0;
+    if (strspn(buf, "0123456789abcdefABCDEF") != 4)
+        return -1;
+    return strtoul(buf, NULL, 16) == id;    /* 1 this map, 0 another */
+}
+static void areas_parse_list(const char *sk, uint32_t id, uint32_t n, uint32_t out[8], int *whole)
+{
+    if (whole) *whole = 0;
     while (sk && *sk) {
         const char *semi = strchr(sk, ';'), *colon = strchr(sk, ':');
         const char *end = semi ? semi : sk + strlen(sk);
         const char *nums = sk;
         int applies = 1;
+        if (!(colon && colon < end) && areas_whole_map(sk, end, id) >= 0) {
+            if (areas_whole_map(sk, end, id) == 1 && whole)
+                *whole = 1;                 /* every area the game ever draws */
+            sk = semi ? semi + 1 : end;
+            continue;
+        }
         if (colon && colon < end) {
             applies = (strtoul(sk, NULL, 16) == id);
             nums = colon + 1;
@@ -2674,7 +2697,11 @@ static void areas_drawable(uint32_t out[8])
                 }
                 /* v236: RECOMP_DRAW_AREAS_ADD: areas always drawn here */
                 memset(s_area_add_ini, 0, sizeof s_area_add_ini);
-                areas_parse_list(getenv("RECOMP_DRAW_AREAS_ADD"), s_map_id, n, s_area_add_ini);
+                areas_parse_list(getenv("RECOMP_DRAW_AREAS_ADD"), s_map_id, n, s_area_add_ini,
+                                 &s_area_add_map);
+                if (s_area_add_map)
+                    fprintf(stderr, "[AREAS] map %04X in RECOMP_DRAW_AREAS_ADD: every area"
+                            " drawn here\n", s_map_id);
                 {
                     unsigned c = 0;
                     for (i = 0; i < n && i < 256; i++)
@@ -2692,6 +2719,15 @@ static void areas_drawable(uint32_t out[8])
                     const char *end = semi ? semi : sk + strlen(sk);
                     const char *nums = sk;
                     int applies = 1;
+                    if (!(colon && colon < end) && areas_whole_map(sk, end, s_map_id) >= 0) {
+                        if (areas_whole_map(sk, end, s_map_id) == 1) {   /* v242: the whole map */
+                            memset(mask, 0, sizeof mask);
+                            fprintf(stderr, "[AREAS] map %04X in RECOMP_DRAW_AREAS_SKIP:"
+                                    " no areas added here (as the game draws it)\n", s_map_id);
+                        }
+                        sk = semi ? semi + 1 : end;
+                        continue;
+                    }
                     if (colon && colon < end) {
                         unsigned long id = strtoul(sk, NULL, 16);
                         applies = (id == s_map_id);
@@ -2864,7 +2900,13 @@ static void area_pass_body_##name(void)                                      \
     areas_drawable(add);                                                     \
     for (k = 0; k < 8; k++)                                                  \
         forced |= s_area_add_ini[k] | s_area_add_rt[k];                      \
-    if (!areas_all() && !forced) {                                           \
+    if (s_area_add_map) {              /* v242: the whole map, less skips */\
+        for (k = 0; k < 8; k++)                                              \
+            add[k] = (add[k] & ~s_area_skip_rt[k])                           \
+                     | s_area_add_ini[k] | s_area_add_rt[k];                 \
+        goto set_##name;                                                     \
+    }                                                                        \
+    if (!areas_all() && !forced && !s_area_add_map) {                        \
         name##_gen();                                                        \
         return;                                                              \
     }                                                                        \
@@ -2878,6 +2920,7 @@ static void area_pass_body_##name(void)                                      \
     }                                                                        \
     for (k = 0; k < 8; k++)            /* v236: always drawn */             \
         add[k] |= s_area_add_ini[k] | s_area_add_rt[k];                      \
+set_##name:                                                                  \
     for (k = 0; k < 8; k++) {                                                \
         keep[k] = MEM32(0x20C6C8u + 4 * k);                                  \
         MEM32(0x20C6C8u + 4 * k) = keep[k] | add[k];                         \
