@@ -3799,7 +3799,19 @@ static void drawlog(int kind, const NvGlState *st)
 /* addresses compared without the aperture bits: the tiled window at
  * 0xF0000000 and the contiguous one at 0x80000000 alias the same memory */
 #define WS_ADDR(a) ((a) & 0x0FFFFFFFu)
-static struct { uint32_t base, bytes; int screen; } s_ws_rt[WS_RT_N];
+static struct { uint32_t base, bytes; int screen; uint32_t w, h; ULONGLONG last; } s_ws_rt[WS_RT_N];
+/* v240: after a while of play the graffiti in graffiti select came out
+ * squeezed again and the stretching floors came back (Miggas). Two ways a
+ * remembered target went stale:
+ *  - a 1024x1024 graffiti target shown across the screen (the editor's
+ *    canvas) was marked a copy of the screen, and everything drawn into it
+ *    from then on was squeezed: only targets no bigger than the screen are
+ *    marked so now;
+ *  - memory that was once a target (boost's) is reused for ordinary
+ *    textures (a floor), which were then taken for pictures of a frame and
+ *    kept unsqueezed: a target not drawn into for WS_RT_STALE_MS is
+ *    forgotten. */
+#define WS_RT_STALE_MS 3000
 static unsigned s_ws_rt_next;
 /* v206: boost's blur target. The first boost of a run flashed the stretched
  * 4:3 view for a frame (Miggas): the scene goes into a 512x512 target that
@@ -3829,9 +3841,11 @@ static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h
         if (s_ws_rt[i].base == base) {
             /* v187o: the same memory as a target of another size is another
              * use of it: no longer known as a copy of the screen */
-            if (s_ws_rt[i].bytes != bytes)
+            if (s_ws_rt[i].bytes != bytes || s_ws_rt[i].w != w || s_ws_rt[i].h != h)
                 s_ws_rt[i].screen = ws_premark(w, h);
             s_ws_rt[i].bytes = bytes;
+            s_ws_rt[i].w = w; s_ws_rt[i].h = h;
+            s_ws_rt[i].last = GetTickCount64();
             return;
         }
     /* v187o: a target overlapping a remembered one reuses its memory (the
@@ -3846,16 +3860,24 @@ static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h
     s_ws_rt[i].base = base;
     s_ws_rt[i].bytes = bytes;
     s_ws_rt[i].screen = ws_premark(w, h);
+    s_ws_rt[i].w = w; s_ws_rt[i].h = h;
+    s_ws_rt[i].last = GetTickCount64();
     s_ws_rt_next++;
 }
 /* the remembered surface holding address a, or -1 */
 static int ws_target_at(uint32_t a)
 {
     unsigned i;
+    ULONGLONG now = GetTickCount64();
     a = WS_ADDR(a);
     for (i = 0; i < WS_RT_N; i++)
-        if (s_ws_rt[i].bytes && a >= s_ws_rt[i].base && a < s_ws_rt[i].base + s_ws_rt[i].bytes)
+        if (s_ws_rt[i].bytes && a >= s_ws_rt[i].base && a < s_ws_rt[i].base + s_ws_rt[i].bytes) {
+            if (now - s_ws_rt[i].last > WS_RT_STALE_MS) {   /* v240: stale */
+                s_ws_rt[i].bytes = 0; s_ws_rt[i].base = 0; s_ws_rt[i].screen = 0;
+                return -1;
+            }
             return (int)i;
+        }
     return -1;
 }
 static int ws_tex_is_target(void)
@@ -4023,7 +4045,8 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
              * of the screen from now on (v187i) */
             if (rt && ws_is_screen(st)) {
                 int t = ws_target_at(s_gpu.texs[0].offset);
-                if (t >= 0 && !s_ws_rt[t].screen) {
+                if (t >= 0 && !s_ws_rt[t].screen
+                        && s_ws_rt[t].w <= 640 && s_ws_rt[t].h <= 480) {   /* v240 */
                     s_ws_rt[t].screen = 1;
                     if (logw)
                         fprintf(stderr, "[WS] surface %08X is a copy of the screen: squeezed "
