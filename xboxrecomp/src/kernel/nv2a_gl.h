@@ -199,6 +199,7 @@ uint32_t nv2a_gl_present(uint32_t surf_va);
 
 /* Frame boundary: per-frame texture validation restarts. */
 void nv2a_gl_end_frame(void);
+void nv2a_gl_idle(uint32_t draws);   /* v241: shaders built ahead on light frames */
 
 /* Statistics for the [PERF] report. */
 void nv2a_gl_stats(uint64_t *draws, uint64_t *tris, uint64_t *uploads,

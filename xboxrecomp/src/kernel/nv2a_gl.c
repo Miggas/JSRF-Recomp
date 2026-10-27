@@ -1307,6 +1307,9 @@ static void cache_save(const char *path, GLuint pr)
 
 static GLuint link_with2(const char *vsrc, const char *fsrc);
 static GlProg *zvar(GlProg *p, const NvGlState *st);
+static void rcp_note(int kind, int ffkey, int nz, const uint32_t *spec,
+                     const uint32_t (*prog)[4], int n);                 /* v241 */
+static void rcp_note_prog(const GlProg *base, int nz, const uint32_t *spec);
 static void spec_purge(GlProg *base);
 static GLuint link_with(const char *vsrc) { return link_with2(vsrc, FS); }
 
@@ -1697,6 +1700,7 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
         p->used = ++s_prog_clock;
         get_locs(p);
         p->vsrc = src; p->vsrc_owned = 1;      /* kept for the twin */
+        rcp_note(2, 0, 0, NULL, prog, n);      /* v241 */
         {
             static unsigned built;
             double f = (double)SDL_GetPerformanceFrequency();
@@ -1735,6 +1739,7 @@ static GlProg *zvar(GlProg *p, const NvGlState *st)
                 static unsigned nb;
                 get_locs(q);
                 p->nz = q;
+                rcp_note_prog(p, 1, NULL);     /* v241 */
                 if (nb++ == 0)
                     fprintf(stderr, "[GL] 3D batches leave depth to GL: the GPU tests it"
                             " before shading (RECOMP_GL_FRAGDEPTH=1 for the old way)\n");
@@ -1940,6 +1945,7 @@ static GlProg *pick_prog(GlProg *p, const NvGlState *st)
             if (q->id) {
                 get_locs(q);
                 e->prog = q;
+                rcp_note_prog(p, nz, k);       /* v241 */
                 if (s_spec_built++ == 0)
                     fprintf(stderr, "[GL] fragment shaders specialised to each combiner setup"
                             " (RECOMP_GL_RC_SPECIAL=0 for the general one)\n");
@@ -1953,6 +1959,223 @@ static GlProg *pick_prog(GlProg *p, const NvGlState *st)
         free(src);
         return e->prog ? e->prog : z;
     }
+}
+
+/* v241: shaders built ahead (after JSRF Unleashed's 0.5.0/0.5.8 idea).
+ * The shader cache (v79) keeps every program compiled, but it is keyed by
+ * the shader sources, so a version that changes the shaders starts with an
+ * empty cache: every new setup is compiled the first time the game draws it,
+ * with the game waiting (tens to hundreds of milliseconds each). Every
+ * program built is now also written down as how to make it -- the vertex
+ * shader (fixed function, pass-through, or the game's vertex program words),
+ * the depth twin, and the combiner setup it was specialised to --
+ * in shader_cache/recipes.bin. At later starts, those not in the cache yet
+ * are compiled with the current sources a few milliseconds at a time on
+ * light frames (menus, loading screens), and only saved to the cache; the
+ * game then loads them from there when it needs them (about 1 ms each).
+ * The list stays on this machine; nothing is shipped.
+ * RECOMP_GL_PREBUILD=0 turns it off. */
+#define RCP_SPEC 37
+typedef struct {
+    uint32_t kind, ffkey, nz, spec, n;   /* kind: 0 fixed function, 1 pass-through, 2 program */
+    uint32_t key[RCP_SPEC];
+    uint32_t *prog;                      /* n * 4 words */
+} Recipe;
+static Recipe *s_rcp;
+static unsigned s_rcp_n, s_rcp_cap, s_rcp_next, s_rcp_built, s_rcp_had;
+static int s_rcp_state;                  /* 0 not read, 1 ready, -1 off */
+static uint64_t s_rcp_seen[16384];       /* hashes of the recipes known */
+static FILE *s_rcp_out;
+
+static int prebuild_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_GL_PREBUILD");
+        on = !(e && e[0] == '0');
+    }
+    return on;
+}
+static uint64_t rcp_hash(const Recipe *r)
+{
+    uint64_t h = 0xCBF29CE484222325ull;
+    uint32_t i, w[5];
+    w[0] = r->kind; w[1] = r->ffkey; w[2] = r->nz; w[3] = r->spec; w[4] = r->n;
+    for (i = 0; i < 5; i++) h = (h ^ w[i]) * 0x100000001B3ull;
+    if (r->spec)
+        for (i = 0; i < RCP_SPEC; i++) h = (h ^ r->key[i]) * 0x100000001B3ull;
+    for (i = 0; r->prog && i < r->n * 4; i++) h = (h ^ r->prog[i]) * 0x100000001B3ull;
+    return h ? h : 1;
+}
+/* 1 when the recipe was new (and is now known) */
+static int rcp_mark(uint64_t h)
+{
+    unsigned i, at = (unsigned)(h ^ (h >> 29)) & 16383u;
+    for (i = 0; i < 16384; i++, at = (at + 1) & 16383u) {
+        if (s_rcp_seen[at] == h) return 0;
+        if (!s_rcp_seen[at]) { s_rcp_seen[at] = h; return 1; }
+    }
+    return 0;                            /* full: treat as known */
+}
+static void rcp_read(void)
+{
+    FILE *f;
+    char magic[8];
+    s_rcp_state = -1;
+    if (!prebuild_on() || !shader_cache_on())
+        return;
+    s_rcp_state = 1;
+#if defined(_WIN32)
+    f = fopen("shader_cache\\recipes.bin", "rb");
+#else
+    f = fopen("shader_cache/recipes.bin", "rb");
+#endif
+    if (!f)
+        return;
+    if (fread(magic, 1, 8, f) == 8 && !memcmp(magic, "JSRFRCP1", 8)) {
+        for (;;) {
+            Recipe r;
+            uint32_t hd[5];
+            memset(&r, 0, sizeof r);
+            if (fread(hd, 4, 5, f) != 5) break;
+            r.kind = hd[0]; r.ffkey = hd[1]; r.nz = hd[2]; r.spec = hd[3]; r.n = hd[4];
+            if (r.kind > 2 || r.n > 136 || (r.kind == 2) != (r.n > 0)) break;
+            if (fread(r.key, 4, RCP_SPEC, f) != RCP_SPEC) break;
+            if (r.n) {
+                r.prog = (uint32_t *)malloc((size_t)r.n * 16);
+                if (!r.prog || fread(r.prog, 16, r.n, f) != r.n) { free(r.prog); break; }
+            }
+            if (!rcp_mark(rcp_hash(&r))) { free(r.prog); continue; }
+            if (s_rcp_n == s_rcp_cap) {
+                unsigned nc = s_rcp_cap ? s_rcp_cap * 2 : 256;
+                Recipe *nr = (Recipe *)realloc(s_rcp, nc * sizeof *nr);
+                if (!nr) { free(r.prog); break; }
+                s_rcp = nr; s_rcp_cap = nc;
+            }
+            s_rcp[s_rcp_n++] = r;
+        }
+    }
+    fclose(f);
+    s_rcp_had = s_rcp_n;
+    if (s_rcp_n)
+        fprintf(stderr, "[GL] shaders to build ahead: %u setups known from earlier runs"
+                " (RECOMP_GL_PREBUILD=0: off)\n", s_rcp_n);
+}
+/* write down a program that has just been built */
+static void rcp_note(int kind, int ffkey, int nz, const uint32_t *spec,
+                     const uint32_t (*prog)[4], int n)
+{
+    Recipe r;
+    if (s_rcp_state == 0)
+        rcp_read();
+    if (s_rcp_state != 1)
+        return;
+    memset(&r, 0, sizeof r);
+    r.kind = (uint32_t)kind; r.ffkey = (uint32_t)ffkey; r.nz = (uint32_t)nz;
+    r.spec = spec ? 1u : 0u; r.n = kind == 2 ? (uint32_t)n : 0u;
+    if (spec) memcpy(r.key, spec, sizeof r.key);
+    r.prog = (uint32_t *)(uintptr_t)(kind == 2 ? &prog[0][0] : NULL);
+    if (!rcp_mark(rcp_hash(&r)))
+        return;
+    if (!s_rcp_out) {
+        int fresh;
+        FILE *t;
+#if defined(_WIN32)
+        const char *path = "shader_cache\\recipes.bin";
+#else
+        const char *path = "shader_cache/recipes.bin";
+#endif
+        t = fopen(path, "rb");
+        fresh = !t;
+        if (t) fclose(t);
+        s_rcp_out = fopen(path, "ab");
+        if (!s_rcp_out) { s_rcp_state = -1; return; }
+        if (fresh) fwrite("JSRFRCP1", 1, 8, s_rcp_out);
+    }
+    {
+        uint32_t hd[5];
+        hd[0] = r.kind; hd[1] = r.ffkey; hd[2] = r.nz; hd[3] = r.spec; hd[4] = r.n;
+        fwrite(hd, 4, 5, s_rcp_out);
+        fwrite(r.key, 4, RCP_SPEC, s_rcp_out);
+        if (r.n) fwrite(r.prog, 16, r.n, s_rcp_out);
+        fflush(s_rcp_out);
+    }
+}
+/* how a base program is made */
+static int rcp_base(const GlProg *p, int *kind, int *ffkey, const uint32_t (**prog)[4], int *n)
+{
+    int i;
+    *prog = NULL; *n = 0; *ffkey = 0;
+    if (p == &s_p_old) { *kind = 1; return 1; }
+    if (p == &s_p_ff) { *kind = 0; *ffkey = 3; return 1; }
+    for (i = 0; i < 3; i++)
+        if (p == &s_p_ffv[i]) { *kind = 0; *ffkey = i; return 1; }
+    if (p->key && p->key_n) {
+        *kind = 2; *prog = (const uint32_t (*)[4])p->key; *n = (int)p->key_n;
+        return 1;
+    }
+    return 0;
+}
+static void rcp_note_prog(const GlProg *base, int nz, const uint32_t *spec)
+{
+    int kind, ffkey, n;
+    const uint32_t (*prog)[4];
+    if (base && rcp_base(base, &kind, &ffkey, &prog, &n))
+        rcp_note(kind, ffkey, nz, spec, prog, n);
+}
+/* build one recipe's program into the shader cache, if it is not there */
+static void rcp_build(const Recipe *r)
+{
+    char *vgen = NULL, *fgen = NULL;
+    const char *vsrc, *fsrc;
+    char path[64];
+    FILE *f;
+    if (r->kind == 0) vsrc = ff_source((int)(r->ffkey & 3));
+    else if (r->kind == 1) vsrc = VS_OLD;
+    else {
+        vgen = gen_vsh((const uint32_t (*)[4])r->prog, (int)r->n);
+        if (!vgen) return;
+        vsrc = vgen;
+    }
+    if (r->spec) {
+        fgen = spec_src(r->nz ? fs_nz() : FS, r->key);
+        if (!fgen) { free(vgen); return; }
+        fsrc = fgen;
+    } else
+        fsrc = r->nz ? fs_nz() : FS;
+    cache_path(path, sizeof path, vsrc, fsrc);
+    f = fopen(path, "rb");
+    if (f)
+        fclose(f);                     /* already built */
+    else {
+        GLuint id = link_with2(vsrc, fsrc);
+        if (id) {
+            glDeleteProgram(id);
+            s_rcp_built++;
+        }
+    }
+    free(vgen);
+    free(fgen);
+}
+/* at the end of a frame with `draws` draws: some of the list, if light */
+void nv2a_gl_idle(uint32_t draws)
+{
+    uint64_t t0, budget;
+    if (s_state != 1)
+        return;
+    if (s_rcp_state == 0)
+        rcp_read();
+    if (s_rcp_state != 1 || s_rcp_next >= s_rcp_had)
+        return;
+    if (draws > 400)
+        return;                        /* a busy frame: not now */
+    budget = (uint64_t)SDL_GetPerformanceFrequency() * 6 / 1000;   /* 6 ms */
+    t0 = TM_NOW();
+    while (s_rcp_next < s_rcp_had && TM_NOW() - t0 < budget)
+        rcp_build(&s_rcp[s_rcp_next++]);
+    if (s_rcp_next >= s_rcp_had)
+        fprintf(stderr, "[GL] shaders built ahead: %u of %u setups compiled, the rest were"
+                " in the cache already\n", s_rcp_built, s_rcp_had);
 }
 
 int nv2a_gl_prepare_vsh(const uint32_t (*prog)[4], int n)

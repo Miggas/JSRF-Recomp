@@ -51,3 +51,4 @@ uint32_t nv2a_gl_vis_count(void) { return 0; }
 void nv2a_gl_trace_frame(int on) { (void)on; }
 void nv2a_gl_trace_draw(int draw_no) { (void)draw_no; }
 void nv2a_gl_trace_report(void) {}
+void nv2a_gl_idle(uint32_t draws) { (void)draws; }

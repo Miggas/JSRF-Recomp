@@ -6836,6 +6836,11 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
                     show_pitch = last_pitch ? last_pitch : pitch;
                 show = got;
                 nv2a_gl_end_frame();
+                {   /* v241: shaders built ahead, on light frames */
+                    static uint32_t draws_idle;
+                    nv2a_gl_idle(s_gpu.draws - draws_idle);
+                    draws_idle = s_gpu.draws;
+                }
             }
             if (s_gpu.pitch && show) {
                 xbox_FramebufferWindowSet(show, show_pitch);
