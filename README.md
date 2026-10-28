@@ -477,7 +477,7 @@ off: delete the `;` to switch it on. Steam launch options override the file.
 | Setting | What it does |
 |---|---|
 | `RECOMP_GL_TEX_WATCH=0` | Leave at `0` if the game stutters (for example on the Steam Deck). |
-| `RECOMP_SLEEP_WAITS=…` | GPU waits: `vblank` = default, `all` = lowest power use (may cause dips), `none` = highest CPU use. Steam Deck: see [section 7](#choose-a-power-mode). |
+| `RECOMP_SLEEP_WAITS=…` | GPU waits. Windows default: `all` (the game's wait spins 0.2 ms, then sleeps). Steam Deck default: `vblank`. `none` = highest CPU use. Steam Deck: see [section 7](#choose-a-power-mode). |
 
 If you play with **Option B** (`play_jsrf.bat`), its settings are inside the
 `.bat` file instead (same names).

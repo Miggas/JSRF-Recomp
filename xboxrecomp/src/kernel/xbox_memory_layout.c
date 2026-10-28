@@ -906,6 +906,7 @@ static woa_t s_woa;
 static wba_t s_wba;
 static int s_spinwait = -1;
 static int s_sleep_kick, s_sleep_vbl;   /* v183 */
+static int s_kick_spin_us;              /* v243 */
 static void nv2a_waitinit(void)
 {
     const char *e = getenv("RECOMP_SPIN_WAIT");
@@ -916,15 +917,28 @@ static void nv2a_waitinit(void)
         s_wba = (wba_t)(void *)GetProcAddress(k, "WakeByAddressAll");
     }
     {
+        /* v243: on Windows KickOff's wait sleeps by default too, after
+         * spinning a while (s_kick_spin_us): the short waits, most of a busy
+         * frame's kicks, are caught spinning and cost no wake-up, the long
+         * ones (waiting out the frame cap) sleep and free the core. Run of
+         * 99th Street, PC: sleeping at once 45 fps, spinning 49. Under
+         * Wine/Proton the default stays v183's (the Deck's clocks). */
         const char *w = getenv("RECOMP_SLEEP_WAITS");
-        s_sleep_kick = 0; s_sleep_vbl = 1;
+        const char *sp = getenv("RECOMP_KICK_SPIN_US");
+        int wine = GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version") != NULL;
+        s_sleep_kick = !wine; s_sleep_vbl = 1;
+        if (w && !_stricmp(w, "vblank")) s_sleep_kick = 0;
         if (w && !_stricmp(w, "all")) s_sleep_kick = 1;
-        if (w && !_stricmp(w, "none")) s_sleep_vbl = 0;
+        if (w && !_stricmp(w, "none")) s_sleep_kick = s_sleep_vbl = 0;
+        s_kick_spin_us = sp ? atoi(sp) : 200;
+        if (s_kick_spin_us < 0) s_kick_spin_us = 0;
     }
     s_spinwait = !(e && e[0] == '0') && (s_sleep_kick || s_sleep_vbl);
     if (!s_spinwait) s_sleep_kick = s_sleep_vbl = 0;
-    fprintf(stderr, "  NV2A ack waits: KickOff %s, vblank DPC %s%s (RECOMP_SLEEP_WAITS=vblank|all|none)\n",
-            s_sleep_kick ? "sleeps" : "spins", s_sleep_vbl ? "sleeps" : "spins",
+    fprintf(stderr, "  NV2A ack waits: KickOff %s (%d us spin first, RECOMP_KICK_SPIN_US), vblank DPC %s%s"
+            " (RECOMP_SLEEP_WAITS=vblank|all|none)\n",
+            s_sleep_kick ? "sleeps" : "spins", s_sleep_kick ? s_kick_spin_us : 0,
+            s_sleep_vbl ? "sleeps" : "spins",
             s_spinwait && !(s_woa && s_wba) ? " (short sleeps: no WaitOnAddress)" : "");
 }
 void xbox_Nv2aAckedWake(void)
@@ -982,6 +996,27 @@ void xbox_Nv2aWaitClear(volatile uint32_t *reg, uint32_t mask)
         if (!(*reg & mask))
             goto done;
         YieldProcessor();
+    }
+    if (mask == 0x10000u && s_kick_spin_us > 0) {
+        /* v243: KickOff spins a while before it sleeps */
+        static LONGLONG per_us;
+        LARGE_INTEGER t0, t;
+        if (!per_us) {
+            LARGE_INTEGER f;
+            QueryPerformanceFrequency(&f);
+            per_us = f.QuadPart / 1000000 ? f.QuadPart / 1000000 : 1;
+        }
+        QueryPerformanceCounter(&t0);
+        for (;;) {
+            for (i = 0; i < 32; i++) {
+                if (!(*reg & mask))
+                    goto done;
+                YieldProcessor();
+            }
+            QueryPerformanceCounter(&t);
+            if (t.QuadPart - t0.QuadPart >= (LONGLONG)s_kick_spin_us * per_us)
+                break;
+        }
     }
     while (*reg & mask) {
         LONG seen = g_nv2a_ack_seq;

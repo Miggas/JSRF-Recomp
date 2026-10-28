@@ -51,6 +51,12 @@ Back to the main guide: [README.md](README.md#9-settings-jsrfini).
 | `RECOMP_SND_DIST=1` | Log 3D sound distances (which sounds play or are cut off, and why). |
 | `RECOMP_VBLANK_ACK=executor` | Testing only: the old vblank handling, which loses vblanks (music and dialogue crackle). |
 
+## CPU
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_KICK_SPIN_US=200` | How long the game's GPU wait spins before it sleeps, in microseconds (with `RECOMP_SLEEP_WAITS=all`, the Windows default). Higher is faster in busy areas and uses more CPU; `0` sleeps at once. |
+
 ## Input
 
 | Setting | What it does |
