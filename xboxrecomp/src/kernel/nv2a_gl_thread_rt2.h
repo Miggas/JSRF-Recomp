@@ -309,8 +309,21 @@ static int gt_start(SDL_Window *win, SDL_GLContext ctx)
         return 0;
     {
         /* v179: the idle spin's length in rdtsc ticks */
+        /* v243b: 50 us under Wine/Proton. A wake-up there is a slow system
+         * call; with 3 us the GL thread fell asleep between almost every
+         * draw (~10 us apart on the Deck) and the executor woke it each time
+         * (46% of its samples, Deck run in 99th Street: 38 fps; 50 us: 47-49,
+         * 200 us: 46-47). */
         const char *sp = getenv("RECOMP_GL_THREAD_SPIN");
-        int us = sp ? atoi(sp) : 3;
+        int wine = 0;
+#if defined(_WIN32)
+        {
+            void *nt = SDL_LoadObject("ntdll.dll");
+            wine = nt && SDL_LoadFunction(nt, "wine_get_version") != NULL;
+            if (nt) SDL_UnloadObject(nt);
+        }
+#endif
+        int us = sp ? atoi(sp) : (wine ? 50 : 3);
         Uint64 q0 = SDL_GetPerformanceCounter(), f = SDL_GetPerformanceFrequency();
         uint64_t t0 = __rdtsc(), dt;
         SDL_Delay(10);

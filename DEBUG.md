@@ -56,6 +56,7 @@ Back to the main guide: [README.md](README.md#9-settings-jsrfini).
 | Setting | What it does |
 |---|---|
 | `RECOMP_KICK_SPIN_US=200` | How long the game's GPU wait spins before it sleeps, in microseconds (with `RECOMP_SLEEP_WAITS=all`, the Windows default). Higher is faster in busy areas and uses more CPU; `0` sleeps at once. |
+| `RECOMP_GL_THREAD_SPIN=…` | How long the GL thread waits awake for more work before it sleeps, in microseconds. Default `3` on Windows, `50` on the Steam Deck (waking it up is slow under Proton). |
 
 ## Input
 
