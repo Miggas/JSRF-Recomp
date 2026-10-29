@@ -25,8 +25,8 @@
 #include <math.h>
 #if defined(_WIN32)
 #include <windows.h>
-#else
-#define InterlockedIncrement(p) __sync_add_and_fetch((p), 1)
+#elif !defined(InterlockedIncrement)
+#include "win32_compat.h"   /* v244: InterlockedIncrement is a function there */
 #endif
 #include "apu_state.h"
 #include "fpconv.h"
@@ -251,8 +251,8 @@ typedef struct {
           rev, rev_delay, diffusion, density, hf_ref;
 } I3dl2Params;
 static I3dl2Params s_i3_pending;
-static volatile long s_i3_ver;          /* bumped by every set */
-static long s_i3_used = -1;
+static volatile LONG s_i3_ver;          /* bumped by every set (v244: LONG, 32-bit on Linux too) */
+static LONG s_i3_used = -1;
 
 void mcpx_apu_set_i3dl2(const float p[12])
 {

@@ -60,6 +60,7 @@ extern "C" {
 #define MEM_PRIVATE    0x00020000u
 #define MEM_TOP_DOWN   0x00100000u
 #define PAGE_NOACCESS          0x01u
+#define PAGE_GUARD             0x100u
 #define PAGE_READONLY          0x02u
 #define PAGE_READWRITE         0x04u
 #define PAGE_WRITECOPY         0x08u
@@ -90,6 +91,17 @@ LONG InterlockedDecrement(volatile LONG *Addend);
 LONG InterlockedExchange(volatile LONG *Target, LONG Value);
 LONG InterlockedExchangeAdd(volatile LONG *Addend, LONG Value);
 LONG InterlockedCompareExchange(volatile LONG *Dest, LONG Exchange, LONG Comparand);
+LONG InterlockedOr(volatile LONG *Dest, LONG Value);       /* v244 */
+LONG InterlockedAnd(volatile LONG *Dest, LONG Value);
+#define YieldProcessor() __builtin_ia32_pause()
+/* v244: modules. Windows DLLs are never there (Wine checks see "not Wine");
+ * NULL asks for the program itself. */
+typedef void (*FARPROC)(void);
+HMODULE GetModuleHandleA(LPCSTR name);
+void    w32_guest_window(void *lo, size_t len);   /* v244: see win32_compat.c */
+HMODULE LoadLibraryA(LPCSTR name);
+FARPROC GetProcAddress(HMODULE module, LPCSTR name);
+BOOL    FreeLibrary(HMODULE module);
 LONGLONG InterlockedCompareExchange64(volatile LONGLONG *Dest, LONGLONG Exchange, LONGLONG Comparand);
 PVOID InterlockedCompareExchangePointer(PVOID volatile *Dest, PVOID Exchange, PVOID Comparand);
 
@@ -305,6 +317,16 @@ int   MessageBoxA(HWND hwnd, LPCSTR text, LPCSTR caption, UINT type);
 #define VK_DOWN      0x28
 #define VK_INSERT    0x2D
 #define VK_DELETE    0x2E
+#define VK_NUMPAD0   0x60
+#define VK_NUMPAD1   0x61
+#define VK_NUMPAD2   0x62
+#define VK_NUMPAD3   0x63
+#define VK_NUMPAD4   0x64
+#define VK_NUMPAD5   0x65
+#define VK_NUMPAD6   0x66
+#define VK_NUMPAD7   0x67
+#define VK_NUMPAD8   0x68
+#define VK_NUMPAD9   0x69
 #define VK_MULTIPLY  0x6A
 #define VK_ADD       0x6B
 #define VK_SUBTRACT  0x6D
@@ -314,6 +336,12 @@ int   MessageBoxA(HWND hwnd, LPCSTR text, LPCSTR caption, UINT type);
 #define VK_F3        0x72
 #define VK_F4        0x73
 #define VK_F5        0x74
+#define VK_F6        0x75
+#define VK_F7        0x76
+#define VK_F8        0x77
+#define VK_F9        0x78
+#define VK_F10       0x79
+#define VK_F11       0x7A
 #define VK_F12       0x7B
 #define VK_OEM_PLUS  0xBB
 #define VK_OEM_COMMA 0xBC

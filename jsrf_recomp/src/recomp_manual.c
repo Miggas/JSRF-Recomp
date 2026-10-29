@@ -49,7 +49,11 @@ extern volatile uint64_t g_icall_count;
  * take the declarations from the generated header instead. Note it defines
  * macros named after the registers (eax, esp, ...): don't use those as
  * identifiers in this file. */
+#if defined(_WIN32)
 #include <windows.h>            /* before recomp_types.h: it #defines eax, esp, ... */
+#else
+#include "win32_compat.h"       /* v244: the Win32 calls used here, on Linux */
+#endif
 #include "gen/recomp_types.h"
 
 /* ── Manual function overrides ─────────────────────────────── */
@@ -2012,7 +2016,7 @@ void sub_001A2E2E(void)
 enum { SSE_P3, SSE_HOST, SSE_EXACT };
 static signed char s_sse_mode[SSE_SITES];
 static int s_sse_default = -1;
-static volatile long s_sse_init;
+static volatile LONG s_sse_init;
 
 static void sse_list(const char *e, int mode)
 {

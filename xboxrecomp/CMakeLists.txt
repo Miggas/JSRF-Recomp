@@ -34,8 +34,11 @@ add_subdirectory(src/platform)
 # Core: Xbox kernel replacement (memory layout, file I/O, threading, sync)
 add_subdirectory(src/kernel)
 
-# Graphics: D3D8 → D3D11 compatibility layer
-add_subdirectory(src/d3d)
+# Graphics: D3D8 → D3D11 compatibility layer (v244: Windows only; titles that
+# run their own XDK D3D through the NV2A executor, JSRF, do not use it)
+if(WIN32 OR XBOXRECOMP_D3D8_GL)
+    add_subdirectory(src/d3d)
+endif()
 
 # Audio: DirectSound → software mixer compatibility
 add_subdirectory(src/audio)
@@ -62,7 +65,7 @@ add_subdirectory(src/video)
 add_library(xboxrecomp INTERFACE)
 target_link_libraries(xboxrecomp INTERFACE
     xbox_kernel
-    xbox_d3d8
+    $<$<BOOL:${WIN32}>:xbox_d3d8>
     xbox_dsound
     xbox_input
     xbox_usb

@@ -21,6 +21,7 @@
 #include <setjmp.h>
 #if !defined(_WIN32)
 #include <unistd.h>   /* _exit */
+#include <sys/mman.h> /* v244: the guest window reservation */
 #endif
 
 /* XBE header field offsets (per xboxdevwiki.net/Xbe) */
@@ -907,15 +908,40 @@ static wba_t s_wba;
 static int s_spinwait = -1;
 static int s_sleep_kick, s_sleep_vbl;   /* v183 */
 static int s_kick_spin_us;              /* v243 */
+#if !defined(_WIN32) && defined(__linux__)
+/* v244: WaitOnAddress / WakeByAddressAll on Linux, through futexes (the
+ * waits here are on 32-bit counters) */
+#include <linux/futex.h>
+#include <sys/syscall.h>
+static BOOL WINAPI lx_wait_on_address(volatile VOID *a, PVOID cmp, SIZE_T n, DWORD ms)
+{
+    struct timespec ts;
+    (void)n;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (long)(ms % 1000) * 1000000L;
+    syscall(SYS_futex, (int *)a, FUTEX_WAIT_PRIVATE, *(int *)cmp,
+            ms == INFINITE ? NULL : &ts, NULL, 0);
+    return TRUE;
+}
+static VOID WINAPI lx_wake_by_address_all(PVOID a)
+{
+    syscall(SYS_futex, (int *)a, FUTEX_WAKE_PRIVATE, 0x7FFFFFFF, NULL, NULL, 0);
+}
+#endif
 static void nv2a_waitinit(void)
 {
     const char *e = getenv("RECOMP_SPIN_WAIT");
+#if defined(_WIN32)
     HMODULE k = GetModuleHandleA("kernelbase.dll");
     if (!k) k = GetModuleHandleA("api-ms-win-core-synch-l1-2-0.dll");
     if (k) {
         s_woa = (woa_t)(void *)GetProcAddress(k, "WaitOnAddress");
         s_wba = (wba_t)(void *)GetProcAddress(k, "WakeByAddressAll");
     }
+#elif defined(__linux__)
+    s_woa = lx_wait_on_address;
+    s_wba = lx_wake_by_address_all;
+#endif
     {
         /* v243: on Windows KickOff's wait sleeps by default too, after
          * spinning a while (s_kick_spin_us): the short waits, most of a busy
@@ -2092,15 +2118,24 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
          * above 4 GB, which is why Half-Life 2 (768 MB) never saw it. Doing
          * this on Windows needs placeholder reservations (VirtualAlloc2). */
 #ifndef _WIN32
-        g_span_size = g_memory_size * (size_t)(1 + XBOX_NUM_MIRRORS);
-        g_span_base = VirtualAlloc(NULL, g_span_size, MEM_RESERVE, PAGE_NOACCESS);
+        /* v244: the whole 4 GB guest space, not just RAM and its mirrors:
+         * the contiguous window, the GPU and MCPX apertures and the flash
+         * are mapped at fixed guest addresses too, and on Linux whatever the
+         * system put there first (a thread's stack, run 1 of the native
+         * build) was hit by the register traps' protection. */
+        g_span_size = (size_t)0x100000000ull - XBOX_MAP_START;
+        g_span_base = mmap(NULL, g_span_size, PROT_NONE,
+                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (g_span_base == MAP_FAILED)
+            g_span_base = NULL;
         if (g_span_base) {
-            VirtualFree(g_span_base, g_memory_size, MEM_RELEASE);
+            w32_guest_window(g_span_base, g_span_size);
             g_memory_base = MapViewOfFileEx(g_mapping_handle,
                                             FILE_MAP_ALL_ACCESS, 0, 0,
                                             g_memory_size, g_span_base);
             if (!g_memory_base) {
-                VirtualFree(g_span_base, g_span_size, MEM_RELEASE);
+                w32_guest_window(NULL, 0);
+                munmap(g_span_base, g_span_size);
                 g_span_base = NULL;
                 g_span_size = 0;
             }
@@ -3079,7 +3114,12 @@ void xbox_MemoryLayoutShutdown(void)
     /* Whatever is left of the base+mirrors reservation. The views carved out
      * of it are already unmapped above; this releases the range itself. */
     if (g_span_base) {
+#ifndef _WIN32
+        w32_guest_window(NULL, 0);
+        munmap(g_span_base, g_span_size);
+#else
         VirtualFree(g_span_base, g_span_size, MEM_RELEASE);
+#endif
         g_span_base = NULL;
         g_span_size = 0;
     }

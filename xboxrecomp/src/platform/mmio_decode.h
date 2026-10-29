@@ -28,8 +28,12 @@
 
 #include <stdint.h>
 
+#if defined(_WIN32) || defined(__linux__)   /* v244 */
 #if defined(_WIN32)
 #include <windows.h>
+#else
+#include "win32_compat.h"
+#endif
 
 /* Service one register access. dev is passed straight back to the callbacks. */
 typedef uint64_t (*mmio_read_fn)(void *dev, uint32_t off, int size);

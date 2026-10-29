@@ -56,8 +56,13 @@ add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
 file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS "src/recomp/gen/*.c")
 
 # Core game sources
+if(WIN32)
+    set(GAME_MAIN src/main.c)
+else()
+    set(GAME_MAIN src/main_linux.c)   # v244: the Linux build's start-up
+endif()
 set(GAME_SOURCES
-    src/main.c
+    ${GAME_MAIN}
     src/recomp_manual.c
     src/jsrf_widescreen.c   # v187n: HUD at the screen edges, 4:3 screens (widescreen only)
     # Add game-specific sources here, e.g.:
@@ -71,10 +76,17 @@ set(GAME_SOURCES
 #   src/recomp/recomp_dispatch.h     - binary search dispatch table
 #   src/recomp/recomp_types.h        - register model, ICALL macros, MEM helpers
 
+if(WIN32)
 add_executable(${PROJECT_NAME} WIN32
     ${GAME_SOURCES}
     ${RECOMP_GEN_SOURCES}
 )
+else()
+add_executable(${PROJECT_NAME}
+    ${GAME_SOURCES}
+    ${RECOMP_GEN_SOURCES}
+)
+endif()
 
 # Link against the xboxrecomp umbrella target (all 6 runtime libraries)
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)
@@ -87,6 +99,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Windows SDK libraries needed at link time
+if(WIN32)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     d3d11
     dxgi
@@ -98,6 +111,17 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     # function's symbol, i.e. to the guest function that faulted.
     dbghelp
 )
+else()
+# Linux (v244): the toolkit's POSIX layer, SDL2 and OpenGL come with xboxrecomp
+target_link_libraries(${PROJECT_NAME} PRIVATE m pthread dl)
+# xboxrecomp.h names the D3D8 layer's header; the layer itself is not built
+target_include_directories(${PROJECT_NAME} PRIVATE ${XBOXRECOMP_DIR}/src/d3d)
+# Big generated functions: keep the build reasonable, symbols for crash reports
+target_compile_options(${PROJECT_NAME} PRIVATE -g1 -fno-strict-aliasing -fwrapv
+    -Wno-unused -Wno-unused-label -Wno-unused-but-set-variable)
+# Each guest call is a host call; the main thread's stack is set by the
+# launcher (ulimit) and guest threads get their own (see win32_compat.c)
+endif()
 
 # MSVC-specific: large address aware, increase section limit for big generated files
 if(MSVC)

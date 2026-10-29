@@ -18,8 +18,12 @@ MCPXAPUState *g_apu_state = NULL;
 /* The MMIO hook is a Win32-VEH x86-64 instruction decoder. On Linux the
  * equivalent goes through sigaction + ucontext_t (Stage 2 / main.c). For
  * now the whole body is Windows-only so apu_emu links on Debian. */
+#if defined(_WIN32) || defined(__linux__)   /* v244: Linux through win32_compat's signal handlers */
 #if defined(_WIN32)
 #include <windows.h>
+#else
+#include "win32_compat.h"
+#endif
 
 /* APU MMIO base in Xbox VA space */
 #define APU_MMIO_BASE  0xFE800000u
@@ -282,4 +286,4 @@ bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
     return ok;
 }
 
-#endif /* _WIN32 */
+#endif /* _WIN32 || __linux__ */

@@ -36,3 +36,6 @@ __pycache__/
 .vscode/
 Thumbs.db
 .DS_Store
+
+# Linux build folder (build_linux.sh)
+jsrf_recomp/build-linux/

@@ -42,6 +42,7 @@
 
 /* xboxrecomp runtime headers */
 #include <xbox/xboxrecomp.h>
+#include "jsrf_version.h"
 
 /*
  * If xboxrecomp.h is not an umbrella header in your setup, include
@@ -1003,7 +1004,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     fprintf(stderr, "[CONFIG] %s layout, game files in %s; %d setting(s) from %s\n",
             g_portable ? "portable" : "classic", g_game_dir, g_ini_count,
             g_ini_count ? g_ini_path : "no jsrf.ini");
-    fprintf(stderr, "[CONFIG] build v243b, compiled " __DATE__ " " __TIME__ "\n");
+    fprintf(stderr, "[CONFIG] build " JSRF_BUILD ", compiled " __DATE__ " " __TIME__ "\n");
 
     /* Install VEH handler (first handler in chain) */
     /* Load symbols up front rather than from inside the handler: at fault

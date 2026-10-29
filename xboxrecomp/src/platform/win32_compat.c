@@ -55,6 +55,8 @@ LONG InterlockedIncrement(volatile LONG *p)        { return __atomic_add_fetch(p
 LONG InterlockedDecrement(volatile LONG *p)        { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
 LONG InterlockedExchange(volatile LONG *p, LONG v) { return __atomic_exchange_n(p, v, __ATOMIC_SEQ_CST); }
 LONG InterlockedExchangeAdd(volatile LONG *p, LONG v) { return __atomic_fetch_add(p, v, __ATOMIC_SEQ_CST); }
+LONG InterlockedOr(volatile LONG *p, LONG v)  { return __atomic_fetch_or(p, v, __ATOMIC_SEQ_CST); }
+LONG InterlockedAnd(volatile LONG *p, LONG v) { return __atomic_fetch_and(p, v, __ATOMIC_SEQ_CST); }
 
 LONG InterlockedCompareExchange(volatile LONG *p, LONG xchg, LONG cmp)
 {
@@ -730,8 +732,12 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    if (stackSize)
-        pthread_attr_setstacksize(&attr, stackSize < 65536 ? 65536 : stackSize);
+    /* v244: as the Windows build's /STACK, every thread reserves 256 MB
+     * (only touched pages are used): guest calls are host calls, and lifted
+     * frames are much bigger than the original ones */
+    if (stackSize < ((SIZE_T)256 << 20))
+        stackSize = (SIZE_T)256 << 20;
+    pthread_attr_setstacksize(&attr, stackSize);
 
     if (pthread_create(&o->thread, &attr, thread_trampoline, o) != 0) {
         pthread_attr_destroy(&attr);
@@ -1124,6 +1130,92 @@ static void *mach_map_fixed(void *address, size_t size, int prot)
 void view_register(void *addr, size_t len);
 size_t view_take(const void *addr);
 
+/* v244: the guest's 4 GB window, reserved whole at start-up
+ * (xbox_MemoryLayoutInit), so nothing else -- a thread's stack, a library --
+ * can land between the pieces mapped into it later. Inside it, the fixed
+ * mappings replace that reservation (MAP_FIXED, which outside it would
+ * destroy whatever is there), and a release puts the reservation back. */
+static uintptr_t s_gw_lo, s_gw_hi;
+static uint8_t *s_gw_free;          /* a bit a 4 KB page: still only reserved */
+static pthread_mutex_t s_gw_lock = PTHREAD_MUTEX_INITIALIZER;
+static void gw_mark(uintptr_t a, size_t n, int free_)
+{
+    size_t p0 = (a - s_gw_lo) >> 12, p1 = (a + n - s_gw_lo + 4095) >> 12, p;
+    for (p = p0; p < p1; p++) {
+        if (free_) s_gw_free[p >> 3] |= (uint8_t)(1u << (p & 7));
+        else       s_gw_free[p >> 3] &= (uint8_t)~(1u << (p & 7));
+    }
+}
+static int gw_all_free(uintptr_t a, size_t n)
+{
+    size_t p0 = (a - s_gw_lo) >> 12, p1 = (a + n - s_gw_lo + 4095) >> 12, p;
+    for (p = p0; p < p1; p++)
+        if (!(s_gw_free[p >> 3] & (1u << (p & 7))))
+            return 0;
+    return 1;
+}
+void w32_guest_window(void *lo, size_t len)
+{
+    free(s_gw_free);
+    s_gw_free = NULL;
+    s_gw_lo = (uintptr_t)lo;
+    s_gw_hi = lo ? (uintptr_t)lo + len : 0;
+    if (lo) {
+        s_gw_free = (uint8_t *)malloc((len >> 15) + 1);
+        if (!s_gw_free) { s_gw_hi = 0; return; }
+        memset(s_gw_free, 0xFF, (len >> 15) + 1);
+    }
+}
+static int in_guest_window(const void *a, size_t n)
+{
+    uintptr_t x = (uintptr_t)a;
+    return s_gw_hi && x >= s_gw_lo && x + n <= s_gw_hi;
+}
+/* inside the window, and nothing mapped there yet: ours to replace */
+static int gw_claim(const void *a, size_t n)
+{
+    int ok;
+    if (!in_guest_window(a, n))
+        return 0;
+    pthread_mutex_lock(&s_gw_lock);
+    ok = gw_all_free((uintptr_t)a, n);
+    if (ok) gw_mark((uintptr_t)a, n, 0);
+    pthread_mutex_unlock(&s_gw_lock);
+    return ok;
+}
+/* views of file mappings in the window: VirtualFree does not release them
+ * (on Windows it fails on a view; UnmapViewOfFile does that) */
+static uintptr_t s_gw_views[128];
+static int s_gw_nviews;
+static void gw_view_add(const void *a)
+{
+    if (s_gw_nviews < 128) s_gw_views[s_gw_nviews++] = (uintptr_t)a;
+}
+static int gw_view_is(const void *a)
+{
+    int i;
+    for (i = 0; i < s_gw_nviews; i++)
+        if (s_gw_views[i] == (uintptr_t)a) return 1;
+    return 0;
+}
+static void gw_view_drop(const void *a)
+{
+    int i;
+    for (i = 0; i < s_gw_nviews; i++)
+        if (s_gw_views[i] == (uintptr_t)a) { s_gw_views[i] = s_gw_views[--s_gw_nviews]; return; }
+}
+static int rereserve(void *a, size_t n)
+{
+    int ok = mmap(a, n, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE,
+                  -1, 0) != MAP_FAILED;
+    if (ok) {
+        pthread_mutex_lock(&s_gw_lock);
+        gw_mark((uintptr_t)a, n, 1);
+        pthread_mutex_unlock(&s_gw_lock);
+    }
+    return ok;
+}
+
 LPVOID VirtualAlloc(LPVOID address, SIZE_T size, DWORD allocationType, DWORD protect)
 {
     int prot  = prot_from_page(protect);
@@ -1140,6 +1232,17 @@ LPVOID VirtualAlloc(LPVOID address, SIZE_T size, DWORD allocationType, DWORD pro
 #if defined(MAP_FIXED_NOREPLACE)
     if (address) flags |= MAP_FIXED_NOREPLACE;
 #endif
+    if (address && in_guest_window(address, size)) {
+        /* live memory there already: refused, as Windows refuses it */
+        if (!gw_claim(address, size)) {
+            SetLastError(487 /* ERROR_INVALID_ADDRESS */);
+            return NULL;
+        }
+#if defined(MAP_FIXED_NOREPLACE)
+        flags &= ~MAP_FIXED_NOREPLACE;
+#endif
+        flags |= MAP_FIXED;                  /* our own reservation */
+    }
 
     void *p;
 #if defined(__APPLE__)
@@ -1177,9 +1280,26 @@ BOOL VirtualFree(LPVOID address, SIZE_T size, DWORD freeType)
          * TRUE without unmapping -- as this used to -- made every release a
          * silent no-op: the caller believed the address was free, the next
          * allocation there failed, and nothing connected the two. */
-        size_t len = view_take(address);
+        size_t len;
+        if (in_guest_window(address, size ? size : 1) && gw_view_is(address)) {
+            SetLastError(487 /* ERROR_INVALID_ADDRESS: a view, not an allocation */);
+            return FALSE;
+        }
+        len = view_take(address);
         if (size == 0) size = len;
         if (size == 0) return FALSE;
+        if (in_guest_window(address, size)) {
+            /* only what was allocated here goes back to the reservation;
+             * a release of pages that are still only reserved does nothing,
+             * and one over somebody else's mapping (the RAM mirrors' release
+             * before mapping, over the contiguous window) is refused */
+            if (len)
+                return rereserve(address, len);
+            if (gw_all_free((uintptr_t)address, size))
+                return TRUE;
+            SetLastError(487 /* ERROR_INVALID_ADDRESS */);
+            return FALSE;
+        }
         return munmap(address, size) == 0;
     }
     if (freeType & MEM_DECOMMIT)
@@ -1427,7 +1547,12 @@ BOOL FlushFileBuffers(HANDLE h)
 /* via SDL_GetKeyboardState when main.c gets its SDL2 port.              */
 /* ===================================================================== */
 
-SHORT GetAsyncKeyState(int vKey)          { (void)vKey; return 0; }
+/* v244: the keys the game window has seen (set by the presenter) */
+int (*g_w32_key_down)(int vk);
+SHORT GetAsyncKeyState(int vKey)
+{
+    return (g_w32_key_down && g_w32_key_down(vKey)) ? (SHORT)0x8000 : 0;
+}
 HWND  FindWindowA(LPCSTR c, LPCSTR w)     { (void)c; (void)w; return NULL; }
 HWND  GetActiveWindow(void)               { return NULL; }
 BOOL  SetWindowTextA(HWND h, LPCSTR t)    { (void)h; (void)t; return TRUE; }
@@ -1654,7 +1779,13 @@ LPVOID MapViewOfFileEx(HANDLE mapping, DWORD access, DWORD offHigh, DWORD offLow
      * addresses, so with a base the OS chose rather than one we picked, that
      * difference is the process quietly destroying its own libraries and heap
      * and dying somewhere unrelated a moment later. */
-    if (baseAddr) {
+    if (baseAddr && in_guest_window(baseAddr, len)) {
+        if (!gw_claim(baseAddr, len)) {
+            SetLastError(487 /* ERROR_INVALID_ADDRESS */);
+            return NULL;
+        }
+        flags |= MAP_FIXED;                  /* v244: our own reservation */
+    } else if (baseAddr) {
 #if defined(MAP_FIXED_NOREPLACE)
         flags |= MAP_FIXED_NOREPLACE;
 #elif defined(__APPLE__)
@@ -1681,6 +1812,8 @@ LPVOID MapViewOfFileEx(HANDLE mapping, DWORD access, DWORD offHigh, DWORD offLow
         return NULL;
     }
     view_register(p, len);
+    if (in_guest_window(p, len))
+        gw_view_add(p);
     return p;
 }
 
@@ -1693,6 +1826,10 @@ BOOL UnmapViewOfFile(LPCVOID baseAddr)
 {
     size_t len = view_take(baseAddr);
     if (len == 0) return FALSE;
+    if (in_guest_window(baseAddr, len)) {
+        gw_view_drop(baseAddr);
+        return rereserve((void *)baseAddr, len);
+    }
     return munmap((void *)baseAddr, len) == 0;
 }
 
@@ -1912,8 +2049,162 @@ VOID RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR *args)
     /* TODO: on Windows this does not return; SEH dispatch unimplemented. */
 }
 
+/* v244: vectored exception handlers on Linux. A SIGSEGV / SIGBUS (or
+ * SIGILL, SIGFPE) is turned into the Windows exception the handlers expect:
+ * the registers copied from the ucontext into a CONTEXT, the fault address
+ * and read/write in the record. A handler returning
+ * EXCEPTION_CONTINUE_EXECUTION has its register changes (an MMIO access
+ * stepped over) written back; when none does, the default action runs. */
+#if defined(__linux__)
+#include <ucontext.h>
+#define W32_VEH_MAX 8
+static PVECTORED_EXCEPTION_HANDLER s_veh[W32_VEH_MAX];
+static volatile int s_veh_n;
+static int s_veh_installed;
+static struct sigaction s_veh_old[4];
+static const int s_veh_sig[4] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE };
+
+static void veh_ctx_in(CONTEXT *c, const ucontext_t *u)
+{
+    const greg_t *g = u->uc_mcontext.gregs;
+    c->Rax = (uint64_t)g[REG_RAX]; c->Rcx = (uint64_t)g[REG_RCX];
+    c->Rdx = (uint64_t)g[REG_RDX]; c->Rbx = (uint64_t)g[REG_RBX];
+    c->Rsp = (uint64_t)g[REG_RSP]; c->Rbp = (uint64_t)g[REG_RBP];
+    c->Rsi = (uint64_t)g[REG_RSI]; c->Rdi = (uint64_t)g[REG_RDI];
+    c->R8  = (uint64_t)g[REG_R8];  c->R9  = (uint64_t)g[REG_R9];
+    c->R10 = (uint64_t)g[REG_R10]; c->R11 = (uint64_t)g[REG_R11];
+    c->R12 = (uint64_t)g[REG_R12]; c->R13 = (uint64_t)g[REG_R13];
+    c->R14 = (uint64_t)g[REG_R14]; c->R15 = (uint64_t)g[REG_R15];
+    c->Rip = (uint64_t)g[REG_RIP]; c->EFlags = (uint32_t)g[REG_EFL];
+}
+static void veh_ctx_out(const CONTEXT *c, ucontext_t *u)
+{
+    greg_t *g = u->uc_mcontext.gregs;
+    g[REG_RAX] = (greg_t)c->Rax; g[REG_RCX] = (greg_t)c->Rcx;
+    g[REG_RDX] = (greg_t)c->Rdx; g[REG_RBX] = (greg_t)c->Rbx;
+    g[REG_RSP] = (greg_t)c->Rsp; g[REG_RBP] = (greg_t)c->Rbp;
+    g[REG_RSI] = (greg_t)c->Rsi; g[REG_RDI] = (greg_t)c->Rdi;
+    g[REG_R8]  = (greg_t)c->R8;  g[REG_R9]  = (greg_t)c->R9;
+    g[REG_R10] = (greg_t)c->R10; g[REG_R11] = (greg_t)c->R11;
+    g[REG_R12] = (greg_t)c->R12; g[REG_R13] = (greg_t)c->R13;
+    g[REG_R14] = (greg_t)c->R14; g[REG_R15] = (greg_t)c->R15;
+    g[REG_RIP] = (greg_t)c->Rip; g[REG_EFL] = (greg_t)c->EFlags;
+}
+
+static void veh_signal(int sig, siginfo_t *si, void *uc_)
+{
+    ucontext_t *uc = (ucontext_t *)uc_;
+    EXCEPTION_RECORD rec;
+    EXCEPTION_POINTERS ep;
+    CONTEXT ctx;
+    int i, n = s_veh_n, saved = errno;
+    memset(&rec, 0, sizeof rec);
+    veh_ctx_in(&ctx, uc);
+    switch (sig) {
+    case SIGSEGV: case SIGBUS:
+        rec.ExceptionCode = EXCEPTION_ACCESS_VIOLATION;
+        rec.NumberParameters = 2;
+        /* page-fault error code bit 1: the access was a write */
+        rec.ExceptionInformation[0] = (uc->uc_mcontext.gregs[REG_ERR] & 2) ? 1 : 0;
+        rec.ExceptionInformation[1] = (ULONG_PTR)si->si_addr;
+        break;
+    case SIGILL: rec.ExceptionCode = 0xC000001Du; break;   /* illegal instruction */
+    default:     rec.ExceptionCode = 0xC0000094u; break;   /* integer divide by zero */
+    }
+    rec.ExceptionAddress = (PVOID)(uintptr_t)ctx.Rip;
+    ep.ExceptionRecord = &rec;
+    ep.ContextRecord = &ctx;
+    for (i = 0; i < n; i++) {
+        if (s_veh[i] && s_veh[i](&ep) == EXCEPTION_CONTINUE_EXECUTION) {
+            veh_ctx_out(&ctx, uc);
+            errno = saved;
+            return;
+        }
+    }
+    /* nobody took it: the default action (a crash), as before */
+    for (i = 0; i < 4; i++)
+        if (s_veh_sig[i] == sig) {
+            sigaction(sig, &s_veh_old[i], NULL);
+            break;
+        }
+    errno = saved;
+}
+
 PVOID AddVectoredExceptionHandler(ULONG First, PVECTORED_EXCEPTION_HANDLER Handler)
-{ (void)First; (void)Handler; return NULL; }   /* TODO: wire to sigaction */
+{
+    int i, n = s_veh_n;
+    if (!Handler || n >= W32_VEH_MAX)
+        return NULL;
+    if (First) {
+        for (i = n; i > 0; i--) s_veh[i] = s_veh[i - 1];
+        s_veh[0] = Handler;
+    } else
+        s_veh[n] = Handler;
+    __atomic_store_n(&s_veh_n, n + 1, __ATOMIC_SEQ_CST);
+    if (!s_veh_installed) {
+        struct sigaction sa;
+        static char *alt;
+        stack_t ss;
+        memset(&sa, 0, sizeof sa);
+        sa.sa_sigaction = veh_signal;
+        sa.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
+        sigemptyset(&sa.sa_mask);
+        for (i = 0; i < 4; i++)
+            sigaction(s_veh_sig[i], &sa, &s_veh_old[i]);
+        /* the main thread's handler gets a stack of its own, for a fault
+         * that is a stack overflow (the report still prints) */
+        if (!alt && (alt = (char *)malloc(1 << 20)) != NULL) {
+            ss.ss_sp = alt; ss.ss_size = 1 << 20; ss.ss_flags = 0;
+            sigaltstack(&ss, NULL);
+        }
+        s_veh_installed = 1;
+    }
+    return (PVOID)Handler;
+}
+ULONG RemoveVectoredExceptionHandler(PVOID h)
+{
+    int i, j, n = s_veh_n;
+    for (i = 0; i < n; i++)
+        if ((PVOID)s_veh[i] == h) {
+            for (j = i; j + 1 < n; j++) s_veh[j] = s_veh[j + 1];
+            s_veh[n - 1] = NULL;
+            __atomic_store_n(&s_veh_n, n - 1, __ATOMIC_SEQ_CST);
+            return 1;
+        }
+    return 0;
+}
+#else
+PVOID AddVectoredExceptionHandler(ULONG First, PVECTORED_EXCEPTION_HANDLER Handler)
+{ (void)First; (void)Handler; return NULL; }
 ULONG RemoveVectoredExceptionHandler(PVOID h) { (void)h; return 1; }
+#endif
+
+/* v244: modules (see win32_compat.h) */
+#include <dlfcn.h>
+HMODULE GetModuleHandleA(LPCSTR name)
+{
+    return name ? NULL : (HMODULE)dlopen(NULL, RTLD_NOW);
+}
+HMODULE LoadLibraryA(LPCSTR name)
+{
+    size_t n = name ? strlen(name) : 0;
+    if (n >= 4 && !strcasecmp(name + n - 4, ".dll"))
+        return NULL;                         /* a Windows library: not here */
+    return name ? (HMODULE)dlopen(name, RTLD_NOW) : NULL;
+}
+FARPROC GetProcAddress(HMODULE module, LPCSTR name)
+{
+    void *p;
+    if (!module || !name)
+        return NULL;
+    p = dlsym(module, name);
+    return (FARPROC)p;
+}
+BOOL FreeLibrary(HMODULE module)
+{
+    return module ? dlclose(module) == 0 : FALSE;
+}
+
 
 #endif /* !_WIN32 */
+

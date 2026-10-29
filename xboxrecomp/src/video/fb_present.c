@@ -779,15 +779,326 @@ void xbox_FramebufferWindowStart(void)
 }
 
 #else
+/* ── v244: Linux. The window is the GL context's own SDL window
+ * (nv2a_gl.c shows it at the first frame and hands it over with
+ * xbox_FramebufferWindowAttach); this keeps its events, the keys the game
+ * reads, full screen, the title and the free camera's mouse. Everything
+ * runs on the executor thread, which made the window: the events are
+ * pumped once a presented frame (xbox_FramebufferWindowPump). The same
+ * shape and widescreen logic as the Windows window above. */
+#include <SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <time.h>
+#include <unistd.h>
+#include "win32_compat.h"
+
+static SDL_Window *s_sw;
+static volatile int s_fb_running;
+static volatile int s_gl_owned;
+static char s_title_extra[96];
+static char s_title[48] = "Jet Set Radio Future";
+static volatile long s_flips, s_frame_draws;
+static volatile unsigned char s_key_down[256];
+static volatile int s_key_mask, s_mouse_cap, s_wheel;
+static int s_fullscreen;
+
+static uint64_t ms_now(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000u + (uint64_t)(t.tv_nsec / 1000000);
+}
+
+void xbox_SetTitleExtra(const char *t)
+{
+    if (!t) t = "";
+    strncpy(s_title_extra, t, sizeof s_title_extra - 1);
+    s_title_extra[sizeof s_title_extra - 1] = 0;
+}
+void *xbox_FramebufferWindowHwnd(void) { return NULL; }
+void xbox_FramebufferWindowGLOwned(void) { s_gl_owned = 1; }
+
+double xbox_PresentAspect(void)
+{
+    static double a = 0.0;
+    if (a == 0.0) {
+        const char *e = getenv("RECOMP_ASPECT");
+        const char *w = getenv("RECOMP_WIDESCREEN");
+        double x = 0, y = 0;
+        a = 4.0 / 3.0;
+        if (e && sscanf(e, "%lf%*[:x/]%lf", &x, &y) == 2 && x > 0 && y > 0)
+            a = x / y;
+        else if (w && !strcasecmp(w, "auto")) {
+            SDL_DisplayMode m;
+            if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
+                SDL_InitSubSystem(SDL_INIT_VIDEO);
+            if (SDL_GetDesktopDisplayMode(0, &m) == 0 && m.w > 0 && m.h > 0)
+                a = (double)m.w / m.h;
+        } else if (w && w[0] == '1')
+            a = 16.0 / 9.0;
+        if (a < 1.0 || a > 4.0)
+            a = 4.0 / 3.0;
+        if (a != 4.0 / 3.0)
+            fprintf(stderr, "[WS] widescreen: shown at %.3f:1, 3D squeezed by %.4f "
+                    "(RECOMP_WIDESCREEN / RECOMP_ASPECT)\n", a, (4.0 / 3.0) / a);
+    }
+    return a;
+}
+
+static volatile uint64_t s_ws_hold_ms, s_ws_edgebars_ms, s_menu_ms;
+static volatile double s_ws_n;
+void xbox_WidescreenHold43(void) { s_ws_hold_ms = ms_now(); }
+void xbox_WidescreenEdgeBars(void) { s_ws_edgebars_ms = ms_now(); }
+int xbox_PresentEdgeBars(void)
+{
+    return s_ws_n > 0.5 && s_ws_edgebars_ms && ms_now() - s_ws_edgebars_ms <= 100;
+}
+double xbox_WidescreenK(void);
+double xbox_RowFillK(void)
+{
+    double k;
+    if (s_ws_n > 0.5)
+        return 0.0;
+    k = xbox_WidescreenK();
+    return k < 0.999 ? k : 0.0;
+}
+void xbox_MenuScreen(void) { s_menu_ms = ms_now(); }
+int xbox_MenuScreenNow(void) { return s_menu_ms && ms_now() - s_menu_ms <= 100; }
+static void ws_tick(void)
+{
+    static int said = -1;
+    int narrow = ms_now() - s_ws_hold_ms <= 50;
+    if (narrow != said && said >= 0 && xbox_PresentAspect() > 4.0 / 3.0 + 1e-6)
+        fprintf(stderr, "[WS] %s\n", narrow ? "4:3 screen: shown 4:3" : "widescreen again");
+    said = narrow;
+    s_ws_n = narrow ? 1.0 : 0.0;
+}
+double xbox_WidescreenK(void)
+{
+    double k0 = (4.0 / 3.0) / xbox_PresentAspect();
+    return k0 + (1.0 - k0) * s_ws_n;
+}
+void xbox_PresentFit(int cw, int ch, int *dw, int *dh)
+{
+    double a;
+    int w, h;
+    ws_tick();
+    a = (4.0 / 3.0) / xbox_WidescreenK();
+    w = cw; h = (int)(cw / a + 0.5);
+    if (h > ch) { h = ch; w = (int)(ch * a + 0.5); }
+    if (w > cw) w = cw;
+    *dw = w; *dh = h;
+}
+
+/* frames only ever reach this window from the GPU; the CPU paths are off */
 void xbox_FramebufferWindowSet(uint32_t fb_va, uint32_t pitch) { (void)fb_va; (void)pitch; }
 void xbox_FramebufferWindowPresent(uint32_t fb_va, uint32_t pitch) { (void)fb_va; (void)pitch; }
-int xbox_FramebufferWindowAccepts(uint32_t w, uint32_t h) { (void)w; (void)h; return 0; }
+int xbox_FramebufferWindowAccepts(uint32_t w, uint32_t h)
+{
+    (void)w; (void)h;
+    return s_fb_running;
+}
 int xbox_FramebufferWindowPresentPixels(const uint32_t *px, uint32_t w, uint32_t h)
 { (void)px; (void)w; (void)h; return 0; }
-void *xbox_FramebufferWindowHwnd(void) { return 0; }
-void xbox_FramebufferWindowGLOwned(void) {}
-void xbox_FramebufferWindowStart(void) {}
-int xbox_FramebufferKeyDown(int vk) { (void)vk; return 0; }
-void xbox_FramebufferWindowSetTitle(const uint16_t *n, int m) { (void)n; (void)m; }
-void xbox_FramebufferWindowFrameStats(uint32_t draws) { (void)draws; }
+
+void xbox_FramebufferWindowSetTitle(const uint16_t *name, int max_chars)
+{
+    int i;
+    for (i = 0; i < max_chars && i < 47 && name[i]; i++)
+        s_title[i] = (char)(name[i] < 128 ? name[i] : '?');
+    if (i)
+        s_title[i] = 0;
+}
+void xbox_FramebufferWindowFrameStats(uint32_t draws)
+{
+    __atomic_add_fetch(&s_flips, 1, __ATOMIC_RELAXED);
+    s_frame_draws = (long)draws;
+}
+
+int xbox_FramebufferKeyDown(int vk)
+{
+    if ((unsigned)vk > 255 || s_key_mask)
+        return 0;
+    return s_key_down[vk] != 0;
+}
+int xbox_FramebufferKeyRaw(int vk)
+{
+    if ((unsigned)vk > 255)
+        return 0;
+    return s_key_down[vk] != 0;
+}
+
+/* SDL key -> the Windows virtual-key code the game side asks for */
+static int vk_of(SDL_Keycode k)
+{
+    if (k >= SDLK_a && k <= SDLK_z) return 'A' + (int)(k - SDLK_a);
+    if (k >= SDLK_0 && k <= SDLK_9) return '0' + (int)(k - SDLK_0);
+    if (k >= SDLK_F1 && k <= SDLK_F12) return 0x70 + (int)(k - SDLK_F1);
+    switch (k) {
+    case SDLK_RETURN: case SDLK_KP_ENTER: return 0x0D;
+    case SDLK_ESCAPE: return 0x1B;
+    case SDLK_SPACE: return 0x20;
+    case SDLK_TAB: return 0x09;
+    case SDLK_BACKSPACE: return 0x08;
+    case SDLK_LEFT: return 0x25; case SDLK_UP: return 0x26;
+    case SDLK_RIGHT: return 0x27; case SDLK_DOWN: return 0x28;
+    case SDLK_LSHIFT: case SDLK_RSHIFT: return 0x10;
+    case SDLK_LCTRL: case SDLK_RCTRL: return 0x11;
+    case SDLK_LALT: case SDLK_RALT: return 0x12;
+    case SDLK_KP_0: return 0x60; case SDLK_KP_1: return 0x61; case SDLK_KP_2: return 0x62;
+    case SDLK_KP_3: return 0x63; case SDLK_KP_4: return 0x64; case SDLK_KP_5: return 0x65;
+    case SDLK_KP_6: return 0x66; case SDLK_KP_7: return 0x67; case SDLK_KP_8: return 0x68;
+    case SDLK_KP_9: return 0x69;
+    case SDLK_KP_MULTIPLY: return 0x6A; case SDLK_KP_PLUS: return 0x6B;
+    case SDLK_KP_MINUS: return 0x6D; case SDLK_KP_DIVIDE: return 0x6F;
+    case SDLK_INSERT: return 0x2D; case SDLK_DELETE: return 0x2E;
+    case SDLK_HOME: return 0x24; case SDLK_END: return 0x23;
+    case SDLK_PAGEUP: return 0x21; case SDLK_PAGEDOWN: return 0x22;
+    case SDLK_MINUS: return 0xBD; case SDLK_EQUALS: return 0xBB;
+    case SDLK_COMMA: return 0xBC; case SDLK_PERIOD: return 0xBE;
+    default: return -1;
+    }
+}
+
+static void fb_fullscreen(int on)
+{
+    if (!s_sw || on == s_fullscreen)
+        return;
+    SDL_SetWindowFullscreen(s_sw, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    s_fullscreen = on;
+}
+
+/* the free camera: relative mouse while it flies */
+void xbox_FreecamInput(int capture, int *dx, int *dy, int *wheel)
+{
+    *dx = *dy = 0;
+    *wheel = 0;
+    s_key_mask = capture;
+    if (!capture || !s_sw || !(SDL_GetWindowFlags(s_sw) & SDL_WINDOW_INPUT_FOCUS)) {
+        if (s_mouse_cap) { s_mouse_cap = 0; }
+        __atomic_exchange_n(&s_wheel, 0, __ATOMIC_SEQ_CST);
+        return;
+    }
+    s_mouse_cap = 1;
+    SDL_GetRelativeMouseState(dx, dy);
+    *wheel = __atomic_exchange_n(&s_wheel, 0, __ATOMIC_SEQ_CST);
+}
+
+extern int (*g_w32_key_down)(int vk);
+
+void xbox_FramebufferWindowAttach(void *sdl_window)
+{
+    int cw, ch;
+    const char *fs = getenv("RECOMP_FULLSCREEN");
+    s_sw = (SDL_Window *)sdl_window;
+    if (!s_sw)
+        return;
+    g_w32_key_down = xbox_FramebufferKeyRaw;
+    {
+        /* the scaled frame if it fits the desktop, else the largest of the
+         * shown shape that does; the window can be resized */
+        SDL_Rect r;
+        const char *sc = getenv("RECOMP_GL_SCALE");
+        int k = sc ? atoi(sc) : 1;
+        if (k < 1) k = 1;
+        ch = 480 * k;
+        cw = (int)(ch * xbox_PresentAspect() + 0.5);
+        if (SDL_GetDisplayUsableBounds(0, &r) == 0) {
+            int aw = r.w - 16, ah = r.h - 48;
+            if (cw > aw) { ch = ch * aw / cw; cw = aw; }
+            if (ch > ah) { cw = cw * ah / ch; ch = ah; }
+        }
+    }
+    SDL_SetWindowTitle(s_sw, s_title);
+    SDL_SetWindowSize(s_sw, cw, ch);
+    SDL_SetWindowResizable(s_sw, SDL_TRUE);
+    SDL_SetWindowPosition(s_sw, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_ShowWindow(s_sw);
+    if (fs && fs[0] == '1')
+        fb_fullscreen(1);
+    fprintf(stderr, "[FB] game window %dx%d%s (F11 or Alt+Enter: full screen)\n", cw, ch,
+            s_fullscreen ? ", full screen" : "");
+}
+
+/* the window's events, once a presented frame (executor thread) */
+void xbox_FramebufferWindowPump(void)
+{
+    SDL_Event e;
+    static uint64_t t0;
+    static long f0;
+    if (!s_sw)
+        return;
+    while (SDL_PollEvent(&e)) {
+        switch (e.type) {
+        case SDL_QUIT:
+            if (!getenv("RECOMP_FB_CLOSE_KEEPS_RUNNING")) {
+                fprintf(stderr, "[EXIT] game window closed by the user\n");
+                fflush(stderr);
+                fflush(stdout);
+                _exit(0);
+            }
+            break;
+        case SDL_KEYDOWN: {
+            int vk = vk_of(e.key.keysym.sym);
+            if (!e.key.repeat && (e.key.keysym.sym == SDLK_F11
+                    || (e.key.keysym.sym == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT)))) {
+                fb_fullscreen(!s_fullscreen);
+                break;
+            }
+            if (vk >= 0) {
+                s_key_down[vk] = 1;
+                if (getenv("RECOMP_KEY_TRACE")) {
+                    static unsigned n;
+                    if (n++ < 40) fprintf(stderr, "  [KEY] down vk=0x%02X\n", (unsigned)vk);
+                }
+            }
+            break;
+        }
+        case SDL_KEYUP: {
+            int vk = vk_of(e.key.keysym.sym);
+            if (vk >= 0) s_key_down[vk] = 0;
+            break;
+        }
+        case SDL_MOUSEWHEEL:
+            __atomic_add_fetch(&s_wheel, e.wheel.y * 120, __ATOMIC_SEQ_CST);
+            break;
+        case SDL_WINDOWEVENT:
+            if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+                memset((void *)s_key_down, 0, sizeof s_key_down);
+            break;
+        default:
+            break;
+        }
+    }
+    {
+        static int rel = -1;
+        int want = s_mouse_cap && (SDL_GetWindowFlags(s_sw) & SDL_WINDOW_INPUT_FOCUS);
+        if (want != rel) {
+            SDL_SetRelativeMouseMode(want ? SDL_TRUE : SDL_FALSE);
+            rel = want;
+        }
+    }
+    {
+        uint64_t now = ms_now();
+        if (!t0) { t0 = now; f0 = s_flips; }
+        if (now - t0 >= (s_title_extra[0] ? 250u : 1000u)) {
+            char tb[256];
+            double fps = (double)(s_flips - f0) * 1000.0 / (double)(now - t0);
+            snprintf(tb, sizeof tb, "%s | FPS: %.1f | draws: %ld%s%s", s_title, fps,
+                     (long)s_frame_draws, s_title_extra[0] ? " | " : "", s_title_extra);
+            SDL_SetWindowTitle(s_sw, tb);
+            t0 = now; f0 = s_flips;
+        }
+    }
+}
+
+int xbox_FramebufferDumpBmp(const char *path) { (void)path; return 0; }
+
+void xbox_FramebufferWindowStart(void)
+{
+    s_fb_running = 1;           /* the window itself comes with the first frame */
+}
 #endif

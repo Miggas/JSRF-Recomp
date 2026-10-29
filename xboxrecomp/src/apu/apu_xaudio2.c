@@ -508,14 +508,109 @@ void xa2_get_health(unsigned long *glitches, int *qmin, int *qmax)
     g_xa2_qmax = -1;
 }
 
-#else /* !_WIN32 -- POSIX stubs (no audio output yet) */
+#else /* !_WIN32 -- v244: SDL2 audio on Linux, with XAudio2's queue rules */
 
-int  xa2_init(void)                                   { return 0; }
-void xa2_shutdown(void)                               {}
-int  xa2_is_active(void)                              { return 0; }
-int  xa2_submit_samples(const int16_t *s, int n)      { (void)s; (void)n; return 0; }
-int  xa2_get_buffer_size(void)                        { return 0; }
-void xa2_get_stats(unsigned long *u, unsigned long *s) { *u = *s = 0; }
-void xa2_get_health(unsigned long *g, int *a, int *b) { *g = 0; *a = *b = 0; }
+#include <SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Same shape as the XAudio2 path above: 48 kHz stereo 16-bit, buffers of
+ * 1024 samples, at most 8 queued (a full queue refuses the next one, which
+ * is how the APU's frame thread keeps real time), and a lead of silence
+ * rebuilt when it runs dry. SDL's queue is counted in bytes; "buffers
+ * queued" is that over one buffer's size. */
+#define SA_RATE     48000
+#define SA_BUF      1024
+#define SA_BUFS     8
+#define SA_LEAD     3
+static SDL_AudioDeviceID s_sa_dev;
+static int s_sa_on, s_sa_lead = -1, s_sa_qmin = 99, s_sa_qmax = -1;
+static unsigned long s_sa_under, s_sa_silence, s_sa_frames;
+
+int xa2_init(void)
+{
+    SDL_AudioSpec want, have;
+    if (s_sa_on)
+        return 1;
+    if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+        fprintf(stderr, "[AUDIO] SDL audio init failed: %s\n", SDL_GetError());
+        return 0;
+    }
+    memset(&want, 0, sizeof want);
+    want.freq = SA_RATE;
+    want.format = AUDIO_S16SYS;
+    want.channels = 2;
+    want.samples = 512;
+    want.callback = NULL;                     /* queued */
+    s_sa_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+    if (!s_sa_dev) {
+        fprintf(stderr, "[AUDIO] no audio device: %s\n", SDL_GetError());
+        return 0;
+    }
+    SDL_PauseAudioDevice(s_sa_dev, 0);
+    s_sa_on = 1;
+    fprintf(stderr, "[AUDIO] SDL audio (%s) at %d Hz stereo 16-bit, %d x %d-sample buffers\n",
+            SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "?", have.freq,
+            SA_BUFS, SA_BUF);
+    return 1;
+}
+
+void xa2_shutdown(void)
+{
+    if (s_sa_dev) {
+        SDL_CloseAudioDevice(s_sa_dev);
+        s_sa_dev = 0;
+    }
+    s_sa_on = 0;
+}
+
+int xa2_is_active(void) { return s_sa_on; }
+
+int xa2_submit_samples(const int16_t *samples, int num_samples)
+{
+    const Uint32 buf_bytes = SA_BUF * 2 * sizeof(int16_t);
+    Uint32 queued;
+    int q, n;
+    if (!s_sa_on)
+        return 0;
+    if (s_sa_lead < 0) {
+        const char *e = getenv("RECOMP_APU_LEAD");
+        s_sa_lead = e ? atoi(e) : SA_LEAD;
+        if (s_sa_lead < 0) s_sa_lead = 0;
+        if (s_sa_lead > SA_BUFS - 2) s_sa_lead = SA_BUFS - 2;
+    }
+    queued = SDL_GetQueuedAudioSize(s_sa_dev);
+    q = (int)((queued + buf_bytes - 1) / buf_bytes);
+    if (q < s_sa_qmin) s_sa_qmin = q;
+    if (q > s_sa_qmax) s_sa_qmax = q;
+    if (q >= SA_BUFS)
+        return 0;
+    if (queued == 0) {
+        static const int16_t zero[SA_BUF][2];
+        int k;
+        if (s_sa_frames)
+            s_sa_under++;
+        for (k = 0; k < s_sa_lead; k++)
+            if (SDL_QueueAudio(s_sa_dev, zero, buf_bytes) == 0)
+                s_sa_silence++;
+    }
+    n = num_samples > SA_BUF ? SA_BUF : num_samples;
+    if (SDL_QueueAudio(s_sa_dev, samples, (Uint32)n * 2 * sizeof(int16_t)) != 0)
+        return 0;
+    s_sa_frames++;
+    return 1;
+}
+
+int  xa2_get_buffer_size(void) { return SA_BUF; }
+void xa2_get_stats(unsigned long *u, unsigned long *s) { *u = s_sa_under; *s = s_sa_silence; }
+void xa2_get_health(unsigned long *g, int *a, int *b)
+{
+    *g = 0;
+    *a = s_sa_qmin > SA_BUFS ? 0 : s_sa_qmin;
+    *b = s_sa_qmax < 0 ? 0 : s_sa_qmax;
+    s_sa_qmin = 99;
+    s_sa_qmax = -1;
+}
 
 #endif /* _WIN32 */

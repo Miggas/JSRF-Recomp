@@ -479,9 +479,19 @@ translate:
 /* ======================================================================== */
 #else /* !_WIN32  -- POSIX / Linux */
 /* ======================================================================== */
+/* v244: brought level with the Windows side above for the native Linux
+ * build: the partition devices are image files (JSRF reads the partition
+ * table from Partition0 at start-up and quits to the dashboard without it),
+ * the save-side folders are made at init, every translation is logged as
+ * [PATH], and -- Linux file names being case-sensitive and the game asking
+ * for D:\Media\... whatever the case on disk -- a path that does not exist
+ * as asked is looked up again ignoring case, one component at a time. */
 
 #include <unistd.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -489,6 +499,9 @@ translate:
 static char s_game_dir[MAX_PATH];
 static char s_save_dir[MAX_PATH];
 static BOOL s_initialized = FALSE;
+
+#define XBOX_PART_TABLE_OFFSET 0x800
+#define XBOX_PART_IN_USE       0x80000000u
 
 /* Strip a single trailing '/' (but never the root '/'). */
 static void strip_trailing_slash(char* s)
@@ -519,12 +532,63 @@ static void mkdir_p(const char* path)
         xbox_log(XBOX_LOG_WARN, XBOX_LOG_PATH, "mkdir %s: %s", tmp, strerror(errno));
 }
 
+static void xbox_write_partition_table(const char *path)
+{
+    static const struct { const char *name; ULONG start, size; } parts[] = {
+        { "XBOX_PART_X",  0x00000400, 0x00177000 },
+        { "XBOX_PART_Y",  0x00177400, 0x00177000 },
+        { "XBOX_PART_Z",  0x002EE400, 0x00177000 },
+        { "XBOX_PART_C",  0x00465400, 0x000FA000 },
+        { "XBOX_PART_E",  0x0055F400, 0x00465400 },
+    };
+    unsigned char sector[512];
+    size_t i;
+    int fd = open(path, O_WRONLY | O_CREAT, 0644);
+    if (fd < 0)
+        return;
+    memset(sector, 0, sizeof(sector));
+    memcpy(sector, "****PARTINFO****", 16);
+    for (i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        unsigned char *e = sector + 48 + i * 32;
+        size_t n = strlen(parts[i].name);
+        uint32_t v;
+        memset(e, ' ', 16);
+        memcpy(e, parts[i].name, n < 16 ? n : 16);
+        v = XBOX_PART_IN_USE; memcpy(e + 16, &v, 4);
+        v = parts[i].start;   memcpy(e + 20, &v, 4);
+        v = parts[i].size;    memcpy(e + 24, &v, 4);
+        v = 0;                memcpy(e + 28, &v, 4);
+    }
+    if (pwrite(fd, sector, sizeof(sector), XBOX_PART_TABLE_OFFSET) != (ssize_t)sizeof(sector))
+        xbox_log(XBOX_LOG_WARN, XBOX_LOG_PATH, "partition table write: %s", strerror(errno));
+    close(fd);
+}
+
+static BOOL xbox_partition_device_path(const char *xbox_path, char *out, DWORD n)
+{
+    static const char *prefix = "\\Device\\Harddisk0\\Partition";
+    int len = match_prefix(xbox_path, prefix);
+    int digit;
+    const char *rest;
+    if (!len)
+        return FALSE;
+    digit = xbox_path[len];
+    if (digit < '0' || digit > '9')
+        return FALSE;
+    rest = xbox_path + len + 1;
+    if (*rest == '\\' || *rest == '/')
+        rest++;
+    if (*rest != '\0')
+        return FALSE;
+    snprintf(out, n, "%s/Partition%c.img", s_save_dir, (char)digit);
+    return TRUE;
+}
+
 void xbox_path_init(const char* game_dir, const char* save_dir)
 {
     if (game_dir) {
         snprintf(s_game_dir, sizeof(s_game_dir), "%s", game_dir);
     } else {
-        /* Neutral default: CWD/"game", the layout game projects use. */
         char cwd[MAX_PATH];
         if (!getcwd(cwd, sizeof(cwd)))
             snprintf(cwd, sizeof(cwd), ".");
@@ -534,7 +598,6 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     if (save_dir) {
         snprintf(s_save_dir, sizeof(s_save_dir), "%s", save_dir);
     } else {
-        /* XDG base-directory spec: $XDG_DATA_HOME or ~/.local/share */
         const char* xdg = getenv("XDG_DATA_HOME");
         if (xdg && xdg[0]) {
             snprintf(s_save_dir, sizeof(s_save_dir), "%s/xboxrecomp", xdg);
@@ -547,10 +610,95 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
 
     strip_trailing_slash(s_game_dir);
     strip_trailing_slash(s_save_dir);
+    {
+        char full[4096];                    /* realpath writes up to PATH_MAX */
+        if (realpath(s_save_dir, full) || (mkdir_p(s_save_dir), realpath(s_save_dir, full)))
+            snprintf(s_save_dir, sizeof(s_save_dir), "%s", full);
+    }
+
+    /* the save-side folders and the partition images, as on Windows */
+    {
+        static const char *subs[] = { "TitleData", "UserData", "Cache", "SystemData" };
+        static const unsigned long long part_sectors[6] = {
+            0, 0x00465400ull, 0x000FA000ull, 0x00177000ull, 0x00177000ull, 0x00177000ull,
+        };
+        char p[MAX_PATH + 32];
+        int i;
+        mkdir_p(s_save_dir);
+        for (i = 0; i < (int)(sizeof(subs) / sizeof(subs[0])); i++) {
+            snprintf(p, sizeof p, "%s/%s", s_save_dir, subs[i]);
+            mkdir_p(p);
+        }
+        snprintf(p, sizeof p, "%s/Partition0.img", s_save_dir);
+        xbox_write_partition_table(p);
+        for (i = 1; i <= 5; i++) {
+            int fd;
+            struct stat st;
+            snprintf(p, sizeof p, "%s/Partition%d.img", s_save_dir, i);
+            fd = open(p, O_WRONLY | O_CREAT, 0644);
+            if (fd < 0)
+                continue;
+            /* sparse: nothing is stored until written */
+            if (fstat(fd, &st) == 0 && (unsigned long long)st.st_size < part_sectors[i] * 512ull)
+                if (ftruncate(fd, (off_t)(part_sectors[i] * 512ull)) != 0) { /* keep going */ }
+            close(fd);
+        }
+    }
 
     s_initialized = TRUE;
     xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path init: game=%s, save=%s",
              s_game_dir, s_save_dir);
+}
+
+/* the path as asked, or failing that the same path matched ignoring case,
+ * component by component (only below the base folder; the base is ours) */
+static void ci_resolve(char *path, size_t base_len)
+{
+    struct stat st;
+    char out[MAX_PATH];
+    const char *p;
+    size_t o;
+    if (stat(path, &st) == 0 || base_len >= strlen(path))
+        return;
+    memcpy(out, path, base_len);
+    o = base_len;
+    out[o] = 0;
+    p = path + base_len;
+    while (*p) {
+        const char *e;
+        char comp[256];
+        size_t cl;
+        while (*p == '/') { if (o + 1 < sizeof out) out[o++] = '/'; p++; }
+        if (!*p) break;
+        e = strchr(p, '/');
+        cl = e ? (size_t)(e - p) : strlen(p);
+        if (cl >= sizeof comp) return;
+        memcpy(comp, p, cl); comp[cl] = 0;
+        out[o] = 0;
+        {
+            char test[MAX_PATH];
+            snprintf(test, sizeof test, "%s%s", out, comp);
+            if (stat(test, &st) != 0) {
+                DIR *d = opendir(o ? out : ".");
+                struct dirent *de;
+                if (d) {
+                    while ((de = readdir(d)) != NULL)
+                        if (!strcasecmp(de->d_name, comp)) {
+                            snprintf(comp, sizeof comp, "%s", de->d_name);
+                            break;
+                        }
+                    closedir(d);
+                }
+            }
+        }
+        if (o + strlen(comp) + 1 >= sizeof out) return;
+        memcpy(out + o, comp, strlen(comp));
+        o += strlen(comp);
+        out[o] = 0;
+        p += cl;
+    }
+    out[o] = 0;
+    snprintf(path, MAX_PATH, "%s", out);
 }
 
 BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, DWORD buf_size)
@@ -572,6 +720,11 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
             return xbox_translate_path(linked, host_path_buf, buf_size);
     }
 
+    if (xbox_partition_device_path(xbox_path, host_path_buf, buf_size)) {
+        fprintf(stderr, "  [PATH] %s -> partition image\n", xbox_path);
+        return TRUE;
+    }
+
     for (int i = 0; i < PATH_RULE_COUNT; i++) {
         skip = match_prefix(xbox_path, s_rules[i].prefix);
         if (skip) {
@@ -590,8 +743,12 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
     return TRUE;
 
 translate:
+    if (g_xbox_path_hook)
+        g_xbox_path_hook(xbox_path);
+    fprintf(stderr, "  [PATH] %s\n", xbox_path);
     {
         char remainder_posix[MAX_PATH];
+        size_t base_len = strlen(base_dir);
         snprintf(remainder_posix, sizeof(remainder_posix), "%s", remainder);
 
         /* Xbox paths use backslashes -> POSIX slashes. */
@@ -606,6 +763,7 @@ translate:
             char dir_path[MAX_PATH];
             snprintf(dir_path, sizeof(dir_path), "%s%s", base_dir, sub_dir);
             mkdir_p(dir_path);
+            base_len = strlen(dir_path);
         } else {
             snprintf(host_path_buf, buf_size, "%s/%s", base_dir, remainder_posix);
         }
@@ -615,6 +773,8 @@ translate:
             while (n > 1 && host_path_buf[n - 1] == '/')
                 host_path_buf[--n] = '\0';
         }
+        if (buf_size >= MAX_PATH)
+            ci_resolve(host_path_buf, base_len);
 
         XBOX_TRACE(XBOX_LOG_PATH, "%s -> %s", xbox_path, host_path_buf);
         return TRUE;

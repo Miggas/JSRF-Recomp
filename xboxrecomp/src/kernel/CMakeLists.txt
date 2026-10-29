@@ -94,3 +94,8 @@ else()
 endif()
 
 target_compile_definitions(xbox_kernel PRIVATE $<$<CONFIG:Debug>:_DEBUG>)
+
+# v244: on Linux the presenter is fb_present.c's SDL window
+if(NOT WIN32)
+    target_compile_definitions(xbox_kernel PRIVATE XBOXRECOMP_PRESENTER=1)
+endif()

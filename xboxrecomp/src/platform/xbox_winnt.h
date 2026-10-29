@@ -139,6 +139,7 @@ typedef unsigned int       UINT,  *PUINT;
 typedef int                BOOL,  *PBOOL;
 typedef int64_t            LONGLONG,  LONG64,  *PLONGLONG;
 typedef uint64_t           ULONGLONG, ULONG64, *PULONGLONG, DWORDLONG;
+typedef uint64_t           DWORD64, *PDWORD64;
 typedef float              FLOAT;
 typedef double             DOUBLE;
 
@@ -156,29 +157,17 @@ typedef void              *HWND, *HDC, *HBITMAP, *HICON, *HMENU, *HCURSOR;
 /* PCONTEXT: Windows VEH register state. On Linux the equivalent is
  * ucontext_t*; we leave it opaque here since Linux callers don't use it. */
  
-#ifdef __linux__
-/* On gcc these data structures are necessary  even if anyone is going to be used*/
-typedef union Register{
-	uint32_t X; // all register
-	uint8_t SR[4]; // Subregister
-} REG; 
-
-typedef uint32_t  IREG;
-
-typedef struct ProcessorCONTEXT{
-	// General
-	REG EAX;
-	REG EBX;
-	REG ECX;
-	REG EDX;
-	IREG ESI;
-	IREG EDI;
-	IREG ESP;
-	IREG EBP;
-	//  Instruction Pointer Flags
-	IREG EIP;
-	IREG EFlags;
-} *PCONTEXT;
+#if !defined(_WIN32)
+/* v244: the x86-64 register state under the Windows names, so the fault
+ * handlers (MMIO decoders, write-watch) run unchanged on Linux; filled from
+ * and written back to the signal's ucontext (win32_compat.c). */
+typedef uint64_t DWORD64_CTX;
+typedef struct _CONTEXT {
+    DWORD64_CTX Rax, Rcx, Rdx, Rbx, Rsp, Rbp, Rsi, Rdi;
+    DWORD64_CTX R8, R9, R10, R11, R12, R13, R14, R15;
+    DWORD64_CTX Rip;
+    uint32_t    EFlags;
+} CONTEXT, *PCONTEXT;
 #else
 typedef void              *PCONTEXT;
 #endif

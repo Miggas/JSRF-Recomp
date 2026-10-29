@@ -853,6 +853,16 @@ NTSTATUS __stdcall xbox_NtCreateFile(
     }
 
     int fd;
+    /* v244: a partition device opened as a directory (a free-space query)
+     * gets the folder its image is in, as on Windows */
+    if (CreateOptions & XBOX_FILE_DIRECTORY_FILE) {
+        struct stat st;
+        if (stat(host_path, &st) == 0 && !S_ISDIR(st.st_mode)) {
+            char *slash = strrchr(host_path, '/');
+            if (slash && slash != host_path)
+                *slash = 0;
+        }
+    }
     if (CreateOptions & XBOX_FILE_DIRECTORY_FILE) {
         if (CreateDisposition == XBOX_FILE_CREATE || CreateDisposition == XBOX_FILE_OPEN_IF)
             mkdir(host_path, 0755);   /* EEXIST is fine */
@@ -863,6 +873,9 @@ NTSTATUS __stdcall xbox_NtCreateFile(
 
     if (fd < 0) {
         int e = errno;
+        /* v244: the Win32 error the bridge's [FILE] line names */
+        g_xbox_last_file_error = e == ENOENT ? 2u : e == ENOTDIR ? 3u : e == EACCES ? 5u
+                               : e == EEXIST ? 183u : 31u;
         XBOX_TRACE(XBOX_LOG_FILE, "NtCreateFile FAILED: %s (errno=%d)", host_path, e);
         if (IoStatusBlock) {
             IoStatusBlock->Status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -895,10 +908,15 @@ NTSTATUS __stdcall xbox_NtReadFile(
         return STATUS_INVALID_HANDLE;
     }
 
-    if (ByteOffset && ByteOffset->QuadPart >= 0)
-        lseek(fd, (off_t)ByteOffset->QuadPart, SEEK_SET);
-
-    ssize_t n = read(fd, Buffer, Length);
+    /* v244: at an offset with pread (no other thread's seek in between),
+     * then the file position after it, as Windows leaves it */
+    ssize_t n;
+    if (ByteOffset && ByteOffset->QuadPart >= 0) {
+        n = pread(fd, Buffer, Length, (off_t)ByteOffset->QuadPart);
+        if (n >= 0)
+            lseek(fd, (off_t)ByteOffset->QuadPart + n, SEEK_SET);
+    } else
+        n = read(fd, Buffer, Length);
     if (n < 0) {
         XBOX_TRACE(XBOX_LOG_FILE, "NtReadFile(handle=%p) errno=%d", FileHandle, errno);
         IoStatusBlock->Status = STATUS_UNSUCCESSFUL;

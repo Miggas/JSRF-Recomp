@@ -379,6 +379,30 @@ echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/scaling_gove
 ⚠️ **This applies to every game until you restart the Deck.**
 </details>
 
+### Native Linux build (experimental)
+
+![Hard](https://img.shields.io/badge/difficulty-hard-red) &nbsp; ⏱️ 30 minutes
+
+The game can also be built as a Linux program, which runs on the Deck without
+Proton. It is new and has only been tested up to the start of the game; report
+what works and what does not.
+
+1. Build it in an Ubuntu 22.04 environment: **WSL** on your PC
+   (`wsl --install -d Ubuntu-22.04`), or a **distrobox** on the Deck in Desktop
+   Mode (`distrobox create -n jsrf -i ubuntu:22.04`, then `distrobox enter jsrf`).
+2. Install the tools there:
+   ```
+   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev
+   ```
+3. In the project's `jsrf_recomp` folder, run `bash build_linux.sh /path/to/your/game/folder`.
+   The recompiled code made on Windows (`src/recomp/gen`) can be copied over; if it
+   is not there, the script makes it from `default.xbe`.
+4. The game folder now has `jsrf_recomp` (no `.exe`) next to `jsrf_recomp.exe`.
+   In Steam, add `jsrf_recomp` as a non-Steam game and **do not** force a Proton
+   version.
+
+Same `jsrf.ini`, same saves. Logs go to the file `RECOMP_LOG` names, as on Windows.
+
 ---
 
 ## 8. Controls

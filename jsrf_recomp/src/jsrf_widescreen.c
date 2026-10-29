@@ -30,7 +30,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
 #include <windows.h>            /* before recomp_types.h: it #defines eax, esp, ... */
+#else
+#include "win32_compat.h"       /* v244: the Win32 calls used here, on Linux */
+#endif
 #include "gen/recomp_types.h"
 
 extern double xbox_PresentAspect(void);

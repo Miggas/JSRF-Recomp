@@ -3098,9 +3098,9 @@ static void start_present_read(GlSurf *s, int win);
  * The window thread stops painting once this has succeeded. Any failure
  * falls back to the old path for the rest of the run. RECOMP_GL_WINDOW_CPU=1
  * keeps the old path; RECOMP_GL_VSYNC=1 waits for vertical blank. */
-#if defined(_WIN32)
 extern void *xbox_FramebufferWindowHwnd(void);
 extern void xbox_FramebufferWindowGLOwned(void);
+#if defined(_WIN32)
 typedef BOOL  (WINAPI *wgl_make_t)(HDC, HGLRC);
 typedef HGLRC (WINAPI *wgl_getctx_t)(void);
 typedef HDC   (WINAPI *wgl_getdc_t)(void);
@@ -3109,6 +3109,7 @@ typedef int   (WINAPI *gdi_getpf_t)(HDC);
 typedef int   (WINAPI *gdi_descpf_t)(HDC, int, UINT, LPPIXELFORMATDESCRIPTOR);
 typedef BOOL  (WINAPI *gdi_setpf_t)(HDC, int, const PIXELFORMATDESCRIPTOR *);
 typedef BOOL  (WINAPI *gdi_swap_t)(HDC);
+#endif /* _WIN32: v244, the timing below is shared with Linux */
 /* v89: how the window path is really doing. A fence goes in after each
  * present; at the next present, the fences not yet passed say how many
  * frames the GPU is still behind (2+ all the time = the GPU is the limit,
@@ -3287,6 +3288,7 @@ void nv2a_gl_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind
     s_gwt.iv_max_us = s_gwt.iv_over20 = s_gwt.iv_over34 = 0;
 }
 
+#if defined(_WIN32)
 /* v108: presenting through a DXGI flip-model swap chain. GL still renders;
  * the finished frame is blitted into a D3D11 texture shared with GL
  * (WGL_NV_DX_interop2), copied to the swap chain's back buffer and shown
@@ -3459,6 +3461,7 @@ static int dxp_init(HWND hwnd, int cw, int ch)
     return 1;
 }
 
+#endif /* _WIN32 (DXGI) */
 /* v238: anti-aliasing on the way to the screen. v238c: RECOMP_GL_AA =
  * fxaa, smaa_low, smaa_medium, smaa_high or smaa_ultra (off when not set).
  * The finished frame (its texture, at the internal resolution) goes through
@@ -3864,6 +3867,7 @@ static GLuint present_aa(GLuint src, GLuint src_fbo, int w, int h)
     return s_fx.fbo;
 }
 
+#if defined(_WIN32)
 /* Present s through DXGI; 0 = not available (caller falls back). */
 static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int dw, int dh)
 {
@@ -4149,13 +4153,77 @@ static int gl_window_present(GlSurf *s)
     return gl_window_present_impl(s);
 }
 #else
-static int gl_window_present(GlSurf *s) { (void)s; return 0; }
-void nv2a_gl_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max,
-                          uint64_t *behind2, double *iv_max_ms, uint64_t *iv20,
-                          uint64_t *iv34)
-{ *frames = *behind_max = *behind2 = *iv20 = *iv34 = 0; *behind_avg = *iv_max_ms = 0; }
-int nv2a_gl_gpu_frame_stats(char *buf, size_t n) { (void)buf; (void)n; return 0; }
-static void gq_frame_start(void) {}
+/* v244: Linux. The context's own SDL window is the game window (shown at
+ * the first frame, fb_present.c handles its events); each finished frame
+ * is blitted into it, fitted, and swapped -- on the GL thread when that is
+ * on, as on Windows. */
+typedef struct { GLuint fbo, tex; uint32_t w, h; uint64_t queued; double rowk; } GwFrame;
+static volatile uint64_t s_gt_lat_sum, s_gt_lat_max, s_gt_lat_n;
+static int s_sdlw_state;               /* 0 not shown yet, 1 shown */
+extern void xbox_FramebufferWindowAttach(void *sdl_window);   /* fb_present.c */
+extern void xbox_FramebufferWindowPump(void);
+static void gw_present_sdl(void *arg)
+{
+    const GwFrame *f = (const GwFrame *)arg;
+    int cw = 0, ch = 0, dw, dh, dx, dy;
+    SDL_GL_GetDrawableSize(s_win, &cw, &ch);
+    if (cw <= 0 || ch <= 0)
+        return;
+    xbox_PresentFit(cw, ch, &dw, &dh);
+    dx = (cw - dw) / 2; dy = (ch - dh) / 2;
+    {
+        GLuint fx = present_aa(f->tex, f->fbo, SC(f->w), SC(f->h));
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : f->fbo);
+    }
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glViewport(0, 0, cw, ch);
+    present_bar_color(SC(f->w), SC(f->h));
+    glClear(GL_COLOR_BUFFER_BIT);
+    glBlitFramebuffer(0, 0, SC(f->w), SC(f->h), dx, dy, dx + dw, dy + dh,
+                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    present_row_fill_k(f->rowk, SC(f->w), SC(f->h), dx, dy, dw, dy + dh);
+    gq_mark();
+    SDL_GL_SwapWindow(s_win);
+    {
+        uint64_t d = TM_NOW() - f->queued;
+        s_gt_lat_sum += d;
+        if (d > s_gt_lat_max) s_gt_lat_max = d;
+        s_gt_lat_n++;
+    }
+    gw_timing_swap();
+    glEnable(GL_SCISSOR_TEST);
+}
+static int gl_window_present(GlSurf *s)
+{
+    GwFrame f;
+    if (!s_win)
+        return 0;
+    if (!s_sdlw_state) {
+        const char *v = getenv("RECOMP_GL_VSYNC");
+        s_sdlw_state = 1;
+        if (s_gt_on && t_gt_mode == 1)
+            glFinish();                    /* the context is the GL thread's now */
+        SDL_GL_SetSwapInterval(v && v[0] == '1' ? 1 : 0);
+        xbox_FramebufferWindowAttach(s_win);
+        xbox_FramebufferWindowGLOwned();
+        fprintf(stderr, "[GL] frames drawn into the game window (SDL)\n");
+    }
+    xbox_FramebufferWindowPump();
+    f.fbo = s->fbo; f.tex = s->tex; f.w = s->w; f.h = s->h;
+    f.rowk = s_rf_k;
+    f.queued = TM_NOW();
+    if (s_gt_on && t_gt_mode == 1)
+        gt_call(gw_present_sdl, &f, sizeof f);
+    else
+        gw_present_sdl(&f);
+    s_bound_fbo = (GLuint)-1;
+    s_bound_vp[0] = s_bound_vp[1] = -1;
+    s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
+    s_ap_valid = 0;
+    return 1;
+}
 #endif
 
 uint32_t nv2a_gl_present(uint32_t surf_va)
@@ -6315,7 +6383,6 @@ int nv2a_gl_call_stats(char *buf, size_t n)
                  (unsigned long long)(s_gt_n_cmds - l_cm), (unsigned long long)(s_gt_n_sync - l_sy),
                  (unsigned long long)(s_gt_n_pwait - l_pw));
         l_sy = s_gt_n_sync; l_pw = s_gt_n_pwait; l_cm = s_gt_n_cmds;
-#if defined(_WIN32)
         {
             static uint64_t l_ls, l_ln;
             uint64_t ln = s_gt_lat_n - l_ln;
@@ -6329,7 +6396,6 @@ int nv2a_gl_call_stats(char *buf, size_t n)
             l_ls = s_gt_lat_sum; l_ln = s_gt_lat_n;
             s_gt_lat_max = 0;
         }
-#endif
     }
     memcpy(l_c, s_glc, sizeof l_c);
     l_d = s_n_draws;

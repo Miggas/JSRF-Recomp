@@ -1,3 +1,6 @@
 # Windows batch files must keep CRLF: with LF endings cmd mis-jumps to
 # labels (goto lands in the wrong place).
 *.bat -text
+
+# Shell scripts must keep LF, or bash fails on the CR at each line end
+*.sh text eol=lf

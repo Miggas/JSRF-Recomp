@@ -3578,7 +3578,7 @@ static uint32_t s_raw_present;
  * Smaller render targets (reflections, the graffiti previews) are left
  * alone. The game still culls for its 4:3 view, so things can appear late
  * at the far left and right. k comes from the presenter (fb_present.c). */
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(XBOXRECOMP_PRESENTER)
 extern double xbox_WidescreenK(void);
 extern int xbox_MenuScreenNow(void);     /* v207b */
 #else
