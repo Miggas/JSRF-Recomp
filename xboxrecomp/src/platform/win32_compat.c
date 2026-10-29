@@ -2061,8 +2061,12 @@ VOID RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR *args)
 static PVECTORED_EXCEPTION_HANDLER s_veh[W32_VEH_MAX];
 static volatile int s_veh_n;
 static int s_veh_installed;
-static struct sigaction s_veh_old[4];
-static const int s_veh_sig[4] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE };
+#define W32_VEH_SIGS 5
+static struct sigaction s_veh_old[W32_VEH_SIGS];
+/* v244c: SIGTRAP too -- the AC97 and write-watch traps step over the
+ * faulting write with the trap flag and close the page again on the step
+ * (EXCEPTION_SINGLE_STEP); without it the Deck run died in DirectSoundCreate */
+static const int s_veh_sig[W32_VEH_SIGS] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP };
 
 static void veh_ctx_in(CONTEXT *c, const ucontext_t *u)
 {
@@ -2108,6 +2112,10 @@ static void veh_signal(int sig, siginfo_t *si, void *uc_)
         rec.ExceptionInformation[0] = (uc->uc_mcontext.gregs[REG_ERR] & 2) ? 1 : 0;
         rec.ExceptionInformation[1] = (ULONG_PTR)si->si_addr;
         break;
+    case SIGTRAP:
+        /* a single step (the trap flag) or a breakpoint (int3) */
+        rec.ExceptionCode = si->si_code == TRAP_TRACE ? 0x80000004u : 0x80000003u;
+        break;
     case SIGILL: rec.ExceptionCode = 0xC000001Du; break;   /* illegal instruction */
     default:     rec.ExceptionCode = 0xC0000094u; break;   /* integer divide by zero */
     }
@@ -2122,7 +2130,7 @@ static void veh_signal(int sig, siginfo_t *si, void *uc_)
         }
     }
     /* nobody took it: the default action (a crash), as before */
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < W32_VEH_SIGS; i++)
         if (s_veh_sig[i] == sig) {
             sigaction(sig, &s_veh_old[i], NULL);
             break;
@@ -2149,7 +2157,7 @@ PVOID AddVectoredExceptionHandler(ULONG First, PVECTORED_EXCEPTION_HANDLER Handl
         sa.sa_sigaction = veh_signal;
         sa.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
         sigemptyset(&sa.sa_mask);
-        for (i = 0; i < 4; i++)
+        for (i = 0; i < W32_VEH_SIGS; i++)
             sigaction(s_veh_sig[i], &sa, &s_veh_old[i]);
         /* the main thread's handler gets a stack of its own, for a fault
          * that is a stack overflow (the report still prints) */

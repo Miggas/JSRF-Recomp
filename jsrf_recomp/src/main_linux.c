@@ -165,6 +165,10 @@ static LONG veh_handler(PEXCEPTION_POINTERS ep)
         if (xbox_OhciOwnsAddress(xbox_va) && xbox_OhciHandleMmio(ep->ContextRecord, xbox_va))
             return EXCEPTION_CONTINUE_EXECUTION;
     }
+    /* single steps and breakpoints are other handlers' business */
+    if (ep->ExceptionRecord->ExceptionCode == 0x80000004u
+            || ep->ExceptionRecord->ExceptionCode == 0x80000003u)
+        return EXCEPTION_CONTINUE_SEARCH;
     if (!__sync_lock_test_and_set(&g_fatal_once, 1)) {
         const CONTEXT *c = ep->ContextRecord;
         const uint8_t *code = (const uint8_t *)(uintptr_t)c->Rip;
