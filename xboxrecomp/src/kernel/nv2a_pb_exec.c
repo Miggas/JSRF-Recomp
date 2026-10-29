@@ -2801,6 +2801,12 @@ static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h
 /* v239: set while one of the map's own draw passes runs (marked in the
  * command stream by recomp_manual.c; ws_fill_mark) */
 static int s_in_map_pass;
+/* v244b: declared before its first use (GCC 14 refuses an implicit one) */
+#if defined(_WIN32) || defined(XBOXRECOMP_PRESENTER)
+extern int xbox_MenuScreenNow(void);
+#else
+static int xbox_MenuScreenNow(void);
+#endif
 static int gl_state(NvGlState *st)
 {
     uint32_t bpp = surface_bpp(), base, zf, i;

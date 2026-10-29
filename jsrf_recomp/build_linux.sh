@@ -8,8 +8,8 @@
 #
 # Needs: a C compiler, cmake, python3, and the SDL2 and OpenGL development
 # files. On Ubuntu / Debian (WSL, or a distrobox on the Steam Deck):
-#   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev
-# On Arch: sudo pacman -S base-devel cmake ninja python sdl2 mesa
+#   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev libssl-dev
+# On Arch: sudo pacman -S base-devel cmake ninja python sdl2 mesa openssl
 set -e
 cd "$(dirname "$0")"
 HERE="$(pwd)"
@@ -28,10 +28,13 @@ command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || missing="$mis
 if command -v pkg-config >/dev/null 2>&1 && ! pkg-config --exists sdl2; then
     missing="$missing libsdl2-dev"
 fi
+if command -v pkg-config >/dev/null 2>&1 && ! pkg-config --exists libcrypto; then
+    missing="$missing libssl-dev"
+fi
 if [ -n "$missing" ]; then
     echo "Missing:$missing"
-    echo "Ubuntu / Debian: sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev"
-    echo "Arch:            sudo pacman -S base-devel cmake ninja python sdl2 mesa"
+    echo "Ubuntu / Debian: sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev libssl-dev"
+    echo "Arch:            sudo pacman -S base-devel cmake ninja python sdl2 mesa openssl"
     exit 1
 fi
 
@@ -45,15 +48,29 @@ python3 tools/wrap_dsound.py "$HERE/src/recomp/gen"
 
 GEN=""
 command -v ninja >/dev/null 2>&1 && GEN="-G Ninja"
-if [ ! -f build-linux/CMakeCache.txt ]; then
+
+# Under WSL the Windows drives (/mnt/c...) refuse some of what CMake does
+# to its build folder ("Operation not permitted"), and are slow: the build
+# folder then goes in your Linux home instead. The finished program still
+# goes to the game folder.
+BUILD="build-linux"
+case "$HERE" in
+    /mnt/*) BUILD="$HOME/jsrf-build-linux" ;;
+esac
+# a setup that failed halfway leaves a cache without the build files:
+# start that folder over
+if [ ! -f "$BUILD/build.ninja" ] && [ ! -f "$BUILD/Makefile" ]; then
+    rm -rf "$BUILD"
     echo "Configuring..."
-    cmake -S . -B build-linux $GEN -DCMAKE_BUILD_TYPE=Release
+    cmake -S . -B "$BUILD" $GEN -DCMAKE_BUILD_TYPE=Release
 fi
 echo "Building (Release, the first time takes a while)..."
-cmake --build build-linux --parallel "$(nproc 2>/dev/null || echo 2)"
+cmake --build "$BUILD" --parallel "$(nproc 2>/dev/null || echo 2)"
 
-cp -f build-linux/jsrf_recomp "$DEST/jsrf_recomp"
-chmod +x "$DEST/jsrf_recomp"
+cp -f "$BUILD/jsrf_recomp" "$DEST/jsrf_recomp"
+# (a Windows drive under WSL keeps no permissions: mark it executable on
+# the Deck instead, see the README)
+chmod +x "$DEST/jsrf_recomp" 2>/dev/null || true
 
 # Your jsrf.ini is never overwritten.
 if [ ! -f "$DEST/jsrf.ini" ]; then

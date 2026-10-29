@@ -392,13 +392,16 @@ what works and what does not.
    Mode (`distrobox create -n jsrf -i ubuntu:22.04`, then `distrobox enter jsrf`).
 2. Install the tools there:
    ```
-   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev
+   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev libssl-dev
    ```
 3. In the project's `jsrf_recomp` folder, run `bash build_linux.sh /path/to/your/game/folder`.
    The recompiled code made on Windows (`src/recomp/gen`) can be copied over; if it
    is not there, the script makes it from `default.xbe`.
 4. The game folder now has `jsrf_recomp` (no `.exe`) next to `jsrf_recomp.exe`.
-   In Steam, add `jsrf_recomp` as a non-Steam game and **do not** force a Proton
+   Copy the folder to the Deck as usual. If it was built on a Windows drive, mark
+   it executable once on the Deck: right-click it in the file manager →
+   **Properties → Permissions → Is executable**, or `chmod +x jsrf_recomp` in Konsole.
+5. In Steam, add `jsrf_recomp` as a non-Steam game and **do not** force a Proton
    version.
 
 Same `jsrf.ini`, same saves. Logs go to the file `RECOMP_LOG` names, as on Windows.

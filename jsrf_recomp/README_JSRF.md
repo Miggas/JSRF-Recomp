@@ -610,6 +610,7 @@ next fix.
   - the game window is the renderer's SDL window (keys, full screen with F11 / Alt+Enter, title, free-camera mouse), SDL audio in XAudio2's place, the Windows input sources (keyboard and SDL pads) with every pad through SDL, futex waits for KickOff, 256 MB thread stacks;
   - `main_linux.c` is the start-up without the Windows-only diagnostics; `jsrf_version.h` holds the build number for both.
   Tested here up to the game's first disc read (no game files on the build machine): memory, threads, interrupts, USB, audio and the partition table work. Windows build unchanged apart from shared code moved out of `#if _WIN32`.
+- **v244b:** the Linux build needs OpenSSL's development files (`libssl-dev`, now in the README and checked by the script); a failed setup no longer leaves `build-linux` half made; `xbox_MenuScreenNow` declared before its use (GCC 14 refuses implicit declarations). Checked with GCC 14's errors turned on. Under WSL, with the project on a Windows drive (`/mnt/c/...`), the build folder goes to `~/jsrf-build-linux`: CMake's setup fails there with "Operation not permitted".
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
