@@ -1017,8 +1017,27 @@ void xbox_FramebufferWindowAttach(void *sdl_window)
     SDL_SetWindowResizable(s_sw, SDL_TRUE);
     SDL_SetWindowPosition(s_sw, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(s_sw);
-    if (fs && fs[0] == '1')
-        fb_fullscreen(1);
+    if (fs && fs[0] == '1') {
+        /* v244d: not on the Deck's desktop, where without a keyboard there
+         * is no way out of it (Game Mode runs under gamescope, which the
+         * game fills anyway) */
+        int deck_desktop = 0;
+        FILE *v = fopen("/sys/devices/virtual/dmi/id/board_vendor", "r");
+        if (v) {
+            char b[32] = {0};
+            if (fgets(b, sizeof b, v) && !strncmp(b, "Valve", 5)) {
+                const char *d = getenv("XDG_CURRENT_DESKTOP");
+                deck_desktop = !getenv("GAMESCOPE_WAYLAND_DISPLAY")
+                               && !(d && strstr(d, "gamescope"));
+            }
+            fclose(v);
+        }
+        if (deck_desktop)
+            fprintf(stderr, "[FB] Steam Deck desktop: in a window (RECOMP_FULLSCREEN is for"
+                    " Game Mode here; F11 switches)\n");
+        else
+            fb_fullscreen(1);
+    }
     fprintf(stderr, "[FB] game window %dx%d%s (F11 or Alt+Enter: full screen)\n", cw, ch,
             s_fullscreen ? ", full screen" : "");
 }

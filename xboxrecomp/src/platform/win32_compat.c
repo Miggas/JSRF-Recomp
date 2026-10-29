@@ -282,6 +282,7 @@ typedef struct w32_object {
     int             exited;
     DWORD           exit_code;
     int             suspend_count;
+    int             suspend_ack;    /* v244d: stopped in the suspend signal */
     pthread_cond_t  gate;
     LPTHREAD_START_ROUTINE start;
     LPVOID          start_param;
@@ -778,28 +779,97 @@ BOOL GetExitCodeThread(HANDLE h, LPDWORD exitCode)
     return TRUE;
 }
 
+/* v244d: real suspension. The old SuspendThread only counted (only the
+ * CREATE_SUSPENDED start gate was honoured), so a guest thread that
+ * suspends itself -- and waits there to be resumed -- carried straight on
+ * and called it again: on the Deck one did so 1.27 billion times (most of
+ * the CPU, ~10 W), and CRI's sound threads ran when they should have been
+ * parked (the title's music breaking up, stopping while a save loads).
+ * A thread suspending itself now blocks on its gate until resumed; another
+ * thread is stopped with a signal whose handler waits (a futex on the
+ * count) until the count is back to zero, as the Windows scheduler would
+ * hold it. SuspendThread returns once the target has stopped. */
+#if defined(__linux__)
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#define W32_SIG_SUSPEND (SIGRTMIN + 5)
+static void w32_futex_wait(volatile int *a, int v)
+{ syscall(SYS_futex, (int *)a, FUTEX_WAIT_PRIVATE, v, NULL, NULL, 0); }
+static void w32_futex_wake(volatile int *a)
+{ syscall(SYS_futex, (int *)a, FUTEX_WAKE_PRIVATE, 0x7FFFFFFF, NULL, NULL, 0); }
+static void suspend_handler(int sig)
+{
+    w32_object *o = t_self_obj;
+    int saved = errno, c;
+    (void)sig;
+    if (!o) return;
+    __atomic_store_n(&o->suspend_ack, 1, __ATOMIC_SEQ_CST);
+    w32_futex_wake(&o->suspend_ack);
+    while ((c = __atomic_load_n(&o->suspend_count, __ATOMIC_SEQ_CST)) > 0)
+        w32_futex_wait(&o->suspend_count, c);
+    __atomic_store_n(&o->suspend_ack, 0, __ATOMIC_SEQ_CST);
+    errno = saved;
+}
+static void suspend_init(void)
+{
+    static int done;
+    struct sigaction sa;
+    if (__atomic_exchange_n(&done, 1, __ATOMIC_SEQ_CST))
+        return;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = suspend_handler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    sigaction(W32_SIG_SUSPEND, &sa, NULL);
+}
+#endif
+
 DWORD ResumeThread(HANDLE h)
 {
     w32_object *o = (w32_object *)h;
+    if (h == PSEUDO_CURRENT_THREAD) o = t_self_obj;
     if (!o || o->kind != K_THREAD) return (DWORD)-1;
     pthread_mutex_lock(&o->lock);
     DWORD prev = (DWORD)o->suspend_count;
-    if (o->suspend_count > 0 && --o->suspend_count == 0)
-        pthread_cond_broadcast(&o->gate);
+    if (o->suspend_count > 0) {
+        __atomic_sub_fetch(&o->suspend_count, 1, __ATOMIC_SEQ_CST);
+        if (o->suspend_count == 0) {
+            pthread_cond_broadcast(&o->gate);
+#if defined(__linux__)
+            w32_futex_wake(&o->suspend_count);
+#endif
+        }
+    }
     pthread_mutex_unlock(&o->lock);
     return prev;
 }
-
 DWORD SuspendThread(HANDLE h)
 {
-    /* True mid-run suspension is not supported on POSIX; only the
-     * CREATE_SUSPENDED start gate is. Track the count for ResumeThread. */
     w32_object *o = (w32_object *)h;
+    DWORD prev;
+    if (h == PSEUDO_CURRENT_THREAD) o = t_self_obj;
     if (!o || o->kind != K_THREAD) return (DWORD)-1;
     pthread_mutex_lock(&o->lock);
-    DWORD prev = (DWORD)o->suspend_count;
-    o->suspend_count++;
+    prev = (DWORD)o->suspend_count;
+    __atomic_add_fetch(&o->suspend_count, 1, __ATOMIC_SEQ_CST);
+    if (o == t_self_obj) {
+        /* suspending itself: parked here until somebody resumes it */
+        while (o->suspend_count > 0)
+            pthread_cond_wait(&o->gate, &o->lock);
+        pthread_mutex_unlock(&o->lock);
+        return prev;
+    }
     pthread_mutex_unlock(&o->lock);
+#if defined(__linux__)
+    if (prev == 0 && o->thread_joinable && !o->exited) {
+        int i;
+        suspend_init();
+        if (pthread_kill(o->thread, W32_SIG_SUSPEND) == 0)
+            for (i = 0; i < 2000 && !__atomic_load_n(&o->suspend_ack, __ATOMIC_SEQ_CST)
+                        && __atomic_load_n(&o->suspend_count, __ATOMIC_SEQ_CST) > 0; i++)
+                usleep(50);            /* until it has stopped (100 ms at most) */
+    }
+#endif
     return prev;
 }
 
