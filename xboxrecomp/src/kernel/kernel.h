@@ -672,9 +672,7 @@ NTSTATUS __stdcall xbox_NtWriteFile(
     PLARGE_INTEGER ByteOffset);
 
 NTSTATUS __stdcall xbox_NtClose(HANDLE Handle);
-#ifdef _WIN32
-void xbox_dir_context_drop(HANDLE FileHandle);
-#endif
+void xbox_dir_context_drop(HANDLE FileHandle);   /* v244f: both backends */
 
 NTSTATUS __stdcall xbox_NtDeleteFile(PXBOX_OBJECT_ATTRIBUTES ObjectAttributes);
 
