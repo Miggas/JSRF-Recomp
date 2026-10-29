@@ -966,10 +966,14 @@ NTSTATUS __stdcall xbox_NtWriteFile(
     return STATUS_SUCCESS;
 }
 
+static void posix_dir_context_drop(HANDLE FileHandle);   /* below */
+
 NTSTATUS __stdcall xbox_NtClose(HANDLE Handle)
 {
     XBOX_TRACE(XBOX_LOG_FILE, "NtClose(handle=%p)", Handle);
     if (Handle && Handle != INVALID_HANDLE_VALUE) {
+        /* v244e: its directory search goes with it, as on Windows */
+        posix_dir_context_drop(Handle);
         CloseHandle(Handle);
         return STATUS_SUCCESS;
     }
@@ -1198,6 +1202,28 @@ typedef struct {
 static DIR_CONTEXT s_dir_contexts[MAX_DIR_CONTEXTS];
 static CRITICAL_SECTION s_dir_cs;
 static BOOL s_dir_cs_init = FALSE;
+
+/* v244e: a closed directory handle takes its search with it. Host handle
+ * values are reused, and a search left part-way (a title that stops at the
+ * first match: CRI's wxCiGetFileSize) carried on under the next directory
+ * opened at the same value -- its first answer the old search's next entry,
+ * or none: the garage music (g_park.adx) "can not open" on the Deck. The
+ * Windows side has had this since before v183. */
+static void posix_dir_context_drop(HANDLE FileHandle)
+{
+    if (!s_dir_cs_init)
+        return;
+    EnterCriticalSection(&s_dir_cs);
+    for (int i = 0; i < MAX_DIR_CONTEXTS; i++)
+        if (s_dir_contexts[i].handle == FileHandle) {
+            if (s_dir_contexts[i].dir)
+                closedir(s_dir_contexts[i].dir);
+            s_dir_contexts[i].dir = NULL;
+            s_dir_contexts[i].handle = NULL;
+        }
+    LeaveCriticalSection(&s_dir_cs);
+}
+void xbox_dir_context_drop(HANDLE FileHandle) { posix_dir_context_drop(FileHandle); }
 
 NTSTATUS __stdcall xbox_NtQueryDirectoryFile(
     HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
