@@ -3838,7 +3838,9 @@ HANDLE xbox_GetMappingHandle(void)
  * write count; clean is "the count has not moved", or else "every page still
  * protected and the sum unchanged". Generations only grow, so an unchanged
  * sum means no page of the range was written. */
-#ifdef _WIN32
+/* v245: on Linux too: faults arrive as SIGSEGV through win32_compat's
+ * vectored handlers, and VirtualProtect is mprotect */
+#if defined(_WIN32) || defined(__linux__)
 #define GW_PAGES (XBOX_CONTIG_SIZE / 4096u)
 static int               g_gw_on = -1;
 static uint8_t          *g_gw_view[2];         /* host: window, tiled alias */

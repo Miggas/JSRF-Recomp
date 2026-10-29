@@ -911,12 +911,18 @@ NTSTATUS __stdcall xbox_NtReadFile(
     /* v244: at an offset with pread (no other thread's seek in between),
      * then the file position after it, as Windows leaves it */
     ssize_t n;
+    /* v245: the buffer may hold write-watched pages; a system call writing
+     * into a read-only page fails (EFAULT) instead of faulting to the
+     * handler, so they are unprotected and pinned for the read, as on
+     * Windows */
+    xbox_gw_host_write(Buffer, Length, 1);
     if (ByteOffset && ByteOffset->QuadPart >= 0) {
         n = pread(fd, Buffer, Length, (off_t)ByteOffset->QuadPart);
         if (n >= 0)
             lseek(fd, (off_t)ByteOffset->QuadPart + n, SEEK_SET);
     } else
         n = read(fd, Buffer, Length);
+    xbox_gw_host_write(Buffer, Length, 0);
     if (n < 0) {
         XBOX_TRACE(XBOX_LOG_FILE, "NtReadFile(handle=%p) errno=%d", FileHandle, errno);
         IoStatusBlock->Status = STATUS_UNSUCCESSFUL;

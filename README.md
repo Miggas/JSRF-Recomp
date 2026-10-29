@@ -281,8 +281,8 @@ instead of `jsrf.ini`.
 
 > [!NOTE]
 > The provided `jsrf.ini` already has the settings that suit the Deck:
-> `RECOMP_GL_SCALE=2` (1280×960 inside the game) and `RECOMP_GL_TEX_WATCH=0`
-> (avoids stutter).
+> `RECOMP_GL_SCALE=2` (1280×960 inside the game). The texture write-watch turns itself off under
+> Proton (avoids stutter).
 
 ### Choose a power mode
 
@@ -503,7 +503,7 @@ off: delete the `;` to switch it on. Steam launch options override the file.
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_GL_TEX_WATCH=0` | Leave at `0` if the game stutters (for example on the Steam Deck). |
+| `RECOMP_GL_TEX_WATCH=0` | Turns the texture write-watch off (it is on by default on Windows and in the Linux build, off under Proton). Try it if the game stutters. |
 | `RECOMP_SLEEP_WAITS=…` | GPU waits. Windows default: `all` (the game's wait spins 0.2 ms, then sleeps). Steam Deck default: `vblank`. `none` = highest CPU use. Steam Deck: see [section 7](#choose-a-power-mode). |
 
 If you play with **Option B** (`play_jsrf.bat`), its settings are inside the

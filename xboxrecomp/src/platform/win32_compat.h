@@ -92,6 +92,8 @@ LONG InterlockedExchange(volatile LONG *Target, LONG Value);
 LONG InterlockedExchangeAdd(volatile LONG *Addend, LONG Value);
 LONG InterlockedCompareExchange(volatile LONG *Dest, LONG Exchange, LONG Comparand);
 LONG InterlockedOr(volatile LONG *Dest, LONG Value);       /* v244 */
+LONG64 InterlockedIncrement64(volatile LONG64 *Addend);   /* v245 */
+LONG64 InterlockedExchangeAdd64(volatile LONG64 *Addend, LONG64 Value);
 LONG InterlockedAnd(volatile LONG *Dest, LONG Value);
 #define YieldProcessor() __builtin_ia32_pause()
 /* v244: modules. Windows DLLs are never there (Wine checks see "not Wine");
