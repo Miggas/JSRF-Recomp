@@ -104,7 +104,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     d3d11
     dxgi
     dxguid
-    xinput
+    $<IF:$<C_COMPILER_ID:MSVC>,xinput,xinput1_4>   # MinGW / Zig: by the DLL's name
     winmm
     shell32     # v140: copying the old saves over (SHFileOperation)
     # Lets the fault handler resolve the host RIP back to the generated
@@ -143,6 +143,14 @@ if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /Z7)
     # The generated code files can be very large. Increase object file section limit.
     target_compile_options(${PROJECT_NAME} PRIVATE /bigobj)
+endif()
+
+# Zig / MinGW on Windows (the launcher's compiler): the same 256 MB stack
+# as /STACK above, and the same warnings switched off as on Linux
+if(WIN32 AND NOT MSVC)
+    target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,268435456)
+    target_compile_options(${PROJECT_NAME} PRIVATE -fno-strict-aliasing -fwrapv
+        -Wno-unused -Wno-unused-label -Wno-unused-but-set-variable)
 endif()
 
 # ── Game-specific additions ─────────────────────────────────────

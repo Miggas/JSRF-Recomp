@@ -8,8 +8,8 @@
 #
 # Needs: a C compiler, cmake, python3, and the SDL2 and OpenGL development
 # files. On Ubuntu / Debian (WSL, or a distrobox on the Steam Deck):
-#   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev libssl-dev
-# On Arch: sudo pacman -S base-devel cmake ninja python sdl2 mesa openssl
+#   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev
+# On Arch: sudo pacman -S base-devel cmake ninja python sdl2
 set -e
 cd "$(dirname "$0")"
 HERE="$(pwd)"
@@ -28,13 +28,10 @@ command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || missing="$mis
 if command -v pkg-config >/dev/null 2>&1 && ! pkg-config --exists sdl2; then
     missing="$missing libsdl2-dev"
 fi
-if command -v pkg-config >/dev/null 2>&1 && ! pkg-config --exists libcrypto; then
-    missing="$missing libssl-dev"
-fi
 if [ -n "$missing" ]; then
     echo "Missing:$missing"
-    echo "Ubuntu / Debian: sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libgl-dev libssl-dev"
-    echo "Arch:            sudo pacman -S base-devel cmake ninja python sdl2 mesa openssl"
+    echo "Ubuntu / Debian: sudo apt install build-essential cmake ninja-build python3 libsdl2-dev"
+    echo "Arch:            sudo pacman -S base-devel cmake ninja python sdl2"
     exit 1
 fi
 

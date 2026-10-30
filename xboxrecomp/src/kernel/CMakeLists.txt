@@ -45,25 +45,10 @@ if(XBOXRECOMP_GL)
     target_include_directories(xbox_kernel PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/glad/include)
     if(WIN32)
-        if(NOT TARGET SDL2::SDL2-static)
-            include(FetchContent)
-            set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-            set(SDL_STATIC ON CACHE BOOL "" FORCE)
-            set(SDL_TEST OFF CACHE BOOL "" FORCE)
-            set(SDL_TESTS OFF CACHE BOOL "" FORCE)
-            set(SDL2_DISABLE_SDL2MAIN ON CACHE BOOL "" FORCE)
-            set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
-            set(SDL_INSTALL_TESTS OFF CACHE BOOL "" FORCE)
-            FetchContent_Declare(SDL2
-                URL https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz
-                DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-            FetchContent_MakeAvailable(SDL2)
-        endif()
         target_link_libraries(xbox_kernel PUBLIC SDL2::SDL2-static opengl32)
     else()
-        find_package(SDL2 REQUIRED)
-        find_package(OpenGL REQUIRED)
-        target_link_libraries(xbox_kernel PUBLIC SDL2::SDL2 OpenGL::GL)
+        # OpenGL is loaded at run time through SDL (glad): no GL library to link
+        target_link_libraries(xbox_kernel PUBLIC SDL2::SDL2)
     endif()
 endif()
 
@@ -81,9 +66,9 @@ if(WIN32)
     # include path that "platform/xbox_winnt.h" resolves against.
     target_link_libraries(xbox_kernel PUBLIC platform kernel32 bcrypt)
 else()
-    # Linux: platform layer (POSIX host primitives) + OpenSSL for crypto.
-    find_package(OpenSSL REQUIRED)
-    target_link_libraries(xbox_kernel PUBLIC platform OpenSSL::Crypto)
+    # Linux: platform layer (POSIX host primitives). The crypto is all
+    # software (kernel_crypto.c): no OpenSSL.
+    target_link_libraries(xbox_kernel PUBLIC platform)
 endif()
 
 if(MSVC)

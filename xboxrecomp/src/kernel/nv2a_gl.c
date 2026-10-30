@@ -2484,7 +2484,12 @@ int nv2a_gl_active(void)
 #define HASH_CRC_TARGET
 #else
 #include <cpuid.h>
+#if defined(__clang__)
+/* clang (and Zig) name the CRC32 instruction as its own feature */
+#define HASH_CRC_TARGET __attribute__((target("sse4.2,crc32")))
+#else
 #define HASH_CRC_TARGET __attribute__((target("sse4.2")))
+#endif
 #endif
 static int crc_ok(void)
 {

@@ -233,6 +233,7 @@ static BOOL load_xbe(const char *path, void **out_data, size_t *out_size);
  * Entry VA 0x00148023 was named from XbSymbolDatabase, so the generated
  * function is XAPILIB_mainCRTStartup rather than sub_00148023. */
 extern void XAPILIB_mainCRTStartup(void);
+extern int recomp_dispatch_init(void);   /* recomp_dispatch.c */
 #define xbe_entry_point XAPILIB_mainCRTStartup
 
 /* ── VEH crash handler ─────────────────────────────────────── */

@@ -42,6 +42,6 @@ if(WIN32)
     target_link_libraries(xbox_apu PRIVATE platform kernel32 winmm xaudio2_8 ole32)
 else()
     # Linux: platform layer (Win32 primitives on POSIX) + SDL2 audio + libm
-    find_package(SDL2 REQUIRED)
+    # SDL2::SDL2: cmake/sdl2.cmake
     target_link_libraries(xbox_apu PRIVATE platform SDL2::SDL2 m)
 endif()
