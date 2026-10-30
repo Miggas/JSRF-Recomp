@@ -40,6 +40,11 @@ Each section is marked with how much effort it takes:
 | ![Medium](https://img.shields.io/badge/difficulty-medium-yellow) | A few more steps, or installing something. Follow the instructions closely. |
 | ![Hard](https://img.shields.io/badge/difficulty-hard-red) | Typing commands, or system settings. Optional — there is always an easier way. |
 
+### Planned features
+
+- Native Linux support, for the Steam Deck and other Linux.
+- An all-in-one standalone launcher to configure, update and recompile, without external programs.
+
 ---
 
 ## Contents
