@@ -31,7 +31,8 @@ bool have_tools(void);
 bool have_msvc(void);                     /* Visual Studio with the C++ tools (Windows) */
 void game_exe(char *out);
 void game_ini(char *out);
-const char *source_id(void);              /* the commit the source is at, or "" */
+const char *source_id(void);
+const char *update_branch(void);          /* BRANCH= in launcher.ini, else main */              /* the commit the source is at, or "" */
 
 /* jobs */
 enum { JOB_NONE, JOB_TOOLS, JOB_BUILD, JOB_UPDATE, JOB_CHECK };

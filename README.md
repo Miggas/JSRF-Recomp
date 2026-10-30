@@ -54,4 +54,4 @@ Next to the launcher:
 | `source/` | the project, downloaded by Update |
 | `tools/` | Python, Zig, CMake, Ninja (about 400 MB) |
 | `build/` | the compiler's work files |
-| `launcher.ini` | the launcher's settings |
+| `launcher.ini` | the launcher's settings: `BRANCH=test` makes Update download the `test` branch (missing = `main`) |

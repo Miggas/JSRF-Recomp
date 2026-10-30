@@ -313,6 +313,8 @@ static void tab_update(struct nk_context *ctx, float h)
         if (!g_paths.have_source) snprintf(t, sizeof t, "The project is not downloaded yet.");
         else if (*id) snprintf(t, sizeof t, "Project version: %.10s", id);
         else snprintf(t, sizeof t, "Project version: unknown");
+        size_t tl = strlen(t);
+        snprintf(t + tl, sizeof t - tl, "   (branch: %s, set in launcher.ini)", update_branch());
         nk_label(ctx, t, NK_TEXT_LEFT);
         const char *r = update_remote();
         if (*r && strcmp(r, id))

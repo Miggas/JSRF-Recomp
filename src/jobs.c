@@ -64,7 +64,9 @@ void paths_init(void)
     if (!is_file(li)) {
         const char *t =
             "; JSRF launcher settings (the game's own are in jsrf.ini, in the game folder)\n"
-            "[launcher]\n";
+            "[launcher]\n"
+            "; --- The project's branch Update downloads: main (default) or test (newest, less tested).\n"
+            ";BRANCH=test\n";
         write_file(li, t, strlen(t));
     }
     ini_load(&g_launcher_ini, li);
@@ -227,6 +229,20 @@ static bool use_msvc(void)
     if (c == COMP_ZIG) return false;
     if (c == COMP_MSVC) return true;
     return have_msvc();
+}
+
+/* BRANCH= in launcher.ini: the project's branch Update downloads.
+ * Missing, empty or not a branch name: main. */
+const char *update_branch(void)
+{
+    static char b[100];
+    const char *v = ini_get(&g_launcher_ini, "BRANCH");
+    bool ok = v && *v && strlen(v) < sizeof b;
+    for (const char *c = v; ok && *c; c++)
+        ok = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') ||
+             *c == '-' || *c == '_' || *c == '.' || *c == '/';
+    snprintf(b, sizeof b, "%s", ok ? v : "main");
+    return b;
 }
 
 static char s_source_id[64];
@@ -584,8 +600,9 @@ static bool check_update(void)
 {
     s_remote[0] = 0;
     status("Checking for updates...", NULL);
-    const char *argv[] = { "curl", "-fsSL", "-H", "Accept: application/vnd.github.sha",
-                           "https://api.github.com/repos/" REPO "/commits/main", NULL };
+    char url[256];
+    snprintf(url, sizeof url, "https://api.github.com/repos/" REPO "/commits/%s", update_branch());
+    const char *argv[] = { "curl", "-fsSL", "-H", "Accept: application/vnd.github.sha", url, NULL };
     char out[256];
     if (run_capture(argv, NULL, out, sizeof out) != 0 || strlen(out) < 40) {
         logf_("Could not reach GitHub. %s", out);
@@ -608,8 +625,10 @@ static bool do_update(void)
     pjoin(zip, dl, "source.zip");
     pjoin(tmp, dl, "unpacked");
     py_exe(py);
-    status("Downloading the newest version of the project...", NULL);
-    if (!download("https://github.com/" REPO "/archive/refs/heads/main.zip", zip)) return false;
+    status("Downloading the newest version of the project (%s)...", update_branch());
+    char url[256];
+    snprintf(url, sizeof url, "https://github.com/" REPO "/archive/refs/heads/%s.zip", update_branch());
+    if (!download(url, zip)) return false;
     status("Unpacking...", NULL);
     /* GitHub puts the commit in the zip's comment */
     const char *argv[] = { py, "-c",
@@ -621,7 +640,11 @@ static bool do_update(void)
     char sha[256];
     if (run_capture(argv, NULL, sha, sizeof sha) != 0) { logf_("Could not unpack: %s", sha); return false; }
     char top[LPATH];
-    pjoin(top, tmp, "JSRF-Recomp-main");
+    /* the zip's folder: repo-branch, a / in the branch name becoming - */
+    char topname[160];
+    snprintf(topname, sizeof topname, "JSRF-Recomp-%s", update_branch());
+    for (char *c = topname; *c; c++) if (*c == '/') *c = '-';
+    pjoin(top, tmp, topname);
     if (!is_source(top)) { logf_("The download does not look like the project."); return false; }
 
     char old[LPATH];
