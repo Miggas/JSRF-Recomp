@@ -415,11 +415,12 @@ works on Windows and Linux, the Steam Deck included, and needs nothing
 installed: on the first build it downloads its own tools (Python, the Zig
 compiler, CMake, Ninja; about 150 MB) into its `tools` folder.
 
-1. Put `jsrf_launcher` (`jsrf_launcher.exe` on Windows) in an empty folder.
-   On the Deck, mark it executable (**Properties → Permissions → Is executable**).
-2. Start it. In **Play**, set the game folder: type it, or drop `default.xbe`
-   onto the window.
-3. **Update → Download** gets the project, then builds the game.
+1. Download it from [Releases](https://github.com/Miggas/JSRF-Recomp/releases)
+   and put it in an empty folder. On the Deck, mark it executable
+   (**Properties → Permissions → Is executable**).
+2. Put your game files in a `game` folder next to it, or drop `default.xbe`
+   onto its window.
+3. **Update → Download** gets the project and builds the game.
 4. **Play**. On the Deck, add `jsrf_launcher` to Steam as a non-Steam game,
    without Proton.
 
@@ -428,8 +429,7 @@ compiler, CMake, Ninja; about 150 MB) into its `tools` folder.
   and saves are kept.
 - On Windows, **Build → Compiler**: Visual Studio when it is installed, Zig
   otherwise. A Zig build's crash reports don't name the game function.
-- Put in a copy of this project made with git, it builds that copy and leaves
-  updating to git.
+- The launcher's code is on the [`launcher`](https://github.com/Miggas/JSRF-Recomp/tree/launcher) branch.
 
 ---
 
@@ -677,8 +677,6 @@ co-author.
 - `xboxrecomp/` is MIT licensed (see `xboxrecomp/LICENSE`). Some of its audio
   files come from [xemu](https://github.com/xemu-project/xemu) under
   LGPL-2.1 — see `xboxrecomp/NOTICE` for the full list and their authors.
-- The launcher's window is drawn with [Nuklear](https://github.com/Immediate-Mode-UI/Nuklear)
-  (public domain / MIT, `launcher/third_party/nuklear`), on [SDL2](https://libsdl.org) (zlib).
 - *Jet Set Radio Future* is © SEGA. Xbox is a trademark of Microsoft. This
   project is not affiliated with or endorsed by SEGA or Microsoft, and includes
   none of their code or content.

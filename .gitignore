@@ -39,11 +39,3 @@ Thumbs.db
 
 # Linux build folder (build_linux.sh)
 jsrf_recomp/build-linux/
-
-# the launcher, when run from a copy of the project
-/tools/
-/build/
-/launcher.ini
-/jsrf_launcher
-/jsrf_launcher.exe
-build-launcher/
