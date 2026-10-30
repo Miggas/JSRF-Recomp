@@ -519,6 +519,15 @@ static bool do_build(void)
     if (cancelled()) return false;
 
     bool msvc = use_msvc();
+    if (!msvc) {
+        char tc[LPATH];
+        pjoin3(tc, jr, "cmake", "zig.cmake");
+        if (!is_file(tc)) {
+            logf_("This version of the project can't be built with Zig (it needs v246 or newer).");
+            logf_("Update the project, or build with Visual Studio (Build -> Compiler).");
+            return false;
+        }
+    }
     char bdir[LPATH], cmake[LPATH], ninja[LPATH], stamp[LPATH], want[LPATH * 2 + 32];
     pjoin(bdir, g_paths.build, msvc ? "msvc" : "zig");
     pkg_bin(cmake, "cmake", "cmake");
