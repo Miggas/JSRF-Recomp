@@ -1,0 +1,47 @@
+# Builds the launcher for Windows and Linux with the build scripts. A tag
+# "launcher-v..." puts both on a release; running it by hand (Actions ->
+# launcher -> Run workflow) only keeps them as a download on that run.
+name: launcher
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["launcher-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -q libsdl2-2.0-0
+      - run: bash build_launcher.sh
+      - run: tar -czf jsrf_launcher-linux.tar.gz jsrf_launcher
+      - uses: actions/upload-artifact@v4
+        with: { name: linux, path: jsrf_launcher-linux.tar.gz }
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .\build_launcher.bat
+        shell: cmd
+      - run: Compress-Archive jsrf_launcher.exe jsrf_launcher-windows.zip
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: jsrf_launcher-windows.zip }
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/launcher-v')
+    needs: [linux, windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" linux/jsrf_launcher-linux.tar.gz windows/jsrf_launcher-windows.zip \
+            --repo "$GITHUB_REPOSITORY" --title "Launcher $GITHUB_REF_NAME" \
+            --notes "jsrf_launcher for Windows and Linux (Steam Deck). See the README on the main branch."
