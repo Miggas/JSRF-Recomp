@@ -1,6 +1,9 @@
-# Builds the launcher for Windows and Linux with the build scripts. A tag
-# "launcher-v..." puts both on a release; running it by hand (Actions ->
-# launcher -> Run workflow) only keeps them as a download on that run.
+# Builds the launcher for Windows and Linux with the build scripts.
+# A release made on GitHub (Releases -> Draft a new release, a new tag
+# "launcher-v...", target "launcher") gets both attached a few minutes
+# later; pushing such a tag makes the release by itself. Running it by
+# hand (Actions -> launcher -> Run workflow) keeps them as a download on
+# that run.
 name: launcher
 
 on:
@@ -42,6 +45,12 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" linux/jsrf_launcher-linux.tar.gz windows/jsrf_launcher-windows.zip \
-            --repo "$GITHUB_REPOSITORY" --title "Launcher $GITHUB_REF_NAME" \
-            --notes "jsrf_launcher for Windows and Linux (Steam Deck). See the README on the main branch."
+          files="linux/jsrf_launcher-linux.tar.gz windows/jsrf_launcher-windows.zip"
+          # made on the website: add the files to it; a pushed tag: make it
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" $files --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" $files --repo "$GITHUB_REPOSITORY" \
+              --title "Launcher $GITHUB_REF_NAME" \
+              --notes "jsrf_launcher for Windows and Linux (Steam Deck). See the README on the main branch."
+          fi
