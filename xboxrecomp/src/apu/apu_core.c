@@ -437,63 +437,7 @@ extern long long apu_dbg_ms(void);
 static unsigned long g_apu_trap_waits, g_apu_trap_timeouts, g_apu_silent_frames;
 static int64_t g_apu_trap_longest_us;
 
-/* v252: the quit window's sounds, made here while the game (and its sound)
- * is held. An original one, in the game's style (*picked by Miggas*): a
- * record scratch, forward and back ("baby scratch"), deep: a saw wave (plus
- * a sine for body) whose pitch follows the record's speed, 85..565 Hz, two
- * strokes in 170 ms, through two low-passes that open with the speed.
- * Played for a move only; closing the window is silent. (Table 1, at three
- * quarters the pitch, is kept for a back sound.) Made once, at 48 kHz. */
-extern volatile LONG g_xbox_game_held, g_xbox_ui_sound;   /* input/xinput_device.c */
-#define UI_SND_N (48000 * 17 / 100)
-static int16_t s_ui_snd[2][UI_SND_N];   /* 0 move, 1 back */
-static int s_ui_made;
-
-static void ui_make(void)
-{
-    const double sr = 48000.0, pi = 3.14159265358979, dur = UI_SND_N / 48000.0;
-    static float tmp[UI_SND_N];
-    for (int k = 0; k < 2; k++) {
-        double ph = 0, l1 = 0, l2 = 0, peak = 0;
-        double a2 = exp(-2 * pi * 1800 / sr);
-        for (int i = 0; i < UI_SND_N; i++) {
-            double t = i / sr;
-            double sw = fabs(sin(2 * pi * t / dur));            /* the record's speed */
-            double f = (85 + 480 * sw) * (k ? 0.75 : 1.0);
-            ph += f / sr;
-            ph -= floor(ph);
-            double x = 2 * (ph - floor(ph + 0.5)) + 0.5 * sin(2 * pi * ph);
-            double a1 = exp(-2 * pi * (450 + 2000 * sw) / sr);
-            l1 = a1 * l1 + (1 - a1) * x;
-            l2 = a2 * l2 + (1 - a2) * l1;
-            double v = l2 * (t < 0.003 ? t / 0.003 : 1.0) * exp(-t / 0.1);
-            tmp[i] = (float)v;
-            if (fabs(v) > peak) peak = fabs(v);
-        }
-        for (int i = 0; i < UI_SND_N; i++) {
-            double fade = (UI_SND_N - 1 - i) / (0.005 * sr);
-            s_ui_snd[k][i] = (int16_t)(tmp[i] / peak * 6500 * (fade < 1 ? fade : 1));
-        }
-    }
-    s_ui_made = 1;
-}
-
-static void ui_render(int16_t buf[][2], int n)
-{
-    static int pos = UI_SND_N, which;
-    LONG req = InterlockedExchange(&g_xbox_ui_sound, 0);
-    if (req) {
-        if (!s_ui_made) ui_make();
-        which = (req & 2) ? 1 : 0;
-        pos = 0;                                /* a new press starts it again */
-    }
-    for (int i = 0; i < n && pos < UI_SND_N; i++, pos++) {
-        int v = s_ui_snd[which][pos];
-        int l = buf[i][0] + v, r = buf[i][1] + v;
-        buf[i][0] = (int16_t)(l > 32767 ? 32767 : l < -32768 ? -32768 : l);
-        buf[i][1] = (int16_t)(r > 32767 ? 32767 : r < -32768 ? -32768 : r);
-    }
-}
+extern volatile LONG g_xbox_game_held;   /* v252: input/xinput_device.c */
 
 void mcpx_apu_monitor_frame(MCPXAPUState *d)
 {
@@ -525,7 +469,7 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
         if (g_audio_muted) {
             memset(d->monitor.frame_buf, 0, sizeof(d->monitor.frame_buf));
         } else if (g_xbox_game_held) {
-            ui_render(d->monitor.frame_buf, MIXER_FRAME_SAMPLES);   /* v252 */
+            /* v252: the game is held (quit window, shader build): silence */
         } else {
             if (g_test_tone.active) {
                 for (i = 0; i < MIXER_FRAME_SAMPLES; i++) {
@@ -767,8 +711,8 @@ static void *mcpx_apu_frame_thread(void *arg)
         }
 
         /* v252: the game is held by the quit window: its voices stand still
-         * (no VP, no software mixer), the output keeps going in real time
-         * with only the window's own sounds */
+         * (no VP, no software mixer), the output keeps going in real time,
+         * silent */
         if (g_xbox_game_held) {
             throttle(d);
             mcpx_apu_monitor_frame(d);

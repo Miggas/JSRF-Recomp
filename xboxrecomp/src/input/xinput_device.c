@@ -498,11 +498,8 @@ int xbox_QuitDialogOpen(void) { return s_qd_open == 1; }
 int xbox_QuitDialogSel(void) { return (int)s_qd_sel; }
 
 /* v252: while the window is open the game is held (kernel/nv2a_gl.c holds
- * it at its next frame), its sound too (apu/apu_core.c, which then plays
- * only these); the window's own sound: bit 0 a move (closing is silent). */
+ * it at its next frame), its sound too (apu/apu_core.c) */
 volatile LONG g_xbox_game_held;
-volatile LONG g_xbox_ui_sound;
-static void ui_sound(int k) { InterlockedExchange(&g_xbox_ui_sound, g_xbox_ui_sound | (1 << k)); }
 
 static void quit_filter(int idx, XBOX_INPUT_STATE *st);
 static DWORD source_get(int src, XBOX_INPUT_STATE *pState);
@@ -562,7 +559,6 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         if (((b & lr) && (b & lr) != (pb & lr)) || (sx && sx != psx)) {
             LONG to = (b & XBOX_GAMEPAD_DPAD_LEFT) || sx < 0 ? 0 :
                       (b & XBOX_GAMEPAD_DPAD_RIGHT) || sx > 0 ? 1 : s_qd_sel;
-            if (to != s_qd_sel) ui_sound(0);
             InterlockedExchange(&s_qd_sel, to);
         }
         if ((ab & 1) && !(pab & 1) && s_qd_sel == 0) quit_now();
