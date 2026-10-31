@@ -152,6 +152,11 @@ if(WIN32 AND NOT MSVC)
     # what loads next to it) in the low 4 GB the Xbox memory is mapped into
     target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,268435456
         -Wl,--image-base,0x140000000)
+    # v248: fast memcpy / memmove / memset / memcmp. Without them Zig links
+    # its own, which copy a byte at a time (slow loading screens).
+    target_sources(${PROJECT_NAME} PRIVATE ${XBOXRECOMP_DIR}/src/platform/win_memfuncs.c)
+    set_source_files_properties(${XBOXRECOMP_DIR}/src/platform/win_memfuncs.c
+        PROPERTIES COMPILE_OPTIONS "-fno-builtin")
     target_compile_options(${PROJECT_NAME} PRIVATE -fno-strict-aliasing -fwrapv
         -Wno-unused -Wno-unused-label -Wno-unused-but-set-variable)
 endif()
