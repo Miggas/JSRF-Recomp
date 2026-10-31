@@ -4236,6 +4236,8 @@ static int gl_window_present(GlSurf *s)
 }
 #endif
 
+static GlSurf *s_last_win;   /* v252: the frame last shown in the game window */
+
 uint32_t nv2a_gl_present(uint32_t surf_va)
 {
     static int sync = -1;
@@ -4258,8 +4260,10 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
             win = 0;                      /* guest is current again: show it */
         if (win && gl_window_present(s)) {
             present_collect();            /* a read still in flight, if any */
+            s_last_win = s;
             return 0;                     /* shown already */
         }
+        s_last_win = NULL;
         if (win) {
             present_collect();            /* the previous frame, to the window */
             start_present_read(s, 1);
@@ -4277,6 +4281,31 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
     }
     start_present_read(s, 0);
     return shown;
+}
+
+/* v252: the quit window holds the game. Called at the frame's flip: while
+ * the window is open the game's thread stays here, so nothing in the game
+ * moves (its sound is held too, apu_core.c); the last frame is shown again
+ * with the window over it, about 60 times a second, and the window reads
+ * the controllers itself. Only when that frame went to the game window (the
+ * window is drawn on that path); otherwise the game runs on under it. */
+extern int xbox_QuitDialogOpen(void);
+extern void xbox_QuitDialogPoll(void);
+extern volatile LONG g_xbox_game_held;
+void nv2a_gl_quit_hold(void)
+{
+    if (!xbox_QuitDialogOpen() || !s_last_win || s_state != 1)
+        return;
+    InterlockedExchange(&g_xbox_game_held, 1);
+    fprintf(stderr, "[QUIT] game held\n");
+    while (xbox_QuitDialogOpen()) {
+        xbox_QuitDialogPoll();
+        if (!gl_window_present(s_last_win))
+            break;
+        Sleep(16);
+    }
+    InterlockedExchange(&g_xbox_game_held, 0);
+    fprintf(stderr, "[QUIT] game goes on\n");
 }
 
 static void start_present_read(GlSurf *s, int win)

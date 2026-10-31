@@ -41,6 +41,7 @@ void nv2a_gl_draw_mapped(const NvGlState *st, const uint32_t *idx, uint32_t n_id
 void nv2a_gl_unmap_vertices(void) {}
 void nv2a_gl_times(uint64_t t[4], uint64_t *freq) { t[0] = t[1] = t[2] = t[3] = 0; *freq = 0; }
 uint32_t nv2a_gl_present(uint32_t surf_va) { return surf_va; }
+void nv2a_gl_quit_hold(void) {}
 float nv2a_gl_probe_z(int i) { (void)i; return -1.0f; }
 int nv2a_gl_gpu_frame_stats(char *b, size_t n) { (void)b; (void)n; return 0; }
 int nv2a_gl_submit_stats(char *b, size_t n) { (void)b; (void)n; return 0; }

@@ -6853,6 +6853,10 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
                 xbox_FramebufferWindowPresent(show, show_pitch);
             }
             last_pitch = pitch;
+            if (nv2a_gl_active()) {
+                extern void nv2a_gl_quit_hold(void);
+                nv2a_gl_quit_hold();          /* v252: the quit window */
+            }
         }
         {
             /* RECOMP_FB_DUMP_FLIPS: dump every presented frame, not one per

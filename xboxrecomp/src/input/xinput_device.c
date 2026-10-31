@@ -497,6 +497,25 @@ static int  s_qd_off = -1;
 int xbox_QuitDialogOpen(void) { return s_qd_open == 1; }
 int xbox_QuitDialogSel(void) { return (int)s_qd_sel; }
 
+/* v252: while the window is open the game is held (kernel/nv2a_gl.c holds
+ * it at its next frame), its sound too (apu/apu_core.c, which then plays
+ * only these); the window's own sound: bit 0 a move (closing is silent). */
+volatile LONG g_xbox_game_held;
+volatile LONG g_xbox_ui_sound;
+static void ui_sound(int k) { InterlockedExchange(&g_xbox_ui_sound, g_xbox_ui_sound | (1 << k)); }
+
+static void quit_filter(int idx, XBOX_INPUT_STATE *st);
+static DWORD source_get(int src, XBOX_INPUT_STATE *pState);
+/* the game is held and reads no input: the window reads every device */
+void xbox_QuitDialogPoll(void)
+{
+    XBOX_INPUT_STATE st;
+    for (int src = 0; src < XBOX_INPUT_SOURCES; src++) {
+        memset(&st, 0, sizeof st);
+        if (source_get(src, &st) == ERROR_SUCCESS) quit_filter(8 + src, &st);
+    }
+}
+
 static void quit_now(void)
 {
     fprintf(stderr, "[EXIT] quit from the quit window (L3 + R3)\n");
@@ -540,9 +559,12 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         }
     } else if (s_qd_open == 1) {
         WORD lr = XBOX_GAMEPAD_DPAD_LEFT | XBOX_GAMEPAD_DPAD_RIGHT;
-        if (((b & lr) && (b & lr) != (pb & lr)) || (sx && sx != psx))
-            InterlockedExchange(&s_qd_sel, (b & XBOX_GAMEPAD_DPAD_LEFT) || sx < 0 ? 0 :
-                                           (b & XBOX_GAMEPAD_DPAD_RIGHT) || sx > 0 ? 1 : s_qd_sel);
+        if (((b & lr) && (b & lr) != (pb & lr)) || (sx && sx != psx)) {
+            LONG to = (b & XBOX_GAMEPAD_DPAD_LEFT) || sx < 0 ? 0 :
+                      (b & XBOX_GAMEPAD_DPAD_RIGHT) || sx > 0 ? 1 : s_qd_sel;
+            if (to != s_qd_sel) ui_sound(0);
+            InterlockedExchange(&s_qd_sel, to);
+        }
         if ((ab & 1) && !(pab & 1) && s_qd_sel == 0) quit_now();
         if (((ab & 2) && !(pab & 2)) || ((ab & 1) && !(pab & 1))) {
             InterlockedExchange(&s_qd_open, 2);
