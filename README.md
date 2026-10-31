@@ -364,6 +364,7 @@ switch it on. Steam launch options override the file.
 |---|---|
 | `RECOMP_USB_PADS=1` | Number of players (1 to 4). With 2 or more, players join in the order they press a button. |
 | `RECOMP_RUMBLE=100` | Controller rumble: `0` = off, `1` to `100` = strength in percent. |
+| `RECOMP_QUIT_COMBO=0` | Turns the quit window off (on by default: click both sticks, L3 + R3). |
 
 **`[audio]`**
 

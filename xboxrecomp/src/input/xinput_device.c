@@ -14,6 +14,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#if !defined(_WIN32)
+#include <unistd.h>   /* _exit (v250) */
+#endif
 
 /* ======================================================================== */
 #if defined(_WIN32) || defined(__linux__)
@@ -477,15 +480,89 @@ static DWORD input_get(DWORD dwPort, XBOX_INPUT_STATE *pState, int merge_kbd)
     return ERROR_SUCCESS;
 }
 
+/* v250: the quit window. Clicking both sticks (L3 + R3) opens it (drawn by
+ * kernel/nv2a_gl_quit.h); while it is open the game gets a controller at
+ * rest; A quits, B closes it, and nothing reaches the game until every
+ * button is let go again. Any controller (and the keyboard: Shift + Ctrl,
+ * then Z / X) works it. RECOMP_QUIT_COMBO=0 turns it off. */
+#define QD_IDX 64
+static volatile LONG s_qd_open;           /* 0 closed, 1 open, 2 closed, waiting for release */
+static WORD s_qd_prev_btn[QD_IDX];
+static BYTE s_qd_prev_ab[QD_IDX];
+static int  s_qd_off = -1;
+
+int xbox_QuitDialogOpen(void) { return s_qd_open == 1; }
+
+static void quit_now(void)
+{
+    fprintf(stderr, "[EXIT] quit from the quit window (L3 + R3)\n");
+    fflush(stderr);
+    fflush(stdout);
+#if defined(_WIN32)
+    TerminateProcess(GetCurrentProcess(), 0);
+#else
+    _exit(0);
+#endif
+}
+
+static void quit_filter(int idx, XBOX_INPUT_STATE *st)
+{
+    const WORD sticks = XBOX_GAMEPAD_LEFT_THUMB | XBOX_GAMEPAD_RIGHT_THUMB;
+    XBOX_GAMEPAD *g = &st->Gamepad;
+    if (s_qd_off < 0) {
+        const char *e = getenv("RECOMP_QUIT_COMBO");
+        s_qd_off = e && e[0] == '0';
+    }
+    if (s_qd_off || idx < 0 || idx >= QD_IDX) return;
+    WORD b = g->wButtons;
+    BYTE ab = (BYTE)((g->bAnalogButtons[XBOX_BUTTON_A] > 30 ? 1 : 0) |
+                     (g->bAnalogButtons[XBOX_BUTTON_B] > 30 ? 2 : 0));
+    WORD pb = s_qd_prev_btn[idx];
+    BYTE pab = s_qd_prev_ab[idx];
+    s_qd_prev_btn[idx] = b;
+    s_qd_prev_ab[idx] = ab;
+    int held = b != 0 || ab != 0 || g->bAnalogButtons[XBOX_BUTTON_X] > 30 || g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
+
+    if (s_qd_open == 0) {
+        if ((b & sticks) == sticks && (pb & sticks) != sticks) {
+            InterlockedExchange(&s_qd_open, 1);
+            fprintf(stderr, "[QUIT] quit window open (A = quit, B = back)\n");
+        } else {
+            return;                         /* the game's input, untouched */
+        }
+    } else if (s_qd_open == 1) {
+        if ((ab & 1) && !(pab & 1)) quit_now();
+        if ((ab & 2) && !(pab & 2)) {
+            InterlockedExchange(&s_qd_open, 2);
+            fprintf(stderr, "[QUIT] back to the game\n");
+        }
+    } else if (!held) {
+        InterlockedExchange(&s_qd_open, 0);   /* everything let go: the game's again */
+    }
+    /* a controller at rest for the game; a new packet number so it reads it */
+    memset(g, 0, sizeof *g);
+    st->dwPacketNumber ^= 0x80000000u;
+}
+
 DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
 {
-    return input_get(dwPort, pState, 1);
+    DWORD r = input_get(dwPort, pState, 1);
+    if (r == ERROR_SUCCESS) quit_filter((int)dwPort, pState);
+    return r;
 }
 
 /* v186b: one input device on its own -- PC pad 0..3 without the keyboard
  * merged in, or the keyboard alone -- for the per-player assignment in
  * usb/usb_gamepad.c. */
+static DWORD source_get(int src, XBOX_INPUT_STATE *pState);
 DWORD xbox_InputGetSource(int src, XBOX_INPUT_STATE *pState)
+{
+    DWORD r = source_get(src, pState);
+    if (r == ERROR_SUCCESS) quit_filter(8 + src, pState);   /* v250 */
+    return r;
+}
+
+static DWORD source_get(int src, XBOX_INPUT_STATE *pState)
 {
     if (!pState)
         return ERROR_DEVICE_NOT_CONNECTED;

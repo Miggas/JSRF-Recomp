@@ -3103,6 +3103,7 @@ static void start_present_read(GlSurf *s, int win);
  * The window thread stops painting once this has succeeded. Any failure
  * falls back to the old path for the rest of the run. RECOMP_GL_WINDOW_CPU=1
  * keeps the old path; RECOMP_GL_VSYNC=1 waits for vertical blank. */
+#include "nv2a_gl_quit.h"   /* v250: the quit window (L3 + R3), over the frame */
 extern void *xbox_FramebufferWindowHwnd(void);
 extern void xbox_FramebufferWindowGLOwned(void);
 #if defined(_WIN32)
@@ -3906,6 +3907,7 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), dx, dy + dh, dx + dw, dy,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     present_row_fill(SC(s->w), SC(s->h), dx, dy + dh, dw, dy);   /* v217b */
+    present_overlay_f(cw, ch, 1);   /* v250: D3D's row 0 is the top */
     gq_mark();
     s_dx.unlock(s_dx.hdev, 1, &s_dx.hobj);
     if (SUCCEEDED(IDXGISwapChain1_GetBuffer(s_dx.sc, 0, &dxp_IID_ID3D11Texture2D, (void **)&bb))) {
@@ -4066,6 +4068,7 @@ static int gl_window_present_impl(GlSurf *s)
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     present_row_fill(SC(s->w), SC(s->h), dx, dy, dw, dy + dh);   /* v217b */
+    present_overlay(cw, ch);   /* v250 */
     gq_mark();
     s_gw.swap(s_gw.hdc);
     gw_timing_swap();
@@ -4115,6 +4118,7 @@ static void gw_present_gl(void *arg)
     glBlitFramebuffer(0, 0, SC(f->w), SC(f->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     present_row_fill_k(f->rowk, SC(f->w), SC(f->h), dx, dy, dw, dy + dh);   /* v224 */
+    present_overlay(cw, ch);   /* v250 */
     s_gw.swap(s_gw.hdc);
     {
         uint64_t d = TM_NOW() - f->queued;
@@ -4189,6 +4193,7 @@ static void gw_present_sdl(void *arg)
     glBlitFramebuffer(0, 0, SC(f->w), SC(f->h), dx, dy, dx + dw, dy + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     present_row_fill_k(f->rowk, SC(f->w), SC(f->h), dx, dy, dw, dy + dh);
+    present_overlay(cw, ch);   /* v250 */
     gq_mark();
     SDL_GL_SwapWindow(s_win);
     {
