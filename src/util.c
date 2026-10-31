@@ -12,8 +12,10 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#define COBJMACROS
 #include <windows.h>
 #include <shellapi.h>
+#include <shobjidl.h>
 #else
 #include <dirent.h>
 #include <errno.h>
@@ -631,6 +633,45 @@ bool launch(const char *exe, const char *cwd)
     return ok;
 }
 
+bool pick_folder(const char *start, char *out)
+{
+    IFileOpenDialog *d = NULL;
+    IShellItem *it = NULL;
+    PWSTR p = NULL;
+    bool ok = false;
+    HRESULT ci = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(CoCreateInstance(&CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER,
+                                &IID_IFileOpenDialog, (void **)&d))) {
+        if (SUCCEEDED(ci)) CoUninitialize();
+        return false;
+    }
+    FILEOPENDIALOGOPTIONS o = 0;
+    IFileOpenDialog_GetOptions(d, &o);
+    IFileOpenDialog_SetOptions(d, o | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+    IFileOpenDialog_SetTitle(d, L"Choose the game folder (with default.xbe)");
+    if (start && *start && is_dir(start)) {
+        wchar_t *w = wide(start);
+        IShellItem *sf = NULL;
+        if (SUCCEEDED(SHCreateItemFromParsingName(w, NULL, &IID_IShellItem, (void **)&sf))) {
+            IFileOpenDialog_SetFolder(d, sf);
+            IShellItem_Release(sf);
+        }
+        free(w);
+    }
+    if (SUCCEEDED(IFileOpenDialog_Show(d, GetActiveWindow())) &&
+        SUCCEEDED(IFileOpenDialog_GetResult(d, &it))) {
+        if (SUCCEEDED(IShellItem_GetDisplayName(it, SIGDN_FILESYSPATH, &p))) {
+            narrow(p, out, LPATH);
+            ok = out[0] != 0;
+            CoTaskMemFree(p);
+        }
+        IShellItem_Release(it);
+    }
+    IFileOpenDialog_Release(d);
+    if (SUCCEEDED(ci)) CoUninitialize();
+    return ok;
+}
+
 void open_folder(const char *p)
 {
     wchar_t *w = wide(p);
@@ -709,6 +750,26 @@ bool launch(const char *exe, const char *cwd)
     int st;
     waitpid(pid, &st, 0);
     return true;
+}
+
+/* the desktop's own dialog: kdialog (KDE, the Steam Deck's desktop), else
+ * zenity (GNOME and others) */
+bool pick_folder(const char *start, char *out)
+{
+    const char *dir = start && *start && is_dir(start) ? start : getenv("HOME");
+    char title[] = "Choose the game folder (with default.xbe)";
+    const char *kd[] = { "kdialog", "--title", title, "--getexistingdirectory", dir ? dir : "/", NULL };
+    char d2[LPATH + 2];
+    snprintf(d2, sizeof d2, "%s/", dir ? dir : "");
+    const char *ze[] = { "zenity", "--file-selection", "--directory", "--title", title, "--filename", d2, NULL };
+    const char *const *tries[] = { kd, ze };
+    for (int i = 0; i < 2; i++) {
+        int r = run_capture(tries[i], NULL, out, LPATH);
+        if (r == 0 && out[0] == '/') return true;
+        if (r == 1 || (r == 0 && !out[0])) return false;   /* cancelled */
+    }
+    out[0] = 0;
+    return false;
 }
 
 void open_folder(const char *p)

@@ -49,7 +49,7 @@ Next to the launcher:
 
 | | |
 |---|---|
-| `game/` | your game files (or the folder set in Play), and the built game |
+| `jsrf/` | your game files (or the folder set in Play), and the built game; made at the first start |
 | `source/` | the project, downloaded by Update |
 | `tools/` | Python, Zig, CMake, Ninja (about 400 MB) |
 | `build/` | the compiler's work files |

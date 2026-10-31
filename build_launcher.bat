@@ -32,7 +32,7 @@ set "ZIG_GLOBAL_CACHE_DIR=%~dp0deps\zig-cache"
 "%ZIG%" cc -target x86_64-windows-gnu -O2 -std=gnu11 ^
   -Ithird_party\nuklear -I"%SDL%\include\SDL2" ^
   src\main.c src\util.c src\ini.c src\jobs.c "%SDL%\lib\libSDL2.a" ^
-  -lsetupapi -lwinmm -limm32 -lversion -lole32 -loleaut32 -lgdi32 -luser32 -lshell32 -ladvapi32 ^
+  -lsetupapi -lwinmm -limm32 -lversion -lole32 -luuid -loleaut32 -lgdi32 -luser32 -lshell32 -ladvapi32 ^
   -Wl,--subsystem,windows -o jsrf_launcher.exe
 if errorlevel 1 goto fail
 echo Built: jsrf_launcher.exe

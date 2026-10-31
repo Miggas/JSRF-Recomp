@@ -64,6 +64,9 @@ int   run(const char *const *argv, const char *cwd, volatile int *cancel);
 int   run_capture(const char *const *argv, const char *cwd, char *out, size_t cap);
 /* Starts a program on its own (the game), not waiting for it. */
 bool  launch(const char *exe, const char *cwd);
+/* A folder chooser: the system's dialog on Windows, kdialog or zenity on
+ * Linux. Starts in start (may be ""). False if cancelled or none works. */
+bool  pick_folder(const char *start, char *out);
 /* Opens a folder in the file manager. */
 void  open_folder(const char *p);
 int   cpu_count(void);

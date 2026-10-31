@@ -91,14 +91,57 @@ static void dropped(const char *p)
 }
 
 /* ---------------------------------------------------------------------- */
-static void status_line(struct nk_context *ctx, const char *what, bool ok, const char *yes, const char *no)
+/* a green check or a red X, drawn */
+static void mark(struct nk_context *ctx, bool ok)
 {
-    nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
-    nk_layout_row_push(ctx, 0.28f);
+    struct nk_rect r;
+    if (!nk_widget(&r, ctx)) return;
+    struct nk_command_buffer *cb = nk_window_get_canvas(ctx);
+    float sz = r.h * 0.55f, cx = r.x + sz * 0.7f, cy = r.y + r.h / 2;
+    if (ok) {
+        nk_stroke_line(cb, cx - sz * 0.45f, cy, cx - sz * 0.1f, cy + sz * 0.35f, 3.0f, C_OK);
+        nk_stroke_line(cb, cx - sz * 0.1f, cy + sz * 0.35f, cx + sz * 0.5f, cy - sz * 0.4f, 3.0f, C_OK);
+    } else {
+        nk_stroke_line(cb, cx - sz * 0.4f, cy - sz * 0.4f, cx + sz * 0.4f, cy + sz * 0.4f, 3.0f, C_BAD);
+        nk_stroke_line(cb, cx - sz * 0.4f, cy + sz * 0.4f, cx + sz * 0.4f, cy - sz * 0.4f, 3.0f, C_BAD);
+    }
+}
+
+/* One requirement: the mark, its name, what it is. When missing, the line
+ * is a link to where it is fixed: true when clicked. */
+static bool req_line(struct nk_context *ctx, const char *what, bool ok, const char *yes, const char *no)
+{
+    /* the whole line is the link: the X, the name and the text */
+    bool clicked = false;
+    nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
+    nk_layout_row_push(ctx, 0.04f);
+    if (!ok && nk_widget_is_mouse_clicked(ctx, NK_BUTTON_LEFT)) clicked = true;
+    mark(ctx, ok);
+    nk_layout_row_push(ctx, 0.24f);
+    if (!ok && nk_widget_is_mouse_clicked(ctx, NK_BUTTON_LEFT)) clicked = true;
     nk_label(ctx, what, NK_TEXT_LEFT);
     nk_layout_row_push(ctx, 0.72f);
-    nk_label_colored(ctx, ok ? yes : no, NK_TEXT_LEFT, ok ? C_OK : C_BAD);
+    if (ok) {
+        nk_label_colored(ctx, yes, NK_TEXT_LEFT, C_DIM);
+    } else {
+        bool hover = nk_widget_is_hovered(ctx);
+        if (nk_widget_is_mouse_clicked(ctx, NK_BUTTON_LEFT)) clicked = true;
+        char t[300];
+        snprintf(t, sizeof t, "%s  >", no);
+        nk_label_colored(ctx, t, NK_TEXT_LEFT, hover ? C_HEAD : C_BAD);
+    }
     nk_layout_row_end(ctx);
+    return clicked;
+}
+
+static void choose_game_folder(void)
+{
+    char d[LPATH];
+    if (job_busy()) return;
+    if (pick_folder(g_paths.game, d)) {
+        set_game_dir(d);
+        snprintf(s_message, sizeof s_message, "Game folder set to %s", d);
+    }
 }
 
 static bool button(struct nk_context *ctx, const char *label, bool enabled)
@@ -129,26 +172,32 @@ static void tab_play(struct nk_context *ctx)
     nk_layout_row_push(ctx, 0.70f);
     nk_flags ev = nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD | NK_EDIT_SIG_ENTER,
                                                  s_game_dir_edit, sizeof s_game_dir_edit, nk_filter_default);
-    nk_layout_row_push(ctx, 0.14f);
-    bool use = nk_button_label(ctx, "Use");
-    nk_layout_row_push(ctx, 0.16f);
+    nk_layout_row_push(ctx, 0.15f);
+    if (button(ctx, "Choose folder", !job_busy())) choose_game_folder();
+    nk_layout_row_push(ctx, 0.15f);
     if (nk_button_label(ctx, "Open folder")) {
         make_dirs(g_paths.game);
         open_folder(g_paths.game);
     }
     nk_layout_row_end(ctx);
-    if ((use || (ev & NK_EDIT_COMMITED)) && strcmp(s_game_dir_edit, g_paths.game)) set_game_dir(s_game_dir_edit);
+    if ((ev & NK_EDIT_COMMITED) && strcmp(s_game_dir_edit, g_paths.game)) set_game_dir(s_game_dir_edit);
     nk_layout_row_dynamic(ctx, s_row, 1);
-    nk_label_colored(ctx, "Or drop default.xbe (or the folder) onto this window.", NK_TEXT_LEFT, C_DIM);
+    nk_label_colored(ctx, "Type the folder and press Enter, choose it, or drop default.xbe onto this window.",
+                     NK_TEXT_LEFT, C_DIM);
 
     spacer(ctx, 10);
+    /* in the order they are needed; a missing one links to where it is fixed */
     bool xbe = have_xbe(), exe = have_game_exe(), tools = have_tools();
-    status_line(ctx, "Game files", xbe, "default.xbe found", "default.xbe not found in this folder");
-    status_line(ctx, "Generated code", have_gen(), "there", "not generated yet: press Build");
-    status_line(ctx, "Recompiled game", exe, "built", "not built yet: press Build");
-    status_line(ctx, "Project source", g_paths.have_source,
-                "downloaded", "not downloaded yet: Update -> Download");
-    status_line(ctx, "Build tools", tools, "ready", "downloaded on the first build (about 150 MB)");
+    if (req_line(ctx, "Game files", xbe, "default.xbe found", "default.xbe not found here: choose the game folder"))
+        choose_game_folder();
+    if (req_line(ctx, "Project source", g_paths.have_source, "downloaded", "not downloaded yet: go to Update"))
+        s_tab = TAB_UPDATE;
+    if (req_line(ctx, "Build tools", tools, "ready", "not downloaded yet: go to Build (about 150 MB)"))
+        s_tab = TAB_BUILD;
+    if (req_line(ctx, "Generated code", have_gen(), "there", "not generated yet: go to Build"))
+        s_tab = TAB_BUILD;
+    if (req_line(ctx, "Recompiled game", exe, "built", "not built yet: go to Build"))
+        s_tab = TAB_BUILD;
 
     spacer(ctx, 16);
     nk_layout_row_dynamic(ctx, s_row * 1.8f, 2);
@@ -547,11 +596,17 @@ static void tab_build(struct nk_context *ctx, float h)
     nk_layout_row_end(ctx);
     used += s_row + 4;
 #endif
-    nk_layout_row_dynamic(ctx, s_row, 1);
+    nk_layout_row_dynamic(ctx, s_row, 2);
     nk_bool rg = s_regen;
-    nk_checkbox_label(ctx, "Even if nothing changed (normally each button checks first and skips)", &rg);
+    nk_checkbox_label(ctx, "Force Generate/Build", &rg);
     s_regen = rg != 0;
+    nk_bool df = debug_files_pref();
+    if (nk_checkbox_label(ctx, "Include debug files (jsrf_recomp.pdb)", &df)) debug_files_set(df != 0);
     used += s_row + 4;
+    nk_layout_row_dynamic(ctx, s_row - 6, 1);
+    nk_label_colored(ctx, "Force: run even if nothing changed.   Debug files: function names in crash reports and performance logs.",
+                     NK_TEXT_LEFT, C_DIM);
+    used += s_row - 2;
 
     bool busy = job_busy();
     bool ready = !busy && have_xbe() && g_paths.have_source;
@@ -777,7 +832,7 @@ int main(int argc, char **argv)
         static bool have_pending;
         bool got;
         if (have_pending) { e = pending; have_pending = false; got = true; }
-        else got = SDL_WaitEventTimeout(&e, job_busy() ? 50 : 250);   /* idle, but follow a job's log */
+        else got = SDL_WaitEventTimeout(&e, job_busy() ? 33 : 250);   /* idle, but follow a job's log */
         if (got) {
             do {
                 if (e.type == SDL_MOUSEBUTTONDOWN && !have_pending &&
@@ -831,9 +886,27 @@ int main(int argc, char **argv)
                 nk_group_end(ctx);
             }
 
-            nk_layout_row_dynamic(ctx, s_row, 1);
-            const char *st = job_busy() ? job_status() : s_message[0] ? s_message : job_status();
-            nk_label_colored(ctx, st, NK_TEXT_LEFT, job_busy() ? C_HEAD : C_DIM);
+            if (job_busy()) {
+                /* a turning arc while a job runs, the step, then the detail */
+                nk_layout_row_begin(ctx, NK_STATIC, s_row, 2);
+                nk_layout_row_push(ctx, s_row);
+                struct nk_rect r;
+                if (nk_widget(&r, ctx)) {
+                    struct nk_command_buffer *cb = nk_window_get_canvas(ctx);
+                    float a = (float)(SDL_GetTicks() % 1000) / 1000.0f * 6.2831853f;
+                    float rad = r.h * 0.32f;
+                    nk_stroke_arc(cb, r.x + r.w / 2, r.y + r.h / 2, rad, 0, 6.2831853f, 3.0f, nk_rgb(60, 60, 72));
+                    nk_stroke_arc(cb, r.x + r.w / 2, r.y + r.h / 2, rad, a, a + 4.2f, 3.0f, C_HEAD);
+                }
+                nk_layout_row_push(ctx, (float)w - s_row - 48);
+                char t[400];
+                snprintf(t, sizeof t, "%s: %s", job_phase(), job_status());
+                nk_label_colored(ctx, t, NK_TEXT_LEFT, C_HEAD);
+                nk_layout_row_end(ctx);
+            } else {
+                nk_layout_row_dynamic(ctx, s_row, 1);
+                nk_label_colored(ctx, s_message[0] ? s_message : job_status(), NK_TEXT_LEFT, C_DIM);
+            }
         }
         nk_end(ctx);
 

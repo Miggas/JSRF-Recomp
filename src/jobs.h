@@ -10,7 +10,7 @@ typedef struct {
     char tools[LPATH];    /* base/tools: Python, Zig, CMake, Ninja */
     char source[LPATH];   /* base/source: the project, as downloaded by Update */
     bool have_source;
-    char game[LPATH];     /* base/game or as set: default.xbe, and the built game */
+    char game[LPATH];     /* base/jsrf or as set: default.xbe, and the built game */
     char build[LPATH];    /* base/build */
 } Paths;
 
@@ -23,6 +23,8 @@ void paths_init(void);
 void paths_set_game(const char *dir);     /* and saved in launcher.ini */
 int  compiler_pref(void);
 void compiler_set(int c);
+bool debug_files_pref(void);              /* DEBUG_FILES=1: copy jsrf_recomp.pdb with the game */
+void debug_files_set(bool on);
 
 /* what is there */
 bool have_xbe(void);
@@ -46,6 +48,7 @@ void job_cancel(void);
 /* the last job's result: 1 ok, 0 failed, -1 none yet */
 int  job_result(void);
 const char *job_status(void);             /* one line: what is happening */
+const char *job_phase(void);              /* the step, for the spinner: "Building game"... */
 const char *update_remote(void);          /* the newest commit found by JOB_CHECK, or "" */
 
 bool play(void);

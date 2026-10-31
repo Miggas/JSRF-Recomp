@@ -81,10 +81,20 @@ void paths_init(void)
     pjoin(p->source, p->base, "source");
     p->have_source = is_source(p->source);
 
-    /* the game folder: as set in Play, else game/ */
+    /* the game folder: as set in Play, else jsrf/ next to the launcher
+     * (made now, so it is there to put the game files in). A game/ folder
+     * with the game in it, from the launchers before v1h, is kept. */
     const char *gd = ini_get(&g_launcher_ini, "GAME_DIR");
-    if (gd && *gd) snprintf(p->game, sizeof p->game, "%s", gd);
-    else pjoin(p->game, p->base, "game");
+    if (gd && *gd) {
+        snprintf(p->game, sizeof p->game, "%s", gd);
+    } else {
+        char old[LPATH], x[LPATH];
+        pjoin(old, p->base, "game");
+        pjoin(x, old, "default.xbe");
+        if (is_file(x)) snprintf(p->game, sizeof p->game, "%s", old);
+        else pjoin(p->game, p->base, "jsrf");
+    }
+    make_dirs(p->game);
 }
 
 void paths_set_game(const char *dir)
@@ -102,6 +112,18 @@ int compiler_pref(void)
     if (c && !strcmp(c, "zig")) return COMP_ZIG;
     if (c && !strcmp(c, "msvc")) return COMP_MSVC;
     return COMP_AUTO;
+}
+
+bool debug_files_pref(void)
+{
+    const char *v = ini_get(&g_launcher_ini, "DEBUG_FILES");
+    return v && v[0] == '1';
+}
+
+void debug_files_set(bool on)
+{
+    ini_put(&g_launcher_ini, "DEBUG_FILES", on ? "1" : "0", "launcher");
+    launcher_ini_save();
 }
 
 void compiler_set(int c)
@@ -273,9 +295,12 @@ static int s_job, s_result = -1;
 static volatile int s_cancel;
 static bool s_regen;
 static char s_status[256];
+static const char *s_phase = "";
 static char s_remote[64];
 
 const char *job_status(void) { return s_status; }
+const char *job_phase(void) { return s_phase; }
+#define PHASE(x) (s_phase = (x))
 const char *update_remote(void) { return s_remote; }
 bool job_busy(void) { return SDL_AtomicGet(&s_busy) != 0; }
 int  job_current(void) { return job_busy() ? s_job : JOB_NONE; }
@@ -404,6 +429,7 @@ static bool setup_tools(void)
 {
     if (have_tools()) {
         if (wrappers_ok()) return true;
+        PHASE("Setting up tools");
         status("Making the compiler wrappers again...", NULL);
         return make_wrappers();
     }
@@ -411,6 +437,7 @@ static bool setup_tools(void)
     char py[LPATH];
     py_exe(py);
     if (!is_file(py)) {
+        PHASE("Downloading tools");
         status("Downloading Python (about 45 MB)...", NULL);
         char url[512], tgz[LPATH];
         snprintf(url, sizeof url,
@@ -425,6 +452,7 @@ static bool setup_tools(void)
         remove_file(tgz);
         if (!is_file(py)) { logf_("Python was not unpacked to %s", py); return false; }
     }
+    PHASE("Downloading tools");
     status("Downloading the translator and compiler (capstone, Zig, CMake, Ninja)...", NULL);
     const char *argv[16];
     int n = 0;
@@ -548,6 +576,7 @@ static bool need_source_and_xbe(void)
 static bool do_generate(void)
 {
     if (!need_source_and_xbe()) return false;
+    PHASE("Checking");
     status("Checking the generated code...", NULL);
     if (!s_regen && gen_current()) {
         status("The generated code is up to date: nothing to do.", NULL);
@@ -562,6 +591,7 @@ static bool do_generate(void)
     gen_dir(gen);
     /* taken before: a file changing while it runs makes it run again next time */
     unsigned long long h = gen_inputs();
+    PHASE("Generating code");
     status("Translating the game's code from default.xbe (a few minutes)...", NULL);
     pjoin3(tool, jr, "tools", "generate_code.py");
     const char *argv[] = { py, tool, xbe, NULL };
@@ -578,6 +608,7 @@ static bool do_generate(void)
 static bool do_build(void)
 {
     if (!need_source_and_xbe()) return false;
+    PHASE("Checking");
     status("Checking the generated code...", NULL);
     if (!have_gen()) {
         logf_("No generated code yet: press Generate code first.");
@@ -636,6 +667,7 @@ static bool do_build(void)
         if (!up_to_date && (!same || !is_file(marker))) {
             remove_tree(bdir);
             make_dirs(bdir);
+            PHASE("Building game");
             status("Setting up the build (the first time takes a few minutes)...", NULL);
             char tc[LPATH], zb[LPATH], mk[LPATH + 32];
             const char *argv[24];
@@ -673,6 +705,7 @@ static bool do_build(void)
     if (cancelled()) return false;
 
     if (!up_to_date) {
+        PHASE("Building game");
         status("Compiling (the first time takes a while)...", NULL);
         char par[16];
         snprintf(par, sizeof par, "%d", cpu_count());
@@ -681,19 +714,27 @@ static bool do_build(void)
         stamp_write(bstamp, bh);
     }
 
+    PHASE("Building game");
     status("Copying the game to the game folder...", NULL);
     if (!copy_file(built, dest)) {
         logf_("Could not copy the game to %s (is the game still running?)", dest);
         return false;
     }
-    /* the debug symbols too, so crash reports and RECOMP_PROFILE can name
-     * the game's functions (Zig's exe looks for it next to itself) */
+    /* the debug symbols, when chosen (Build -> Include debug files): crash
+     * reports and RECOMP_PROFILE can then name the game's functions (Zig's
+     * exe looks for it next to itself) */
     {
         char bp[LPATH], gp[LPATH];
         if (msvc) pjoin3(bp, bdir, "Release", "jsrf_recomp.pdb");
         else pjoin(bp, bdir, "jsrf_recomp.pdb");
         pjoin(gp, g_paths.game, "jsrf_recomp.pdb");
-        if (is_file(bp) && !copy_file(bp, gp)) logf_("Could not copy %s", gp);
+        if (!debug_files_pref()) {
+            if (is_file(gp)) remove_file(gp);    /* an old one would not match */
+        } else if (is_file(bp) && !copy_file(bp, gp)) {
+            logf_("Could not copy %s", gp);
+        } else if (is_file(bp)) {
+            logf_("Copied the debug files (jsrf_recomp.pdb).");
+        }
     }
     char ini[LPATH];
     game_ini(ini);
@@ -721,6 +762,7 @@ static bool do_build(void)
 static bool check_update(void)
 {
     s_remote[0] = 0;
+    PHASE("Checking for updates");
     status("Checking for updates...", NULL);
     char url[256];
     snprintf(url, sizeof url, "https://api.github.com/repos/" REPO "/commits/%s", update_branch());
@@ -753,6 +795,7 @@ static bool do_update(void)
     pjoin(zip, dl, "source.zip");
     pjoin(tmp, dl, "unpacked");
     py_exe(py);
+    PHASE("Downloading update");
     status("Downloading the newest version of the project (%s)...", update_branch());
     char url[256];
     snprintf(url, sizeof url, "https://github.com/" REPO "/archive/refs/heads/%s.zip", update_branch());
@@ -847,6 +890,7 @@ bool job_start(int job, bool force)
     if (s_thread) { SDL_WaitThread(s_thread, NULL); s_thread = NULL; }
     s_job = job;
     s_regen = force;
+    s_phase = "Working";
     s_cancel = 0;
     s_result = -1;
     SDL_AtomicSet(&s_busy, 1);
