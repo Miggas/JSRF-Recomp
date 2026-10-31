@@ -34,6 +34,8 @@ bool ini_dirty(const Ini *ini);
 void ini_revert(Ini *ini);
 /* turns line i on and the other lines of the same key off */
 void ini_set_on(Ini *ini, int i, bool on);
+/* turns every line of a key off */
+void ini_off(Ini *ini, const char *key);
 /* the value a setting has now (the line that is on), or NULL */
 const char *ini_get(const Ini *ini, const char *key);
 /* sets a key: the line that is on, else the first line of that key, else a

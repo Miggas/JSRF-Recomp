@@ -46,6 +46,7 @@ enum { TAB_PLAY, TAB_SETTINGS, TAB_BUILD, TAB_UPDATE, TAB_COUNT };
 static const char *const TAB_NAMES[TAB_COUNT] = { "Play", "Settings", "Build", "Update" };
 
 static int s_tab = TAB_PLAY;
+static int s_win_h = 800;             /* the window's height, for the drop-down lists */
 static Ini s_game_ini;
 static char s_game_dir_edit[LPATH];
 static bool s_regen;
@@ -168,6 +169,274 @@ static int text_lines(struct nk_context *ctx, const char *s, float width)
     return n < 1 ? 1 : n;
 }
 
+/* ---- Settings: the common settings as controls, each writing the
+ * jsrf.ini lines it stands for; "All settings" is every line ---- */
+enum { SET_GAMEPLAY, SET_VIDEO, SET_INPUT, SET_AUDIO, SET_DEBUG, SET_ALL, SET_COUNT };
+static const char *const SET_NAMES[SET_COUNT] = { "Gameplay", "Video", "Input", "Audio", "Debug", "All settings" };
+static int s_set_tab = SET_GAMEPLAY;
+
+static Ini *gi(void) { return &s_game_ini; }
+
+/* the value of a key now, or def when it is off */
+static const char *get_or(const char *key, const char *def)
+{
+    const char *v = ini_get(gi(), key);
+    return v && *v ? v : def;
+}
+
+static void put(const char *key, const char *val, const char *section)
+{
+    ini_put(gi(), key, val, section);
+}
+
+static void off(const char *key) { ini_off(gi(), key); }
+
+/* the description, under its option */
+static void desc(struct nk_context *ctx, float width, const char *text, struct nk_color c)
+{
+    nk_layout_row_dynamic(ctx, (s_row - 8) * text_lines(ctx, text, width), 1);
+    nk_label_colored_wrap(ctx, text, c);
+    spacer(ctx, 2);
+}
+
+/* a name on the left, the control on the right */
+static void opt_row(struct nk_context *ctx, const char *name)
+{
+    nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
+    nk_layout_row_push(ctx, 0.34f);
+    nk_label(ctx, name, NK_TEXT_LEFT);
+    nk_layout_row_push(ctx, 0.66f);
+}
+
+static int combo(struct nk_context *ctx, const char *name, const char *const *items, int n, int sel)
+{
+    opt_row(ctx, name);
+    /* every item, or what fits under the box (it opens downwards and the
+     * window cuts it off): the rest scrolls */
+    struct nk_rect b = nk_widget_bounds(ctx);
+    float want = n * (s_row + ctx->style.window.spacing.y + 2) + 2 * ctx->style.window.popup_padding.y + 4;
+    float room = (float)s_win_h - (b.y + b.h) - 8;
+    if (want > room && room > s_row * 2) want = room;
+    int r = nk_combo(ctx, items, n, sel, (int)s_row, nk_vec2(b.w, want));
+    nk_layout_row_end(ctx);
+    return r;
+}
+
+static bool check(struct nk_context *ctx, const char *name, bool on)
+{
+    nk_layout_row_dynamic(ctx, s_row, 1);
+    nk_bool v = on;
+    nk_checkbox_label(ctx, name, &v);
+    return v != 0;
+}
+
+static int find(const char *const *vals, int n, const char *v)
+{
+    for (int i = 0; i < n; i++)
+        if (!strcmp(vals[i], v)) return i;
+    return -1;
+}
+
+static void panel_gameplay(struct nk_context *ctx, float w)
+{
+    bool on = !strcmp(get_or("RECOMP_SKIP_INTRO", "0"), "1");
+    bool nv = check(ctx, "Skip intros", on);
+    if (nv != on) { if (nv) put("RECOMP_SKIP_INTRO", "1", "game"); else off("RECOMP_SKIP_INTRO"); }
+    desc(ctx, w, "Skips the logos at start.", C_DIM);
+}
+
+static void panel_video(struct nk_context *ctx, float w)
+{
+    /* resolution scale: RECOMP_GL_SCALE */
+    {
+        static const char *const items[] = { "1x (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)" };
+        int cur = atoi(get_or("RECOMP_GL_SCALE", "1"));
+        if (cur < 1) cur = 1;
+        if (cur > 4) cur = 4;
+        int sel = combo(ctx, "Resolution scale", items, 4, cur - 1);
+        if (sel != cur - 1) {
+            char v[4];
+            snprintf(v, sizeof v, "%d", sel + 1);
+            put("RECOMP_GL_SCALE", v, "display");
+        }
+        desc(ctx, w, "The resolution the game is drawn at. Higher is sharper and smoother; 2x is best for the Steam Deck.", C_DIM);
+    }
+    /* widescreen: RECOMP_WIDESCREEN (auto, 1 = 16:9), or RECOMP_ASPECT=w:h,
+     * which wins over it */
+    {
+        static const char *const items[] = { "Disabled (4:3)", "Auto (your screen's shape)", "16:9", "16:10", "21:9", "32:9" };
+        static const char *const aspects[] = { "", "", "", "16:10", "21:9", "32:9" };
+        const char *asp = ini_get(gi(), "RECOMP_ASPECT");
+        const char *ws = ini_get(gi(), "RECOMP_WIDESCREEN");
+        int cur = 0;
+        if (asp && *asp) { cur = find(aspects, 6, asp); if (cur < 3) cur = 0; }
+        else if (ws && !strcmp(ws, "auto")) cur = 1;
+        else if (ws && ws[0] == '1') cur = 2;
+        int sel = combo(ctx, "Widescreen", items, 6, cur);
+        if (sel != cur) {
+            off("RECOMP_ASPECT");
+            off("RECOMP_WIDESCREEN");
+            if (sel == 1) put("RECOMP_WIDESCREEN", "auto", "display");
+            else if (sel == 2) put("RECOMP_WIDESCREEN", "1", "display");
+            else if (sel >= 3) put("RECOMP_ASPECT", aspects[sel], "display");
+        }
+        desc(ctx, w, "Auto uses your screen's shape. The HUD moves to the screen edges; a few menus stay 4:3.", C_DIM);
+    }
+    /* window: RECOMP_FULLSCREEN (a borderless full-screen window), and on
+     * Windows RECOMP_GL_PRESENT=dxgi on top of it */
+    {
+#ifdef _WIN32
+        static const char *const items[] = { "Windowed", "Borderless window", "Fullscreen" };
+        enum { W_WIN, W_BORDERLESS, W_FULL, W_N = 3 };
+#else
+        static const char *const items[] = { "Windowed", "Fullscreen" };
+        enum { W_WIN, W_FULL, W_N = 2, W_BORDERLESS = 99 };
+#endif
+        bool fs = !strcmp(get_or("RECOMP_FULLSCREEN", "0"), "1");
+        bool dx = !strcmp(get_or("RECOMP_GL_PRESENT", ""), "dxgi");
+        int cur = !fs ? W_WIN : (dx && W_BORDERLESS != 99) ? W_BORDERLESS : W_FULL;
+        int sel = combo(ctx, "Window", items, W_N, cur);
+        if (sel != cur) {
+            if (sel == W_WIN) { off("RECOMP_FULLSCREEN"); off("RECOMP_GL_PRESENT"); }
+            else if (sel == W_FULL) { put("RECOMP_FULLSCREEN", "1", "display"); off("RECOMP_GL_PRESENT"); }
+            else { put("RECOMP_FULLSCREEN", "1", "display"); put("RECOMP_GL_PRESENT", "dxgi", "display"); }
+        }
+#ifdef _WIN32
+        desc(ctx, w, "F11 or Alt+Enter switches while playing. Borderless window presents through DXGI and may lower performance.", C_DIM);
+#else
+        desc(ctx, w, "F11 or Alt+Enter switches while playing.", C_DIM);
+#endif
+    }
+    /* anisotropic filtering: RECOMP_GL_ANISO (off = 1) */
+    {
+        static const char *const items[] = { "Disabled", "2x", "4x", "8x", "16x" };
+        static const char *const vals[] = { "", "2", "4", "8", "16" };
+        int cur = find(vals, 5, get_or("RECOMP_GL_ANISO", ""));
+        if (cur < 0) cur = 0;
+        int sel = combo(ctx, "Anisotropic filtering", items, 5, cur);
+        if (sel != cur) { if (sel == 0) off("RECOMP_GL_ANISO"); else put("RECOMP_GL_ANISO", vals[sel], "display"); }
+        desc(ctx, w, "Sharper textures on surfaces seen at an angle (roads, walls). Costs very little.", C_DIM);
+    }
+    /* anti-aliasing: RECOMP_GL_AA */
+    {
+        static const char *const items[] = { "Disabled", "FXAA", "SMAA Low", "SMAA Medium", "SMAA High", "SMAA Ultra" };
+        static const char *const vals[] = { "", "fxaa", "smaa_low", "smaa_medium", "smaa_high", "smaa_ultra" };
+        int cur = find(vals, 6, get_or("RECOMP_GL_AA", ""));
+        if (cur < 0) cur = 0;
+        int sel = combo(ctx, "Anti-aliasing", items, 6, cur);
+        if (sel != cur) { if (sel == 0) off("RECOMP_GL_AA"); else put("RECOMP_GL_AA", vals[sel], "display"); }
+        desc(ctx, w, "Smooths jagged edges. FXAA is the lightest, SMAA looks better. A higher resolution scale smooths edges too.", C_DIM);
+    }
+}
+
+static void panel_input(struct nk_context *ctx, float w)
+{
+    {
+        static const char *const items[] = { "1", "2", "3", "4" };
+        int cur = atoi(get_or("RECOMP_USB_PADS", "1"));
+        if (cur < 1) cur = 1;
+        if (cur > 4) cur = 4;
+        int sel = combo(ctx, "Gamepads", items, 4, cur - 1);
+        if (sel != cur - 1) put("RECOMP_USB_PADS", items[sel], "input");
+        desc(ctx, w, "Number of players. With 2 or more, players join in the order they press a button.", C_DIM);
+    }
+    {
+        int cur = atoi(get_or("RECOMP_RUMBLE", "100")), v = cur;
+        if (v < 0) v = 0;
+        if (v > 100) v = 100;
+        nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
+        nk_layout_row_push(ctx, 0.34f);
+        nk_label(ctx, "Rumble strength", NK_TEXT_LEFT);
+        nk_layout_row_push(ctx, 0.54f);
+        nk_slider_int(ctx, 0, &v, 100, 5);
+        nk_layout_row_push(ctx, 0.12f);
+        char t[16];
+        snprintf(t, sizeof t, v ? "%d%%" : "Off", v);
+        nk_label(ctx, t, NK_TEXT_RIGHT);
+        nk_layout_row_end(ctx);
+        if (v != cur) { char s2[8]; snprintf(s2, sizeof s2, "%d", v); put("RECOMP_RUMBLE", s2, "input"); }
+        desc(ctx, w, "Controller vibration, in percent. 0 turns it off.", C_DIM);
+    }
+}
+
+static void panel_audio(struct nk_context *ctx, float w)
+{
+    float cur = (float)atof(get_or("RECOMP_APU_GAIN", "0.5")), v = cur;
+    if (v < 0) v = 0;
+    if (v > 1.5f) v = 1.5f;
+    nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
+    nk_layout_row_push(ctx, 0.34f);
+    nk_label(ctx, "Gain", NK_TEXT_LEFT);
+    nk_layout_row_push(ctx, 0.54f);
+    nk_slider_float(ctx, 0.0f, &v, 1.5f, 0.05f);
+    nk_layout_row_push(ctx, 0.12f);
+    char t[16];
+    snprintf(t, sizeof t, "%.2f", v);
+    nk_label(ctx, t, NK_TEXT_RIGHT);
+    nk_layout_row_end(ctx);
+    if (v < cur - 0.001f || v > cur + 0.001f) {
+        char s2[16];
+        snprintf(s2, sizeof s2, "%.2f", v);
+        put("RECOMP_APU_GAIN", s2, "audio");
+    }
+    desc(ctx, w, "Master volume. 0.50 is the default; above 1.00 loud sounds may be limited.", C_DIM);
+}
+
+/* Logging: RECOMP_LOG=stderr.txt with quiet off; off: no log, quiet on.
+ * Performance logs: RECOMP_PROFILE=1, which needs the log. */
+static void panel_debug(struct nk_context *ctx, float w)
+{
+    bool logging = ini_get(gi(), "RECOMP_LOG") && *ini_get(gi(), "RECOMP_LOG");
+    bool prof = !strcmp(get_or("RECOMP_PROFILE", "0"), "1");
+    bool nl = check(ctx, "Logging", logging);
+    desc(ctx, w, "Writes stderr.txt in the game folder, for bug reports. Turns quiet mode off, so the game runs a little slower.", C_DIM);
+    bool np = check(ctx, "Performance logs", prof);
+    desc(ctx, w, "Slows the game down. Adds where the time goes to the log every 10 seconds. Turns Logging on.", C_BAD);
+    if (np && !prof) nl = true;            /* needs the log */
+    if (!nl && logging) np = false;        /* no log, nothing to write it to */
+    if (nl != logging) {
+        if (nl) { put("RECOMP_LOG", "stderr.txt", "files"); off("RECOMP_QUIET"); }
+        else { off("RECOMP_LOG"); put("RECOMP_QUIET", "1", "game"); }
+    }
+    if (np != prof) { if (np) put("RECOMP_PROFILE", "1", "files"); else off("RECOMP_PROFILE"); }
+}
+
+/* every line of jsrf.ini, ticked = on */
+static void panel_all(struct nk_context *ctx, float width)
+{
+    nk_layout_row_dynamic(ctx, s_row, 1);
+    nk_label_colored(ctx, "Every line of jsrf.ini. Ticked = on.", NK_TEXT_LEFT, C_DIM);
+    for (int i = 0; i < s_game_ini.n; i++) {
+        IniLine *L = &s_game_ini.l[i];
+        switch (L->kind) {
+        case L_SECTION:
+            spacer(ctx, 6);
+            nk_layout_row_dynamic(ctx, s_row, 1);
+            nk_label_colored(ctx, L->show, NK_TEXT_LEFT, C_HEAD);
+            break;
+        case L_DESC:
+            nk_layout_row_dynamic(ctx, (s_row - 8) * text_lines(ctx, L->show, width), 1);
+            nk_label_colored_wrap(ctx, L->show, C_DIM);
+            break;
+        case L_SETTING: {
+            nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
+            nk_layout_row_push(ctx, 0.45f);
+            nk_bool on = L->on;
+            if (nk_checkbox_label(ctx, L->key, &on)) ini_set_on(&s_game_ini, i, on != 0);
+            nk_layout_row_push(ctx, 0.55f);
+            char before[sizeof L->val];
+            memcpy(before, L->val, sizeof before);
+            nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD, L->val, sizeof L->val, nk_filter_default);
+            if (strcmp(before, L->val) && !L->on) ini_set_on(&s_game_ini, i, true);
+            nk_layout_row_end(ctx);
+            break;
+        }
+        default:
+            break;
+        }
+    }
+}
+
 static void tab_settings(struct nk_context *ctx, float h)
 {
     char p[LPATH];
@@ -199,41 +468,27 @@ static void tab_settings(struct nk_context *ctx, float h)
     nk_layout_row_push(ctx, 0.16f);
     if (button(ctx, "Reload", true)) load_game_ini();
     nk_layout_row_push(ctx, 0.52f);
-    nk_label_colored(ctx, dirty ? "Not saved yet." : "Ticked = on. Steam launch options override this file.",
+    nk_label_colored(ctx, dirty ? "Not saved yet." : "Steam launch options override these.",
                      NK_TEXT_RIGHT, dirty ? C_HEAD : C_DIM);
     nk_layout_row_end(ctx);
 
-    nk_layout_row_dynamic(ctx, h - s_row * 1.2f - 12, 1);
-    if (nk_group_begin(ctx, "ini", 0)) {
+    /* the sections */
+    nk_layout_row_dynamic(ctx, s_row * 1.1f, SET_COUNT);
+    for (int i = 0; i < SET_COUNT; i++) {
+        nk_bool sel = s_set_tab == i;
+        if (nk_selectable_label(ctx, SET_NAMES[i], NK_TEXT_CENTERED, &sel)) s_set_tab = i;
+    }
+
+    nk_layout_row_dynamic(ctx, h - s_row * 2.3f - 24, 1);
+    if (nk_group_begin(ctx, "settings", 0)) {
         float width = nk_window_get_content_region(ctx).w;
-        for (int i = 0; i < s_game_ini.n; i++) {
-            IniLine *L = &s_game_ini.l[i];
-            switch (L->kind) {
-            case L_SECTION:
-                spacer(ctx, 6);
-                nk_layout_row_dynamic(ctx, s_row, 1);
-                nk_label_colored(ctx, L->show, NK_TEXT_LEFT, C_HEAD);
-                break;
-            case L_DESC:
-                nk_layout_row_dynamic(ctx, (s_row - 8) * text_lines(ctx, L->show, width), 1);
-                nk_label_colored_wrap(ctx, L->show, C_DIM);
-                break;
-            case L_SETTING: {
-                nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
-                nk_layout_row_push(ctx, 0.45f);
-                nk_bool on = L->on;
-                if (nk_checkbox_label(ctx, L->key, &on)) ini_set_on(&s_game_ini, i, on != 0);
-                nk_layout_row_push(ctx, 0.55f);
-                char before[sizeof L->val];
-                memcpy(before, L->val, sizeof before);
-                nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD, L->val, sizeof L->val, nk_filter_default);
-                if (strcmp(before, L->val) && !L->on) ini_set_on(&s_game_ini, i, true);
-                nk_layout_row_end(ctx);
-                break;
-            }
-            default:
-                break;
-            }
+        switch (s_set_tab) {
+        case SET_GAMEPLAY: panel_gameplay(ctx, width); break;
+        case SET_VIDEO:    panel_video(ctx, width); break;
+        case SET_INPUT:    panel_input(ctx, width); break;
+        case SET_AUDIO:    panel_audio(ctx, width); break;
+        case SET_DEBUG:    panel_debug(ctx, width); break;
+        case SET_ALL:      panel_all(ctx, width); break;
         }
         nk_group_end(ctx);
     }
@@ -550,6 +805,7 @@ int main(int argc, char **argv)
 
         int w, h;
         SDL_GetWindowSize(win, &w, &h);
+        s_win_h = h;
         if (nk_begin(ctx, "main", nk_rect(0, 0, (float)w, (float)h), NK_WINDOW_NO_SCROLLBAR)) {
             nk_layout_row_begin(ctx, NK_DYNAMIC, s_row * 1.3f, TAB_COUNT + 1);
             nk_layout_row_push(ctx, 0.32f);

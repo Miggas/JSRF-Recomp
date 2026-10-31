@@ -175,6 +175,13 @@ void ini_set_on(Ini *ini, int i, bool on)
     L->on = on;
 }
 
+void ini_off(Ini *ini, const char *key)
+{
+    for (int i = 0; i < ini->n; i++)
+        if (ini->l[i].kind == L_SETTING && !strcmp(ini->l[i].key, key))
+            ini->l[i].on = false;
+}
+
 const char *ini_get(const Ini *ini, const char *key)
 {
     for (int i = 0; i < ini->n; i++)
