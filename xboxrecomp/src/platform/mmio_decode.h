@@ -86,6 +86,55 @@ static inline void mmio_set_flags(PCONTEXT ctx, uint64_t result, int size,
         ctx->EFlags |= 0x0001u;                                   /* CF */
 }
 
+/* v247: a register operand as the instruction names it. Without a REX
+ * prefix, byte registers 4..7 are AH, CH, DH, BH; 32-bit writes clear the
+ * top half, 8- and 16-bit writes keep the rest. */
+static inline uint64_t mmio_mask(int size)
+{
+    return size >= 8 ? ~0ULL : ((1ULL << (size * 8)) - 1);
+}
+
+static inline uint64_t mmio_get_reg(PCONTEXT c, int reg, int size, int has_rex)
+{
+    if (size == 1 && !has_rex && reg >= 4 && reg < 8)
+        return (*mmio_ctx_reg(c, reg - 4) >> 8) & 0xFF;
+    return *mmio_ctx_reg(c, reg) & mmio_mask(size);
+}
+
+static inline void mmio_put_reg(PCONTEXT c, int reg, int size, int has_rex, uint64_t v)
+{
+    uint64_t *d;
+    if (size == 1 && !has_rex && reg >= 4 && reg < 8) {
+        d = mmio_ctx_reg(c, reg - 4);
+        *d = (*d & ~0xFF00ULL) | ((v & 0xFF) << 8);
+        return;
+    }
+    d = mmio_ctx_reg(c, reg);
+    if (size == 1)      *d = (*d & ~0xFFULL)   | (v & 0xFF);
+    else if (size == 2) *d = (*d & ~0xFFFFULL) | (v & 0xFFFF);
+    else if (size == 4) *d = v & 0xFFFFFFFFULL;
+    else                *d = v;
+}
+
+/* ADD OR - - AND SUB XOR CMP (the ALU group's /0../7; ADC and SBB are
+ * left out: they read CF, which these flags do not track). 0 if not one. */
+static inline int mmio_alu(int aop, uint64_t a, uint64_t b, int size,
+                           uint64_t *res, int *cf)
+{
+    uint64_t m = mmio_mask(size), r;
+    a &= m; b &= m;
+    switch (aop) {
+    case 0: r = (a + b) & m; *cf = r < a; break;          /* ADD */
+    case 1: r = a | b; *cf = 0; break;                     /* OR  */
+    case 4: r = a & b; *cf = 0; break;                     /* AND */
+    case 5: case 7: r = (a - b) & m; *cf = a < b; break;   /* SUB, CMP */
+    case 6: r = a ^ b; *cf = 0; break;                     /* XOR */
+    default: return 0;
+    }
+    *res = r;
+    return 1;
+}
+
 /* 1 if the instruction at ctx->Rip was serviced and Rip advanced past it. */
 static inline int mmio_emulate(PCONTEXT ctx, uint32_t off, void *dev,
                                mmio_read_fn rd, mmio_write_fn wr)
@@ -199,9 +248,91 @@ static inline int mmio_emulate(PCONTEXT ctx, uint32_t off, void *dev,
             ctx->Rip += prefix + 2 + mlen;
             return 1;
         }
+        if (op[1] == 0xBE || op[1] == 0xBF) {        /* v247: MOVSX r, r/m8|16 */
+            int s = (op[1] == 0xBE) ? 1 : 2;
+            uint64_t v;
+            mlen = mmio_modrm_len(op + 2, rex_b);
+            reg  = ((op[2] >> 3) & 7) | (rex_r ? 8 : 0);
+            v    = rd(dev, off, s) & mmio_mask(s);
+            if (v & (1ULL << (s * 8 - 1))) v |= ~mmio_mask(s);
+            mmio_put_reg(ctx, reg, size, has_rex, v);
+            ctx->Rip += prefix + 2 + mlen;
+            return 1;
+        }
         return 0;
 
+    /* v247: the forms clang (Zig) also emits against registers: the value
+     * read into an ALU instruction, immediates, TEST with an immediate,
+     * sign-extending loads. MSVC and GCC load with a plain MOV first. */
+    case 0x63: {                                     /* MOVSXD r64, r/m32    */
+        uint64_t v;
+        if (!rex_w) return 0;
+        mlen = mmio_modrm_len(op + 1, rex_b);
+        reg  = ((op[1] >> 3) & 7) | (rex_r ? 8 : 0);
+        v    = rd(dev, off, 4) & 0xFFFFFFFFULL;
+        if (v & 0x80000000ULL) v |= 0xFFFFFFFF00000000ULL;
+        *mmio_ctx_reg(ctx, reg) = v;
+        ctx->Rip += prefix + 1 + mlen;
+        return 1;
+    }
+
+    case 0x80: case 0x81: case 0x83: {               /* ALU r/m, imm         */
+        uint64_t m, imm, res;
+        int ilen, cf, aop = (op[1] >> 3) & 7;
+        if (op[0] == 0x80) size = 1;
+        mlen = mmio_modrm_len(op + 1, rex_b);
+        if (op[0] == 0x81 && size == 2) {
+            imm = *(const uint16_t *)(op + 1 + mlen); ilen = 2;
+        } else if (op[0] == 0x81) {
+            imm = (uint64_t)(int64_t)*(const int32_t *)(op + 1 + mlen); ilen = 4;
+        } else {
+            imm = (uint64_t)(int64_t)(int8_t)op[1 + mlen]; ilen = 1;
+        }
+        m = rd(dev, off, size);
+        if (!mmio_alu(aop, m, imm, size, &res, &cf)) return 0;
+        if (aop != 7) wr(dev, off, res, size);
+        mmio_set_flags(ctx, res, size, cf);
+        ctx->Rip += prefix + 1 + mlen + ilen;
+        return 1;
+    }
+
+    case 0xF6: case 0xF7: {                          /* TEST r/m, imm (/0)   */
+        uint64_t m, imm;
+        int ilen;
+        if (((op[1] >> 3) & 7) != 0) return 0;
+        if (op[0] == 0xF6) size = 1;
+        mlen = mmio_modrm_len(op + 1, rex_b);
+        if (size == 1)      { imm = op[1 + mlen]; ilen = 1; }
+        else if (size == 2) { imm = *(const uint16_t *)(op + 1 + mlen); ilen = 2; }
+        else { imm = (uint64_t)(int64_t)*(const int32_t *)(op + 1 + mlen); ilen = 4; }
+        m = rd(dev, off, size);
+        mmio_set_flags(ctx, m & imm, size, 0);
+        ctx->Rip += prefix + 1 + mlen + ilen;
+        return 1;
+    }
+
     default:
+        /* ALU r/m, r (00/01, 28/29, 30/31) and ALU r, r/m (02/03, 0A/0B,
+         * 22/23, 2A/2B, 32/33, 3A/3B); 08/09, 20/21, 38/39 are above */
+        if (op[0] < 0x40 && (op[0] & 7) <= 3) {
+            uint64_t m, r, res;
+            int cf, aop = op[0] >> 3, to_reg = op[0] & 2;
+            if (!(op[0] & 1)) size = 1;
+            mlen = mmio_modrm_len(op + 1, rex_b);
+            reg  = ((op[1] >> 3) & 7) | (rex_r ? 8 : 0);
+            m    = rd(dev, off, size);
+            r    = mmio_get_reg(ctx, reg, size, has_rex);
+            if (to_reg) {
+                if (!mmio_alu(aop, r, m, size, &res, &cf)) return 0;
+                if (aop != 7) mmio_put_reg(ctx, reg, size, has_rex, res);
+            } else {
+                if (!mmio_alu(aop, m, r, size, &res, &cf)) return 0;
+                if (aop != 7) wr(dev, off, res, size);
+            }
+            mmio_set_flags(ctx, res, size, cf);
+            ctx->Rip += prefix + 1 + mlen;
+            return 1;
+        }
         return 0;
     }
 }

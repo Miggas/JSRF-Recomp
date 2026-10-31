@@ -148,7 +148,10 @@ endif()
 # Zig / MinGW on Windows (the launcher's compiler): the same 256 MB stack
 # as /STACK above, and the same warnings switched off as on Linux
 if(WIN32 AND NOT MSVC)
-    target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,268435456)
+    # v247: and MSVC's image base: the default 0x400000 puts the exe (and
+    # what loads next to it) in the low 4 GB the Xbox memory is mapped into
+    target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,268435456
+        -Wl,--image-base,0x140000000)
     target_compile_options(${PROJECT_NAME} PRIVATE -fno-strict-aliasing -fwrapv
         -Wno-unused -Wno-unused-label -Wno-unused-but-set-variable)
 endif()

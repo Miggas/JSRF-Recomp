@@ -25,6 +25,8 @@ MCPXAPUState *g_apu_state = NULL;
 #include "win32_compat.h"
 #endif
 
+#include "../platform/mmio_decode.h"   /* v247: the shared decoder, as a fallback */
+
 /* APU MMIO base in Xbox VA space */
 #define APU_MMIO_BASE  0xFE800000u
 #define APU_MMIO_SIZE  0x00080000u  /* 512KB */
@@ -81,6 +83,16 @@ static int decode_modrm_len(const uint8_t *ip, int has_rex_b)
 /* ============================================================
  * Instruction decoder for APU MMIO access
  * ============================================================ */
+
+static uint64_t apu_mmio_rd(void *d, uint32_t off, int size)
+{
+    return mcpx_apu_mmio_read((MCPXAPUState *)d, off, (unsigned int)size);
+}
+
+static void apu_mmio_wr(void *d, uint32_t off, uint64_t val, int size)
+{
+    mcpx_apu_mmio_write((MCPXAPUState *)d, off, val, (unsigned int)size);
+}
 
 static bool apu_decode_and_handle(PCONTEXT ctx, uint32_t mmio_offset, int is_write)
 {
@@ -243,6 +255,11 @@ static bool apu_decode_and_handle(PCONTEXT ctx, uint32_t mmio_offset, int is_wri
         g_apu_mmio_write_count++;
         return true;
     }
+
+    /* v247: what the shared decoder knows beyond this one (the forms clang
+     * emits: ALU with the register as destination, immediates, MOVSX) */
+    if (mmio_emulate(ctx, mmio_offset, g_apu_state, apu_mmio_rd, apu_mmio_wr))
+        return true;
 
     /* Unrecognized */
     g_apu_mmio_decode_fail++;
