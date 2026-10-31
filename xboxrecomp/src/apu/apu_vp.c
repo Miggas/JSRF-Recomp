@@ -651,7 +651,14 @@ uint64_t mcpx_apu_vp_read(void *opaque, hwaddr addr, unsigned int size)
 
     switch (addr) {
     case NV1BA0_PIO_FREE:
-        return 0x80; /* Always pretend queue is empty */
+        /* The queue is never simulated: always empty. v254: 0x800, not 0x80.
+         * DirectSound waits for room before it writes a buffer's methods,
+         * 7 words a voice for a multi-voice buffer: (free >> 2) >= 7 * voices
+         * (sub_001A3E58, JSRF). 0x80 is 32 words, so a buffer of 5 or more
+         * voices waited forever: the game froze in DSOUND Play (a report in
+         * the fight with Hayashi's Terror Drone, *reported by Miggas*). Every
+         * wait on this register is "at least n", none "exactly empty". */
+        return 0x800;
     default:
         break;
     }
