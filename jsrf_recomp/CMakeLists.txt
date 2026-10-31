@@ -38,6 +38,11 @@ set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xboxrecomp" CACHE PATH
 if(MSVC)
     string(APPEND CMAKE_C_FLAGS_RELEASE " /Z7")
     string(APPEND CMAKE_CXX_FLAGS_RELEASE " /Z7")
+elseif(WIN32)
+    # v248b: Zig / MinGW: line tables, written to jsrf_recomp.pdb, so crash
+    # reports and RECOMP_PROFILE name the functions as with MSVC
+    string(APPEND CMAKE_C_FLAGS_RELEASE " -g1")
+    string(APPEND CMAKE_CXX_FLAGS_RELEASE " -g1")
 endif()
 
 # Add xboxrecomp as a subdirectory -- this builds all 6 runtime libraries
