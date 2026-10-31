@@ -465,7 +465,14 @@ static void panel_debug(struct nk_context *ctx, float w)
     bool logging = ini_get(gi(), "RECOMP_LOG") && *ini_get(gi(), "RECOMP_LOG");
     bool prof = !strcmp(get_or("RECOMP_PROFILE", "0"), "1");
     bool nl = check(ctx, "Logging", logging);
+#ifdef _WIN32
+    desc(ctx, w, "Writes stderr.txt in the game folder, for bug reports, with the debug file (jsrf_recomp.pdb) "
+         "so it can name the game's functions. Turns quiet mode off, so the game runs a little slower.", C_DIM);
+    if (logging && !ini_dirty(gi()) && debug_files_missing())
+        desc(ctx, w, "jsrf_recomp.pdb is missing: the log can't name the game's functions. Build again to restore it.", C_BAD);
+#else
     desc(ctx, w, "Writes stderr.txt in the game folder, for bug reports. Turns quiet mode off, so the game runs a little slower.", C_DIM);
+#endif
     bool np = check(ctx, "Performance logs", prof);
     desc(ctx, w, "Slows the game down. Adds where the time goes to the log every 10 seconds. Turns Logging on.", C_BAD);
     if (np && !prof) nl = true;            /* needs the log */
@@ -536,8 +543,15 @@ static void tab_settings(struct nk_context *ctx, float h)
     nk_layout_row_begin(ctx, NK_DYNAMIC, s_row * 1.2f, 4);
     nk_layout_row_push(ctx, 0.16f);
     if (button(ctx, "Save", dirty)) {
-        if (ini_save(&s_game_ini)) snprintf(s_message, sizeof s_message, "Saved %s", p);
-        else snprintf(s_message, sizeof s_message, "Could not save %s", p);
+        if (ini_save(&s_game_ini)) {
+            /* Logging on: the debug file goes next to the game; off: away */
+            if (debug_files_sync() < 0)
+                snprintf(s_message, sizeof s_message, "Saved. jsrf_recomp.pdb is missing: build again to restore it.");
+            else
+                snprintf(s_message, sizeof s_message, "Saved %s", p);
+        } else {
+            snprintf(s_message, sizeof s_message, "Could not save %s", p);
+        }
     }
     nk_layout_row_push(ctx, 0.16f);
     if (button(ctx, "Undo changes", dirty)) ini_revert(&s_game_ini);
@@ -701,12 +715,10 @@ static void tab_debug(struct nk_context *ctx, float h)
     bool busy = job_busy();
     bool src = !busy && g_paths.have_source;
 
-    nk_layout_row_dynamic(ctx, s_row, 2);
+    nk_layout_row_dynamic(ctx, s_row, 1);
     nk_bool rg = s_regen;
     nk_checkbox_label(ctx, "Force Generate/Build", &rg);
     s_regen = rg != 0;
-    nk_bool df = debug_files_pref();
-    if (nk_checkbox_label(ctx, "Include debug files (jsrf_recomp.pdb)", &df)) debug_files_set(df != 0);
     used += s_row + 4;
 
     nk_layout_row_dynamic(ctx, s_row * 1.3f, 4);

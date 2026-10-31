@@ -20,9 +20,11 @@ extern Ini   g_launcher_ini;   /* launcher.ini: the launcher's own settings */
 void paths_init(void);
 void paths_set_game(const char *dir);     /* and saved in launcher.ini */
 void paths_refresh_source(void);          /* after Update */
-bool debug_files_pref(void);              /* DEBUG_FILES=1: copy jsrf_recomp.pdb with the game */
+/* jsrf_recomp.pdb next to the game while Logging is on (Windows) */
+bool debug_files_wanted(void);
+int  debug_files_sync(void);              /* copies or removes it: 1 there, 0 not wanted, -1 missing */
+bool debug_files_missing(void);           /* wanted but not there */
 bool debug_menu_pref(void);               /* DEBUG_MENU=1: the Debug tab */
-void debug_files_set(bool on);
 
 /* what is there */
 bool have_xbe(void);

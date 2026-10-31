@@ -112,10 +112,61 @@ void paths_set_game(const char *dir)
     launcher_ini_save();
 }
 
-bool debug_files_pref(void)
+/* The game's debug file (jsrf_recomp.pdb, Windows): next to the game while
+ * Logging is on in its jsrf.ini (RECOMP_LOG), so crash reports and
+ * performance logs can name the game's functions; gone while it is off.
+ * Linux builds keep that inside the game file. */
+bool debug_files_wanted(void)
 {
-    const char *v = ini_get(&g_launcher_ini, "DEBUG_FILES");
-    return v && v[0] == '1';
+#ifdef _WIN32
+    char p[LPATH];
+    game_ini(p);
+    Ini gi;
+    memset(&gi, 0, sizeof gi);
+    if (!ini_load(&gi, p)) return false;
+    const char *v = ini_get(&gi, "RECOMP_LOG");
+    bool on = v && *v;
+    ini_free(&gi);
+    return on;
+#else
+    return false;
+#endif
+}
+
+static void build_pdb(char *out)
+{
+    char b[LPATH];
+    pjoin(b, g_paths.build, "zig");
+    pjoin(out, b, "jsrf_recomp.pdb");
+}
+
+int debug_files_sync(void)
+{
+#ifdef _WIN32
+    char bp[LPATH], gp[LPATH];
+    build_pdb(bp);
+    pjoin(gp, g_paths.game, "jsrf_recomp.pdb");
+    if (!debug_files_wanted()) {
+        if (is_file(gp)) remove_file(gp);
+        return 0;
+    }
+    if (!is_file(bp)) return is_file(gp) ? 1 : -1;
+    if (!copy_file(bp, gp)) return is_file(gp) ? 1 : -1;
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+bool debug_files_missing(void)
+{
+#ifdef _WIN32
+    char gp[LPATH];
+    pjoin(gp, g_paths.game, "jsrf_recomp.pdb");
+    return debug_files_wanted() && !is_file(gp);
+#else
+    return false;
+#endif
 }
 
 bool debug_menu_pref(void)
@@ -124,11 +175,6 @@ bool debug_menu_pref(void)
     return v && v[0] == '1';
 }
 
-void debug_files_set(bool on)
-{
-    ini_put(&g_launcher_ini, "DEBUG_FILES", on ? "1" : "0", "launcher");
-    launcher_ini_save();
-}
 
 
 /* ======================================================================
@@ -626,7 +672,14 @@ static bool do_build(void)
     status("Checking what changed...", NULL);
     unsigned long long bh = build_inputs();
     bool up_to_date = !s_regen && is_file(built) && stamp_is(bstamp, bh);
+    {
+        /* Logging on (Windows): the debug file has to be there too */
+        char bp[LPATH];
+        build_pdb(bp);
+        if (up_to_date && debug_files_wanted() && !is_file(bp)) up_to_date = false;
+    }
     if (up_to_date && is_file(dest)) {
+        if (debug_files_sync() > 0) logf_("Debug file (jsrf_recomp.pdb) next to the game.");
         status("The game is up to date: nothing to build.", NULL);
         return true;
     }
@@ -694,20 +747,15 @@ static bool do_build(void)
         logf_("Could not copy the game to %s (is the game still running?)", dest);
         return false;
     }
-    /* the debug symbols, when chosen (Build -> Include debug files): crash
-     * reports and RECOMP_PROFILE can then name the game's functions (Zig's
-     * exe looks for it next to itself) */
+    /* the debug file, while Logging is on (an old one is removed either
+     * way first: it would not match the new game) */
     {
-        char bp[LPATH], gp[LPATH];
-        pjoin(bp, bdir, "jsrf_recomp.pdb");
+        char gp[LPATH];
         pjoin(gp, g_paths.game, "jsrf_recomp.pdb");
-        if (!debug_files_pref()) {
-            if (is_file(gp)) remove_file(gp);    /* an old one would not match */
-        } else if (is_file(bp) && !copy_file(bp, gp)) {
-            logf_("Could not copy %s", gp);
-        } else if (is_file(bp)) {
-            logf_("Copied the debug files (jsrf_recomp.pdb).");
-        }
+        if (is_file(gp)) remove_file(gp);
+        int d = debug_files_sync();
+        if (d > 0) logf_("Debug file (jsrf_recomp.pdb) next to the game.");
+        else if (d < 0) logf_("Could not put the debug file (jsrf_recomp.pdb) next to the game.");
     }
     char ini[LPATH];
     game_ini(ini);

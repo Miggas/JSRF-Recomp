@@ -22,8 +22,8 @@ README on the main branch.
 
 ## The Debug tab
 
-`DEBUG_MENU=1` in `launcher.ini` shows it: Force Generate/Build, Include
-debug files, Download tools, the checks (generated code, `default.xbe`, the
+`DEBUG_MENU=1` in `launcher.ini` shows it: Force Generate/Build, Download
+tools, the checks (generated code, `default.xbe`, the
 hard-disk cache), Play stopping after 30 s with a dump, Sample a hang, Trace
 one frame, and the whole log.
 
