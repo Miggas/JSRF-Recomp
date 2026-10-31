@@ -6854,7 +6854,8 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
             }
             last_pitch = pitch;
             if (nv2a_gl_active()) {
-                extern void nv2a_gl_quit_hold(void);
+                extern void nv2a_gl_quit_hold(void), nv2a_gl_prebuild_hold(void);
+                nv2a_gl_prebuild_hold();      /* v253: shaders first, once */
                 nv2a_gl_quit_hold();          /* v252: the quit window */
             }
         }

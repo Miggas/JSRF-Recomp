@@ -193,9 +193,13 @@ static void qd_button(float x0, float x1, const char *label, int picked, float t
 
 /* the window, over a frame of cw x ch pixels in the framebuffer bound for
  * drawing; flip: that framebuffer's row 0 is the top (DXGI) */
+extern char g_gl_build_msg[64];   /* v253: nv2a_gl.c, while shaders are built */
+
 static void present_overlay_f(int cw, int ch, int flip)
 {
-    if (!xbox_QuitDialogOpen() || cw <= 0 || ch <= 0) { s_qd_last_sel = -1; return; }
+    int quit = xbox_QuitDialogOpen();
+    if (!quit) s_qd_last_sel = -1;
+    if ((!quit && !g_gl_build_msg[0]) || cw <= 0 || ch <= 0) return;
     if (!s_qd_state) {
         GLint p0 = 0, va0 = 0, ab0 = 0;
         glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
@@ -225,11 +229,23 @@ static void present_overlay_f(int cw, int ch, int flip)
         if (sel != s_qd_last_sel) { s_qd_last_sel = sel; t0 = now; }   /* a new pick starts red */
         float t = (float)((now - t0) % 1000) / 1000.0f;
         s_qd_n = 0;
-        qd_frame(195.0f, 205.7f, 446.0f, 275.3f, 1.8f, 1.1f, edge, box);
-        qd_frame(199.0f, 211.7f, 442.0f, 236.0f, 0.0f, 0.8f, bar_edge, teal);
-        qd_text(320.5f, 223.4f, 2.05f, 2.55f, 0.6f, 0.24f, "Quit the game?", ink);
-        qd_button(240.0f, 300.0f, "YES", sel == 0, t);
-        qd_button(340.7f, 400.7f, "NO", sel == 1, t);
+        if (g_gl_build_msg[0]) {
+            /* v253: "Building Shaders (xx out of yyy built)", bottom middle */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 };
+            char m[64];
+            memcpy(m, g_gl_build_msg, sizeof m);
+            m[63] = 0;
+            float w = qd_text_w(m, 1.45f) + 22.0f;
+            qd_frame(320.0f - w / 2, 428.0f, 320.0f + w / 2, 452.0f, 1.6f, 0.9f, edge, box);
+            qd_text(320.5f, 440.0f, 1.45f, 1.9f, 0.45f, 0.22f, m, white);
+        }
+        if (quit) {
+            qd_frame(195.0f, 205.7f, 446.0f, 275.3f, 1.8f, 1.1f, edge, box);
+            qd_frame(199.0f, 211.7f, 442.0f, 236.0f, 0.0f, 0.8f, bar_edge, teal);
+            qd_text(320.5f, 223.4f, 2.05f, 2.55f, 0.6f, 0.24f, "Quit the game?", ink);
+            qd_button(240.0f, 300.0f, "YES", sel == 0, t);
+            qd_button(340.7f, 400.7f, "NO", sel == 1, t);
+        }
     }
 
     GLint p0 = 0, va0 = 0, ab0 = 0;

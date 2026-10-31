@@ -2123,9 +2123,11 @@ static void rcp_note_prog(const GlProg *base, int nz, const uint32_t *spec)
     if (base && rcp_base(base, &kind, &ffkey, &prog, &n))
         rcp_note(kind, ffkey, nz, spec, prog, n);
 }
-/* build one recipe's program into the shader cache, if it is not there */
-static void rcp_build(const Recipe *r)
+/* build one recipe's program into the shader cache, if it is not there;
+ * check_only (v253): only say whether it is missing (1) */
+static int rcp_build2(const Recipe *r, int check_only)
 {
+    int missing = 0;
     char *vgen = NULL, *fgen = NULL;
     const char *vsrc, *fsrc;
     char path[64];
@@ -2134,12 +2136,12 @@ static void rcp_build(const Recipe *r)
     else if (r->kind == 1) vsrc = VS_OLD;
     else {
         vgen = gen_vsh((const uint32_t (*)[4])r->prog, (int)r->n);
-        if (!vgen) return;
+        if (!vgen) return 0;
         vsrc = vgen;
     }
     if (r->spec) {
         fgen = spec_src(r->nz ? fs_nz() : FS, r->key);
-        if (!fgen) { free(vgen); return; }
+        if (!fgen) { free(vgen); return 0; }
         fsrc = fgen;
     } else
         fsrc = r->nz ? fs_nz() : FS;
@@ -2147,6 +2149,8 @@ static void rcp_build(const Recipe *r)
     f = fopen(path, "rb");
     if (f)
         fclose(f);                     /* already built */
+    else if (check_only)
+        missing = 1;
     else {
         GLuint id = link_with2(vsrc, fsrc);
         if (id) {
@@ -2156,12 +2160,15 @@ static void rcp_build(const Recipe *r)
     }
     free(vgen);
     free(fgen);
+    return missing;
 }
+static void rcp_build(const Recipe *r) { (void)rcp_build2(r, 0); }
 /* at the end of a frame with `draws` draws: some of the list, if light */
+static int s_pre_done;   /* v253: the first-frame check (nv2a_gl_prebuild_hold) has run */
 void nv2a_gl_idle(uint32_t draws)
 {
     uint64_t t0, budget;
-    if (s_state != 1)
+    if (s_state != 1 || !s_pre_done)
         return;
     if (s_rcp_state == 0)
         rcp_read();
@@ -4306,6 +4313,66 @@ void nv2a_gl_quit_hold(void)
     }
     InterlockedExchange(&g_xbox_game_held, 0);
     fprintf(stderr, "[QUIT] game goes on\n");
+}
+
+/* v253: shaders built before the game starts (idea by Miggas). At the
+ * game's first frame in the window, a quick look at which of the known
+ * setups (recipes.bin) are not in the shader cache; if any, the game is held
+ * there (as by the quit window, its sound too) and they are all built, with
+ * "Building Shaders (xx out of yyy built)" at the bottom of the window, so
+ * the game never waits for one later. Nothing to build: no pause at all.
+ * Without the game-window path (where the text is drawn) they are built on
+ * light frames as before. RECOMP_GL_PREBUILD=0 turns both off. */
+char g_gl_build_msg[64];   /* drawn by nv2a_gl_quit.h while not empty */
+void nv2a_gl_prebuild_hold(void)
+{
+    static int frames;
+    unsigned *todo, n = 0, i;
+    uint64_t t0, last;
+    if (s_pre_done || s_state != 1)
+        return;
+    if (!s_last_win) {
+        if (++frames >= 300)
+            s_pre_done = 1;                /* no game window: the light frames do it */
+        return;
+    }
+    s_pre_done = 1;
+    if (s_rcp_state == 0)
+        rcp_read();
+    if (s_rcp_state != 1 || s_rcp_next >= s_rcp_had)
+        return;
+    t0 = TM_NOW();
+    todo = (unsigned *)malloc((s_rcp_had - s_rcp_next) * sizeof *todo);
+    if (!todo)
+        return;
+    for (i = s_rcp_next; i < s_rcp_had; i++)
+        if (rcp_build2(&s_rcp[i], 1))
+            todo[n++] = i;
+    fprintf(stderr, "[GL] shader check: %u of %u setups to build (%.0f ms)\n", n,
+            s_rcp_had - s_rcp_next, (double)(TM_NOW() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency());
+    if (n) {
+        uint64_t sec = (uint64_t)SDL_GetPerformanceFrequency();
+        InterlockedExchange(&g_xbox_game_held, 1);
+        last = 0;
+        for (i = 0; i <= n; i++) {
+            uint64_t now = TM_NOW();
+            if (i == n || !last || now - last > sec / 30) {   /* the count, ~30 times a second */
+                snprintf(g_gl_build_msg, sizeof g_gl_build_msg,
+                         "Building Shaders (%u out of %u built)", i, n);
+                if (!gl_window_present(s_last_win))
+                    break;
+                last = now;
+            }
+            if (i < n)
+                rcp_build(&s_rcp[todo[i]]);
+        }
+        g_gl_build_msg[0] = 0;
+        InterlockedExchange(&g_xbox_game_held, 0);
+        fprintf(stderr, "[GL] shaders built before the start: %u in %.1f s\n", s_rcp_built,
+                (double)(TM_NOW() - t0) / (double)sec);
+    }
+    free(todo);
+    s_rcp_next = s_rcp_had;                /* nothing left for the light frames */
 }
 
 static void start_present_read(GlSurf *s, int win)
