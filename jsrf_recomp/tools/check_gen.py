@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compare src/recomp/gen with the code this version of the project is expected
 to produce from the NTSC default.xbe (analysis/gen_hashes.txt, SHA-256 of each
-file with Linux line endings). After generate_code.bat:  py -3 tools/check_gen.py"""
+file with Linux line endings). The launcher's Debug tab runs it (Check generated
+code), or:  python3 tools/check_gen.py"""
 import hashlib, os, sys
 here = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 gen = os.path.join(here, "src", "recomp", "gen")

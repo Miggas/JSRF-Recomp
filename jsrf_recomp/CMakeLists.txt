@@ -33,14 +33,17 @@ add_compile_definitions(
 set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xboxrecomp" CACHE PATH
     "Path to the xboxrecomp toolkit root directory")
 
+# v249: built with Zig only (cmake/zig.cmake; the launcher sets it up), on
+# Windows and Linux
+if(MSVC)
+    message(FATAL_ERROR "jsrf_recomp is built with Zig: use the launcher, or "
+        "-DCMAKE_TOOLCHAIN_FILE=cmake/zig.cmake (see cmake/zig.cmake).")
+endif()
+
 # Debug info for the toolkit libraries too (Release otherwise has none), so a
 # crash or hang sample inside the runtime is named rather than "no symbol".
-if(MSVC)
-    string(APPEND CMAKE_C_FLAGS_RELEASE " /Z7")
-    string(APPEND CMAKE_CXX_FLAGS_RELEASE " /Z7")
-elseif(WIN32)
-    # v248b: Zig / MinGW: line tables, written to jsrf_recomp.pdb, so crash
-    # reports and RECOMP_PROFILE name the functions as with MSVC
+# Windows: line tables, written to jsrf_recomp.pdb (v248b).
+if(WIN32)
     string(APPEND CMAKE_C_FLAGS_RELEASE " -g1")
     string(APPEND CMAKE_CXX_FLAGS_RELEASE " -g1")
 endif()
@@ -109,7 +112,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     d3d11
     dxgi
     dxguid
-    $<IF:$<C_COMPILER_ID:MSVC>,xinput,xinput1_4>   # MinGW / Zig: by the DLL's name
+    xinput1_4   # by the DLL's name (MinGW)
     winmm
     shell32     # v140: copying the old saves over (SHFileOperation)
     # Lets the fault handler resolve the host RIP back to the generated
@@ -128,37 +131,17 @@ target_compile_options(${PROJECT_NAME} PRIVATE -g1 -fno-strict-aliasing -fwrapv
 # launcher (ulimit) and guest threads get their own (see win32_compat.c)
 endif()
 
-# MSVC-specific: large address aware, increase section limit for big generated files
-if(MSVC)
-    target_link_options(${PROJECT_NAME} PRIVATE
-        /LARGEADDRESSAWARE
-        # 256 MB host stack reserve (only reserved, not committed) for the game
-        # thread and every guest thread. Each guest call is a host C call and
-        # lifted frames are much bigger than the original x86 ones, so the
-        # 1 MB default overflows on deep but legitimate call chains, and a
-        # stack overflow kills the process with no output.
-        /STACK:268435456
-        # A .pdb for Release too, so crash reports and the hang sampler can name
-        # the generated function (= the guest function) a host address is in.
-        # NOICF keeps identical small functions from being folded under one name.
-        /DEBUG /OPT:REF /OPT:NOICF
-    )
-    # Debug info in each .obj (/Z7 rather than /Zi: no shared .pdb for the
-    # parallel compiles to contend over).
-    target_compile_options(${PROJECT_NAME} PRIVATE /Z7)
-    # The generated code files can be very large. Increase object file section limit.
-    target_compile_options(${PROJECT_NAME} PRIVATE /bigobj)
-endif()
-
-# Zig / MinGW on Windows (the launcher's compiler): the same 256 MB stack
-# as /STACK above, and the same warnings switched off as on Linux
-if(WIN32 AND NOT MSVC)
-    # v247: and MSVC's image base: the default 0x400000 puts the exe (and
-    # what loads next to it) in the low 4 GB the Xbox memory is mapped into
-    # v248c: and a window program, as WIN32 above makes it with MSVC (CMake
-    # does not pass that on to Zig): as a console program every log line
-    # went to a console window (slow, and loading writes many), and
-    # RECOMP_LOG was ignored (stderr already looked redirected)
+# Windows:
+#  - a 256 MB stack reserve (only reserved) for the game thread and every
+#    guest thread: each guest call is a host C call and lifted frames are
+#    much bigger than the x86 ones, so the 1 MB default overflows on deep
+#    but legitimate call chains, and that kills the process silently
+#  - image base 0x140000000 (v247): the default 0x400000 puts the exe, and
+#    what loads next to it, in the low 4 GB the Xbox memory is mapped into
+#  - a window program (v248c; CMake does not pass WIN32 on to Zig): as a
+#    console program every log line went to a console window (slow), and
+#    RECOMP_LOG was ignored (stderr already looked redirected)
+if(WIN32)
     target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,268435456
         -Wl,--image-base,0x140000000 -Wl,--subsystem,windows)
     # v248: fast memcpy / memmove / memset / memcmp. Without them Zig links

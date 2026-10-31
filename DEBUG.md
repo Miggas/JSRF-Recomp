@@ -1,8 +1,14 @@
 # Jet Set Radio Future — debug and advanced settings
 
 These settings aren't in `jsrf.ini` because most players never need them. To
-use one, add it as a new line in `jsrf.ini` (`NAME=value`), or set it in the
-`.bat` file if you play with Option B. Remove it again when you're done.
+use one, add it as a new line in `jsrf.ini` (`NAME=value`), or in the
+launcher's **Settings → All settings**. Remove it again when you're done.
+
+The launcher's hidden **Debug** tab (`DEBUG_MENU=1` in `launcher.ini`) has the
+checks (generated code, `default.xbe`, the hard-disk cache), Play stopping
+after 30 s with a dump (`RECOMP_WATCHDOG_SECS=30`), Sample a hang and Trace one
+frame (they make `sample.flag` / `trace.flag` in the game folder), and the
+whole log.
 
 > [!WARNING]
 > Most of these are for testing and finding problems. Some slow the game down

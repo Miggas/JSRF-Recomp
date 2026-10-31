@@ -1,12 +1,11 @@
 Jet Set Radio Future recomp
 
-Full instructions, for first-time users too: README.md (open it with Notepad,
-or read it on the GitHub page).
+Full instructions, for first-time users too: README.md (open it with a text
+editor, or read it on the GitHub page).
 
-Short version, in jsrf_recomp\:
-  1. copy your game files (default.xbe and the rest) into game\
-  2. generate_code.bat     translate your default.xbe into C (Python 3 + capstone)
-  3. rebuild.bat           build (Visual Studio 2022 with C++)
-  4. build_portable.bat    put jsrf_recomp.exe + jsrf.ini in the game folder,
-                           then play by double-clicking jsrf_recomp.exe there
-     (or play_jsrf.bat to play from the project; run_jsrf.bat to make a log)
+Short version:
+  1. get jsrf_launcher from the Releases page and put it in an empty folder
+  2. start it, and copy your game files (default.xbe and the rest) into the
+     jsrf folder it makes
+  3. Update -> Download, then Play -> Build
+  4. PLAY

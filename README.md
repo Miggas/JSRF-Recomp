@@ -2,20 +2,21 @@
 
 # Jet Set Radio Future — PC recompilation
 
-**The original Xbox game, translated into a native Windows program.**<br>
-Runs on Windows 10/11, and on the Steam Deck through Proton 11.
+**The original Xbox game, translated into a native Windows and Linux program.**<br>
+Runs on Windows 10/11, Linux and the Steam Deck.
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
-![Steam Deck](https://img.shields.io/badge/Steam%20Deck-Proton%2011-1A9FFF?logo=steamdeck&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-native-FCC624?logo=linux&logoColor=black)
+![Steam Deck](https://img.shields.io/badge/Steam%20Deck-native-1A9FFF?logo=steamdeck&logoColor=white)
 ![Version](https://img.shields.io/badge/game-NTSC%20(US)%20retail%20only-orange)
 ![Bring your own game](https://img.shields.io/badge/game%20files-not%20included-lightgrey)
 
 </div>
 
 This is **not an emulator**. The game's own program is translated, once, into C
-code on your computer, and that code is compiled into a normal Windows `.exe`.
-The Xbox's hardware — graphics, sound, controllers, memory card — is recreated
-by the runtime in `xboxrecomp/`.
+code on your computer, and that code is compiled into a normal program. The
+Xbox's hardware — graphics, sound, controllers, memory card — is recreated by
+the runtime in `xboxrecomp/`.
 
 > [!NOTE]
 > **Made with AI.** Most of this project's code was written by Claude
@@ -32,18 +33,11 @@ by the runtime in `xboxrecomp/`.
 
 ### How hard is each step?
 
-Each section is marked with how much effort it takes:
-
 | Badge | Meaning |
 |---|---|
-| ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) | Double-click or copy a file. Anyone can do it. |
-| ![Medium](https://img.shields.io/badge/difficulty-medium-yellow) | A few more steps, or installing something. Follow the instructions closely. |
-| ![Hard](https://img.shields.io/badge/difficulty-hard-red) | Typing commands, or system settings. Optional — there is always an easier way. |
-
-### Planned features
-
-- Native Linux support, for the Steam Deck and other Linux.
-- An all-in-one standalone launcher to configure, update and recompile, without external programs.
+| ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) | Click a button or copy a file. Anyone can do it. |
+| ![Medium](https://img.shields.io/badge/difficulty-medium-yellow) | A few more steps. Follow the instructions closely. |
+| ![Hard](https://img.shields.io/badge/difficulty-hard-red) | Typing commands. Optional — there is always an easier way. |
 
 ---
 
@@ -52,11 +46,11 @@ Each section is marked with how much effort it takes:
 | | Section | Difficulty |
 |---|---|---|
 | 1 | [What you need](#1-what-you-need) | — |
-| 2 | [Install the tools (once)](#2-install-the-tools-once) | ![Medium](https://img.shields.io/badge/-medium-yellow) |
-| 3 | [Get this project](#3-get-this-project) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
-| 4 | [Add your game files](#4-add-your-game-files) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
-| 5 | [Build the game](#5-build-the-game) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
-| 6 | [Play — Option A or Option B](#6-play) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
+| 2 | [Get the launcher](#2-get-the-launcher) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
+| 3 | [Add your game files](#3-add-your-game-files) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
+| 4 | [Build the game](#4-build-the-game) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
+| 5 | [Play](#5-play) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
+| 6 | [The launcher](#6-the-launcher) | — |
 | 7 | [Playing on a Steam Deck](#7-playing-on-a-steam-deck) | ![Medium](https://img.shields.io/badge/-medium-yellow) |
 | 8 | [Controls](#8-controls) | — |
 | 9 | [Settings (jsrf.ini)](#9-settings-jsrfini) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
@@ -75,10 +69,14 @@ Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
 
 | | Requirement |
 |---|---|
-| 💻 | **A Windows 10 or 11 PC** to build the game. Once built, it also runs on a Steam Deck with **Proton 11** (building on the Deck itself is not supported). |
-| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — the NTSC (North American) retail release**, as a disc image (`.iso`) or as its files (`default.xbe` plus the folders next to it). |
-| 💾 | **About 5 GB of free disk space** (mostly Visual Studio). |
+| 💻 | **A Windows 10/11 PC, a Linux PC or a Steam Deck.** The game is built on the same system it runs on. |
+| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — the NTSC (North American) retail release**, as its files (`default.xbe` plus the folders next to it) or as a disc image (`.iso`). |
+| 💾 | **About 3 GB of free disk space** (the build tools, the build, and the game's cache). |
+| 🌐 | **An internet connection** the first time: the launcher downloads its tools and the project. |
 | 🎮 | **A graphics card with OpenGL 3.3** or newer — practically any GPU from the last ten years. |
+
+Nothing else has to be installed: the launcher brings its own tools (Python,
+the Zig compiler, CMake).
 
 > [!WARNING]
 > **Only the NTSC (North American) release works.** The PAL (European) and
@@ -87,202 +85,129 @@ Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
 > right ones. It does **not** compare the whole file: many dumps have a patched
 > header (region, allowed media), which changes the file's SHA-256 but not the
 > game, and those work fine.
->
-> To check your copy before building, open the folder `debug` and insidethere's
-> a script called `check_xbe.bat`, double click it and if your copy is the right
-> one it'll say `The game's code matches: this copy works with the project.`.
 
 ---
 
-## 2. Install the tools (once)
-
-![Medium](https://img.shields.io/badge/difficulty-medium-yellow) &nbsp; ⏱️ 15–30 minutes, mostly waiting
-
-You need **two free programs**. A third piece, *capstone*, installs itself.
-Install them in this order.
-
-### Step 1 — Visual Studio 2022 Community (the C compiler)
-
-1. Download it from <https://visualstudio.microsoft.com/vs/community/>.
-2. Run the installer. When it asks what to install, tick
-   **☑ Desktop development with C++**. Leave the options on the right as they
-   are; they include CMake, which the build also needs.
-3. Click **Install** and wait (it is large).
-
-> [!TIP]
-> You never need to open Visual Studio afterwards — the build scripts use it on
-> their own.
-
-### Step 2 — Python 3 (runs the translator)
-
-1. Download the latest Python 3 from <https://www.python.org/downloads/>.
-2. Run the installer and, **on the first screen, tick ☑ Add python.exe to PATH**,
-   then click **Install Now**.
-
-> [!CAUTION]
-> If you forget to tick **Add python.exe to PATH**, the scripts cannot find
-> Python. Run the installer again, choose *Modify*, and tick it.
-
-### Step 3 — capstone ![Easy](https://img.shields.io/badge/-automatic-brightgreen)
-
-Nothing to do: `generate_code.bat` installs it the first time it runs (it needs
-an internet connection then).
-
-<details>
-<summary>Install it yourself instead (optional)</summary>
-
-Open **Command Prompt** and type:
-
-```
-py -3 -m pip install capstone==5.0.7
-```
-</details>
-
----
-
-## 3. Get this project
+## 2. Get the launcher
 
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) &nbsp; ⏱️ 1 minute
 
-Pick one:
-
-- **Download the ZIP** — on the GitHub page, click the green **Code** button →
-  **Download ZIP**, then unzip it somewhere with a short path, for example
-  `C:\JSRF\`.
-- **With git** — `git clone <this repository's URL> C:\JSRF`
-
-You should end up with:
-
-```
-C:\JSRF\
-├── xboxrecomp\      the runtime and the translator
-├── jsrf_recomp\     the game project — you work in here
-└── README.md        this file
-```
+1. Download it from [Releases](https://github.com/Miggas/JSRF-Recomp/releases):
+   `jsrf_launcher-windows.zip` or `jsrf_launcher-linux.tar.gz`.
+2. Unpack it into an **empty folder** with a short path, for example `C:\JSRF\`
+   or `~/Games/JSRF`.
+3. Linux / Steam Deck: mark `jsrf_launcher` as executable (right-click →
+   **Properties → Permissions → Is executable**).
+4. Start it. It makes a `jsrf` folder next to itself, for your game files.
 
 > [!NOTE]
-> Avoid folders that are synced (OneDrive, Dropbox) or have very long paths;
-> the build creates many files.
+> Avoid folders that are synced (OneDrive, Dropbox): the build creates many files.
 
 ---
 
-## 4. Add your game files
+## 3. Add your game files
 
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) &nbsp; ⏱️ a few minutes
 
-Copy **all** of the game's files into `jsrf_recomp\game\` — `default.xbe` and
-every folder next to it — so that this file exists:
+Copy **all** of the game's files into the `jsrf` folder — `default.xbe` and
+every folder next to it — so that `jsrf\default.xbe` exists.
 
-```
-C:\JSRF\jsrf_recomp\game\default.xbe
-```
+Your game files are somewhere else? In **Play**, click **Choose folder** and
+pick that folder, or drop `default.xbe` onto the launcher's window.
 
 <details>
-<summary>💿 I only have a disc image (.iso) &nbsp; <img src="https://img.shields.io/badge/-medium-yellow"></summary>
+<summary>💿 I only have a disc image (.iso) &nbsp; <img src="https://img.shields.io/badge/-hard-red"></summary>
 
-The toolkit can unpack it. Open **Command Prompt** and type:
+First do **Update → Download** in the launcher ([section 4](#4-build-the-game)):
+it gets the project and the tools. Then, in a terminal (Command Prompt on
+Windows) in the launcher's folder:
 
 ```
-cd C:\JSRF\xboxrecomp
-py -3 -m tools.xiso unpack "C:\path\to\your\game.iso" -o ..\jsrf_recomp\game
+cd source\xboxrecomp
+..\..\tools\python\python.exe -m tools.xiso unpack "C:\path\to\game.iso" -o ..\..\jsrf
 ```
+
+On Linux: `cd source/xboxrecomp`, then
+`../../tools/python/bin/python3 -m tools.xiso unpack /path/to/game.iso -o ../../jsrf`
 </details>
 
 ---
 
-## 5. Build the game
+## 4. Build the game
 
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) &nbsp; ⏱️ 10–20 minutes the first time
 
-Open the `C:\JSRF\jsrf_recomp\` folder in Explorer and double-click, **in order**:
-
-| Step | Double-click | What it does | How long |
+| Step | In the launcher | What it does | How long |
 |:---:|---|---|---|
-| **1** | `generate_code.bat` | Checks your `default.xbe`, then translates the game's program into C code (in `src\recomp\gen\`). | 2–3 min |
-| **2** | `rebuild.bat` | Compiles everything into `jsrf_recomp.exe`. The first time it also sets up the build folder. | 5–15 min the first time, faster after |
+| **1** | **Update → Download** | Downloads the project and the build tools (about 150 MB). | a few minutes |
+| **2** | **Play → Build** | Checks your `default.xbe`, translates the game's program into C, and compiles it into `jsrf_recomp` (`.exe` on Windows) in your game folder. | 5–15 min the first time |
 
-Each window ends with ✅ **Done** / **Build OK** when it worked, or
-❌ **FAILED — scroll up for the first error** when it didn't
-(see [Troubleshooting](#12-troubleshooting)).
-
-> [!TIP]
-> You only need `generate_code.bat` again when you update the project
-> ([section 11](#11-updating-to-a-newer-version)). `rebuild.bat` is what you run
-> after any change.
+The **Play** tab shows a ✓ or ✗ for each part. Click a ✗ to go where it is
+fixed. The **Build** tab has **Generate code** and **Build** separately; each
+checks first and skips what is already up to date.
 
 ---
 
-## 6. Play
+## 5. Play
 
-There are two ways to play. **Pick one.**
+![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen)
 
-<table>
-<tr>
-<th width="50%">🅰️ &nbsp;Option A — Ready-to-play game folder</th>
-<th width="50%">🅱️ &nbsp;Option B — Straight from the project</th>
-</tr>
-<tr>
-<td valign="top">
-
-![Recommended](https://img.shields.io/badge/-recommended-brightgreen) ![Easy](https://img.shields.io/badge/-easy-brightgreen)
-
-Double-click **`build_portable.bat`**. It builds the game and copies
-`jsrf_recomp.exe` and a settings file, `jsrf.ini`, into your game folder
-(`jsrf_recomp\game\`).
-
-From then on, just double-click **`jsrf_recomp.exe` in the game folder**. You
-can make a desktop shortcut to it, or copy the whole game folder to another PC
-or a Steam Deck.
-
-**Best for:** everyday playing, and the Steam Deck.
-
-</td>
-<td valign="top">
-
-![Easy](https://img.shields.io/badge/-easy-brightgreen)
-
-Double-click **`play_jsrf.bat`** in `jsrf_recomp\`.
-
-The game runs from the build folder; its settings are inside the `.bat` file
-instead of `jsrf.ini`.
-
-**Best for:** quick tests after a rebuild, without copying anything.
-
-</td>
-</tr>
-</table>
+Click **PLAY** in the launcher, or start `jsrf_recomp` (`jsrf_recomp.exe` on
+Windows) in your game folder directly. The game folder can be copied to
+another computer of the same system as it is.
 
 > [!TIP]
-> **`F11`** or **`Alt+Enter`** switches between window and full screen at any time.<br>
-> To put the game in a different folder with Option A: `build_portable.bat D:\Games\JSRF`
+> **`F11`** or **`Alt+Enter`** switches between window and full screen at any time.
+
+---
+
+## 6. The launcher
+
+| Tab | What it does |
+|---|---|
+| **Play** | The game folder, what is ready (✓ / ✗), **PLAY**. |
+| **Settings** | `jsrf.ini` in tabs: Gameplay, Video, Input, Audio, Debug, and **All settings** for every line. |
+| **Build** | **Generate code** and **Build**, each skipping what is up to date. |
+| **Update** | Gets the newest version of the project. Your game files, `jsrf.ini` and saves are kept. Then **Build**. |
+
+`launcher.ini`, next to the launcher, holds its own settings:
+
+| Setting | What it does |
+|---|---|
+| `BRANCH=test` | Update downloads the `test` branch (newest, less tested). Not set: `main`. |
+| `DEBUG_MENU=1` | Shows the **Debug** tab: Force Generate/Build, Include debug files (`jsrf_recomp.pdb`, for crash reports that name the game's functions), the checks (generated code, `default.xbe`, the hard-disk cache), Play stopping after 30 s with a dump, Sample a hang, Trace one frame, and the whole log. |
+
+Everything the launcher does is also written to `launcher_log.txt` next to it.
+The launcher's code is on the [`launcher`](https://github.com/Miggas/JSRF-Recomp/tree/launcher) branch.
 
 ---
 
 ## 7. Playing on a Steam Deck
 
-![Medium](https://img.shields.io/badge/difficulty-medium-yellow) &nbsp; ⏱️ 10 minutes
+![Medium](https://img.shields.io/badge/difficulty-medium-yellow) &nbsp; ⏱️ 20 minutes
 
-1. On your PC, do **[Option A](#6-play)**. Your game folder now holds the game
-   files, `jsrf_recomp.exe` and `jsrf.ini`.
-2. Copy that whole folder to the Deck (USB stick, SD card, or over the
-   network), for example to `/home/deck/Games/JSRF`.
-3. On the Deck, switch to **Desktop Mode**, open Steam, and choose
-   **Games → Add a Non-Steam Game to My Library… → Browse…**. Set the file type
-   to *All Files*, pick `jsrf_recomp.exe`, and add it.
-4. In Steam, right-click the new entry → **Properties → Compatibility** → tick
-   **Force the use of a specific Steam Play compatibility tool** and choose
-   **Proton 11**.
-5. Go back to **Gaming Mode** and play.
+The game is built on the Deck itself and runs without Proton.
 
-> [!WARNING]
-> **Tested with Proton 11 only.** Earlier Proton versions have not been tested,
-> and there are no plans to support them. If something goes wrong on an older
-> version, switch to Proton 11 first.
+1. Switch to **Desktop Mode**.
+2. Do sections [2](#2-get-the-launcher) to [4](#4-build-the-game) there, with
+   the Linux launcher.
+3. In Steam, choose **Games → Add a Non-Steam Game to My Library… → Browse…**,
+   set the file type to *All Files*, pick `jsrf_launcher` (or `jsrf_recomp` in
+   the game folder, to start the game directly) and add it. **Do not** force a
+   Proton version.
+4. Go back to **Gaming Mode** and play. The touchscreen works in the launcher.
+
+<details>
+<summary>🍷 With Proton instead (the Windows build) &nbsp; <img src="https://img.shields.io/badge/-medium-yellow"></summary>
+
+Build on a Windows PC, copy the game folder to the Deck, add `jsrf_recomp.exe`
+as a non-Steam game, and in **Properties → Compatibility** force **Proton 11**.
+Only Proton 11 is tested.
+</details>
 
 > [!NOTE]
 > The provided `jsrf.ini` already has the settings that suit the Deck:
-> `RECOMP_GL_SCALE=2` (1280×960 inside the game). The texture write-watch turns itself off under
-> Proton (avoids stutter).
+> `RECOMP_GL_SCALE=2` (1280×960 inside the game).
 
 ### Choose a power mode
 
@@ -321,8 +246,7 @@ fixes the side effect by telling the Deck to raise its clock straight away (the
 ![Easy](https://img.shields.io/badge/difficulty-nothing%20to%20do-brightgreen)
 
 Leave `jsrf.ini` as it is. The line `;RECOMP_SLEEP_WAITS=vblank` stays switched
-off (it starts with `;`), so the default is used: only one small wait sleeps —
-the one that avoids music crackling — and the rest spin.
+off (it starts with `;`), so the default is used.
 
 #### 🌿 Mode 2 — Power saving
 
@@ -334,14 +258,13 @@ the one that avoids music crackling — and the rest spin.
 
 **Step 1 — let the game sleep while it waits** ![Easy](https://img.shields.io/badge/-easy-brightgreen)
 
-Open `jsrf.ini` (in the game folder) with a text editor and change this line:
+In the launcher: **Settings → All settings**, tick `RECOMP_SLEEP_WAITS` and set
+it to `all`, then **Save**. Or in `jsrf.ini` (in the game folder):
 
 ```diff
 - ;RECOMP_SLEEP_WAITS=vblank
 + RECOMP_SLEEP_WAITS=all
 ```
-
-That is: remove the `;` and change `vblank` to `all`. Save the file.
 
 **Step 2 — set the CPU governor to "performance" with PowerTools** ![Medium](https://img.shields.io/badge/-medium-yellow)
 
@@ -379,59 +302,6 @@ echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/scaling_gove
 ⚠️ **This applies to every game until you restart the Deck.**
 </details>
 
-### Native Linux build (experimental)
-
-![Hard](https://img.shields.io/badge/difficulty-hard-red) &nbsp; ⏱️ 30 minutes
-
-The game can also be built as a Linux program, which runs on the Deck without
-Proton. It is new and has only been tested up to the start of the game; report
-what works and what does not.
-
-1. Build it in an Ubuntu 22.04 environment: **WSL** on your PC
-   (`wsl --install -d Ubuntu-22.04`), or a **distrobox** on the Deck in Desktop
-   Mode (`distrobox create -n jsrf -i ubuntu:22.04`, then `distrobox enter jsrf`).
-2. Install the tools there:
-   ```
-   sudo apt install build-essential cmake ninja-build python3 libsdl2-dev
-   ```
-3. In the project's `jsrf_recomp` folder, run `bash build_linux.sh /path/to/your/game/folder`.
-   The recompiled code made on Windows (`src/recomp/gen`) can be copied over; if it
-   is not there, the script makes it from `default.xbe`.
-4. The game folder now has `jsrf_recomp` (no `.exe`) next to `jsrf_recomp.exe`.
-   Copy the folder to the Deck as usual. If it was built on a Windows drive, mark
-   it executable once on the Deck: right-click it in the file manager →
-   **Properties → Permissions → Is executable**, or `chmod +x jsrf_recomp` in Konsole.
-5. In Steam, add `jsrf_recomp` as a non-Steam game and **do not** force a Proton
-   version.
-
-Same `jsrf.ini`, same saves. Logs go to the file `RECOMP_LOG` names, as on Windows.
-
-### The launcher (experimental)
-
-![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen)
-
-`jsrf_launcher` builds, updates and starts the game, and edits `jsrf.ini`. It
-works on Windows and Linux, the Steam Deck included, and needs nothing
-installed: on the first build it downloads its own tools (Python, the Zig
-compiler, CMake, Ninja; about 150 MB) into its `tools` folder.
-
-1. Download it from [Releases](https://github.com/Miggas/JSRF-Recomp/releases)
-   and put it in an empty folder. On the Deck, mark it executable
-   (**Properties → Permissions → Is executable**).
-2. Start it: it makes a `jsrf` folder next to itself. Put your game files
-   there, or choose another folder in **Play**.
-3. **Update → Download** gets the project and builds the game.
-4. **Play**. On the Deck, add `jsrf_launcher` to Steam as a non-Steam game,
-   without Proton.
-
-- **Settings** edits `jsrf.ini`: the common settings in tabs (Gameplay, Video,
-  Input, Audio, Debug), and **All settings** for every line.
-- **Update** gets the newest version and builds it. Your game files, `jsrf.ini`
-  and saves are kept.
-- On Windows, **Build → Compiler**: Visual Studio when it is installed, Zig
-  otherwise. A Zig build's crash reports don't name the game function.
-- The launcher's code is on the [`launcher`](https://github.com/Miggas/JSRF-Recomp/tree/launcher) branch.
-
 ---
 
 ## 8. Controls
@@ -459,9 +329,10 @@ controller. **The keyboard** works as controller 1:
 
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen)
 
-Settings live in `jsrf.ini`, next to `jsrf_recomp.exe`. Open it with Notepad.
-Each setting is one line, `NAME=value`. A line starting with `;` is switched
-off: delete the `;` to switch it on. Steam launch options override the file.
+Settings live in `jsrf.ini`, in the game folder. The easiest way to change
+them is the launcher's **Settings** tab. In a text editor: each setting is one
+line, `NAME=value`; a line starting with `;` is switched off: delete the `;` to
+switch it on. Steam launch options override the file.
 
 > [!CAUTION]
 > **Do not change** the first lines of the `[game]` section. The game needs
@@ -532,9 +403,6 @@ off: delete the `;` to switch it on. Steam launch options override the file.
 | `RECOMP_GL_TEX_WATCH=0` | Turns the texture write-watch off (it is on by default on Windows and in the Linux build, off under Proton). Try it if the game stutters. |
 | `RECOMP_SLEEP_WAITS=…` | GPU waits. Windows default: `all` (the game's wait spins 0.2 ms, then sleeps). Steam Deck default: `vblank`. `none` = highest CPU use. Steam Deck: see [section 7](#choose-a-power-mode). |
 
-If you play with **Option B** (`play_jsrf.bat`), its settings are inside the
-`.bat` file instead (same names).
-
 More settings, for testing and for finding problems, are listed in
 **[DEBUG.md](DEBUG.md)**. They aren't in `jsrf.ini`; add a line yourself to use one.
 
@@ -545,7 +413,7 @@ More settings, for testing and for finding problems, are listed in
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen)
 
 Your save is in the **`UDATA`** folder of your game folder (for example
-`jsrf_recomp\game\UDATA\`), next to `TDATA`, which holds the game's own
+`jsrf\UDATA\`), next to `TDATA`, which holds the game's own
 settings. These two folders are tiny: copy them to back up your progress, or to
 move it to another PC or the Deck.
 
@@ -576,13 +444,12 @@ move it to another PC or the Deck.
 
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) &nbsp; ⏱️ 5–10 minutes
 
-1. Get the new version of the project (download the ZIP again, or `git pull`).
-   If you download a ZIP, unzip it **into a new folder** and move your `game`
-   folder across — don't copy the old `build` folder.
-2. Double-click **`generate_code.bat`**, then **`rebuild.bat`** — or
-   **`build_portable.bat`** if you play with Option A.
+1. In the launcher: **Update → Update**. It downloads only when there is a newer
+   version.
+2. **Play → Build**. The code is translated again only if what it is made from
+   changed.
 
-Your `jsrf.ini` and saves are kept.
+Your game files, `jsrf.ini` and saves are kept.
 
 ---
 
@@ -590,18 +457,12 @@ Your `jsrf.ini` and saves are kept.
 
 | ❌ You see | ✅ What to do |
 |---|---|
-| `Python 3 not found` | Install Python ([section 2](#step-2--python-3-runs-the-translator)) with **Add python.exe to PATH** ticked. Close and reopen the window afterwards. |
-| `could not install capstone` | Check the internet connection and run `generate_code.bat` again, or run `py -3 -m pip install capstone==5.0.7` in Command Prompt. |
-| `default.xbe not found` | The game files must be in `jsrf_recomp\game\`, with `default.xbe` directly in it (not in a subfolder). |
+| `default.xbe not found` | The game folder must hold `default.xbe` directly (not in a subfolder). **Play → Choose folder** to pick the right one. |
 | `this default.xbe is not the one the analysis was made from` | Your copy is a different version — most likely the PAL (European) or NTSC-J (Japanese) release. Only the NTSC (North American) retail release works. |
-| `No recompiled code yet in src\recomp\gen` | Run `generate_code.bat` before `rebuild.bat`. |
-| `cmake` not found, or `Visual Studio 17 2022` not found | Install Visual Studio 2022 with **Desktop development with C++** ([section 2](#2-install-the-tools-once)). |
-| `MSB1009: Project file does not exist` (`ALL_BUILD.vcxproj`) | An earlier setup failed halfway. Delete the `jsrf_recomp\build` folder and run `rebuild.bat` again (newer versions do this for you); if it fails again, the real error is right after **Configuring...** |
-| CMake says the cache or source folder doesn't match | You moved or copied the project. Delete the `jsrf_recomp\build` folder and run `rebuild.bat` again. |
-| `BUILD FAILED` with something else | Scroll up to the first line that says `error`, and report it ([section 13](#13-reporting-a-problem)). |
-| `Could not copy the exe … is the game still running?` | Close the game and run `build_portable.bat` again. |
-| The game is slow or stutters | Lower `RECOMP_GL_SCALE`; make sure `RECOMP_QUIET=1` is on; on a laptop, plug it in. |
-| Problems on the Steam Deck (or under Proton/Linux) with a Proton version other than 11 | Switch to **Proton 11** ([section 7](#7-playing-on-a-steam-deck)). Only Proton 11 is tested; older versions are not supported. |
+| `Could not reach GitHub` / a download fails | Check the internet connection and try again. |
+| A build fails | **Open log file** (shown under the buttons after a failure), find the first line with `error`, and report it ([section 13](#13-reporting-a-problem)). |
+| `Could not copy the game … is the game still running?` | Close the game and **Build** again. |
+| The game is slow or stutters | Lower the resolution scale (**Settings → Video**); turn **Logging** off (**Settings → Debug**); on a laptop, plug it in. |
 | Busy areas on the Deck drop below 50 fps for a few seconds | You set `RECOMP_SLEEP_WAITS=all` without the performance governor — do both steps of [Mode 2](#-mode-2--power-saving), or go back to Mode 1. |
 | Game opens up to a black screen | Add `RECOMP_GL_CPU_VERTEX=1` to `jsrf.ini` ([DEBUG.md](DEBUG.md)). There's a known bug on NVIDIA systems that causes this; a fix is in the works. |
 
@@ -613,45 +474,43 @@ Your `jsrf.ini` and saves are kept.
 
 A log lets someone see what happened.
 
-| If you play with… | Do this |
-|---|---|
-| 🅰️ **Option A** (exe in the game folder) | In `jsrf.ini`, remove the `;` in front of `RECOMP_LOG=stderr.txt`, and put a `;` in front of `RECOMP_QUIET=1`. Play until the problem happens, close the game, and send `stderr.txt` from the game folder. |
-| 🅱️ **Option B** (from the project) | Double-click `run_jsrf.bat` instead of `play_jsrf.bat`; it writes `stderr.txt` in `jsrf_recomp\`. |
+1. In the launcher: **Settings → Debug → Logging**, then **Save**.
+2. Play until the problem happens and close the game.
+3. Send `stderr.txt` from the game folder. For a build problem, send
+   `launcher_log.txt` from the launcher's folder.
 
 Say what you did, what you expected and what happened instead, and whether it
 was on a PC or a Steam Deck.
 
 > [!TIP]
-> Put the `;` back in front of `RECOMP_LOG` afterwards — the log makes the game
-> slower.
+> Turn **Logging** off again afterwards — the log makes the game slower.
 
 ---
 
 ## 14. What's in the folders
 
-**`jsrf_recomp\` — the scripts you use:**
+**Next to the launcher:**
 
-| File | Use it to |
+| | What it is |
 |---|---|
-| `generate_code.bat` | translate your `default.xbe` into C (after getting or updating the project) |
-| `rebuild.bat` | build the game |
-| `build_portable.bat` | build and put the exe + `jsrf.ini` in the game folder (**Option A**) |
-| `play_jsrf.bat` | play from the project (**Option B**) |
-| `run_jsrf.bat` | play with a full log, for reporting a problem |
-| `debug\` | tools for diagnosing freezes and graphics problems (developers) |
+| `jsrf/` | your game files (or the folder set in Play), with the built game, `jsrf.ini` and your saves |
+| `source/` | the project, downloaded by Update |
+| `tools/` | Python, Zig, CMake, Ninja (about 400 MB) |
+| `build/` | the compiler's work files |
+| `launcher.ini`, `launcher_log.txt` | the launcher's settings and log |
 
 <details>
-<summary>📁 The rest of the folders</summary>
+<summary>📁 Inside the project (<code>source/</code>)</summary>
 
 | Folder | What it is |
 |---|---|
-| `jsrf_recomp\game\` | your game files go here (never uploaded) |
-| `jsrf_recomp\src\` | the project's own code (`main.c`, `recomp_manual.c`) and, after step 5, the generated code in `src\recomp\gen\` (never uploaded) |
-| `jsrf_recomp\analysis\` | the map of the game's program the translator works from: where each function starts and ends, names, calling conventions — addresses and names, no game code |
-| `jsrf_recomp\tools\` | the scripts behind the `.bat` files, and developer tools |
-| `jsrf_recomp\portable\` | the default `jsrf.ini` that `build_portable.bat` copies |
-| `jsrf_recomp\README_JSRF.md` | the development history of every version, with measurements |
-| `xboxrecomp\` | the toolkit: the translator (Python) and the runtime that recreates the Xbox (kernel, NV2A graphics on OpenGL, MCPX audio, controllers) |
+| `jsrf_recomp/src/` | the project's own code (`main.c`, `recomp_manual.c`) and the generated code in `src/recomp/gen/` (made from your `default.xbe`, never uploaded) |
+| `jsrf_recomp/analysis/` | the map of the game's program the translator works from: where each function starts and ends, names, calling conventions — addresses and names, no game code |
+| `jsrf_recomp/tools/` | the translator's scripts and developer tools |
+| `jsrf_recomp/cmake/zig.cmake` | the Zig compiler set-up |
+| `jsrf_recomp/portable/` | the default `jsrf.ini` |
+| `jsrf_recomp/README_JSRF.md` | the development history of every version, with measurements |
+| `xboxrecomp/` | the toolkit: the translator (Python) and the runtime that recreates the Xbox (kernel, NV2A graphics on OpenGL, MCPX audio, controllers) |
 </details>
 
 ---
@@ -673,6 +532,9 @@ co-author.
 - [sp00nznet](https://github.com/sp00nznet/xboxrecomp) for the `xboxrecomp` toolkit this port is
   built on.
 - Piaka for the borderless window tip.
+- The launcher draws its window with [Nuklear](https://github.com/Immediate-Mode-UI/Nuklear)
+  (public domain / MIT) on [SDL2](https://libsdl.org) (zlib), and builds with
+  [Zig](https://ziglang.org) (MIT).
 - This project's own files (everything outside `xboxrecomp/`) are MIT
   licensed — see [`LICENSE`](LICENSE).
 - `xboxrecomp/` is MIT licensed (see `xboxrecomp/LICENSE`). Some of its audio

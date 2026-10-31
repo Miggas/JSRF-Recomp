@@ -37,5 +37,5 @@ __pycache__/
 Thumbs.db
 .DS_Store
 
-# Linux build folder (build_linux.sh)
+# old build folders (rebuild.bat, build_linux.sh)
 jsrf_recomp/build-linux/

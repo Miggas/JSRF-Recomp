@@ -12,7 +12,7 @@
  * same decoders.
  *
  * Layout: the executable sits in the game folder next to default.xbe and
- * jsrf.ini (what build_linux.sh sets up), or game/default.xbe under the
+ * jsrf.ini (where the launcher puts it), or game/default.xbe under the
  * working folder.
  */
 #define _GNU_SOURCE

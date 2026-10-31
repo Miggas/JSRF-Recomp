@@ -91,7 +91,7 @@ extern ptrdiff_t g_xbox_mem_offset;
 /* ── v139: portable layout and jsrf.ini ─────────────────────
  *
  * The exe can sit in the game folder itself, next to default.xbe (what
- * build_portable.bat sets up): it then runs from there, whatever folder it
+ * the launcher puts it): it then runs from there, whatever folder it
  * was started from (a desktop shortcut, Steam's "Start in"), and finds the
  * game beside it. Otherwise the old layout: game\default.xbe under the
  * working folder.
@@ -549,7 +549,7 @@ static void sample_main_thread(int k, const char *why)
 
 /* Samples the main game thread three times: once at RECOMP_SAMPLE_SECS (if
  * set), and whenever a file named sample.flag appears in the working folder
- * (debug\sample_hang.bat makes one) -- so a freeze that happens at a random point
+ * (the launcher's Debug tab, Sample a hang, makes one) -- so a freeze that happens at a random point
  * of play can be caught when it happens. */
 static DWORD WINAPI sampler_thread(LPVOID p)
 {

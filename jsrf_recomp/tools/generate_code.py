@@ -16,14 +16,14 @@ no game code):
                         pointers that the function list folds into a
                         neighbour (two from v66, one from v185)
   4. log_stubs.py,      the project's fix-ups applied to the generated files
-     wrap_dsound.py     (rebuild.bat runs wrap_dsound.py again; idempotent)
+     wrap_dsound.py     (idempotent: safe to run again)
 
 usage:
   py -3 tools/generate_code.py [path/to/default.xbe] [--xboxrecomp DIR] [--any-xbe]
 
 default.xbe defaults to jsrf_recomp/game/default.xbe, the toolkit to
-../xboxrecomp next to jsrf_recomp. Takes about two minutes. Then run
-rebuild.bat.
+../xboxrecomp next to jsrf_recomp. Takes about two minutes. Then build
+(the launcher's Build).
 """
 import argparse
 import hashlib
@@ -248,7 +248,7 @@ def main():
     run([py, os.path.join(HERE, "wrap_dsound.py"), GEN], JR)
 
     n = len([f for f in os.listdir(GEN) if f.endswith(".c")])
-    print("\nDone: %d files in src/recomp/gen. Now run rebuild.bat." % n)
+    print("\nDone: %d files in src/recomp/gen. Now build the game (the launcher's Build)." % n)
 
 
 if __name__ == "__main__":
