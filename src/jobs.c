@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include <time.h>
+#include <ctype.h>
 
 #include <SDL.h>
 
@@ -569,13 +570,91 @@ static void stamp_write(const char *file, unsigned long long v)
     write_file(file, t, strlen(t));
 }
 
+/* The generated-code stamp says which way it was counted ("gen2" since v1m).
+ * A stamp from an older launcher can't be compared, so the code itself is
+ * checked against the project's expected code (analysis/gen_hashes.txt, as
+ * Check generated code does); if every file matches it is current, and the
+ * stamp is rewritten. Saves a needless regeneration after a launcher update. */
+#define GEN_SCHEME "gen2 "
+
+static bool gen_stamp_is(const char *file, unsigned long long v)
+{
+    char *d = read_file(file, NULL);
+    char want[48];
+    snprintf(want, sizeof want, GEN_SCHEME "%016llx", v);
+    bool same = d && !strncmp(d, want, strlen(want));
+    free(d);
+    return same;
+}
+
+static void gen_stamp_write(const char *file, unsigned long long v)
+{
+    char t[48];
+    snprintf(t, sizeof t, GEN_SCHEME "%016llx\n", v);
+    write_file(file, t, strlen(t));
+}
+
+/* every file in gen_hashes.txt present with that SHA-256 (CR LF counted as
+ * LF), and no other .c or .h file in the folder */
+static int s_ref_count, s_ref_extra;
+static void ref_extra_cb(const char *name, bool isdir, void *u)
+{
+    size_t n = strlen(name);
+    (void)u;
+    if (isdir || n < 2 || (strcmp(name + n - 2, ".c") && strcmp(name + n - 2, ".h"))) return;
+    s_ref_extra++;
+}
+
+static bool gen_matches_reference(const char *g)
+{
+    char ref[LPATH], an[LPATH];
+    pjoin3(an, g_paths.source, "jsrf_recomp", "analysis");
+    pjoin(ref, an, "gen_hashes.txt");
+    char *t = read_file(ref, NULL);
+    if (!t) return false;
+    bool ok = true;
+    s_ref_count = 0;
+    for (char *line = strtok(t, "\r\n"); line && ok; line = strtok(NULL, "\r\n")) {
+        char want[80], name[256], f[LPATH], got[65];
+        if (sscanf(line, "%79s %255s", want, name) != 2) continue;
+        pjoin(f, g, name);
+        size_t len = 0;
+        unsigned char *d = (unsigned char *)read_file(f, &len);
+        if (!d) { ok = false; break; }
+        size_t w = 0;
+        for (size_t i = 0; i < len; i++)
+            if (!(d[i] == '\r' && i + 1 < len && d[i + 1] == '\n')) d[w++] = d[i];
+        sha256_hex(d, w, got);
+        free(d);
+        for (int k = 0; want[k]; k++) want[k] = (char)toupper((unsigned char)want[k]);
+        if (strcmp(got, want)) ok = false;
+        s_ref_count++;
+    }
+    free(t);
+    if (!ok || !s_ref_count) return false;
+    s_ref_extra = 0;
+    list_dir(g, ref_extra_cb, NULL);
+    return s_ref_extra == s_ref_count;
+}
+
 static bool gen_current(void)
 {
     char g[LPATH], f[LPATH], st[LPATH];
     gen_dir(g);
     pjoin(f, g, "recomp_dispatch.c");
     pjoin(st, g, "launcher_gen.txt");
-    return is_file(f) && stamp_is(st, gen_inputs());
+    if (!is_file(f)) return false;
+    unsigned long long h = gen_inputs();
+    if (gen_stamp_is(st, h)) return true;
+    char *d = read_file(st, NULL);
+    bool old = d && strncmp(d, GEN_SCHEME, strlen(GEN_SCHEME));
+    free(d);
+    if (old && gen_matches_reference(g)) {
+        logf_("Generated code: made by an older launcher, matches the expected code: kept.");
+        gen_stamp_write(st, h);
+        return true;
+    }
+    return false;
 }
 
 bool have_gen(void)
@@ -641,7 +720,7 @@ static bool do_generate(void)
     if (!runv(jr, argv)) return false;
     char st[LPATH];
     pjoin(st, gen, "launcher_gen.txt");
-    stamp_write(st, h);
+    gen_stamp_write(st, h);
     status("Code generated.", NULL);
     return true;
 }
