@@ -357,6 +357,7 @@ switch it on. Steam launch options override the file.
 | `RECOMP_GL_PRESENT=dxgi` | Borderless window (Windows only). May lower performance. *Tip from Piaka.* |
 | `RECOMP_WIDESCREEN=auto` | Widescreen: `1` = 16:9, `auto` = your monitor's shape. For other shapes use `RECOMP_ASPECT=w:h` instead (for example `RECOMP_ASPECT=21:9`). The HUD moves to the screen edges and the menus are wide too. *HUD placement from Piaka's widescreen work.* |
 | `RECOMP_GL_VSYNC=1` | VSync. |
+| `RECOMP_GL_PREBUILD=0` | Turns off building the missing shaders at start ("Building Shaders"); they're built during play instead. |
 
 **`[input]`**
 
