@@ -175,7 +175,7 @@ another computer of the same system as it is.
 | Setting | What it does |
 |---|---|
 | `BRANCH=test` | Update downloads the `test` branch (newest, less tested). Not set: `main`. |
-| `DEBUG_MENU=1` | Shows the **Debug** tab: Force Generate/Build, Include debug files (`jsrf_recomp.pdb`, for crash reports that name the game's functions), the checks (generated code, `default.xbe`, the hard-disk cache), Play stopping after 30 s with a dump, Sample a hang, Trace one frame, and the whole log. |
+| `DEBUG_MENU=1` | Shows the **Debug** tab: Force Generate/Build, the checks (generated code, `default.xbe`, the hard-disk cache), Play stopping after 30 s with a dump, Sample a hang, Trace one frame, and the whole log. |
 
 Everything the launcher does is also written to `launcher_log.txt` next to it.
 The launcher's code is on the [`launcher`](https://github.com/Miggas/JSRF-Recomp/tree/launcher) branch.
@@ -474,7 +474,9 @@ Your game files, `jsrf.ini` and saves are kept.
 
 A log lets someone see what happened.
 
-1. In the launcher: **Settings → Debug → Logging**, then **Save**.
+1. In the launcher: **Settings → Debug → Logging**, then **Save**. On Windows
+   this also puts `jsrf_recomp.pdb` next to the game, so the log can name the
+   game's functions.
 2. Play until the problem happens and close the game.
 3. Send `stderr.txt` from the game folder. For a build problem, send
    `launcher_log.txt` from the launcher's folder.
