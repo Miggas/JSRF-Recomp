@@ -72,6 +72,7 @@ static void set_game_dir(const char *dir)
     paths_set_game(dir);
     snprintf(s_game_dir_edit, sizeof s_game_dir_edit, "%s", g_paths.game);
     load_game_ini();
+    req_refresh();
 }
 
 /* a dropped default.xbe (or its folder) sets the game folder */
@@ -91,14 +92,18 @@ static void dropped(const char *p)
 }
 
 /* ---------------------------------------------------------------------- */
-/* a green check or a red X, drawn */
-static void mark(struct nk_context *ctx, bool ok)
+/* a green check, a red X, or a small spinner while it is being made */
+enum { M_NO, M_OK, M_WORKING };
+static void mark(struct nk_context *ctx, int m)
 {
     struct nk_rect r;
     if (!nk_widget(&r, ctx)) return;
     struct nk_command_buffer *cb = nk_window_get_canvas(ctx);
     float sz = r.h * 0.55f, cx = r.x + sz * 0.7f, cy = r.y + r.h / 2;
-    if (ok) {
+    if (m == M_WORKING) {
+        float a = (float)(SDL_GetTicks() % 1000) / 1000.0f * 6.2831853f;
+        nk_stroke_arc(cb, cx, cy, sz * 0.45f, a, a + 4.2f, 3.0f, C_HEAD);
+    } else if (m == M_OK) {
         nk_stroke_line(cb, cx - sz * 0.45f, cy, cx - sz * 0.1f, cy + sz * 0.35f, 3.0f, C_OK);
         nk_stroke_line(cb, cx - sz * 0.1f, cy + sz * 0.35f, cx + sz * 0.5f, cy - sz * 0.4f, 3.0f, C_OK);
     } else {
@@ -109,20 +114,28 @@ static void mark(struct nk_context *ctx, bool ok)
 
 /* One requirement: the mark, its name, what it is. When missing, the line
  * is a link to where it is fixed: true when clicked. */
+static bool req_line_m(struct nk_context *ctx, const char *what, int m, const char *yes, const char *no);
 static bool req_line(struct nk_context *ctx, const char *what, bool ok, const char *yes, const char *no)
 {
+    return req_line_m(ctx, what, ok ? M_OK : M_NO, yes, no);
+}
+
+/* m: M_OK shows yes, M_NO no as a link, M_WORKING yes in yellow */
+static bool req_line_m(struct nk_context *ctx, const char *what, int m, const char *yes, const char *no)
+{
+    bool ok = m != M_NO;
     /* the whole line is the link: the X, the name and the text */
     bool clicked = false;
     nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
     nk_layout_row_push(ctx, 0.04f);
     if (!ok && nk_widget_is_mouse_clicked(ctx, NK_BUTTON_LEFT)) clicked = true;
-    mark(ctx, ok);
+    mark(ctx, m);
     nk_layout_row_push(ctx, 0.24f);
     if (!ok && nk_widget_is_mouse_clicked(ctx, NK_BUTTON_LEFT)) clicked = true;
     nk_label(ctx, what, NK_TEXT_LEFT);
     nk_layout_row_push(ctx, 0.72f);
     if (ok) {
-        nk_label_colored(ctx, yes, NK_TEXT_LEFT, C_DIM);
+        nk_label_colored(ctx, yes, NK_TEXT_LEFT, m == M_WORKING ? C_HEAD : C_DIM);
     } else {
         bool hover = nk_widget_is_hovered(ctx);
         if (nk_widget_is_mouse_clicked(ctx, NK_BUTTON_LEFT)) clicked = true;
@@ -194,10 +207,25 @@ static void tab_play(struct nk_context *ctx)
         s_tab = TAB_UPDATE;
     if (req_line(ctx, "Build tools", tools, "ready", "not downloaded yet: go to Build (about 150 MB)"))
         s_tab = TAB_BUILD;
-    if (req_line(ctx, "Generated code", have_gen(), "there", "not generated yet: go to Build"))
-        s_tab = TAB_BUILD;
-    if (req_line(ctx, "Recompiled game", exe, "built", "not built yet: go to Build"))
-        s_tab = TAB_BUILD;
+    {
+        /* from the last check (req_refresh), or what the running job is doing */
+        bool busy = job_busy();
+        const char *ph = job_phase();
+        int g = req_gen(), b = req_build();
+        if (busy && !strcmp(ph, "Generating code")) {
+            req_line_m(ctx, "Generated code", M_WORKING, "being generated...", "");
+        } else if (req_line_m(ctx, "Generated code", g == 2 ? M_OK : M_NO, "up to date",
+                              g == 1 ? "out of date (the project or default.xbe changed): go to Build"
+                                     : "not generated yet: go to Build")) {
+            s_tab = TAB_BUILD;
+        }
+        if (busy && !strcmp(ph, "Building game")) {
+            req_line_m(ctx, "Recompiled game", M_WORKING, "being built...", "");
+        } else if (req_line_m(ctx, "Recompiled game", b == 2 ? M_OK : M_NO, "up to date",
+                              b == 1 ? "older than the code: go to Build" : "not built yet: go to Build")) {
+            s_tab = TAB_BUILD;
+        }
+    }
 
     spacer(ctx, 16);
     nk_layout_row_dynamic(ctx, s_row * 1.8f, 2);
@@ -799,6 +827,7 @@ int main(int argc, char **argv)
     open_log_file();
     snprintf(s_game_dir_edit, sizeof s_game_dir_edit, "%s", g_paths.game);
     load_game_ini();
+    req_refresh();
 
     char title[128];
     snprintf(title, sizeof title, "Jet Set Radio Future - launcher %s", LAUNCHER_VERSION);
@@ -855,7 +884,7 @@ int main(int argc, char **argv)
         int r = job_busy() ? -1 : job_result();
         if (r != last_result) {
             last_result = r;
-            if (r >= 0) load_game_ini();
+            if (r >= 0) { load_game_ini(); paths_refresh_source(); req_refresh(); }
         }
 
         int w, h;

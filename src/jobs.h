@@ -21,6 +21,7 @@ enum { COMP_AUTO, COMP_ZIG, COMP_MSVC };
 
 void paths_init(void);
 void paths_set_game(const char *dir);     /* and saved in launcher.ini */
+void paths_refresh_source(void);          /* after Update */
 int  compiler_pref(void);
 void compiler_set(int c);
 bool debug_files_pref(void);              /* DEBUG_FILES=1: copy jsrf_recomp.pdb with the game */
@@ -30,8 +31,14 @@ void debug_files_set(bool on);
 bool have_xbe(void);
 bool have_game_exe(void);
 bool have_tools(void);
-bool have_msvc(void);
-bool have_gen(void);                      /* generated code is there (maybe not current) */                     /* Visual Studio with the C++ tools (Windows) */
+bool have_msvc(void);                     /* Visual Studio with the C++ tools (Windows) */
+bool have_gen(void);                      /* generated code is there (maybe not current) */
+/* The Play tab's state of the generated code and of the game: 0 none,
+ * 1 there but out of date, 2 up to date. Checked by req_refresh (it reads
+ * the files: at start, after a job, when the game folder changes). */
+void req_refresh(void);
+int  req_gen(void);
+int  req_build(void);
 void game_exe(char *out);
 void game_ini(char *out);
 const char *source_id(void);

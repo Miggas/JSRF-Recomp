@@ -97,6 +97,11 @@ void paths_init(void)
     make_dirs(p->game);
 }
 
+void paths_refresh_source(void)
+{
+    g_paths.have_source = is_source(g_paths.source);
+}
+
 void paths_set_game(const char *dir)
 {
     snprintf(g_paths.game, sizeof g_paths.game, "%s", dir);
@@ -569,6 +574,29 @@ static bool need_source_and_xbe(void)
     if (!g_paths.have_source) { logf_("The project is not downloaded yet: Update -> Download."); return false; }
     if (!have_xbe()) { logf_("default.xbe not found in %s", g_paths.game); return false; }
     return true;
+}
+
+static int s_req_gen, s_req_build;
+int req_gen(void) { return s_req_gen; }
+int req_build(void) { return s_req_build; }
+
+void req_refresh(void)
+{
+    if (job_busy() || !g_paths.have_source) {
+        if (!g_paths.have_source) s_req_gen = s_req_build = 0;
+        return;
+    }
+    s_req_gen = !have_gen() ? 0 : gen_current() ? 2 : 1;
+    char exe[LPATH];
+    game_exe(exe);
+    if (!is_file(exe)) { s_req_build = 0; return; }
+    bool msvc = use_msvc();
+    char bdir[LPATH], built[LPATH], st[LPATH];
+    pjoin(bdir, g_paths.build, msvc ? "msvc" : "zig");
+    if (msvc) pjoin3(built, bdir, "Release", "jsrf_recomp" EXE);
+    else pjoin(built, bdir, "jsrf_recomp" EXE);
+    pjoin(st, bdir, "launcher_built.txt");
+    s_req_build = (s_req_gen == 2 && is_file(built) && stamp_is(st, build_inputs(msvc))) ? 2 : 1;
 }
 
 /* ---- generate ---- */
