@@ -266,6 +266,14 @@ static void log_view(struct nk_context *ctx, float h)
     }
 }
 
+/* launcher_log.txt in the program that opens text files */
+static void open_log_in_editor(void)
+{
+    char p[LPATH];
+    pjoin(p, g_paths.base, "launcher_log.txt");
+    open_folder(p);
+}
+
 static void tab_build(struct nk_context *ctx, float h)
 {
     float used = 0;
@@ -292,12 +300,13 @@ static void tab_build(struct nk_context *ctx, float h)
 
     bool busy = job_busy();
     bool ready = !busy && have_xbe() && g_paths.have_source;
-    nk_layout_row_dynamic(ctx, s_row * 1.4f, 5);
+    nk_layout_row_dynamic(ctx, s_row * 1.4f, 6);
     if (button(ctx, "Generate code", ready)) job_start(JOB_GENERATE, s_regen);
     if (button(ctx, "Build", ready)) job_start(JOB_BUILD, s_regen);
     if (button(ctx, "Download tools", !busy && !have_tools())) job_start(JOB_TOOLS, false);
     if (button(ctx, "Cancel", busy)) job_cancel();
     if (button(ctx, "Clear log", !busy)) log_clear();
+    if (button(ctx, "Open log file", true)) open_log_in_editor();
     used += s_row * 1.4f + 4;
     if (!have_xbe()) {
         nk_layout_row_dynamic(ctx, s_row, 1);
@@ -328,13 +337,14 @@ static void tab_update(struct nk_context *ctx, float h)
                              NK_TEXT_LEFT, C_DIM);
         used += 2 * (s_row + 4);
         bool busy = job_busy();
-        nk_layout_row_dynamic(ctx, s_row * 1.4f, 4);
+        nk_layout_row_dynamic(ctx, s_row * 1.4f, 5);
         if (button(ctx, "Check for updates", !busy)) job_start(JOB_CHECK, false);
         if (button(ctx, g_paths.have_source ? "Update" : "Download", !busy)) {
             job_start(JOB_UPDATE, false);
         }
         if (button(ctx, "Cancel", busy)) job_cancel();
         if (button(ctx, "Clear log", !busy)) log_clear();
+        if (button(ctx, "Open log file", true)) open_log_in_editor();
         used += s_row * 1.4f + 4;
     }
     log_view(ctx, h - used - 8);
@@ -412,10 +422,18 @@ static void style(struct nk_context *ctx)
 
 /* jsrf_launcher --tools | --generate | --build | --all | --update | --check
  * [--force]: the job without the window, its log printed */
+static void open_log_file(void)
+{
+    char p[LPATH];
+    pjoin(p, g_paths.base, "launcher_log.txt");
+    log_file_open(p);
+}
+
 static int headless(int job, bool regen)
 {
     log_init();
     paths_init();
+    open_log_file();
     if (!job_start(job, regen)) return 1;
     int shown = 0;
     for (;;) {
@@ -468,6 +486,7 @@ int main(int argc, char **argv)
     }
     log_init();
     paths_init();
+    open_log_file();
     snprintf(s_game_dir_edit, sizeof s_game_dir_edit, "%s", g_paths.game);
     load_game_ini();
 

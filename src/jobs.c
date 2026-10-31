@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <time.h>
+
 #include <SDL.h>
 
 
@@ -826,6 +828,14 @@ bool job_start(int job, bool force)
     set_env("ZIG_GLOBAL_CACHE_DIR", t);
     set_env("PIP_DISABLE_PIP_VERSION_CHECK", "1");
     set_env("PYTHONUTF8", "1");
+    {
+        static const char *const names[] = { "", "Download tools", "Generate code", "Build",
+                                             "Generate code + Build", "Update", "Check for updates" };
+        char tm[32];
+        time_t now = time(NULL);
+        strftime(tm, sizeof tm, "%H:%M:%S", localtime(&now));
+        logf_("---- %s %s%s ----", tm, names[job], force ? " (even if nothing changed)" : "");
+    }
     s_thread = SDL_CreateThread(job_thread, "job", NULL);
     if (!s_thread) { SDL_AtomicSet(&s_busy, 0); return false; }
     return true;

@@ -44,6 +44,9 @@ unsigned long long hash_text(const char *s, unsigned long long seed);
 
 /* ---- the log (thread safe) ---- */
 void  log_init(void);
+/* everything the log shows also goes to this file, a line at a time (a
+ * progress line once, as it ends); the last run's file is kept as .old */
+void  log_file_open(const char *path);
 void  log_text(const char *s, size_t n);     /* raw program output; \r rewrites the line */
 void  logf_(const char *fmt, ...);           /* one line */
 void  log_clear(void);

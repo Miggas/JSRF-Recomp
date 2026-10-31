@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <time.h>
+
 #include <SDL.h>
 
 #ifdef _WIN32
@@ -381,7 +383,25 @@ static bool s_open;          /* last line still being written */
 static bool s_cr;            /* a \r came: the next text replaces the line */
 static unsigned s_serial;
 
+static FILE *s_log_file;
+
 void log_init(void) { s_log_mx = SDL_CreateMutex(); }
+
+void log_file_open(const char *path)
+{
+    char old[LPATH];
+    snprintf(old, sizeof old, "%s.old", path);
+    remove_file(old);
+    move_path(path, old);
+    s_log_file = uopen(path, "w");
+    if (s_log_file) {
+        char t[64];
+        time_t now = time(NULL);
+        strftime(t, sizeof t, "%Y-%m-%d %H:%M:%S", localtime(&now));
+        fprintf(s_log_file, "JSRF launcher log, %s\n", t);
+        fflush(s_log_file);
+    }
+}
 
 static void push_line(void)
 {
@@ -415,6 +435,10 @@ void log_text(const char *s, size_t n)
             if (i > a) append(s + a, i - a);
             if (s[i] == '\n') {
                 if (!s_open) push_line();
+                if (s_log_file) {
+                    fprintf(s_log_file, "%s\n", s_lines[s_nlines - 1]);
+                    fflush(s_log_file);
+                }
                 s_open = false;
                 s_cr = false;
             } else if (s_open) {
