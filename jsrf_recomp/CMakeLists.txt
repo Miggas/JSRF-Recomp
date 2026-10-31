@@ -155,8 +155,12 @@ endif()
 if(WIN32 AND NOT MSVC)
     # v247: and MSVC's image base: the default 0x400000 puts the exe (and
     # what loads next to it) in the low 4 GB the Xbox memory is mapped into
+    # v248c: and a window program, as WIN32 above makes it with MSVC (CMake
+    # does not pass that on to Zig): as a console program every log line
+    # went to a console window (slow, and loading writes many), and
+    # RECOMP_LOG was ignored (stderr already looked redirected)
     target_link_options(${PROJECT_NAME} PRIVATE -Wl,--stack,268435456
-        -Wl,--image-base,0x140000000)
+        -Wl,--image-base,0x140000000 -Wl,--subsystem,windows)
     # v248: fast memcpy / memmove / memset / memcmp. Without them Zig links
     # its own, which copy a byte at a time (slow loading screens).
     target_sources(${PROJECT_NAME} PRIVATE ${XBOXRECOMP_DIR}/src/platform/win_memfuncs.c)
