@@ -20,18 +20,6 @@ Nothing else is needed. The first time, the script downloads Zig (the C
 compiler, about 80 MB) and SDL2 into `deps/`. On Linux the launcher uses the
 system's SDL2 (SteamOS has it).
 
-## Making a release
-
-Push a tag starting with `launcher-v`:
-
-```
-git tag launcher-v1
-git push origin launcher-v1
-```
-
-GitHub builds both launchers and puts them on a release with that name.
-Or build them with the scripts and upload them to a release by hand.
-
 ## Files
 
 | | |
