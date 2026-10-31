@@ -418,8 +418,8 @@ compiler, CMake, Ninja; about 150 MB) into its `tools` folder.
 1. Download it from [Releases](https://github.com/Miggas/JSRF-Recomp/releases)
    and put it in an empty folder. On the Deck, mark it executable
    (**Properties → Permissions → Is executable**).
-2. Put your game files in a `game` folder next to it, or drop `default.xbe`
-   onto its window.
+2. Start it: it makes a `jsrf` folder next to itself. Put your game files
+   there, or choose another folder in **Play**.
 3. **Update → Download** gets the project and builds the game.
 4. **Play**. On the Deck, add `jsrf_launcher` to Steam as a non-Steam game,
    without Proton.
