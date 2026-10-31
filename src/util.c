@@ -278,11 +278,11 @@ void list_dir(const char *dir, void (*cb)(const char *, bool, void *), void *u)
 void set_env(const char *k, const char *v)
 {
 #ifdef _WIN32
-    wchar_t *a = wide(k), *b = wide(v);
+    wchar_t *a = wide(k), *b = v ? wide(v) : NULL;
     SetEnvironmentVariableW(a, b);
     free(a); free(b);
 #else
-    setenv(k, v, 1);
+    if (v) setenv(k, v, 1); else unsetenv(k);
 #endif
 }
 

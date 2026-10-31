@@ -18,7 +18,14 @@ README on the main branch.
   `xboxrecomp/tools`.
 - **Build** runs only when the source, the generated code or the compiler
   changed. It asks for Generate code first when the code is missing or old.
-- **Play → Build** does both. **Even if nothing changed** forces them.
+- **Play → Build** does both. **Force Generate/Build** (Debug tab) forces them.
+
+## The Debug tab
+
+`DEBUG_MENU=1` in `launcher.ini` shows it: Force Generate/Build, Include
+debug files, Download tools, the checks (generated code, `default.xbe`, the
+hard-disk cache), Play stopping after 30 s with a dump, Sample a hang, Trace
+one frame, and the whole log.
 
 ## Building it
 
@@ -54,4 +61,4 @@ Next to the launcher:
 | `tools/` | Python, Zig, CMake, Ninja (about 400 MB) |
 | `build/` | the compiler's work files |
 | `launcher_log.txt` | the log of the last run (the one before: `launcher_log.txt.old`) |
-| `launcher.ini` | the launcher's settings: `BRANCH=test` makes Update download the `test` branch (missing = `main`) |
+| `launcher.ini` | the launcher's settings: `BRANCH=test` makes Update download the `test` branch (missing = `main`); `DEBUG_MENU=1` shows the Debug tab |

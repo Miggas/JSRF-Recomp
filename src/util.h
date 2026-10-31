@@ -28,7 +28,7 @@ char *read_file(const char *p, size_t *len);                    /* malloc'd, 0-t
 bool  write_file(const char *p, const void *data, size_t len);
 /* calls cb for each entry of dir (not . or ..) */
 void  list_dir(const char *dir, void (*cb)(const char *name, bool isdir, void *u), void *u);
-void  set_env(const char *k, const char *v);
+void  set_env(const char *k, const char *v);   /* v NULL: removed */
 
 /* ---- fingerprints ---- */
 /* A 64-bit hash of the files at root/items[i] (files or whole folders,

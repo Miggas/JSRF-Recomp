@@ -17,21 +17,17 @@ typedef struct {
 extern Paths g_paths;
 extern Ini   g_launcher_ini;   /* launcher.ini: the launcher's own settings */
 
-enum { COMP_AUTO, COMP_ZIG, COMP_MSVC };
-
 void paths_init(void);
 void paths_set_game(const char *dir);     /* and saved in launcher.ini */
 void paths_refresh_source(void);          /* after Update */
-int  compiler_pref(void);
-void compiler_set(int c);
 bool debug_files_pref(void);              /* DEBUG_FILES=1: copy jsrf_recomp.pdb with the game */
+bool debug_menu_pref(void);               /* DEBUG_MENU=1: the Debug tab */
 void debug_files_set(bool on);
 
 /* what is there */
 bool have_xbe(void);
 bool have_game_exe(void);
 bool have_tools(void);
-bool have_msvc(void);                     /* Visual Studio with the C++ tools (Windows) */
 bool have_gen(void);                      /* generated code is there (maybe not current) */
 /* The Play tab's state of the generated code and of the game: 0 none,
  * 1 there but out of date, 2 up to date. Checked by req_refresh (it reads
@@ -47,7 +43,10 @@ const char *update_branch(void);          /* BRANCH= in launcher.ini, else main 
 /* jobs */
 /* JOB_GENERATE and JOB_BUILD first check whether anything changed (force:
  * do it anyway); JOB_ALL is both; JOB_UPDATE only downloads. */
-enum { JOB_NONE, JOB_TOOLS, JOB_GENERATE, JOB_BUILD, JOB_ALL, JOB_UPDATE, JOB_CHECK };
+enum { JOB_NONE, JOB_TOOLS, JOB_GENERATE, JOB_BUILD, JOB_ALL, JOB_UPDATE, JOB_CHECK, JOB_PYTOOL };
+/* the debug menu's checks: Python scripts in the project's tools folder */
+enum { TOOL_CHECK_GEN, TOOL_CHECK_XBE, TOOL_COMPARE_CACHE };
+bool job_start_tool(int tool);
 bool job_start(int job, bool force);
 bool job_busy(void);
 int  job_current(void);
@@ -59,3 +58,4 @@ const char *job_phase(void);              /* the step, for the spinner: "Buildin
 const char *update_remote(void);          /* the newest commit found by JOB_CHECK, or "" */
 
 bool play(void);
+bool play_watchdog(int secs);             /* the game stops after secs, with a dump */

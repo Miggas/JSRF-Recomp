@@ -6,8 +6,7 @@
  *   capstone the translator's disassembler   } from PyPI, with that
  *   Zig      the C compiler (clang inside)   } Python's pip
  *   CMake, Ninja  the build system          }
- * On Windows, Visual Studio is used instead of Zig when it is installed and
- * chosen (the compiler the project has always been built with). */
+ * Zig is the only compiler, on Windows and Linux. */
 #include "jobs.h"
 
 #include <stdio.h>
@@ -70,6 +69,8 @@ void paths_init(void)
         const char *t =
             "; JSRF launcher settings (the game's own are in jsrf.ini, in the game folder)\n"
             "[launcher]\n"
+            "; --- Debug menu: tools, checks and the log console, in a Debug tab.\n"
+            ";DEBUG_MENU=1\n"
             "; --- The project's branch Update downloads: main (default) or test (newest, less tested).\n"
             ";BRANCH=test\n";
         write_file(li, t, strlen(t));
@@ -111,17 +112,15 @@ void paths_set_game(const char *dir)
     launcher_ini_save();
 }
 
-int compiler_pref(void)
-{
-    const char *c = ini_get(&g_launcher_ini, "COMPILER");
-    if (c && !strcmp(c, "zig")) return COMP_ZIG;
-    if (c && !strcmp(c, "msvc")) return COMP_MSVC;
-    return COMP_AUTO;
-}
-
 bool debug_files_pref(void)
 {
     const char *v = ini_get(&g_launcher_ini, "DEBUG_FILES");
+    return v && v[0] == '1';
+}
+
+bool debug_menu_pref(void)
+{
+    const char *v = ini_get(&g_launcher_ini, "DEBUG_MENU");
     return v && v[0] == '1';
 }
 
@@ -131,12 +130,6 @@ void debug_files_set(bool on)
     launcher_ini_save();
 }
 
-void compiler_set(int c)
-{
-    ini_put(&g_launcher_ini, "COMPILER", c == COMP_ZIG ? "zig" : c == COMP_MSVC ? "msvc" : "auto",
-            "launcher");
-    launcher_ini_save();
-}
 
 /* ======================================================================
  * what is there
@@ -224,43 +217,6 @@ bool have_game_exe(void)
     char x[LPATH];
     game_exe(x);
     return is_file(x);
-}
-
-#ifdef _WIN32
-static bool vswhere(char *out, size_t cap)
-{
-    const char *pf = getenv("ProgramFiles(x86)");
-    if (!pf) return false;
-    char vw[LPATH];
-    snprintf(vw, sizeof vw, "%s\\Microsoft Visual Studio\\Installer\\vswhere.exe", pf);
-    if (!is_file(vw)) return false;
-    const char *argv[] = { vw, "-latest", "-products", "*", "-requires",
-                           "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-                           "-property", "installationPath", NULL };
-    return run_capture(argv, NULL, out, cap) == 0 && out[0];
-}
-#endif
-
-bool have_msvc(void)
-{
-#ifdef _WIN32
-    static int v = -1;
-    if (v < 0) {
-        char o[LPATH];
-        v = vswhere(o, sizeof o);
-    }
-    return v == 1;
-#else
-    return false;
-#endif
-}
-
-static bool use_msvc(void)
-{
-    int c = compiler_pref();
-    if (c == COMP_ZIG) return false;
-    if (c == COMP_MSVC) return true;
-    return have_msvc();
 }
 
 /* BRANCH= in launcher.ini: the project's branch Update downloads.
@@ -525,13 +481,13 @@ static unsigned long long gen_inputs(void)
 
 /* What the compiler reads (the generated code included), and which
  * compiler: the same value, the same game. */
-static unsigned long long build_inputs(bool msvc)
+static unsigned long long build_inputs(void)
 {
     static const char *const src[] = {
         "jsrf_recomp/src", "jsrf_recomp/CMakeLists.txt", "jsrf_recomp/cmake",
         "xboxrecomp/src", "xboxrecomp/include", "xboxrecomp/cmake", "xboxrecomp/CMakeLists.txt",
         NULL };
-    unsigned long long h = hash_text(msvc ? "msvc" : "zig " TOOLCHAIN_ID, HASH_SEED);
+    unsigned long long h = hash_text("zig " TOOLCHAIN_ID, HASH_SEED);
     return fingerprint(g_paths.source, src, NULL, h);
 }
 
@@ -590,13 +546,11 @@ void req_refresh(void)
     char exe[LPATH];
     game_exe(exe);
     if (!is_file(exe)) { s_req_build = 0; return; }
-    bool msvc = use_msvc();
     char bdir[LPATH], built[LPATH], st[LPATH];
-    pjoin(bdir, g_paths.build, msvc ? "msvc" : "zig");
-    if (msvc) pjoin3(built, bdir, "Release", "jsrf_recomp" EXE);
-    else pjoin(built, bdir, "jsrf_recomp" EXE);
+    pjoin(bdir, g_paths.build, "zig");
+    pjoin(built, bdir, "jsrf_recomp" EXE);
     pjoin(st, bdir, "launcher_built.txt");
-    s_req_build = (s_req_gen == 2 && is_file(built) && stamp_is(st, build_inputs(msvc))) ? 2 : 1;
+    s_req_build = (s_req_gen == 2 && is_file(built) && stamp_is(st, build_inputs())) ? 2 : 1;
 }
 
 /* ---- generate ---- */
@@ -654,26 +608,23 @@ static bool do_build(void)
     /* (wrap_dsound.py, which rebuild.bat runs before each build, is the
      * translator's last step: code that counts as current here has it) */
 
-    bool msvc = use_msvc();
-    if (!msvc) {
+    {
         char tc[LPATH];
         pjoin3(tc, jr, "cmake", "zig.cmake");
         if (!is_file(tc)) {
-            logf_("This version of the project can't be built with Zig (it needs v246 or newer).");
-            logf_("Update the project, or build with Visual Studio (Build -> Compiler).");
+            logf_("This version of the project can't be built with Zig (it needs v246 or newer): update it.");
             return false;
         }
     }
     char bdir[LPATH], cmake[LPATH], ninja[LPATH], stamp[LPATH], want[LPATH * 2 + 32];
-    pjoin(bdir, g_paths.build, msvc ? "msvc" : "zig");
+    pjoin(bdir, g_paths.build, "zig");
 
     char built[LPATH], dest[LPATH], bstamp[LPATH];
-    if (msvc) pjoin3(built, bdir, "Release", "jsrf_recomp" EXE);
-    else pjoin(built, bdir, "jsrf_recomp" EXE);
+    pjoin(built, bdir, "jsrf_recomp" EXE);
     game_exe(dest);
     pjoin(bstamp, bdir, "launcher_built.txt");
     status("Checking what changed...", NULL);
-    unsigned long long bh = build_inputs(msvc);
+    unsigned long long bh = build_inputs();
     bool up_to_date = !s_regen && is_file(built) && stamp_is(bstamp, bh);
     if (up_to_date && is_file(dest)) {
         status("The game is up to date: nothing to build.", NULL);
@@ -691,7 +642,7 @@ static bool do_build(void)
         bool same = d && !strcmp(d, want);
         free(d);
         char marker[LPATH];
-        pjoin(marker, bdir, msvc ? "ALL_BUILD.vcxproj" : "build.ninja");
+        pjoin(marker, bdir, "build.ninja");
         if (!up_to_date && (!same || !is_file(marker))) {
             remove_tree(bdir);
             make_dirs(bdir);
@@ -703,28 +654,23 @@ static bool do_build(void)
             argv[n++] = cmake;
             argv[n++] = "-S"; argv[n++] = jr;
             argv[n++] = "-B"; argv[n++] = bdir;
-            if (msvc) {
-                /* CMake picks the newest Visual Studio installed */
-                argv[n++] = "-A"; argv[n++] = "x64";
-            } else {
-                static char d1[LPATH + 64], d2[LPATH + 32];
-                pjoin3(tc, jr, "cmake", "zig.cmake");
-                wrap_dir(zb);
-                snprintf(d1, sizeof d1, "-DCMAKE_TOOLCHAIN_FILE=%s", tc);
-                snprintf(d2, sizeof d2, "-DZIG_BIN=%s", zb);
-                snprintf(mk, sizeof mk, "-DCMAKE_MAKE_PROGRAM=%s", ninja);
-                argv[n++] = "-G"; argv[n++] = "Ninja";
-                argv[n++] = mk;
-                argv[n++] = "-DCMAKE_BUILD_TYPE=Release";
-                argv[n++] = d1;
-                argv[n++] = d2;
+            static char d1[LPATH + 64], d2[LPATH + 32];
+            pjoin3(tc, jr, "cmake", "zig.cmake");
+            wrap_dir(zb);
+            snprintf(d1, sizeof d1, "-DCMAKE_TOOLCHAIN_FILE=%s", tc);
+            snprintf(d2, sizeof d2, "-DZIG_BIN=%s", zb);
+            snprintf(mk, sizeof mk, "-DCMAKE_MAKE_PROGRAM=%s", ninja);
+            argv[n++] = "-G"; argv[n++] = "Ninja";
+            argv[n++] = mk;
+            argv[n++] = "-DCMAKE_BUILD_TYPE=Release";
+            argv[n++] = d1;
+            argv[n++] = d2;
 #ifndef _WIN32
-                /* SDL2's released headers + the system's SDL2 (SteamOS has
-                 * no development package; a distro's would mix its own C
-                 * headers in with Zig's) */
-                argv[n++] = "-DXBOXRECOMP_SDL2_RUNTIME=ON";
+            /* SDL2's released headers + the system's SDL2 (SteamOS has
+             * no development package; a distro's would mix its own C
+             * headers in with Zig's) */
+            argv[n++] = "-DXBOXRECOMP_SDL2_RUNTIME=ON";
 #endif
-            }
             argv[n] = NULL;
             if (!runv(jr, argv)) return false;
             write_file(stamp, want, strlen(want));
@@ -753,8 +699,7 @@ static bool do_build(void)
      * exe looks for it next to itself) */
     {
         char bp[LPATH], gp[LPATH];
-        if (msvc) pjoin3(bp, bdir, "Release", "jsrf_recomp.pdb");
-        else pjoin(bp, bdir, "jsrf_recomp.pdb");
+        pjoin(bp, bdir, "jsrf_recomp.pdb");
         pjoin(gp, g_paths.game, "jsrf_recomp.pdb");
         if (!debug_files_pref()) {
             if (is_file(gp)) remove_file(gp);    /* an old one would not match */
@@ -893,6 +838,42 @@ static bool do_update(void)
     return true;
 }
 
+/* the debug menu's checks */
+static int s_tool;
+
+static bool do_tool(void)
+{
+    if (!g_paths.have_source) { logf_("The project is not downloaded yet: Update -> Download."); return false; }
+    if (!setup_tools()) return false;
+    char jr[LPATH], py[LPATH], tool[LPATH], arg[LPATH];
+    pjoin(jr, g_paths.source, "jsrf_recomp");
+    py_exe(py);
+    const char *argv[4] = { py, tool, NULL, NULL };
+    switch (s_tool) {
+    case TOOL_CHECK_GEN:
+        /* the generated code against the code this version expects */
+        PHASE("Checking generated code");
+        pjoin3(tool, jr, "tools", "check_gen.py");
+        break;
+    case TOOL_CHECK_XBE:
+        /* default.xbe is the release the project is made for */
+        PHASE("Checking default.xbe");
+        pjoin3(tool, jr, "tools", "xbe_info.py");
+        pjoin(arg, g_paths.game, "default.xbe");
+        argv[2] = arg;
+        break;
+    default:
+        /* the game's hard-disk cache against the disc files */
+        PHASE("Comparing the cache");
+        pjoin3(tool, jr, "tools", "compare_cache.py");
+        snprintf(arg, sizeof arg, "%s", g_paths.game);
+        argv[2] = arg;
+        break;
+    }
+    status("%s", s_phase);
+    return runv(jr, argv);
+}
+
 static int job_thread(void *u)
 {
     (void)u;
@@ -904,6 +885,7 @@ static int job_thread(void *u)
     case JOB_ALL:      ok = do_generate() && !cancelled() && do_build(); break;
     case JOB_UPDATE: ok = do_update(); break;
     case JOB_CHECK:  ok = check_update(); break;
+    case JOB_PYTOOL: ok = do_tool(); break;
     }
     if (!ok && s_cancel) status("Cancelled.", NULL);
     else if (!ok && s_job != JOB_CHECK) status("Failed: the first error is in the log above.", NULL);
@@ -930,7 +912,8 @@ bool job_start(int job, bool force)
     set_env("PYTHONUTF8", "1");
     {
         static const char *const names[] = { "", "Download tools", "Generate code", "Build",
-                                             "Generate code + Build", "Update", "Check for updates" };
+                                             "Generate code + Build", "Update", "Check for updates",
+                                             "Check" };
         char tm[32];
         time_t now = time(NULL);
         strftime(tm, sizeof tm, "%H:%M:%S", localtime(&now));
@@ -939,6 +922,22 @@ bool job_start(int job, bool force)
     s_thread = SDL_CreateThread(job_thread, "job", NULL);
     if (!s_thread) { SDL_AtomicSet(&s_busy, 0); return false; }
     return true;
+}
+
+bool job_start_tool(int tool)
+{
+    s_tool = tool;
+    return job_start(JOB_PYTOOL, false);
+}
+
+bool play_watchdog(int secs)
+{
+    char v[16];
+    snprintf(v, sizeof v, "%d", secs);
+    set_env("RECOMP_WATCHDOG_SECS", v);   /* wins over jsrf.ini */
+    bool ok = play();
+    set_env("RECOMP_WATCHDOG_SECS", NULL);
+    return ok;
 }
 
 bool play(void)

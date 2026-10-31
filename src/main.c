@@ -42,15 +42,14 @@
 #include <windows.h>
 #endif
 
-enum { TAB_PLAY, TAB_SETTINGS, TAB_BUILD, TAB_UPDATE, TAB_COUNT };
-static const char *const TAB_NAMES[TAB_COUNT] = { "Play", "Settings", "Build", "Update" };
+enum { TAB_PLAY, TAB_SETTINGS, TAB_BUILD, TAB_UPDATE, TAB_DEBUG, TAB_COUNT };
+static const char *const TAB_NAMES[TAB_COUNT] = { "Play", "Settings", "Build", "Update", "Debug" };
 
 static int s_tab = TAB_PLAY;
 static int s_win_h = 800;             /* the window's height, for the drop-down lists */
 static Ini s_game_ini;
 static char s_game_dir_edit[LPATH];
 static bool s_regen;
-static unsigned s_log_seen;
 static char s_message[512];
 static float s_row = 34;              /* row height, from the font */
 
@@ -572,29 +571,43 @@ static void tab_settings(struct nk_context *ctx, float h)
 }
 
 /* ---------------------------------------------------------------------- */
-static void log_view(struct nk_context *ctx, float h)
+/* The log. steps: only the steps (the "== " lines and each job's start),
+ * for the normal tabs; the Debug tab shows everything. */
+static void log_view(struct nk_context *ctx, float h, bool steps)
 {
+    static const char **pick;
+    static int pick_cap;
     nk_layout_row_dynamic(ctx, h, 1);
     const char **lines;
     int n = log_lock(&lines);
+    if (steps) {
+        if (pick_cap < n) { pick_cap = n + 64; pick = realloc(pick, sizeof(char *) * pick_cap); }
+        int m = 0;
+        for (int i = 0; i < n; i++)
+            if (!strncmp(lines[i], "== ", 3) || !strncmp(lines[i], "---- ", 5)) pick[m++] = lines[i];
+        lines = pick;
+        n = m;
+    }
+    const char *id = steps ? "steps" : "log";
     int rh = (int)(s_row - 10);
     struct nk_list_view view;
-    if (nk_list_view_begin(ctx, &view, "log", 0, rh, n)) {
+    if (nk_list_view_begin(ctx, &view, id, 0, rh, n)) {
         nk_layout_row_dynamic(ctx, (float)rh, 1);
         for (int i = view.begin; i < view.end && i < n; i++) {
             const char *l = lines[i];
             bool head = !strncmp(l, "== ", 3);
             bool err = strstr(l, "error") || strstr(l, "Failed") || strstr(l, "FAILED");
             nk_label_colored(ctx, head ? l + 3 : l, NK_TEXT_LEFT,
-                             head ? C_HEAD : err ? C_BAD : nk_rgb(215, 215, 220));
+                             err ? C_BAD : head ? C_HEAD : (steps ? C_DIM : nk_rgb(215, 215, 220)));
         }
         nk_list_view_end(&view);
     }
     log_unlock();
     /* new output: follow it */
-    if (log_serial() != s_log_seen) {
-        s_log_seen = log_serial();
-        nk_group_set_scroll(ctx, "log", 0, (nk_uint)(n * (rh + (int)ctx->style.window.spacing.y)));
+    static unsigned seen[2];
+    if (log_serial() != seen[steps]) {
+        seen[steps] = log_serial();
+        nk_group_set_scroll(ctx, id, 0, (nk_uint)(n * (rh + (int)ctx->style.window.spacing.y)));
     }
 }
 
@@ -606,52 +619,40 @@ static void open_log_in_editor(void)
     open_folder(p);
 }
 
+/* after a failed job: where the details are */
+static float failed_hint(struct nk_context *ctx)
+{
+    if (job_busy() || job_result() != 0) return 0;
+    nk_layout_row_begin(ctx, NK_DYNAMIC, s_row * 1.2f, 2);
+    nk_layout_row_push(ctx, 0.70f);
+    nk_label_colored(ctx, "It failed: the details are in the log file.", NK_TEXT_LEFT, C_BAD);
+    nk_layout_row_push(ctx, 0.30f);
+    if (nk_button_label(ctx, "Open log file")) open_log_in_editor();
+    nk_layout_row_end(ctx);
+    return s_row * 1.2f + 4;
+}
+
 static void tab_build(struct nk_context *ctx, float h)
 {
     float used = 0;
-#ifdef _WIN32
-    nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
-    nk_layout_row_push(ctx, 0.18f);
-    nk_label(ctx, "Compiler", NK_TEXT_LEFT);
-    nk_layout_row_push(ctx, 0.42f);
-    static const char *const comp[] = { "Auto (Visual Studio if installed)", "Zig (built-in)", "Visual Studio" };
-    int c = compiler_pref();
-    int nc = nk_combo(ctx, comp, 3, c, (int)s_row, nk_vec2(420, s_row * 4));
-    if (nc != c) compiler_set(nc);
-    nk_layout_row_push(ctx, 0.40f);
-    nk_label_colored(ctx, have_msvc() ? "Visual Studio found" : "Visual Studio not installed: Zig is used",
-                     NK_TEXT_LEFT, C_DIM);
-    nk_layout_row_end(ctx);
-    used += s_row + 4;
-#endif
-    nk_layout_row_dynamic(ctx, s_row, 2);
-    nk_bool rg = s_regen;
-    nk_checkbox_label(ctx, "Force Generate/Build", &rg);
-    s_regen = rg != 0;
-    nk_bool df = debug_files_pref();
-    if (nk_checkbox_label(ctx, "Include debug files (jsrf_recomp.pdb)", &df)) debug_files_set(df != 0);
-    used += s_row + 4;
-    nk_layout_row_dynamic(ctx, s_row - 6, 1);
-    nk_label_colored(ctx, "Force: run even if nothing changed.   Debug files: function names in crash reports and performance logs.",
-                     NK_TEXT_LEFT, C_DIM);
-    used += s_row - 2;
-
     bool busy = job_busy();
     bool ready = !busy && have_xbe() && g_paths.have_source;
-    nk_layout_row_dynamic(ctx, s_row * 1.4f, 6);
+    nk_layout_row_dynamic(ctx, s_row * 1.4f, 3);
     if (button(ctx, "Generate code", ready)) job_start(JOB_GENERATE, s_regen);
     if (button(ctx, "Build", ready)) job_start(JOB_BUILD, s_regen);
-    if (button(ctx, "Download tools", !busy && !have_tools())) job_start(JOB_TOOLS, false);
     if (button(ctx, "Cancel", busy)) job_cancel();
-    if (button(ctx, "Clear log", !busy)) log_clear();
-    if (button(ctx, "Open log file", true)) open_log_in_editor();
     used += s_row * 1.4f + 4;
-    if (!have_xbe()) {
-        nk_layout_row_dynamic(ctx, s_row, 1);
-        nk_label_colored(ctx, "Set the game folder (with default.xbe) in Play first.", NK_TEXT_LEFT, C_BAD);
-        used += s_row + 4;
-    }
-    log_view(ctx, h - used - 8);
+    nk_layout_row_dynamic(ctx, s_row, 1);
+    if (!have_xbe())
+        nk_label_colored(ctx, "Choose the game folder (with default.xbe) in Play first.", NK_TEXT_LEFT, C_BAD);
+    else if (!g_paths.have_source)
+        nk_label_colored(ctx, "Download the project in Update first.", NK_TEXT_LEFT, C_BAD);
+    else
+        nk_label_colored(ctx, "Each button checks first and skips what is already up to date. "
+                         "The first time also downloads the tools (about 150 MB).", NK_TEXT_LEFT, C_DIM);
+    used += s_row + 4;
+    used += failed_hint(ctx);
+    log_view(ctx, h - used - 8, true);
 }
 
 static void tab_update(struct nk_context *ctx, float h)
@@ -659,33 +660,87 @@ static void tab_update(struct nk_context *ctx, float h)
     float used = 0;
     nk_layout_row_dynamic(ctx, s_row, 1);
     char t[600];
-    {
-        const char *id = source_id();
-        if (!g_paths.have_source) snprintf(t, sizeof t, "The project is not downloaded yet.");
-        else if (*id) snprintf(t, sizeof t, "Project version: %.10s", id);
-        else snprintf(t, sizeof t, "Project version: unknown");
-        size_t tl = strlen(t);
-        snprintf(t + tl, sizeof t - tl, "   (branch: %s, set in launcher.ini)", update_branch());
-        nk_label(ctx, t, NK_TEXT_LEFT);
-        const char *r = update_remote();
-        if (*r && strcmp(r, id))
-            nk_label_colored(ctx, "A newer version is available.", NK_TEXT_LEFT, C_HEAD);
-        else
-            nk_label_colored(ctx, "Update only downloads the project (your game files, jsrf.ini and saves are kept). Then Build.",
-                             NK_TEXT_LEFT, C_DIM);
-        used += 2 * (s_row + 4);
-        bool busy = job_busy();
-        nk_layout_row_dynamic(ctx, s_row * 1.4f, 5);
-        if (button(ctx, "Check for updates", !busy)) job_start(JOB_CHECK, false);
-        if (button(ctx, g_paths.have_source ? "Update" : "Download", !busy)) {
-            job_start(JOB_UPDATE, false);
-        }
-        if (button(ctx, "Cancel", busy)) job_cancel();
-        if (button(ctx, "Clear log", !busy)) log_clear();
-        if (button(ctx, "Open log file", true)) open_log_in_editor();
-        used += s_row * 1.4f + 4;
+    const char *id = source_id();
+    if (!g_paths.have_source) snprintf(t, sizeof t, "The project is not downloaded yet.");
+    else if (*id) snprintf(t, sizeof t, "Project version: %.10s", id);
+    else snprintf(t, sizeof t, "Project version: unknown");
+    size_t tl = strlen(t);
+    snprintf(t + tl, sizeof t - tl, "   (branch: %s, set in launcher.ini)", update_branch());
+    nk_label(ctx, t, NK_TEXT_LEFT);
+    const char *r = update_remote();
+    if (*r && strcmp(r, id))
+        nk_label_colored(ctx, "A newer version is available.", NK_TEXT_LEFT, C_HEAD);
+    else
+        nk_label_colored(ctx, "Update only downloads the project (your game files, jsrf.ini and saves are kept). Then Build.",
+                         NK_TEXT_LEFT, C_DIM);
+    used += 2 * (s_row + 4);
+    bool busy = job_busy();
+    nk_layout_row_dynamic(ctx, s_row * 1.4f, 3);
+    if (button(ctx, "Check for updates", !busy)) job_start(JOB_CHECK, false);
+    if (button(ctx, g_paths.have_source ? "Update" : "Download", !busy)) job_start(JOB_UPDATE, false);
+    if (button(ctx, "Cancel", busy)) job_cancel();
+    used += s_row * 1.4f + 4;
+    used += failed_hint(ctx);
+    log_view(ctx, h - used - 8, true);
+}
+
+/* the debug menu (DEBUG_MENU=1 in launcher.ini): the tools, the checks, the
+ * helpers for a running game, and the whole log */
+static Uint32 s_trace_until;     /* trace.flag goes again at this time */
+
+static void flag_file(const char *name)
+{
+    char p[LPATH];
+    pjoin(p, g_paths.game, name);
+    write_file(p, "", 0);
+}
+
+static void tab_debug(struct nk_context *ctx, float h)
+{
+    float used = 0;
+    bool busy = job_busy();
+    bool src = !busy && g_paths.have_source;
+
+    nk_layout_row_dynamic(ctx, s_row, 2);
+    nk_bool rg = s_regen;
+    nk_checkbox_label(ctx, "Force Generate/Build", &rg);
+    s_regen = rg != 0;
+    nk_bool df = debug_files_pref();
+    if (nk_checkbox_label(ctx, "Include debug files (jsrf_recomp.pdb)", &df)) debug_files_set(df != 0);
+    used += s_row + 4;
+
+    nk_layout_row_dynamic(ctx, s_row * 1.3f, 4);
+    if (button(ctx, "Download tools", !busy && !have_tools())) job_start(JOB_TOOLS, false);
+    if (button(ctx, "Check generated code", src)) job_start_tool(TOOL_CHECK_GEN);
+    if (button(ctx, "Check default.xbe", src && have_xbe())) job_start_tool(TOOL_CHECK_XBE);
+    if (button(ctx, "Compare cache", src)) job_start_tool(TOOL_COMPARE_CACHE);
+    used += s_row * 1.3f + 4;
+
+    bool exe = have_game_exe();
+    nk_layout_row_dynamic(ctx, s_row * 1.3f, 3);
+    if (button(ctx, "Play, stop after 30 s", exe && !busy)) {
+        if (play_watchdog(30)) snprintf(s_message, sizeof s_message, "Game started: it stops after 30 s, with a dump in stderr.txt.");
     }
-    log_view(ctx, h - used - 8);
+    if (button(ctx, "Sample a hang", exe)) {
+        flag_file("sample.flag");
+        snprintf(s_message, sizeof s_message, "Sampling the game: [SAMPLE] lines in stderr.txt in a few seconds.");
+    }
+    if (button(ctx, "Trace one frame", exe)) {
+        flag_file("trace.flag");
+        s_trace_until = SDL_GetTicks() + 5000;
+        snprintf(s_message, sizeof s_message, "Tracing one frame: [FTRACE] lines in stderr.txt.");
+    }
+    used += s_row * 1.3f + 4;
+    nk_layout_row_dynamic(ctx, s_row - 6, 1);
+    nk_label_colored(ctx, "The last two work on a running game with Logging on (Settings -> Debug).", NK_TEXT_LEFT, C_DIM);
+    used += s_row - 2;
+
+    nk_layout_row_dynamic(ctx, s_row * 1.2f, 3);
+    if (button(ctx, "Cancel", busy)) job_cancel();
+    if (button(ctx, "Clear log", !busy)) log_clear();
+    if (button(ctx, "Open log file", true)) open_log_in_editor();
+    used += s_row * 1.2f + 4;
+    log_view(ctx, h - used - 8, false);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -887,15 +942,25 @@ int main(int argc, char **argv)
             if (r >= 0) { load_game_ini(); paths_refresh_source(); req_refresh(); }
         }
 
+        if (s_trace_until && SDL_TICKS_PASSED(SDL_GetTicks(), s_trace_until)) {
+            /* a later Trace one frame can trace another moment */
+            char p[LPATH];
+            pjoin(p, g_paths.game, "trace.flag");
+            remove_file(p);
+            s_trace_until = 0;
+        }
+
         int w, h;
         SDL_GetWindowSize(win, &w, &h);
         s_win_h = h;
         if (nk_begin(ctx, "main", nk_rect(0, 0, (float)w, (float)h), NK_WINDOW_NO_SCROLLBAR)) {
-            nk_layout_row_begin(ctx, NK_DYNAMIC, s_row * 1.3f, TAB_COUNT + 1);
+            int ntab = debug_menu_pref() ? TAB_COUNT : TAB_DEBUG;
+            if (s_tab >= ntab) s_tab = TAB_PLAY;
+            nk_layout_row_begin(ctx, NK_DYNAMIC, s_row * 1.3f, ntab + 1);
             nk_layout_row_push(ctx, 0.32f);
             nk_label_colored(ctx, "JET SET RADIO FUTURE", NK_TEXT_LEFT, C_HEAD);
-            for (int i = 0; i < TAB_COUNT; i++) {
-                nk_layout_row_push(ctx, 0.17f);
+            for (int i = 0; i < ntab; i++) {
+                nk_layout_row_push(ctx, 0.68f / ntab);
                 nk_bool sel = s_tab == i;
                 if (nk_selectable_label(ctx, TAB_NAMES[i], NK_TEXT_CENTERED, &sel)) s_tab = i;
             }
@@ -911,6 +976,7 @@ int main(int argc, char **argv)
                 case TAB_SETTINGS: tab_settings(ctx, inner); break;
                 case TAB_BUILD:    tab_build(ctx, inner); break;
                 case TAB_UPDATE:   tab_update(ctx, inner); break;
+                case TAB_DEBUG:    tab_debug(ctx, inner); break;
                 }
                 nk_group_end(ctx);
             }
