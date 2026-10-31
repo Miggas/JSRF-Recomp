@@ -1,5 +1,6 @@
 /* v250: the quit window. Clicking both sticks (L3 + R3) asks "Quit the
- * game?" over the picture; A quits, B goes back (input/xinput_device.c:
+ * game?" over the picture, drawn after the game's own Yes / No box (v251,
+ * idea by Miggas); left / right picks, A takes it, B goes back (input/xinput_device.c:
  * xbox_QuitDialogOpen). Drawn here, on the finished frame just before it is
  * shown, by the three window paths (Windows, Windows with the GL thread,
  * Linux), in the window's own pixels so it stays sharp at any size.
@@ -86,36 +87,115 @@ static int qd_setup(void)
     return 1;
 }
 
-static void qd_rect(float x0, float y0, float x1, float y1, float r, float g, float b, float a)
+static void qd_quad(const float *xy, float r, float g, float b, float a)   /* 4 corners in order */
 {
     QdVert q[6] = {
-        { x0, y0, r, g, b, a }, { x1, y0, r, g, b, a }, { x1, y1, r, g, b, a },
-        { x0, y0, r, g, b, a }, { x1, y1, r, g, b, a }, { x0, y1, r, g, b, a },
+        { xy[0], xy[1], r, g, b, a }, { xy[2], xy[3], r, g, b, a }, { xy[4], xy[5], r, g, b, a },
+        { xy[0], xy[1], r, g, b, a }, { xy[4], xy[5], r, g, b, a }, { xy[6], xy[7], r, g, b, a },
     };
     if (s_qd_n + 6 > QD_MAX) return;
     memcpy(&s_qd_v[s_qd_n], q, sizeof q);
     s_qd_n += 6;
 }
 
-/* text at (x, y), letters k times stb_easy_font's size (about 7 px high) */
-static float qd_text_w(const char *s, float k) { return stb_easy_font_width((char *)s) * k; }
+/* The picture is laid out in the game's 640 x 480 units (its own dialog,
+ * measured from Miggas's capture of "Which is chosen?": box 195..446 x
+ * 206..275, bar 199..442 x 212..236, buttons 240..300 and 341..401 x
+ * 243..268), then placed on the 4:3 middle of the window. */
+static float s_qx, s_qy, s_qs;   /* window pixel = s_qx + unit * s_qs */
+#define QX(u) (s_qx + (u) * s_qs)
+#define QY(u) (s_qy + (u) * s_qs)
 
-static void qd_text(float x, float y, float k, const char *s, float r, float g, float b, float a)
+static void qd_rect(float x0, float y0, float x1, float y1, float r, float g, float b, float a)
 {
-    static char buf[64 * 1024];   /* 16 bytes a corner, 4 corners a rectangle */
+    float xy[8] = { QX(x0), QY(y0), QX(x1), QY(y0), QX(x1), QY(y1), QX(x0), QY(y1) };
+    qd_quad(xy, r, g, b, a);
+}
+
+/* a box with its corners cut by c (the game's boxes have small bevels) */
+static void qd_box(float x0, float y0, float x1, float y1, float c,
+                   float r, float g, float b, float a)
+{
+    qd_rect(x0 + c, y0, x1 - c, y1, r, g, b, a);
+    qd_rect(x0, y0 + c, x0 + c, y1 - c, r, g, b, a);
+    qd_rect(x1 - c, y0 + c, x1, y1 - c, r, g, b, a);
+    {
+        float t[4][8] = {
+            { QX(x0), QY(y0 + c), QX(x0 + c), QY(y0), QX(x0 + c), QY(y0 + c), QX(x0), QY(y0 + c) },
+            { QX(x1 - c), QY(y0), QX(x1), QY(y0 + c), QX(x1), QY(y0 + c), QX(x1 - c), QY(y0 + c) },
+            { QX(x0), QY(y1 - c), QX(x0 + c), QY(y1 - c), QX(x0 + c), QY(y1), QX(x0 + c), QY(y1) },
+            { QX(x1 - c), QY(y1 - c), QX(x1), QY(y1 - c), QX(x1 - c), QY(y1), QX(x1 - c), QY(y1) },
+        };
+        for (int i = 0; i < 4; i++) qd_quad(t[i], r, g, b, a);
+    }
+}
+
+/* a bordered box: border colour, then the fill inset by w */
+static void qd_frame(float x0, float y0, float x1, float y1, float c, float w,
+                     const float *edge, const float *fill)
+{
+    qd_box(x0, y0, x1, y1, c, edge[0], edge[1], edge[2], edge[3]);
+    qd_box(x0 + w, y0 + w, x1 - w, y1 - w, c > w ? c - w : 0, fill[0], fill[1], fill[2], fill[3]);
+}
+
+/* stb_easy_font letters (thin bars on a 6-wide, 7-high cell) scaled kx by ky,
+ * each bar made heavier by bold units and leaned right by slant (the game's
+ * font is a heavy italic); text centred on (cx, cy), in game units */
+static float qd_text_w(const char *s, float kx) { return stb_easy_font_width((char *)s) * kx; }
+
+static void qd_text(float cx, float cy, float kx, float ky, float bold, float slant,
+                    const char *s, const float *col)
+{
+    static char buf[64 * 1024];   /* 16 bytes a corner, 4 corners a bar */
     int n = stb_easy_font_print(0, 0, (char *)s, NULL, buf, sizeof buf);
+    float x = cx - qd_text_w(s, kx) / 2 + bold, base = cy + 3.5f * ky, y = cy - 3.5f * ky;
     for (int i = 0; i < n; i++) {
         const float *c0 = (const float *)(buf + (i * 4 + 0) * 16);
         const float *c2 = (const float *)(buf + (i * 4 + 2) * 16);
-        qd_rect(x + c0[0] * k, y + c0[1] * k, x + c2[0] * k, y + c2[1] * k, r, g, b, a);
+        float x0 = x + c0[0] * kx - bold, x1 = x + c2[0] * kx + bold;
+        float y0 = y + c0[1] * ky - bold, y1 = y + c2[1] * ky + bold;
+        float l0 = (base - y0) * slant, l1 = (base - y1) * slant;
+        float xy[8] = { QX(x0 + l0), QY(y0), QX(x1 + l0), QY(y0),
+                        QX(x1 + l1), QY(y1), QX(x0 + l1), QY(y1) };
+        qd_quad(xy, col[0], col[1], col[2], col[3]);
     }
+}
+
+extern int xbox_QuitDialogSel(void);   /* 0 YES, 1 NO */
+
+/* the picked button pulses: red, fading to white over a second, then red
+ * again (as the game's; Miggas's description); t = 0 red .. 1 white */
+static int s_qd_last_sel = -1;   /* -1: closed, so opening starts red */
+
+static void qd_mix(float *o, const float *a, const float *b, float t)
+{
+    for (int i = 0; i < 4; i++) o[i] = a[i] + (b[i] - a[i]) * t;
+}
+
+static void qd_button(float x0, float x1, const char *label, int picked, float t)
+{
+    static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 }, black[4] = { 0.04f, 0.04f, 0.04f, 1 },
+                       shade[4] = { 0.45f, 0.45f, 0.45f, 1 };
+    static const float red[4] = { 0.85f, 0.29f, 0.28f, 1 }, redfill[4] = { 0.13f, 0.04f, 0.04f, 1 },
+                       redtext[4] = { 1.0f, 0.33f, 0.33f, 1 };
+    const float y0 = 243.3f, y1 = 268.0f, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    float edge[4], fill[4], text[4], sh[4];
+    if (!picked) t = 1.0f;
+    qd_mix(edge, red, white, t);
+    qd_mix(fill, redfill, black, t);
+    qd_mix(text, redtext, white, t);
+    memcpy(sh, shade, sizeof sh);
+    sh[3] = t;                                   /* the shadow comes in with the white */
+    qd_frame(x0, y0, x1, y1, 1.6f, 0.8f, edge, fill);
+    qd_text(cx + 0.7f, cy + 0.7f, 2.75f, 1.95f, 0.6f, 0.06f, label, sh);
+    qd_text(cx, cy, 2.75f, 1.95f, 0.6f, 0.06f, label, text);
 }
 
 /* the window, over a frame of cw x ch pixels in the framebuffer bound for
  * drawing; flip: that framebuffer's row 0 is the top (DXGI) */
 static void present_overlay_f(int cw, int ch, int flip)
 {
-    if (!xbox_QuitDialogOpen() || cw <= 0 || ch <= 0) return;
+    if (!xbox_QuitDialogOpen() || cw <= 0 || ch <= 0) { s_qd_last_sel = -1; return; }
     if (!s_qd_state) {
         GLint p0 = 0, va0 = 0, ab0 = 0;
         glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
@@ -129,25 +209,27 @@ static void present_overlay_f(int cw, int ch, int flip)
     }
     if (s_qd_state < 0) return;
 
-    /* sizes from the window's height, so it looks the same at any size */
-    float u = ch / 480.0f;
-    float kt = 3.2f * u, kb = 2.2f * u;              /* title, buttons */
-    const char *title = "QUIT THE GAME?";
-    const char *yes = "A  YES", *no = "B  NO";
-    float bw = qd_text_w(title, kt) + 80 * u, bh = 120 * u;
-    float x0 = (cw - bw) / 2, y0 = (ch - bh) / 2, x1 = x0 + bw, y1 = y0 + bh;
-    float bd = 3 * u;
+    /* the 4:3 middle of the window, as the game's own 2D */
+    s_qs = (float)ch / 480.0f;
+    if (640.0f * s_qs > cw) s_qs = (float)cw / 640.0f;
+    s_qx = (cw - 640.0f * s_qs) / 2;
+    s_qy = (ch - 480.0f * s_qs) / 2;
 
-    s_qd_n = 0;
-    qd_rect(0, 0, (float)cw, (float)ch, 0, 0, 0, 0.55f);                     /* dim the game */
-    qd_rect(x0 - bd, y0 - bd, x1 + bd, y1 + bd, 1.0f, 0.80f, 0.15f, 1.0f);   /* yellow border */
-    qd_rect(x0, y0, x1, y1, 0.07f, 0.07f, 0.09f, 0.94f);                    /* the box */
-    qd_text((cw - qd_text_w(title, kt)) / 2, y0 + 24 * u, kt, title, 1.0f, 0.80f, 0.15f, 1.0f);
     {
-        float wy = qd_text_w(yes, kb), wn = qd_text_w(no, kb), gap = 60 * u;
-        float tx = (cw - (wy + gap + wn)) / 2, ty = y0 + 78 * u;
-        qd_text(tx, ty, kb, yes, 0.45f, 0.90f, 0.35f, 1.0f);                 /* A green */
-        qd_text(tx + wy + gap, ty, kb, no, 0.95f, 0.40f, 0.35f, 1.0f);       /* B red */
+        static const float edge[4] = { 0.78f, 0.78f, 0.77f, 1 }, box[4] = { 0.0f, 0.0f, 0.0f, 0.93f };
+        static const float bar_edge[4] = { 0.93f, 0.94f, 0.94f, 1 }, teal[4] = { 0.0f, 0.60f, 0.61f, 1 };
+        static const float ink[4] = { 0.03f, 0.04f, 0.08f, 1 };
+        static unsigned long long t0;
+        unsigned long long now = GetTickCount64();
+        int sel = xbox_QuitDialogSel();
+        if (sel != s_qd_last_sel) { s_qd_last_sel = sel; t0 = now; }   /* a new pick starts red */
+        float t = (float)((now - t0) % 1000) / 1000.0f;
+        s_qd_n = 0;
+        qd_frame(195.0f, 205.7f, 446.0f, 275.3f, 1.8f, 1.1f, edge, box);
+        qd_frame(199.0f, 211.7f, 442.0f, 236.0f, 0.0f, 0.8f, bar_edge, teal);
+        qd_text(320.5f, 223.4f, 2.05f, 2.55f, 0.6f, 0.24f, "Quit the game?", ink);
+        qd_button(240.0f, 300.0f, "YES", sel == 0, t);
+        qd_button(340.7f, 400.7f, "NO", sel == 1, t);
     }
 
     GLint p0 = 0, va0 = 0, ab0 = 0;

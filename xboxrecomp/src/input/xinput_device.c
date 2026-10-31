@@ -482,16 +482,20 @@ static DWORD input_get(DWORD dwPort, XBOX_INPUT_STATE *pState, int merge_kbd)
 
 /* v250: the quit window. Clicking both sticks (L3 + R3) opens it (drawn by
  * kernel/nv2a_gl_quit.h); while it is open the game gets a controller at
- * rest; A quits, B closes it, and nothing reaches the game until every
- * button is let go again. Any controller (and the keyboard: Shift + Ctrl,
- * then Z / X) works it. RECOMP_QUIT_COMBO=0 turns it off. */
+ * rest. Left / right (d-pad or left stick) picks YES or NO (NO first), A
+ * takes the pick, B closes it; nothing reaches the game until every button
+ * is let go again. Any controller (and the keyboard: Shift + Ctrl, then the
+ * arrows and Z / X) works it. RECOMP_QUIT_COMBO=0 turns it off. */
 #define QD_IDX 64
 static volatile LONG s_qd_open;           /* 0 closed, 1 open, 2 closed, waiting for release */
 static WORD s_qd_prev_btn[QD_IDX];
 static BYTE s_qd_prev_ab[QD_IDX];
+static signed char s_qd_prev_x[QD_IDX];   /* left stick: -1 left, 0, 1 right */
+static volatile LONG s_qd_sel = 1;        /* 0 YES, 1 NO */
 static int  s_qd_off = -1;
 
 int xbox_QuitDialogOpen(void) { return s_qd_open == 1; }
+int xbox_QuitDialogSel(void) { return (int)s_qd_sel; }
 
 static void quit_now(void)
 {
@@ -519,20 +523,28 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
                      (g->bAnalogButtons[XBOX_BUTTON_B] > 30 ? 2 : 0));
     WORD pb = s_qd_prev_btn[idx];
     BYTE pab = s_qd_prev_ab[idx];
+    int lx = g->sThumbLX, sx = lx > 16000 ? 1 : lx < -16000 ? -1 : (lx > -8000 && lx < 8000) ? 0 : s_qd_prev_x[idx];
+    int psx = s_qd_prev_x[idx];
     s_qd_prev_btn[idx] = b;
     s_qd_prev_ab[idx] = ab;
+    s_qd_prev_x[idx] = (signed char)sx;
     int held = b != 0 || ab != 0 || g->bAnalogButtons[XBOX_BUTTON_X] > 30 || g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
 
     if (s_qd_open == 0) {
         if ((b & sticks) == sticks && (pb & sticks) != sticks) {
+            InterlockedExchange(&s_qd_sel, 1);
             InterlockedExchange(&s_qd_open, 1);
-            fprintf(stderr, "[QUIT] quit window open (A = quit, B = back)\n");
+            fprintf(stderr, "[QUIT] quit window open (left / right, A = choose, B = back)\n");
         } else {
             return;                         /* the game's input, untouched */
         }
     } else if (s_qd_open == 1) {
-        if ((ab & 1) && !(pab & 1)) quit_now();
-        if ((ab & 2) && !(pab & 2)) {
+        WORD lr = XBOX_GAMEPAD_DPAD_LEFT | XBOX_GAMEPAD_DPAD_RIGHT;
+        if (((b & lr) && (b & lr) != (pb & lr)) || (sx && sx != psx))
+            InterlockedExchange(&s_qd_sel, (b & XBOX_GAMEPAD_DPAD_LEFT) || sx < 0 ? 0 :
+                                           (b & XBOX_GAMEPAD_DPAD_RIGHT) || sx > 0 ? 1 : s_qd_sel);
+        if ((ab & 1) && !(pab & 1) && s_qd_sel == 0) quit_now();
+        if (((ab & 2) && !(pab & 2)) || ((ab & 1) && !(pab & 1))) {
             InterlockedExchange(&s_qd_open, 2);
             fprintf(stderr, "[QUIT] back to the game\n");
         }
