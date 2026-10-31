@@ -510,19 +510,31 @@ static void gen_dir(char *out)
     pjoin3(out, t, "recomp", "gen");
 }
 
-/* What the translator reads: the game's default.xbe, the project's
- * analysis and tools, recomp_manual.c (the functions it leaves out), and
- * the toolkit's translator. The same value: the same code would come out. */
+/* What the translator reads, and only that (v1m: whole folders counted
+ * scripts it never uses, so every update regenerated): the game's
+ * default.xbe; the four analysis files; recomp_manual.c (the functions it
+ * leaves out); generate_code.py and the scripts it runs; the toolkit's
+ * translator packages, without their tests. The same value: the same code
+ * would come out. */
 static unsigned long long gen_inputs(void)
 {
     static const char *const src[] = {
-        "jsrf_recomp/analysis", "jsrf_recomp/tools", "jsrf_recomp/src/recomp_manual.c",
-        "xboxrecomp/tools", NULL };
-    /* the translator's own work folder (it writes there while running), and
-     * the list Check generated code compares with (the translator does not
-     * read it) */
-    static const char *const skip[] = { "xboxrecomp/tools/recomp/output",
-                                        "jsrf_recomp/analysis/gen_hashes.txt", NULL };
+        "jsrf_recomp/analysis/functions_named.json",
+        "jsrf_recomp/analysis/labels.json",
+        "jsrf_recomp/analysis/identified_functions.json",
+        "jsrf_recomp/analysis/abi_functions.json",
+        "jsrf_recomp/src/recomp_manual.c",
+        "jsrf_recomp/tools/generate_code.py",
+        "jsrf_recomp/tools/xbe_info.py",
+        "jsrf_recomp/tools/log_stubs.py",
+        "jsrf_recomp/tools/wrap_dsound.py",
+        "xboxrecomp/tools/__init__.py",
+        "xboxrecomp/tools/recomp",
+        "xboxrecomp/tools/xbe_parser",
+        "xboxrecomp/tools/disasm",
+        NULL };
+    /* the translator's own work folder (it writes there while running) */
+    static const char *const skip[] = { "xboxrecomp/tools/recomp/output", NULL };
     static const char *const xbe[] = { "default.xbe", NULL };
     unsigned long long h = fingerprint(g_paths.source, src, skip, HASH_SEED);
     return fingerprint(g_paths.game, xbe, NULL, h);

@@ -319,7 +319,8 @@ static bool fp_skip(const char *name)
 {
     size_t n = strlen(name);
     return !strcmp(name, "__pycache__") || !strcmp(name, ".git") ||
-           (n > 4 && !strcmp(name + n - 4, ".pyc")) || !strncmp(name, "launcher_", 9);
+           (n > 4 && !strcmp(name + n - 4, ".pyc")) || !strncmp(name, "launcher_", 9) ||
+           (!strncmp(name, "test_", 5) && n > 3 && !strcmp(name + n - 3, ".py"));   /* tests */
 }
 
 typedef struct { FileList *l; const char *rel; } FlWalk;

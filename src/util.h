@@ -33,8 +33,8 @@ void  set_env(const char *k, const char *v);   /* v NULL: removed */
 /* ---- fingerprints ---- */
 /* A 64-bit hash of the files at root/items[i] (files or whole folders,
  * NULL-terminated list): their paths and contents, in name order, so the
- * same files give the same value on any system. Python caches, .git and the
- * launcher's own launcher_*.txt files are left out. Missing items count as
+ * same files give the same value on any system. Python caches, .git, test_*.py
+ * and the launcher's own launcher_*.txt files are left out. Missing items count as
  * missing (they change the value). */
 unsigned long long fingerprint(const char *root, const char *const *items,
                                const char *const *skip, unsigned long long seed);
