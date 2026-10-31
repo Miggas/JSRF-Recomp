@@ -30,6 +30,18 @@ bool  write_file(const char *p, const void *data, size_t len);
 void  list_dir(const char *dir, void (*cb)(const char *name, bool isdir, void *u), void *u);
 void  set_env(const char *k, const char *v);
 
+/* ---- fingerprints ---- */
+/* A 64-bit hash of the files at root/items[i] (files or whole folders,
+ * NULL-terminated list): their paths and contents, in name order, so the
+ * same files give the same value on any system. Python caches, .git and the
+ * launcher's own launcher_*.txt files are left out. Missing items count as
+ * missing (they change the value). */
+unsigned long long fingerprint(const char *root, const char *const *items,
+                               const char *const *skip, unsigned long long seed);
+/* skip: paths (relative to root, as in items, "/" separated) left out, or NULL */
+unsigned long long hash_text(const char *s, unsigned long long seed);
+#define HASH_SEED 0xcbf29ce484222325ULL
+
 /* ---- the log (thread safe) ---- */
 void  log_init(void);
 void  log_text(const char *s, size_t n);     /* raw program output; \r rewrites the line */

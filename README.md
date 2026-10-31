@@ -9,6 +9,17 @@ This branch is the launcher's code only. To play, download the launcher from
 the [Releases](https://github.com/Miggas/JSRF-Recomp/releases) page and see the
 README on the main branch.
 
+## How it decides what to do
+
+- **Update** only downloads the project (nothing when GitHub says it is
+  already the newest). The generated code is kept.
+- **Generate code** runs only when what it is made from changed: `default.xbe`,
+  `jsrf_recomp/analysis`, `jsrf_recomp/tools`, `recomp_manual.c`,
+  `xboxrecomp/tools`.
+- **Build** runs only when the source, the generated code or the compiler
+  changed. It asks for Generate code first when the code is missing or old.
+- **Play → Build** does both. **Even if nothing changed** forces them.
+
 ## Building it
 
 | | |

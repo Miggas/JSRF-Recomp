@@ -28,15 +28,18 @@ void compiler_set(int c);
 bool have_xbe(void);
 bool have_game_exe(void);
 bool have_tools(void);
-bool have_msvc(void);                     /* Visual Studio with the C++ tools (Windows) */
+bool have_msvc(void);
+bool have_gen(void);                      /* generated code is there (maybe not current) */                     /* Visual Studio with the C++ tools (Windows) */
 void game_exe(char *out);
 void game_ini(char *out);
 const char *source_id(void);
 const char *update_branch(void);          /* BRANCH= in launcher.ini, else main */              /* the commit the source is at, or "" */
 
 /* jobs */
-enum { JOB_NONE, JOB_TOOLS, JOB_BUILD, JOB_UPDATE, JOB_CHECK };
-bool job_start(int job, bool regenerate);
+/* JOB_GENERATE and JOB_BUILD first check whether anything changed (force:
+ * do it anyway); JOB_ALL is both; JOB_UPDATE only downloads. */
+enum { JOB_NONE, JOB_TOOLS, JOB_GENERATE, JOB_BUILD, JOB_ALL, JOB_UPDATE, JOB_CHECK };
+bool job_start(int job, bool force);
 bool job_busy(void);
 int  job_current(void);
 void job_cancel(void);

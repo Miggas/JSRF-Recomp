@@ -114,9 +114,10 @@ static void spacer(struct nk_context *ctx, float h)
     nk_spacing(ctx, 1);
 }
 
+/* Play's Build: generate (if needed) and build (if needed) */
 static void start_build(void)
 {
-    if (job_start(JOB_BUILD, s_regen)) { s_tab = TAB_BUILD; s_regen = false; }
+    if (job_start(JOB_ALL, false)) s_tab = TAB_BUILD;
 }
 
 static void tab_play(struct nk_context *ctx)
@@ -142,6 +143,7 @@ static void tab_play(struct nk_context *ctx)
     spacer(ctx, 10);
     bool xbe = have_xbe(), exe = have_game_exe(), tools = have_tools();
     status_line(ctx, "Game files", xbe, "default.xbe found", "default.xbe not found in this folder");
+    status_line(ctx, "Generated code", have_gen(), "there", "not generated yet: press Build");
     status_line(ctx, "Recompiled game", exe, "built", "not built yet: press Build");
     status_line(ctx, "Project source", g_paths.have_source,
                 "downloaded", "not downloaded yet: Update -> Download");
@@ -284,13 +286,15 @@ static void tab_build(struct nk_context *ctx, float h)
 #endif
     nk_layout_row_dynamic(ctx, s_row, 1);
     nk_bool rg = s_regen;
-    nk_checkbox_label(ctx, "Translate the game's code again (normally only after an update)", &rg);
+    nk_checkbox_label(ctx, "Even if nothing changed (normally each button checks first and skips)", &rg);
     s_regen = rg != 0;
     used += s_row + 4;
 
     bool busy = job_busy();
-    nk_layout_row_dynamic(ctx, s_row * 1.4f, 4);
-    if (button(ctx, "Build", !busy && have_xbe() && g_paths.have_source)) start_build();
+    bool ready = !busy && have_xbe() && g_paths.have_source;
+    nk_layout_row_dynamic(ctx, s_row * 1.4f, 5);
+    if (button(ctx, "Generate code", ready)) job_start(JOB_GENERATE, s_regen);
+    if (button(ctx, "Build", ready)) job_start(JOB_BUILD, s_regen);
     if (button(ctx, "Download tools", !busy && !have_tools())) job_start(JOB_TOOLS, false);
     if (button(ctx, "Cancel", busy)) job_cancel();
     if (button(ctx, "Clear log", !busy)) log_clear();
@@ -320,7 +324,7 @@ static void tab_update(struct nk_context *ctx, float h)
         if (*r && strcmp(r, id))
             nk_label_colored(ctx, "A newer version is available.", NK_TEXT_LEFT, C_HEAD);
         else
-            nk_label_colored(ctx, "Updating keeps your game files, jsrf.ini and saves, and builds the new version.",
+            nk_label_colored(ctx, "Update only downloads the project (your game files, jsrf.ini and saves are kept). Then Build.",
                              NK_TEXT_LEFT, C_DIM);
         used += 2 * (s_row + 4);
         bool busy = job_busy();
@@ -406,8 +410,8 @@ static void style(struct nk_context *ctx)
     ctx->style.button.rounding = 6;
 }
 
-/* jsrf_launcher --tools | --build [--regenerate] | --update | --check:
- * the job without the window, its log printed */
+/* jsrf_launcher --tools | --generate | --build | --all | --update | --check
+ * [--force]: the job without the window, its log printed */
 static int headless(int job, bool regen)
 {
     log_init();
@@ -437,10 +441,12 @@ int main(int argc, char **argv)
     bool regen = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--tools")) job = JOB_TOOLS;
+        else if (!strcmp(argv[i], "--generate")) job = JOB_GENERATE;
         else if (!strcmp(argv[i], "--build")) job = JOB_BUILD;
+        else if (!strcmp(argv[i], "--all")) job = JOB_ALL;
         else if (!strcmp(argv[i], "--update")) job = JOB_UPDATE;
         else if (!strcmp(argv[i], "--check")) job = JOB_CHECK;
-        else if (!strcmp(argv[i], "--regenerate")) regen = true;
+        else if (!strcmp(argv[i], "--force")) regen = true;
     }
     if (job != JOB_NONE) {
 #ifdef _WIN32

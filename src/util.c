@@ -289,6 +289,88 @@ int cpu_count(void)
 }
 
 /* ======================================================================
+ * fingerprints (FNV-1a 64)
+ * ==================================================================== */
+static unsigned long long fnv(const void *d, size_t n, unsigned long long h)
+{
+    const unsigned char *p = d;
+    for (size_t i = 0; i < n; i++) { h ^= p[i]; h *= 0x100000001b3ULL; }
+    return h;
+}
+
+unsigned long long hash_text(const char *s, unsigned long long seed)
+{
+    return fnv(s, strlen(s) + 1, seed);
+}
+
+typedef struct { char **v; int n, cap; const char *root; const char *const *skip; } FileList;
+
+static void fl_add(FileList *l, const char *rel)
+{
+    if (l->n == l->cap) { l->cap = l->cap ? l->cap * 2 : 256; l->v = realloc(l->v, sizeof(char *) * l->cap); }
+    l->v[l->n++] = strdup(rel);
+}
+
+static bool fp_skip(const char *name)
+{
+    size_t n = strlen(name);
+    return !strcmp(name, "__pycache__") || !strcmp(name, ".git") ||
+           (n > 4 && !strcmp(name + n - 4, ".pyc")) || !strncmp(name, "launcher_", 9);
+}
+
+typedef struct { FileList *l; const char *rel; } FlWalk;
+static void fl_walk(FileList *l, const char *rel);
+
+static void fl_cb(const char *name, bool isdir, void *u)
+{
+    FlWalk *w = u;
+    if (fp_skip(name)) return;
+    char r[LPATH];
+    snprintf(r, sizeof r, "%s/%s", w->rel, name);   /* "/" on every system: same value */
+    for (int i = 0; w->l->skip && w->l->skip[i]; i++)
+        if (!strcmp(r, w->l->skip[i])) return;
+    if (isdir) fl_walk(w->l, r); else fl_add(w->l, r);
+}
+
+static void fl_walk(FileList *l, const char *rel)
+{
+    char p[LPATH];
+    pjoin(p, l->root, rel);
+    FlWalk w = { l, rel };
+    list_dir(p, fl_cb, &w);
+}
+
+static int fl_cmp(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+unsigned long long fingerprint(const char *root, const char *const *items,
+                               const char *const *skip, unsigned long long h)
+{
+    FileList l = { NULL, 0, 0, root, skip };
+    for (int i = 0; items[i]; i++) {
+        char p[LPATH];
+        pjoin(p, root, items[i]);
+        if (is_dir(p)) fl_walk(&l, items[i]);
+        else if (is_file(p)) fl_add(&l, items[i]);
+        else h = hash_text(items[i], h ^ 0x6d697373ULL);   /* "miss" */
+    }
+    qsort(l.v, (size_t)l.n, sizeof(char *), fl_cmp);
+    for (int i = 0; i < l.n; i++) {
+        char p[LPATH];
+        pjoin(p, root, l.v[i]);
+        size_t n = 0;
+        char *d = read_file(p, &n);
+        h = hash_text(l.v[i], h);
+        if (d) { h = fnv(&n, sizeof n, h); h = fnv(d, n, h); free(d); }
+        free(l.v[i]);
+    }
+    free(l.v);
+    return h;
+}
+
+/* ======================================================================
  * the log
  * ==================================================================== */
 #define LOG_MAX 4000

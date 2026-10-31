@@ -445,53 +445,134 @@ static void clear_shader_cache_cb(const char *name, bool isdir, void *u)
     remove_file(p);
 }
 
-static bool generate_needed(const char *jr)
+/* ---- what is up to date ---- */
+
+static void gen_dir(char *out)
 {
-    char f[LPATH], g[LPATH];
-    pjoin3(g, jr, "src", "recomp");
-    pjoin(g, g, "gen");
-    pjoin(f, g, "recomp_dispatch.c");
-    if (s_regen || !is_file(f)) return true;
-    /* generated from another version of the project (after an update) */
-    char st[LPATH];
-    pjoin(st, g, "launcher_source.txt");
-    char *d = read_file(st, NULL);
-    bool differ = strcmp(d ? d : "", source_id()) != 0;
-    free(d);
-    return differ;
+    char t[LPATH];
+    pjoin3(t, g_paths.source, "jsrf_recomp", "src");
+    pjoin3(out, t, "recomp", "gen");
 }
 
-static bool do_build(void)
+/* What the translator reads: the game's default.xbe, the project's
+ * analysis and tools, recomp_manual.c (the functions it leaves out), and
+ * the toolkit's translator. The same value: the same code would come out. */
+static unsigned long long gen_inputs(void)
 {
-    if (!g_paths.have_source) { logf_("The project's source is not here: use Update first."); return false; }
+    static const char *const src[] = {
+        "jsrf_recomp/analysis", "jsrf_recomp/tools", "jsrf_recomp/src/recomp_manual.c",
+        "xboxrecomp/tools", NULL };
+    /* the translator's own work folder (it writes there while running) */
+    static const char *const skip[] = { "xboxrecomp/tools/recomp/output", NULL };
+    static const char *const xbe[] = { "default.xbe", NULL };
+    unsigned long long h = fingerprint(g_paths.source, src, skip, HASH_SEED);
+    return fingerprint(g_paths.game, xbe, NULL, h);
+}
+
+/* What the compiler reads (the generated code included), and which
+ * compiler: the same value, the same game. */
+static unsigned long long build_inputs(bool msvc)
+{
+    static const char *const src[] = {
+        "jsrf_recomp/src", "jsrf_recomp/CMakeLists.txt", "jsrf_recomp/cmake",
+        "xboxrecomp/src", "xboxrecomp/include", "xboxrecomp/cmake", "xboxrecomp/CMakeLists.txt",
+        NULL };
+    unsigned long long h = hash_text(msvc ? "msvc" : "zig " TOOLCHAIN_ID, HASH_SEED);
+    return fingerprint(g_paths.source, src, NULL, h);
+}
+
+static bool stamp_is(const char *file, unsigned long long v)
+{
+    char *d = read_file(file, NULL);
+    char want[32];
+    snprintf(want, sizeof want, "%016llx", v);
+    bool same = d && !strncmp(d, want, 16);
+    free(d);
+    return same;
+}
+
+static void stamp_write(const char *file, unsigned long long v)
+{
+    char t[32];
+    snprintf(t, sizeof t, "%016llx\n", v);
+    write_file(file, t, strlen(t));
+}
+
+static bool gen_current(void)
+{
+    char g[LPATH], f[LPATH], st[LPATH];
+    gen_dir(g);
+    pjoin(f, g, "recomp_dispatch.c");
+    pjoin(st, g, "launcher_gen.txt");
+    return is_file(f) && stamp_is(st, gen_inputs());
+}
+
+bool have_gen(void)
+{
+    char g[LPATH], f[LPATH];
+    gen_dir(g);
+    pjoin(f, g, "recomp_dispatch.c");
+    return is_file(f);
+}
+
+static bool need_source_and_xbe(void)
+{
+    if (!g_paths.have_source) { logf_("The project is not downloaded yet: Update -> Download."); return false; }
     if (!have_xbe()) { logf_("default.xbe not found in %s", g_paths.game); return false; }
+    return true;
+}
+
+/* ---- generate ---- */
+
+static bool do_generate(void)
+{
+    if (!need_source_and_xbe()) return false;
+    status("Checking the generated code...", NULL);
+    if (!s_regen && gen_current()) {
+        status("The generated code is up to date: nothing to do.", NULL);
+        return true;
+    }
     if (!setup_tools()) return false;
     if (cancelled()) return false;
-
-    char jr[LPATH], py[LPATH], xbe[LPATH], gen[LPATH];
+    char jr[LPATH], py[LPATH], xbe[LPATH], gen[LPATH], tool[LPATH];
     pjoin(jr, g_paths.source, "jsrf_recomp");
     py_exe(py);
     pjoin(xbe, g_paths.game, "default.xbe");
-    pjoin3(gen, jr, "src", "recomp");
-    pjoin(gen, gen, "gen");
+    gen_dir(gen);
+    /* taken before: a file changing while it runs makes it run again next time */
+    unsigned long long h = gen_inputs();
+    status("Translating the game's code from default.xbe (a few minutes)...", NULL);
+    pjoin3(tool, jr, "tools", "generate_code.py");
+    const char *argv[] = { py, tool, xbe, NULL };
+    if (!runv(jr, argv)) return false;
+    char st[LPATH];
+    pjoin(st, gen, "launcher_gen.txt");
+    stamp_write(st, h);
+    status("Code generated.", NULL);
+    return true;
+}
 
-    if (generate_needed(jr)) {
-        status("Translating the game's code from default.xbe (a few minutes)...", NULL);
-        char tool[LPATH];
-        pjoin3(tool, jr, "tools", "generate_code.py");
-        const char *argv[] = { py, tool, xbe, NULL };
-        if (!runv(jr, argv)) return false;
-        char st[LPATH];
-        pjoin(st, gen, "launcher_source.txt");
-        write_file(st, source_id(), strlen(source_id()));
+/* ---- build ---- */
+
+static bool do_build(void)
+{
+    if (!need_source_and_xbe()) return false;
+    status("Checking the generated code...", NULL);
+    if (!have_gen()) {
+        logf_("No generated code yet: press Generate code first.");
+        return false;
     }
-    {
-        char tool[LPATH];
-        pjoin3(tool, jr, "tools", "wrap_dsound.py");
-        const char *argv[] = { py, tool, gen, NULL };
-        if (!runv(jr, argv)) return false;
+    if (!gen_current()) {
+        logf_("The generated code is older than the project or default.xbe: press Generate code first.");
+        return false;
     }
+    if (!setup_tools()) return false;
     if (cancelled()) return false;
+
+    char jr[LPATH];
+    pjoin(jr, g_paths.source, "jsrf_recomp");
+    /* (wrap_dsound.py, which rebuild.bat runs before each build, is the
+     * translator's last step: code that counts as current here has it) */
 
     bool msvc = use_msvc();
     if (!msvc) {
@@ -505,6 +586,20 @@ static bool do_build(void)
     }
     char bdir[LPATH], cmake[LPATH], ninja[LPATH], stamp[LPATH], want[LPATH * 2 + 32];
     pjoin(bdir, g_paths.build, msvc ? "msvc" : "zig");
+
+    char built[LPATH], dest[LPATH], bstamp[LPATH];
+    if (msvc) pjoin3(built, bdir, "Release", "jsrf_recomp" EXE);
+    else pjoin(built, bdir, "jsrf_recomp" EXE);
+    game_exe(dest);
+    pjoin(bstamp, bdir, "launcher_built.txt");
+    status("Checking what changed...", NULL);
+    unsigned long long bh = build_inputs(msvc);
+    bool up_to_date = !s_regen && is_file(built) && stamp_is(bstamp, bh);
+    if (up_to_date && is_file(dest)) {
+        status("The game is up to date: nothing to build.", NULL);
+        return true;
+    }
+    if (!up_to_date) remove_file(bstamp);
     pkg_bin(cmake, "cmake", "cmake");
     ninja_exe(ninja);
     /* the build folder holds absolute paths: made again if the launcher,
@@ -517,7 +612,7 @@ static bool do_build(void)
         free(d);
         char marker[LPATH];
         pjoin(marker, bdir, msvc ? "ALL_BUILD.vcxproj" : "build.ninja");
-        if (!same || !is_file(marker)) {
+        if (!up_to_date && (!same || !is_file(marker))) {
             remove_tree(bdir);
             make_dirs(bdir);
             status("Setting up the build (the first time takes a few minutes)...", NULL);
@@ -556,19 +651,16 @@ static bool do_build(void)
     }
     if (cancelled()) return false;
 
-    status("Compiling (the first time takes a while)...", NULL);
-    {
+    if (!up_to_date) {
+        status("Compiling (the first time takes a while)...", NULL);
         char par[16];
         snprintf(par, sizeof par, "%d", cpu_count());
         const char *argv[] = { cmake, "--build", bdir, "--config", "Release", "--parallel", par, NULL };
         if (!runv(jr, argv)) return false;
+        stamp_write(bstamp, bh);
     }
 
     status("Copying the game to the game folder...", NULL);
-    char built[LPATH], dest[LPATH];
-    if (msvc) pjoin3(built, bdir, "Release", "jsrf_recomp" EXE);
-    else pjoin(built, bdir, "jsrf_recomp" EXE);
-    game_exe(dest);
     if (!copy_file(built, dest)) {
         logf_("Could not copy the game to %s (is the game still running?)", dest);
         return false;
@@ -617,6 +709,12 @@ static bool check_update(void)
 
 static bool do_update(void)
 {
+    /* the newest commit, when GitHub answers: nothing to download if it is
+     * the one here (no answer: download anyway) */
+    if (g_paths.have_source && *source_id() && check_update() && !strcmp(s_remote, source_id())) {
+        status("Already the newest version (%.10s): nothing to download.", s_remote);
+        return true;
+    }
     if (!setup_tools()) return false;
     char dl[LPATH], zip[LPATH], tmp[LPATH], py[LPATH];
     pjoin(dl, g_paths.tools, "download");
@@ -658,6 +756,21 @@ static bool do_update(void)
         char ox[LPATH];
         pjoin(ox, og, "default.xbe");
         if (is_file(ox)) { remove_tree(ng); move_path(og, ng); }
+        /* the generated code too: Generate code makes it again only if
+         * what it is made from changed */
+        char gold[LPATH], gnew[LPATH], t[LPATH];
+        gen_dir(gold);
+        pjoin3(t, top, "jsrf_recomp", "src");
+        pjoin3(gnew, t, "recomp", "gen");
+        if (is_dir(gold)) {
+            /* src/recomp is not in the download (the generated code is
+             * never in the repository): made first, or the move fails */
+            char parent[LPATH];
+            pjoin(parent, t, "recomp");
+            make_dirs(parent);
+            remove_tree(gnew);
+            if (!move_path(gold, gnew)) logf_("Could not keep the generated code: Generate code makes it again.");
+        }
         if (!move_path(g_paths.source, old)) { logf_("Could not move the old version away."); return false; }
     }
     if (!move_path(top, g_paths.source)) {
@@ -674,10 +787,9 @@ static bool do_update(void)
     char gd[LPATH];
     pjoin3(gd, g_paths.source, "jsrf_recomp", "game");
     if (strstr(g_paths.game, gd) == g_paths.game) logf_("Game files kept in %s", gd);
-    status("Updated to %s.", sha);
     snprintf(s_remote, sizeof s_remote, "%.40s", sha);
-    if (!have_xbe()) return true;
-    return do_build();
+    status("Updated to %.10s. Then Build: Generate code (if needed) and Build.", sha);
+    return true;
 }
 
 static int job_thread(void *u)
@@ -685,8 +797,10 @@ static int job_thread(void *u)
     (void)u;
     bool ok = false;
     switch (s_job) {
-    case JOB_TOOLS:  ok = setup_tools(); break;
-    case JOB_BUILD:  ok = do_build(); break;
+    case JOB_TOOLS:    ok = setup_tools(); break;
+    case JOB_GENERATE: ok = do_generate(); break;
+    case JOB_BUILD:    ok = do_build(); break;
+    case JOB_ALL:      ok = do_generate() && !cancelled() && do_build(); break;
     case JOB_UPDATE: ok = do_update(); break;
     case JOB_CHECK:  ok = check_update(); break;
     }
@@ -697,12 +811,12 @@ static int job_thread(void *u)
     return 0;
 }
 
-bool job_start(int job, bool regenerate)
+bool job_start(int job, bool force)
 {
     if (job_busy()) return false;
     if (s_thread) { SDL_WaitThread(s_thread, NULL); s_thread = NULL; }
     s_job = job;
-    s_regen = regenerate;
+    s_regen = force;
     s_cancel = 0;
     s_result = -1;
     SDL_AtomicSet(&s_busy, 1);
