@@ -518,8 +518,11 @@ static unsigned long long gen_inputs(void)
     static const char *const src[] = {
         "jsrf_recomp/analysis", "jsrf_recomp/tools", "jsrf_recomp/src/recomp_manual.c",
         "xboxrecomp/tools", NULL };
-    /* the translator's own work folder (it writes there while running) */
-    static const char *const skip[] = { "xboxrecomp/tools/recomp/output", NULL };
+    /* the translator's own work folder (it writes there while running), and
+     * the list Check generated code compares with (the translator does not
+     * read it) */
+    static const char *const skip[] = { "xboxrecomp/tools/recomp/output",
+                                        "jsrf_recomp/analysis/gen_hashes.txt", NULL };
     static const char *const xbe[] = { "default.xbe", NULL };
     unsigned long long h = fingerprint(g_paths.source, src, skip, HASH_SEED);
     return fingerprint(g_paths.game, xbe, NULL, h);
