@@ -211,6 +211,10 @@ Only Proton 11 is tested.
 
 ### Choose a power mode
 
+> [!NOTE]
+> These modes are for the Windows build under Proton. The native Linux build
+> already sleeps while it waits (`RECOMP_SLEEP_WAITS=all`) by default.
+
 Both modes give a steady **60 fps**. They differ in power use and setup.
 
 | | 🔋 **Mode 1 — Standard** | 🌿 **Mode 2 — Power saving** |
@@ -403,7 +407,7 @@ switch it on. Steam launch options override the file.
 | Setting | What it does |
 |---|---|
 | `RECOMP_GL_TEX_WATCH=0` | Turns the texture write-watch off (it is on by default on Windows and in the Linux build, off under Proton). Try it if the game stutters. |
-| `RECOMP_SLEEP_WAITS=…` | GPU waits. Windows default: `all` (the game's wait spins 0.2 ms, then sleeps). Steam Deck default: `vblank`. `none` = highest CPU use. Steam Deck: see [section 7](#choose-a-power-mode). |
+| `RECOMP_SLEEP_WAITS=…` | GPU waits. Default on Windows and Linux (the Steam Deck's native build too): `all` (the game's wait spins 0.2 ms, then sleeps). Default under Proton: `vblank`. `none` = highest CPU use. Steam Deck with Proton: see [section 7](#choose-a-power-mode). |
 
 More settings, for testing and for finding problems, are listed in
 **[DEBUG.md](DEBUG.md)**. They aren't in `jsrf.ini`; add a line yourself to use one.
@@ -465,7 +469,7 @@ Your game files, `jsrf.ini` and saves are kept.
 | A build fails | **Open log file** (shown under the buttons after a failure), find the first line with `error`, and report it ([section 13](#13-reporting-a-problem)). |
 | `Could not copy the game … is the game still running?` | Close the game and **Build** again. |
 | The game is slow or stutters | Lower the resolution scale (**Settings → Video**); turn **Logging** off (**Settings → Debug**); on a laptop, plug it in. |
-| Busy areas on the Deck drop below 50 fps for a few seconds | You set `RECOMP_SLEEP_WAITS=all` without the performance governor — do both steps of [Mode 2](#-mode-2--power-saving), or go back to Mode 1. |
+| Busy areas on the Deck (Proton) drop below 50 fps for a few seconds | You set `RECOMP_SLEEP_WAITS=all` without the performance governor — do both steps of [Mode 2](#-mode-2--power-saving), or go back to Mode 1. |
 | Game opens up to a black screen | Add `RECOMP_GL_CPU_VERTEX=1` to `jsrf.ini` ([DEBUG.md](DEBUG.md)). There's a known bug on NVIDIA systems that causes this; a fix is in the works. |
 
 ---
