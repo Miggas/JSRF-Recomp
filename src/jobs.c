@@ -36,6 +36,9 @@ static const char *const PIP_PACKAGES[] = {
 };
 /* written to tools/toolchain.txt: a different line sets the tools up again */
 #define TOOLCHAIN_ID "py=" PY_VERSION " capstone=5.0.7 zig=0.13.0 cmake=3.31.6 ninja=1.11.1.4 wrap=1"
+/* the compiler wrappers' own version: a different one makes them again
+ * (only them: Python and the packages stay) */
+#define WRAP_ID "wrap=2"
 
 /* ======================================================================
  * paths
@@ -306,18 +309,18 @@ static bool cancelled(void) { return s_cancel != 0; }
 /* The wrapper programs CMake runs as its compiler: zig-cc -> "zig cc" ...
  * They find Zig relative to themselves, so the folder can be moved. */
 static const char ZIGWRAP_C[] =
-"/* zig-cc, zig-c++, zig-ar, zig-ranlib: run \"zig <mode>\" with the same\n"
-" * arguments. Made by the JSRF launcher. */\n"
+"/* zig-cc, zig-c++, zig-ar, zig-ranlib: run \"zig <ZIG_MODE>\" with the\n"
+" * same arguments. Made by the JSRF launcher. The mode is built in, not\n"
+" * read from the file name: Windows may start it by its short name\n"
+" * (ZIG-C_~1.EXE) when the path has spaces. */\n"
 "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
 "#ifdef _WIN32\n#include <windows.h>\n"
 "int main(void) {\n"
-"    wchar_t self[4096], zig[4096], mode[64];\n"
+"    wchar_t self[4096], zig[4096];\n"
+"    const wchar_t *mode = L\"\" ZIG_MODE;\n"
 "    DWORD n = GetModuleFileNameW(NULL, self, 4096);\n"
 "    if (!n || n >= 4096) return 1;\n"
 "    wchar_t *base = wcsrchr(self, L'\\\\'); base = base ? base + 1 : self;\n"
-"    wchar_t *dash = wcschr(base, L'-'); if (!dash) return 1;\n"
-"    wcsncpy(mode, dash + 1, 63); mode[63] = 0;\n"
-"    wchar_t *dot = wcsrchr(mode, L'.'); if (dot) *dot = 0;\n"
 "    *base = 0;\n"
 "    _snwprintf(zig, 4096, L\"%ls%ls\", self, L\"\" ZIG_REL); zig[4095] = 0;\n"
 "    /* the arguments as given, after our own name */\n"
@@ -340,12 +343,10 @@ static const char ZIGWRAP_C[] =
 "    char self[4096], zig[4200];\n"
 "    ssize_t n = readlink(\"/proc/self/exe\", self, sizeof self - 1);\n"
 "    if (n <= 0) return 1; self[n] = 0;\n"
-"    const char *base = strrchr(argv[0], '/'); base = base ? base + 1 : argv[0];\n"
-"    const char *dash = strchr(base, '-'); if (!dash) return 1;\n"
 "    char *slash = strrchr(self, '/'); if (slash) slash[1] = 0;\n"
 "    snprintf(zig, sizeof zig, \"%s%s\", self, ZIG_REL);\n"
 "    char **a = malloc(sizeof(char *) * (argc + 2));\n"
-"    a[0] = zig; a[1] = (char *)(dash + 1);\n"
+"    a[0] = zig; a[1] = (char *)ZIG_MODE;\n"
 "    for (int i = 1; i < argc; i++) a[i + 1] = argv[i];\n"
 "    a[argc + 1] = NULL;\n"
 "    execv(zig, a);\n"
@@ -367,15 +368,18 @@ static bool make_wrappers(void)
 #else
     const char *rel = "-DZIG_REL=\"../python/lib/python3.12/site-packages/ziglang/zig\"";
 #endif
-    pjoin(out, wd, "zig-cc" EXE);
-    const char *argv[] = { zig, "cc", "-O2", rel, "-o", out, src, NULL };
-    if (!runv(wd, argv)) return false;
-    const char *names[] = { "zig-c++" EXE, "zig-ar" EXE, "zig-ranlib" EXE, NULL };
-    for (int i = 0; names[i]; i++) {
-        char d[LPATH];
-        pjoin(d, wd, names[i]);
-        if (!copy_file(out, d)) { logf_("Could not write %s", d); return false; }
+    static const char *const modes[] = { "cc", "c++", "ar", "ranlib", NULL };
+    for (int i = 0; modes[i]; i++) {
+        char name[32], def[48];
+        snprintf(name, sizeof name, "zig-%s" EXE, modes[i]);
+        snprintf(def, sizeof def, "-DZIG_MODE=\"%s\"", modes[i]);
+        pjoin(out, wd, name);
+        const char *argv[] = { zig, "cc", "-O2", rel, def, "-o", out, src, NULL };
+        if (!runv(wd, argv)) return false;
     }
+    char v[LPATH];
+    pjoin(v, wd, "wrap_version.txt");
+    write_file(v, WRAP_ID "\n", strlen(WRAP_ID) + 1);
     return true;
 }
 
@@ -385,9 +389,24 @@ static bool download(const char *url, const char *dest)
     return runv(NULL, argv);
 }
 
+static bool wrappers_ok(void)
+{
+    char v[LPATH];
+    wrap_dir(v);
+    pjoin(v, v, "wrap_version.txt");
+    char *d = read_file(v, NULL);
+    bool ok = d && !strncmp(d, WRAP_ID, strlen(WRAP_ID));
+    free(d);
+    return ok;
+}
+
 static bool setup_tools(void)
 {
-    if (have_tools()) return true;
+    if (have_tools()) {
+        if (wrappers_ok()) return true;
+        status("Making the compiler wrappers again...", NULL);
+        return make_wrappers();
+    }
     make_dirs(g_paths.tools);
     char py[LPATH];
     py_exe(py);
@@ -607,7 +626,7 @@ static bool do_build(void)
     /* the build folder holds absolute paths: made again if the launcher,
      * the project or the tools moved */
     pjoin(stamp, bdir, "launcher_stamp.txt");
-    snprintf(want, sizeof want, "%s|%s|" TOOLCHAIN_ID, g_paths.source, g_paths.tools);
+    snprintf(want, sizeof want, "%s|%s|" TOOLCHAIN_ID " " WRAP_ID, g_paths.source, g_paths.tools);
     {
         char *d = read_file(stamp, NULL);
         bool same = d && !strcmp(d, want);
