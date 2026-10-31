@@ -424,7 +424,8 @@ compiler, CMake, Ninja; about 150 MB) into its `tools` folder.
 4. **Play**. On the Deck, add `jsrf_launcher` to Steam as a non-Steam game,
    without Proton.
 
-- **Settings** edits `jsrf.ini`: tick a setting to turn it on.
+- **Settings** edits `jsrf.ini`: the common settings in tabs (Gameplay, Video,
+  Input, Audio, Debug), and **All settings** for every line.
 - **Update** gets the newest version and builds it. Your game files, `jsrf.ini`
   and saves are kept.
 - On Windows, **Build → Compiler**: Visual Studio when it is installed, Zig
