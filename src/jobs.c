@@ -686,6 +686,15 @@ static bool do_build(void)
         logf_("Could not copy the game to %s (is the game still running?)", dest);
         return false;
     }
+    /* the debug symbols too, so crash reports and RECOMP_PROFILE can name
+     * the game's functions (Zig's exe looks for it next to itself) */
+    {
+        char bp[LPATH], gp[LPATH];
+        if (msvc) pjoin3(bp, bdir, "Release", "jsrf_recomp.pdb");
+        else pjoin(bp, bdir, "jsrf_recomp.pdb");
+        pjoin(gp, g_paths.game, "jsrf_recomp.pdb");
+        if (is_file(bp) && !copy_file(bp, gp)) logf_("Could not copy %s", gp);
+    }
     char ini[LPATH];
     game_ini(ini);
     if (!is_file(ini)) {
