@@ -187,7 +187,7 @@ static void start_build(void)
  * plays. The highlight shows while the controller is in use; the mouse works
  * as before. Widgets report their boxes while the frame is built
  * (focus_hook); the next frame's input picks from them. */
-typedef struct { float x, y, w, h, frac, step; int kind, popup; } FocusT;
+typedef struct { float x, y, w, h, frac, step; int kind, popup; nk_uint *offy; } FocusT;
 #define FOCUS_MAX 512
 static FocusT s_ft[2][FOCUS_MAX];            /* this frame's, last frame's */
 static int s_ftn[2], s_ftcur;
@@ -202,15 +202,47 @@ static void pad_repeat_start(int dir) { s_rep_dir = dir; s_rep_next = SDL_GetTic
 static void pad_repeat_stop(void) { s_rep_dir = -1; }
 static SDL_GameController *s_pads[4];
 
+/* v1s: a scrolling list (the settings): up / down walk through it and it
+ * scrolls along; only from its top does up leave it (for the tab buttons).
+ * Its widgets out of view don't report themselves, so when none is left in
+ * that direction the list scrolls and the move is tried again next frame. */
+typedef struct { nk_uint *offy; struct nk_rect clip; float bottom; } ScrollR;
+static ScrollR s_sr[2][4];
+static int s_srn[2];
+static int s_pend_dir = -1, s_pend_n;
+
+/* called inside a group, after its last row */
+static void scroll_region_mark(struct nk_context *ctx)
+{
+    struct nk_panel *l = ctx->current ? ctx->current->layout : NULL;
+    if (!l || !l->offset_y || s_srn[s_ftcur] >= 4) return;
+    ScrollR *r = &s_sr[s_ftcur][s_srn[s_ftcur]++];
+    r->offy = l->offset_y;
+    r->clip = l->clip;
+    r->bottom = l->at_y + l->row.height;
+}
+
+static ScrollR *scroll_region_of(const FocusT *f)
+{
+    int prev = s_ftcur ^ 1;
+    if (!f->offy || f->popup) return NULL;
+    for (int i = 0; i < s_srn[prev]; i++)
+        if (s_sr[prev][i].offy == f->offy) return &s_sr[prev][i];
+    return NULL;
+}
+
 static void focus_hook(float x, float y, float w, float h, int kind, float frac, float step)
 {
     FocusT *t;
-    if (s_ftn[s_ftcur] >= FOCUS_MAX || w < 4 || h < 4) return;
+    /* (and not the scroll bars: a list's bar reports its empty part) */
+    if (s_ftn[s_ftcur] >= FOCUS_MAX || w < 14 || h < 4) return;
     /* a slider's own +/- buttons and similar come in again inside it: keep one */
     t = &s_ft[s_ftcur][s_ftn[s_ftcur]];
     t->x = x; t->y = y; t->w = w; t->h = h; t->kind = kind; t->frac = frac; t->step = step;
     t->popup = s_fctx && s_fctx->current && s_fctx->current->layout
                && (s_fctx->current->layout->type & NK_PANEL_SET_POPUP);
+    t->offy = s_fctx && s_fctx->current && s_fctx->current->layout
+              ? s_fctx->current->layout->offset_y : NULL;
     s_ftn[s_ftcur]++;
 }
 
@@ -257,12 +289,59 @@ static void focus_follow(int ww, int wh)
 }
 
 /* the nearest widget in a direction (0 left, 1 right, 2 up, 3 down) */
+static int focus_best(int dir, FocusT *t, int n, const ScrollR *only);
+
+/* scroll a list by d (clamped); the highlight moves with its widget */
+static void scroll_region_by(ScrollR *r, float d)
+{
+    float maxd = r->bottom - (r->clip.y + r->clip.h);
+    if (d > 0 && d > maxd) d = maxd;
+    if (d < 0 && -d > (float)*r->offy) d = -(float)*r->offy;
+    if (d > -1 && d < 1) return;
+    *r->offy = (nk_uint)((float)*r->offy + d);
+    s_focus.y -= d;
+}
+
 static bool focus_move(int dir)
 {
     FocusT *t;
-    int n = focus_targets(&t), i, best = -1;
+    int n = focus_targets(&t), best;
+    ScrollR *r = dir >= 2 ? scroll_region_of(&s_focus) : NULL;
+    if (r) {
+        best = focus_best(dir, t, n, r);
+        if (best >= 0) {
+            s_focus = t[best];
+            /* all of it in view */
+            float top = r->clip.y, bot = r->clip.y + r->clip.h;
+            if (s_focus.y + s_focus.h > bot) scroll_region_by(r, s_focus.y + s_focus.h - bot + 6);
+            else if (s_focus.y < top) scroll_region_by(r, s_focus.y - top - 6);
+            return true;
+        }
+        if (dir == 3 && r->bottom > r->clip.y + r->clip.h + 1) {
+            scroll_region_by(r, s_row * 1.5f);
+            s_pend_dir = dir;
+            return true;
+        }
+        if (dir == 2 && *r->offy > 0) {
+            scroll_region_by(r, -s_row * 1.5f);
+            s_pend_dir = dir;
+            return true;
+        }
+    }
+    best = focus_best(dir, t, n, NULL);
+    if (best < 0) return false;
+    s_focus = t[best];
+    return true;
+}
+
+/* the nearest widget in a direction; only: just that list's, in view */
+static int focus_best(int dir, FocusT *t, int n, const ScrollR *only)
+{
+    int i, best = -1;
     float bd = 1e30f, fx = cxf(&s_focus), fy = cyf(&s_focus);
     for (i = 0; i < n; i++) {
+        if (only && (t[i].offy != only->offy || t[i].y + t[i].h <= only->clip.y + 2
+                     || t[i].y >= only->clip.y + only->clip.h - 2)) continue;
         float dx = cxf(&t[i]) - fx, dy = cyf(&t[i]) - fy, along, across;
         switch (dir) {
         case 0: along = -dx; across = dy; break;
@@ -286,9 +365,7 @@ static bool focus_move(int dir)
             if (d < bd) { bd = d; best = i; }
         }
     }
-    if (best < 0) return false;
-    s_focus = t[best];
-    return true;
+    return best;
 }
 
 /* a click at (x, y): pressed now, released next frame */
@@ -750,6 +827,7 @@ static void tab_settings(struct nk_context *ctx, float h)
         case SET_DEBUG:    panel_debug(ctx, width); break;
         case SET_ALL:      panel_all(ctx, width); break;
         }
+        scroll_region_mark(ctx);
         nk_group_end(ctx);
     }
 }
@@ -1205,7 +1283,10 @@ int main(int argc, char **argv)
                 s_rep_next = now + 110;
             }
             if (sy) { nk_input_scroll(ctx, nk_vec2(0, -sy * 0.5f)); s_pad_mode = true; }
-            s_pad_busy = s_rep_dir >= 0 || sy != 0 || s_pad_release;
+            /* v1s: a list scrolled to show more: the move again */
+            if (s_pend_dir >= 0 && s_pend_n++ < 12) { int d = s_pend_dir; s_pend_dir = -1; pad_dir(ctx, d); }
+            else { s_pend_dir = -1; s_pend_n = 0; }
+            s_pad_busy = s_rep_dir >= 0 || sy != 0 || s_pad_release || s_pend_dir >= 0;
         }
         nk_sdl_handle_grab();
         nk_input_end(ctx);
@@ -1304,6 +1385,7 @@ int main(int argc, char **argv)
         /* v1q: this frame's widgets become the ones the next input picks from */
         s_ftcur ^= 1;
         s_ftn[s_ftcur] = 0;
+        s_srn[s_ftcur] = 0;
         focus_follow(w, h);
     }
     if (job_busy()) {

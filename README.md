@@ -21,6 +21,8 @@ README on the main branch.
 | LB / RB | Previous / next tab |
 | Start | PLAY |
 
+In the settings lists, up / down go through the whole list and it scrolls along; up from the top of a list goes back to the tabs.
+
 The launcher closes once the game has started.
 
 ## Updating the launcher
