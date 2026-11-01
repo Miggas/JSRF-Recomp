@@ -176,6 +176,14 @@ static void start_build(void)
     if (job_start(JOB_ALL, false)) s_tab = TAB_BUILD;
 }
 
+/* v1p: a controller drives a pointer (Nuklear has no focus navigation):
+ * left stick or d-pad moves it, A clicks, right stick scrolls, LB / RB change
+ * tab, Start plays. The pointer is drawn while the controller is in use and
+ * hidden again when the mouse moves. */
+static SDL_GameController *s_pads[4];
+static float s_cx = 640, s_cy = 400;
+static bool s_pad_cursor, s_pad_play, s_quit_after_play, s_pad_moving;
+
 static void tab_play(struct nk_context *ctx)
 {
     nk_layout_row_dynamic(ctx, s_row, 1);
@@ -228,9 +236,12 @@ static void tab_play(struct nk_context *ctx)
 
     spacer(ctx, 16);
     nk_layout_row_dynamic(ctx, s_row * 1.8f, 2);
-    if (button(ctx, "PLAY", exe && !job_busy())) {
+    if (button(ctx, "PLAY", exe && !job_busy()) || (s_pad_play && exe && !job_busy())) {
         if (!play()) snprintf(s_message, sizeof s_message, "Could not start the game.");
-        else snprintf(s_message, sizeof s_message, "Game started.");
+        else {
+            snprintf(s_message, sizeof s_message, "Game started.");
+            s_quit_after_play = true;      /* v1p: the launcher closes behind it */
+        }
     }
     if (button(ctx, exe ? "Build again" : "Build", xbe && g_paths.have_source && !job_busy()))
         start_build();
@@ -885,7 +896,8 @@ int main(int argc, char **argv)
         return r;
     }
     SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "1");
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "0");
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
@@ -928,7 +940,8 @@ int main(int argc, char **argv)
         static bool have_pending;
         bool got;
         if (have_pending) { e = pending; have_pending = false; got = true; }
-        else got = SDL_WaitEventTimeout(&e, job_busy() ? 33 : 250);   /* idle, but follow a job's log */
+        else got = SDL_WaitEventTimeout(&e, s_pad_moving ? 16 : job_busy() ? 33 : 250);   /* idle, but follow a job's log */
+        s_pad_moving = false;
         if (got) {
             do {
                 if (e.type == SDL_MOUSEBUTTONDOWN && !have_pending &&
@@ -940,9 +953,93 @@ int main(int argc, char **argv)
                 }
                 if (e.type == SDL_QUIT) running = false;
                 else if (e.type == SDL_DROPFILE) { dropped(e.drop.file); SDL_free(e.drop.file); }
-                else nk_sdl_handle_event(&e);
+                else if (e.type == SDL_CONTROLLERDEVICEADDED) {
+                    for (int k = 0; k < 4; k++)
+                        if (!s_pads[k]) { s_pads[k] = SDL_GameControllerOpen(e.cdevice.which); break; }
+                } else if (e.type == SDL_CONTROLLERDEVICEREMOVED) {
+                    for (int k = 0; k < 4; k++)
+                        if (s_pads[k] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(s_pads[k]))
+                                         == e.cdevice.which) {
+                            SDL_GameControllerClose(s_pads[k]);
+                            s_pads[k] = NULL;
+                        }
+                } else if (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP) {
+                    bool down = e.type == SDL_CONTROLLERBUTTONDOWN;
+                    int ntab = debug_menu_pref() ? TAB_COUNT : TAB_DEBUG;
+                    if (!s_pad_cursor) {
+                        s_pad_cursor = true;
+                        nk_input_motion(ctx, (int)s_cx, (int)s_cy);
+                    }
+                    switch (e.cbutton.button) {
+                    case SDL_CONTROLLER_BUTTON_A:
+                        nk_input_motion(ctx, (int)s_cx, (int)s_cy);
+                        nk_input_button(ctx, NK_BUTTON_LEFT, (int)s_cx, (int)s_cy, down);
+                        break;
+                    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+                        if (down) s_tab = (s_tab + ntab - 1) % ntab;
+                        break;
+                    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+                        if (down) s_tab = (s_tab + 1) % ntab;
+                        break;
+                    case SDL_CONTROLLER_BUTTON_START:
+                        if (down) { s_tab = TAB_PLAY; s_pad_play = true; }
+                        break;
+                    default: break;
+                    }
+                    if (e.cbutton.button == SDL_CONTROLLER_BUTTON_A) break;   /* press, release: own frames */
+                } else {
+                    if (e.type == SDL_MOUSEMOTION) {
+                        s_pad_cursor = false;      /* the mouse again */
+                        s_cx = (float)e.motion.x; s_cy = (float)e.motion.y;
+                    }
+                    nk_sdl_handle_event(&e);
+                }
                 if (e.type == SDL_MOUSEBUTTONDOWN) break;
             } while (SDL_PollEvent(&e));
+        }
+        /* v1p: the sticks and the d-pad, every frame while they are held */
+        {
+            static Uint32 last;
+            Uint32 now = SDL_GetTicks();
+            float dt = last ? (now - last) / 1000.0f : 0.0f;
+            int ww, wh;
+            last = now;
+            if (dt > 0.1f) dt = 0.1f;
+            SDL_GetWindowSize(win, &ww, &wh);
+            for (int k = 0; k < 4; k++) {
+                SDL_GameController *g = s_pads[k];
+                float mx = 0, my = 0, sy = 0;
+                if (!g) continue;
+                {
+                    int lx = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTX);
+                    int ly = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTY);
+                    int ry = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_RIGHTY);
+                    const float dz = 7000.0f;
+                    if (abs(lx) > dz) mx = (lx > 0 ? lx - dz : lx + dz) / (32767.0f - dz);
+                    if (abs(ly) > dz) my = (ly > 0 ? ly - dz : ly + dz) / (32767.0f - dz);
+                    if (abs(ry) > dz) sy = (ry > 0 ? ry - dz : ry + dz) / (32767.0f - dz);
+                }
+                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_LEFT))  mx = -0.6f;
+                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) mx = 0.6f;
+                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_UP))    my = -0.6f;
+                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_DOWN))  my = 0.6f;
+                if (mx || my) {
+                    /* faster the further the stick: fine control near the
+                     * centre, the width of the window in about a second */
+                    float sp = 1400.0f * dt;
+                    s_cx += mx * fabsf(mx) * sp;
+                    s_cy += my * fabsf(my) * sp;
+                    if (s_cx < 0) s_cx = 0; if (s_cx > ww - 1) s_cx = (float)(ww - 1);
+                    if (s_cy < 0) s_cy = 0; if (s_cy > wh - 1) s_cy = (float)(wh - 1);
+                    s_pad_cursor = true;
+                    nk_input_motion(ctx, (int)s_cx, (int)s_cy);
+                    s_pad_moving = true;
+                }
+                if (sy) {
+                    nk_input_scroll(ctx, nk_vec2(0, -sy * 12.0f * dt * 4.0f));
+                    s_pad_moving = true;
+                }
+            }
         }
         nk_sdl_handle_grab();
         nk_input_end(ctx);
@@ -1020,7 +1117,23 @@ int main(int argc, char **argv)
         SDL_SetRenderDrawColor(ren, 28, 28, 34, 255);
         SDL_RenderClear(ren);
         nk_sdl_render(NK_ANTI_ALIASING_ON);
+        if (s_pad_cursor) {
+            /* v1p: the controller's pointer, an arrow with a dark edge */
+            int x = (int)s_cx, y = (int)s_cy;
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            for (int pass = 0; pass < 2; pass++) {
+                int o = pass ? 0 : 1;
+                if (pass) SDL_SetRenderDrawColor(ren, 245, 200, 40, 255);
+                else SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);
+                for (int r = 0; r < 30; r++) {     /* rows of a right triangle, tip at (x, y) */
+                    int len = r * 2 / 3 + (pass ? 0 : 2);
+                    SDL_RenderDrawLine(ren, x - o, y + r, x + len - o, y + r);
+                }
+            }
+        }
         SDL_RenderPresent(ren);
+        s_pad_play = false;
+        if (s_quit_after_play) running = false;
     }
     if (job_busy()) {
         job_cancel();

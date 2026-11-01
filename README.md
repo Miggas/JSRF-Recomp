@@ -9,6 +9,18 @@ This branch is the launcher's code only. To play, download the launcher from
 the [Releases](https://github.com/Miggas/JSRF-Recomp/releases) page and see the
 README on the main branch.
 
+## Controller
+
+| Button | Does |
+|---|---|
+| Left stick / d-pad | Moves the pointer |
+| A | Clicks |
+| Right stick | Scrolls |
+| LB / RB | Previous / next tab |
+| Start | PLAY |
+
+The launcher closes once the game has started.
+
 ## How it decides what to do
 
 - **Update** only downloads the project (nothing when GitHub says it is
