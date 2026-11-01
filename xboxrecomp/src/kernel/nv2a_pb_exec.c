@@ -6317,8 +6317,13 @@ static int s_mt_on = -1;
 static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param);
 void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
 {
-    if (s_mt_on < 0)
-        s_mt_on = getenv("RECOMP_PROFILE") != NULL;
+    if (s_mt_on < 0) {
+        /* v260: only with RECOMP_PROFILE=2. Two clock reads around every
+         * method were most of what a profile then showed as the dispatcher
+         * (31% of the executor on the Deck: the timing timing itself). */
+        const char *e = getenv("RECOMP_PROFILE");
+        s_mt_on = e && atoi(e) >= 2;
+    }
     if (s_mt_on) {
         uint64_t t0 = __rdtsc();
         uint32_t k = (method >> 2) & 2047u;

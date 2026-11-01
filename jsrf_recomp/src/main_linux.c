@@ -247,6 +247,32 @@ static void prof_add_thread(const char *name)
 }
 static void prof_watch_hook(const char *name) { prof_add_thread(name); }
 
+/* v260: where in a function: 64-byte pieces of the game's own functions,
+ * reported as name+offset (with the function's size, to match a build) */
+typedef struct { uintptr_t key; const char *name; uintptr_t lo, size; unsigned n; } ProfOff;
+#define PROF_OFF 16384
+static ProfOff s_off[PROF_THREADS][PROF_OFF];
+static const ExeFn *exe_fn(uintptr_t a);
+static void off_note(int k, void *addr)
+{
+    const ExeFn *f = exe_fn((uintptr_t)addr);
+    uintptr_t key;
+    unsigned h, i;
+    if (!f) return;
+    key = f->lo + (((uintptr_t)addr - f->lo) & ~(uintptr_t)63);
+    h = (unsigned)((key >> 6) * 2654435761u) & (PROF_OFF - 1);
+    for (i = 0; i < 64; i++, h = (h + 1) & (PROF_OFF - 1)) {
+        if (s_off[k][h].key == key) { s_off[k][h].n++; return; }
+        if (!s_off[k][h].key) {
+            s_off[k][h].key = key; s_off[k][h].name = f->name;
+            s_off[k][h].lo = f->lo; s_off[k][h].size = f->hi - f->lo; s_off[k][h].n = 1;
+            return;
+        }
+    }
+}
+static int off_cmp(const void *a, const void *b)
+{ return (int)((const ProfOff *)b)->n - (int)((const ProfOff *)a)->n; }
+
 typedef struct { const char *name; unsigned all, slow; } ProfFn;
 #define PROF_FN 4096
 static ProfFn s_fn[PROF_THREADS][PROF_FN];
@@ -310,15 +336,20 @@ out:
     free(sh);
     close(fd);
 }
-static const char *exe_name(uintptr_t a)
+static const ExeFn *exe_fn(uintptr_t a)
 {
     size_t lo = 0, hi = s_exefn_n;
     while (lo < hi) {
         size_t mid = (lo + hi) / 2;
         if (s_exefn[mid].lo <= a) lo = mid + 1; else hi = mid;
     }
-    if (lo && a < s_exefn[lo - 1].hi) return s_exefn[lo - 1].name;
+    if (lo && a < s_exefn[lo - 1].hi) return &s_exefn[lo - 1];
     return NULL;
+}
+static const char *exe_name(uintptr_t a)
+{
+    const ExeFn *f = exe_fn(a);
+    return f ? f->name : NULL;
 }
 
 /* names live as long as the program; library names with their caller are
@@ -357,6 +388,7 @@ static void prof_drain(void)
         for (; s_prof[k].r != w; s_prof[k].r++) {
             const char *nm = prof_name2(s_prof[k].ring[s_prof[k].r % PROF_RING],
                                         s_prof[k].caller[s_prof[k].r % PROF_RING]);
+            off_note(k, s_prof[k].ring[s_prof[k].r % PROF_RING]);
             int slow = s_prof[k].slow[s_prof[k].r % PROF_RING], j;
             for (j = 0; j < s_nfn[k]; j++)
                 if (s_fn[k][j].name == nm) break;
@@ -385,6 +417,19 @@ static void prof_report(void)
                 s_tot[k], k == 0 ? "" : "");
         for (i = 0; i < s_nfn[k] && i < 20; i++)
             fprintf(stderr, "[PROF]   %5.1f%%  %s\n", s_fn[k][i].all * 100.0 / s_tot[k], s_fn[k][i].name);
+        {
+            /* v260: the busiest 64-byte pieces of the game's code in this thread */
+            static ProfOff tmp[PROF_OFF];
+            int m = 0;
+            for (i = 0; i < PROF_OFF; i++)
+                if (s_off[k][i].key) tmp[m++] = s_off[k][i];
+            qsort(tmp, (size_t)m, sizeof tmp[0], off_cmp);
+            fprintf(stderr, "[PROF] %s thread, busiest places (function+offset, size):\n", s_prof[k].name);
+            for (i = 0; i < m && i < 25; i++)
+                fprintf(stderr, "[PROF]   %5.1f%%  %s+0x%lX (0x%lX)\n", tmp[i].n * 100.0 / s_tot[k],
+                        tmp[i].name, (unsigned long)(tmp[i].key - tmp[i].lo), (unsigned long)tmp[i].size);
+            memset(s_off[k], 0, sizeof s_off[k]);
+        }
         if (k == 0 && s_tot_slow) {
             qsort(s_fn[k], (size_t)s_nfn[k], sizeof s_fn[k][0], fn_slow);
             fprintf(stderr, "[PROF] game thread during frames past 18 ms (%u samples):\n", s_tot_slow);
