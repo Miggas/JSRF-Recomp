@@ -3060,6 +3060,13 @@ static double ws_fill_now(void)
     int on = !s_fill_off && !s_fill_scene && (strong || (s_fill_mark && !s_fill_weak_off));
     return on ? xbox_RowFillK() : 0.0;
 }
+/* v263: whether this frame is a menu with its sides filled, without
+ * counting a draw (ws_k_for asks before ws_cut_for) */
+static int ws_fill_peek(void)
+{
+    return !s_fill_off && !s_fill_scene && (s_fill_strong || s_fill_mark) && xbox_RowFillK() > 0.0;
+}
+
 /* at the flip: this frame's, and the marks start again for the next */
 double nv2a_ws_fill_latch(void)
 {
@@ -3966,7 +3973,13 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
          * interpreter (only batches of at most 64 vertices are looked at). */
         static int logw = -1;
         int rt = ws_tex_is_target();
-        int plain = !s_gpu.texs[0].valid || st->stencil_test;
+        /* v263: the VS setup menu draws its whole art (a 1024x1024 texture)
+         * across the screen with the stencil test on: taken for the shadow
+         * quad it was kept full width, stretched, while the dark boxes over
+         * its panels were fitted (Miggas). On a menu whose sides are filled
+         * a textured stencil layer is menu art and is fitted. */
+        int plain = !s_gpu.texs[0].valid
+                    || (st->stencil_test && !ws_fill_peek());
         /* v187h: across the whole width, and ending at its edges: within 5%
          * for a quad, up to 4 widths for a triangle (the one big triangle
          * covering the screen). World geometry that merely crosses the
