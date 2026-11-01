@@ -2,9 +2,9 @@
  * main_linux.c - Jet Set Radio Future, native Linux build (v244)
  *
  * The same start-up as main.c (the Windows build), without what only
- * Windows has: the dbghelp crash reports, the main-thread sampler
- * (RECOMP_PROFILE's [PROF] lines; on Linux `perf` does that job better) and
- * the copy of saves from the old %LOCALAPPDATA% place.
+ * Windows has: the dbghelp crash reports, RECOMP_PROFILE's [PROF] lines (on
+ * Linux `perf` does that job better) and the copy of saves from the old
+ * %LOCALAPPDATA% place. The stall sampler is here too since v256.
  *
  * Faults are handled as on Windows: win32_compat.c turns SIGSEGV into the
  * vectored exception the handler below takes, so the APU and the USB host
@@ -27,6 +27,11 @@
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <pthread.h>
+#include <signal.h>
+#include <time.h>
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <ucontext.h>
 
 #include <xbox/xboxrecomp.h>
 #include "jsrf_version.h"
@@ -44,6 +49,132 @@ static char g_game_dir[PATH_MAX] = "game";
 static int  g_portable;
 static int  g_ini_count;
 static char g_ini_path[PATH_MAX];
+
+/* ── Stall sampler (v256, as main.c's on Windows) ─────────────
+ * If no frame has been flipped for 4 s (after the first one), the game
+ * thread is sampled three times, and again every 20 s while it lasts; also
+ * when sample.flag appears (the launcher's Sample a hang). Each sample: where
+ * the thread is in the recomp's own code (a signal to the thread takes its
+ * instruction pointer and host call chain; names need -rdynamic, see the
+ * CMakeLists) and the game's own call chain, the return addresses on its
+ * guest stack. RECOMP_STALL_SAMPLE=0 turns it off. A freeze on the Steam Deck
+ * left nothing to go on without it. */
+extern uint32_t g_xbox_code_lo, g_xbox_code_hi;
+static pthread_t g_main_pt;
+static volatile uint32_t *g_main_esp;    /* the game thread's TLS g_esp */
+#define SAMPLE_SIG (SIGRTMIN + 7)
+#define SAMPLE_MAX 24
+static void *volatile s_smp_frames[SAMPLE_MAX];
+static volatile int s_smp_n, s_smp_done;
+static void *volatile s_smp_rip;
+
+static void sample_sig(int sig, siginfo_t *si, void *uc)
+{
+    (void)sig; (void)si;
+    s_smp_rip = (void *)((ucontext_t *)uc)->uc_mcontext.gregs[REG_RIP];
+    s_smp_n = backtrace((void **)s_smp_frames, SAMPLE_MAX);
+    __atomic_store_n(&s_smp_done, 1, __ATOMIC_RELEASE);
+}
+
+static void print_host_addr(const char *pre, void *a)
+{
+    Dl_info di;
+    if (dladdr(a, &di) && di.dli_sname)
+        fprintf(stderr, "%s%s+0x%lX\n", pre, di.dli_sname,
+                (unsigned long)((uintptr_t)a - (uintptr_t)di.dli_saddr));
+    else if (dladdr(a, &di) && di.dli_fname)
+        fprintf(stderr, "%s%s+0x%lX\n", pre, strrchr(di.dli_fname, '/') ? strrchr(di.dli_fname, '/') + 1
+                : di.dli_fname, (unsigned long)((uintptr_t)a - (uintptr_t)di.dli_fbase));
+    else
+        fprintf(stderr, "%s%p\n", pre, a);
+}
+
+static void sample_main_thread(int k, const char *why)
+{
+    uint32_t esp = g_main_esp ? *g_main_esp : 0;
+    int i, waited;
+    fprintf(stderr, "\n[SAMPLE %d] game thread (%s, guest esp=0x%08X):\n", k + 1, why, esp);
+    s_smp_done = 0;
+    if (pthread_kill(g_main_pt, SAMPLE_SIG) == 0) {
+        for (waited = 0; waited < 200 && !__atomic_load_n(&s_smp_done, __ATOMIC_ACQUIRE); waited++)
+            usleep(1000);
+        if (s_smp_done) {
+            print_host_addr("  RIP ", s_smp_rip);
+            fprintf(stderr, "  host stack, innermost first:\n");
+            for (i = 1; i < s_smp_n; i++)
+                print_host_addr("    ", s_smp_frames[i]);
+        } else {
+            fprintf(stderr, "  (the thread did not answer the signal)\n");
+        }
+    }
+    if (g_xbox_mem_offset && esp) {
+        const uint32_t *sp = (const uint32_t *)((uintptr_t)g_xbox_mem_offset + esp);
+        int shown = 0;
+        fprintf(stderr, "  guest stack (return addresses, innermost first):\n");
+        for (i = 0; i < 512 && shown < 24; i++)
+            if (sp[i] > g_xbox_code_lo && sp[i] < g_xbox_code_hi) {
+                fprintf(stderr, "    [esp+%-4d] 0x%08X\n", i * 4, sp[i]);
+                shown++;
+            }
+    }
+    fflush(stderr);
+}
+
+static unsigned long now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (unsigned long)ts.tv_sec * 1000ul + (unsigned long)(ts.tv_nsec / 1000000);
+}
+
+static void *sampler_thread(void *unused)
+{
+    extern unsigned long xbox_Nv2aLastFlipMs(void);
+    unsigned long last_sampled = 0;
+    int k;
+    (void)unused;
+    for (;;) {
+        usleep(500 * 1000);
+        {
+            unsigned long lf = xbox_Nv2aLastFlipMs(), now = (unsigned long)GetTickCount();
+            if (lf && now - lf > 4000 && (!last_sampled || now_ms() - last_sampled > 20000)) {
+                last_sampled = now_ms();
+                fprintf(stderr, "\n[STALL] no frame for %lu ms: sampling the game thread\n", now - lf);
+                for (k = 0; k < 3; k++) { sample_main_thread(k, "stall"); usleep(700 * 1000); }
+            } else if (lf && now - lf <= 4000) {
+                last_sampled = 0;
+            }
+        }
+        if (access("sample.flag", F_OK) == 0) {
+            unlink("sample.flag");
+            fprintf(stderr, "\n[SAMPLE] sample.flag found: sampling the game thread\n");
+            for (k = 0; k < 3; k++) { sample_main_thread(k, "sample.flag"); usleep(700 * 1000); }
+        }
+    }
+    return NULL;
+}
+
+/* from the game thread, before the game starts */
+static void sampler_start(void)
+{
+    const char *e = getenv("RECOMP_STALL_SAMPLE");
+    struct sigaction sa;
+    pthread_t t;
+    void *warm[2];
+    if (e && e[0] == '0')
+        return;
+    g_main_pt = pthread_self();
+    g_main_esp = &g_esp;
+    backtrace(warm, 2);                    /* loads the unwinder now, not in the handler */
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = sample_sig;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SAMPLE_SIG, &sa, NULL);
+    unlink("sample.flag");
+    if (pthread_create(&t, NULL, sampler_thread, NULL) == 0)
+        pthread_detach(t);
+}
 
 /* ── jsrf.ini: NAME=value lines, as main.c reads them ──────── */
 
@@ -303,6 +434,7 @@ static int game_main(void)
         fprintf(stderr, "[BOOT] flat dispatch unavailable; "
                         "indirect calls will use the binary search\n");
     xbox_WatchdogStart();
+    sampler_start();                       /* v256 */
     {
         extern void xbox_mmcss_game_thread(const char *who);
         xbox_mmcss_game_thread("main");

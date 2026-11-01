@@ -127,6 +127,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${XBOXRECOMP_DIR}/src/d3d)
 # Big generated functions: keep the build reasonable, symbols for crash reports
 target_compile_options(${PROJECT_NAME} PRIVATE -g1 -fno-strict-aliasing -fwrapv
     -Wno-unused -Wno-unused-label -Wno-unused-but-set-variable)
+# v256: function names for the stall sampler's host call chain (dladdr)
+target_link_options(${PROJECT_NAME} PRIVATE -rdynamic)
 # Each guest call is a host call; the main thread's stack is set by the
 # launcher (ulimit) and guest threads get their own (see win32_compat.c)
 endif()
