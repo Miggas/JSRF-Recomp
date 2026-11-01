@@ -236,14 +236,13 @@ static int SDLCALL gt_thread(void *unused)
         return 0;
     }
     GT_ST(&s_gt_started, 1);
-#if defined(_WIN32)
     {
-        /* RECOMP_PROFILE samples this thread too ([PROF] NV2A GL thread) */
+        /* RECOMP_PROFILE samples this thread too ([PROF] NV2A GL thread);
+         * v257: on Linux as well */
         extern void (*g_thread_watch_hook)(const char *name);
         if (g_thread_watch_hook)
             g_thread_watch_hook("NV2A GL");
     }
-#endif
     for (;;) {
         uint32_t w = (uint32_t)GT_LD(&s_gt_w);
         if (r == w) {

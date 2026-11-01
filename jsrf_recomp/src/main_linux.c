@@ -2,9 +2,9 @@
  * main_linux.c - Jet Set Radio Future, native Linux build (v244)
  *
  * The same start-up as main.c (the Windows build), without what only
- * Windows has: the dbghelp crash reports, RECOMP_PROFILE's [PROF] lines (on
- * Linux `perf` does that job better) and the copy of saves from the old
- * %LOCALAPPDATA% place. The stall sampler is here too since v256.
+ * Windows has: the dbghelp crash reports and the copy of saves from the old
+ * %LOCALAPPDATA% place. The stall sampler (v256) and RECOMP_PROFILE (v257)
+ * are here too.
  *
  * Faults are handled as on Windows: win32_compat.c turns SIGSEGV into the
  * vectored exception the handler below takes, so the APU and the USB host
@@ -173,6 +173,168 @@ static void sampler_start(void)
     sigaction(SAMPLE_SIG, &sa, NULL);
     unlink("sample.flag");
     if (pthread_create(&t, NULL, sampler_thread, NULL) == 0)
+        pthread_detach(t);
+}
+
+/* ── RECOMP_PROFILE=1 (v257, as main.c's on Windows) ─────────
+ * About 1000 times a second each watched thread -- the game thread, the
+ * NV2A executor and the GL thread (they register through
+ * g_thread_watch_hook) -- is sent a signal that records where it is. Every
+ * 10 s the top 20 functions of each go to stderr as [PROF] lines (for the
+ * game thread also those of frames past 18 ms), and the counts restart.
+ * Where the time goes on the Steam Deck, where the optimizations start. */
+#define PROF_SIG (SIGRTMIN + 8)
+#define PROF_THREADS 4
+#define PROF_RING 8192                     /* samples kept between drains */
+typedef struct {
+    pthread_t pt;
+    char name[32];
+    void *volatile ring[PROF_RING];
+    volatile unsigned char slow[PROF_RING];
+    volatile unsigned w;                   /* written by the signal handler */
+    unsigned r;
+} ProfThread;
+static ProfThread s_prof[PROF_THREADS];
+static volatile int s_prof_n;
+static int s_prof_on;
+extern volatile uint64_t g_last_flip_qpc;
+static volatile int s_prof_slow_now;
+
+static void prof_sig(int sig, siginfo_t *si, void *uc)
+{
+    pthread_t me = pthread_self();
+    int k, n = __atomic_load_n(&s_prof_n, __ATOMIC_ACQUIRE);
+    (void)sig; (void)si;
+    for (k = 0; k < n; k++)
+        if (pthread_equal(s_prof[k].pt, me)) {
+            unsigned w = s_prof[k].w;
+            s_prof[k].ring[w % PROF_RING] = (void *)((ucontext_t *)uc)->uc_mcontext.gregs[REG_RIP];
+            s_prof[k].slow[w % PROF_RING] = (unsigned char)(k == 0 && s_prof_slow_now);
+            __atomic_store_n(&s_prof[k].w, w + 1, __ATOMIC_RELEASE);
+            return;
+        }
+}
+
+static void prof_add_thread(const char *name)
+{
+    int k;
+    if (!s_prof_on) return;
+    k = __atomic_load_n(&s_prof_n, __ATOMIC_ACQUIRE);
+    if (k >= PROF_THREADS) return;
+    s_prof[k].pt = pthread_self();
+    snprintf(s_prof[k].name, sizeof s_prof[k].name, "%s", name);
+    __atomic_store_n(&s_prof_n, k + 1, __ATOMIC_RELEASE);
+}
+static void prof_watch_hook(const char *name) { prof_add_thread(name); }
+
+typedef struct { const char *name; unsigned all, slow; } ProfFn;
+#define PROF_FN 4096
+static ProfFn s_fn[PROF_THREADS][PROF_FN];
+static int s_nfn[PROF_THREADS];
+static unsigned s_tot[PROF_THREADS], s_tot_slow;
+
+static const char *prof_name(void *a)
+{
+    Dl_info di;
+    if (dladdr(a, &di) && di.dli_sname) return di.dli_sname;   /* stays valid */
+    if (dladdr(a, &di) && di.dli_fname) {
+        const char *b = strrchr(di.dli_fname, '/');
+        return b ? b + 1 : di.dli_fname;
+    }
+    return "?";
+}
+
+static void prof_drain(void)
+{
+    int k, n = __atomic_load_n(&s_prof_n, __ATOMIC_ACQUIRE);
+    for (k = 0; k < n; k++) {
+        unsigned w = __atomic_load_n(&s_prof[k].w, __ATOMIC_ACQUIRE);
+        if (w - s_prof[k].r > PROF_RING) s_prof[k].r = w - PROF_RING;
+        for (; s_prof[k].r != w; s_prof[k].r++) {
+            const char *nm = prof_name(s_prof[k].ring[s_prof[k].r % PROF_RING]);
+            int slow = s_prof[k].slow[s_prof[k].r % PROF_RING], j;
+            for (j = 0; j < s_nfn[k]; j++)
+                if (s_fn[k][j].name == nm) break;
+            if (j == s_nfn[k]) {
+                if (j == PROF_FN) continue;
+                s_fn[k][j].name = nm; s_fn[k][j].all = s_fn[k][j].slow = 0;
+                s_nfn[k]++;
+            }
+            s_fn[k][j].all++;
+            s_tot[k]++;
+            if (slow) { s_fn[k][j].slow++; s_tot_slow++; }
+        }
+    }
+}
+
+static int fn_all(const void *a, const void *b) { return (int)((const ProfFn *)b)->all - (int)((const ProfFn *)a)->all; }
+static int fn_slow(const void *a, const void *b) { return (int)((const ProfFn *)b)->slow - (int)((const ProfFn *)a)->slow; }
+
+static void prof_report(void)
+{
+    int k, i, n = __atomic_load_n(&s_prof_n, __ATOMIC_ACQUIRE);
+    for (k = 0; k < n; k++) {
+        if (!s_tot[k]) continue;
+        qsort(s_fn[k], (size_t)s_nfn[k], sizeof s_fn[k][0], fn_all);
+        fprintf(stderr, "[PROF] %s thread, %u samples%s; top functions:\n", s_prof[k].name,
+                s_tot[k], k == 0 ? "" : "");
+        for (i = 0; i < s_nfn[k] && i < 20; i++)
+            fprintf(stderr, "[PROF]   %5.1f%%  %s\n", s_fn[k][i].all * 100.0 / s_tot[k], s_fn[k][i].name);
+        if (k == 0 && s_tot_slow) {
+            qsort(s_fn[k], (size_t)s_nfn[k], sizeof s_fn[k][0], fn_slow);
+            fprintf(stderr, "[PROF] game thread during frames past 18 ms (%u samples):\n", s_tot_slow);
+            for (i = 0; i < s_nfn[k] && i < 20 && s_fn[k][i].slow; i++)
+                fprintf(stderr, "[PROF]   %5.1f%%  %s\n", s_fn[k][i].slow * 100.0 / s_tot_slow, s_fn[k][i].name);
+        }
+        s_nfn[k] = 0; s_tot[k] = 0;
+    }
+    s_tot_slow = 0;
+    fflush(stderr);
+}
+
+static void *prof_thread(void *unused)
+{
+    unsigned long last = now_ms();
+    (void)unused;
+    for (;;) {
+        int k, n = __atomic_load_n(&s_prof_n, __ATOMIC_ACQUIRE);
+        LARGE_INTEGER q, f;
+        QueryPerformanceCounter(&q);
+        QueryPerformanceFrequency(&f);
+        s_prof_slow_now = g_last_flip_qpc
+            && (uint64_t)(q.QuadPart - (LONGLONG)g_last_flip_qpc) * 1000 > (uint64_t)f.QuadPart * 18;
+        for (k = 0; k < n; k++)
+            pthread_kill(s_prof[k].pt, PROF_SIG);
+        usleep(1000);
+        if (now_ms() - last >= 250) prof_drain();
+        if (now_ms() - last >= 10000) {
+            prof_drain();
+            prof_report();
+            last = now_ms();
+        }
+    }
+    return NULL;
+}
+
+/* from the game thread, before the game starts */
+static void prof_start(void)
+{
+    extern void (*g_thread_watch_hook)(const char *name);
+    const char *e = getenv("RECOMP_PROFILE");
+    struct sigaction sa;
+    pthread_t t;
+    if (!e || atoi(e) <= 0)
+        return;
+    s_prof_on = 1;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = prof_sig;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    sigaction(PROF_SIG, &sa, NULL);
+    prof_add_thread("game");
+    g_thread_watch_hook = prof_watch_hook;
+    fprintf(stderr, "[PROF] sampling the game, NV2A executor and GL threads (RECOMP_PROFILE)\n");
+    if (pthread_create(&t, NULL, prof_thread, NULL) == 0)
         pthread_detach(t);
 }
 
@@ -435,6 +597,7 @@ static int game_main(void)
                         "indirect calls will use the binary search\n");
     xbox_WatchdogStart();
     sampler_start();                       /* v256 */
+    prof_start();                          /* v257 */
     {
         extern void xbox_mmcss_game_thread(const char *who);
         xbox_mmcss_game_thread("main");
