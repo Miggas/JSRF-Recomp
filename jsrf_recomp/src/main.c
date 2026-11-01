@@ -576,7 +576,8 @@ static DWORD WINAPI sampler_thread(LPVOID p)
                 const char *e = getenv("RECOMP_STALL_SAMPLE");
                 stall_on = !(e && e[0] == '0');
             }
-            if (stall_on && lf && now - lf > 4000
+            extern volatile LONG g_xbox_game_held;   /* v259b: the quit window / shader build */
+            if (stall_on && lf && now - lf > 4000 && !g_xbox_game_held
                     && (!last_sampled || now - last_sampled > 20000)) {
                 int k;
                 last_sampled = now;

@@ -139,7 +139,9 @@ static void *sampler_thread(void *unused)
         usleep(500 * 1000);
         {
             unsigned long lf = xbox_Nv2aLastFlipMs(), now = (unsigned long)GetTickCount();
-            if (lf && now - lf > 4000 && (!last_sampled || now_ms() - last_sampled > 20000)) {
+            extern volatile LONG g_xbox_game_held;   /* v259b: the quit window / shader build */
+            if (lf && now - lf > 4000 && !g_xbox_game_held
+                    && (!last_sampled || now_ms() - last_sampled > 20000)) {
                 last_sampled = now_ms();
                 fprintf(stderr, "\n[STALL] no frame for %lu ms: sampling the game thread\n", now - lf);
                 for (k = 0; k < 3; k++) { sample_main_thread(k, "stall"); usleep(700 * 1000); }
