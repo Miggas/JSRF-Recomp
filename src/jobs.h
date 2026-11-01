@@ -45,7 +45,8 @@ const char *update_branch(void);          /* BRANCH= in launcher.ini, else main 
 /* jobs */
 /* JOB_GENERATE and JOB_BUILD first check whether anything changed (force:
  * do it anyway); JOB_ALL is both; JOB_UPDATE only downloads. */
-enum { JOB_NONE, JOB_TOOLS, JOB_GENERATE, JOB_BUILD, JOB_ALL, JOB_UPDATE, JOB_CHECK, JOB_PYTOOL };
+enum { JOB_NONE, JOB_TOOLS, JOB_GENERATE, JOB_BUILD, JOB_ALL, JOB_UPDATE, JOB_CHECK, JOB_PYTOOL,
+       JOB_SELF };                          /* v1r: the launcher updates itself */
 /* the debug menu's checks: Python scripts in the project's tools folder */
 enum { TOOL_CHECK_GEN, TOOL_CHECK_XBE, TOOL_COMPARE_CACHE };
 bool job_start_tool(int tool);
@@ -58,6 +59,9 @@ int  job_result(void);
 const char *job_status(void);             /* one line: what is happening */
 const char *job_phase(void);              /* the step, for the spinner: "Building game"... */
 const char *update_remote(void);          /* the newest commit found by JOB_CHECK, or "" */
+const char *launcher_newer(void);         /* v1r: a newer launcher's release tag found by JOB_CHECK, or "" */
+bool launcher_restart_wanted(void);       /* v1r: JOB_SELF put a new launcher in place */
+void launcher_cleanup_old(void);          /* v1r: at start, the file a self-update left */
 
 bool play(void);
 bool play_watchdog(int secs);             /* the game stops after secs, with a dump */

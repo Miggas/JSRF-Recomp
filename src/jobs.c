@@ -8,6 +8,7 @@
  *   CMake, Ninja  the build system          }
  * Zig is the only compiler, on Windows and Linux. */
 #include "jobs.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -875,6 +876,131 @@ static bool do_build(void)
     return true;
 }
 
+/* ---- the launcher itself (v1r) ----
+ *
+ * Its builds are the project's GitHub releases tagged launcher-vN..., with
+ * jsrf_launcher-linux.tar.gz and jsrf_launcher-windows.zip (the release
+ * workflow). The newest such release newer than this launcher is offered in
+ * the Update tab; updating downloads its file, unpacks it with tar (in
+ * SteamOS and in Windows 10 and later, which reads zip too), puts it in
+ * place of this one and starts it. On Windows a running program cannot be
+ * overwritten but can be renamed: this one becomes jsrf_launcher.exe.old,
+ * removed by the new launcher when it starts. */
+static char s_launcher_new[64];
+static bool s_restart;
+const char *launcher_newer(void) { return s_launcher_new; }
+bool launcher_restart_wanted(void) { return s_restart; }
+
+/* "v1q" < "v1r" < "v2" < "v2a": the number, then the letters */
+static int ver_cmp(const char *a, const char *b)
+{
+    long na, nb;
+    if (*a == 'v') a++;
+    if (*b == 'v') b++;
+    na = strtol(a, (char **)&a, 10);
+    nb = strtol(b, (char **)&b, 10);
+    if (na != nb) return na < nb ? -1 : 1;
+    if (strlen(a) != strlen(b)) return strlen(a) < strlen(b) ? -1 : 1;
+    return strcmp(a, b);
+}
+
+static void self_old(char *out)
+{
+    char me[LPATH];
+    if (!self_exe(me)) { out[0] = 0; return; }
+    snprintf(out, LPATH, "%s.old", me);
+}
+
+void launcher_cleanup_old(void)
+{
+    char old[LPATH];
+    self_old(old);
+    if (*old && is_file(old)) remove_file(old);
+}
+
+static bool check_launcher(void)
+{
+    char dl[LPATH], f[LPATH];
+    s_launcher_new[0] = 0;
+    pjoin(dl, g_paths.base, "launcher_releases.json");
+    snprintf(f, sizeof f, "%s", dl);
+    const char *argv[] = { "curl", "-fsSL", "-o", f,
+                           "https://api.github.com/repos/" REPO "/releases?per_page=40", NULL };
+    char out[256];
+    if (run_capture(argv, NULL, out, sizeof out) != 0) { remove_file(f); return false; }
+    char *j = read_file(f, NULL);
+    remove_file(f);
+    if (!j) return false;
+    /* the newest launcher-v tag of a published release (newest first) */
+    for (char *p = j; (p = strstr(p, "\"tag_name\"")) != NULL; p++) {
+        char *q = strchr(p + 10, '"');
+        char tag[64];
+        size_t n;
+        if (!q) break;
+        q++;
+        n = strcspn(q, "\"");
+        if (n >= sizeof tag) continue;
+        memcpy(tag, q, n); tag[n] = 0;
+        if (strncmp(tag, "launcher-v", 10)) continue;
+        if (ver_cmp(tag + 9, LAUNCHER_VERSION) > 0) snprintf(s_launcher_new, sizeof s_launcher_new, "%s", tag);
+        break;
+    }
+    free(j);
+    if (*s_launcher_new) logf_("A newer launcher is available: %s (this one is %s).", s_launcher_new + 9, LAUNCHER_VERSION);
+    else logf_("The launcher is up to date (%s).", LAUNCHER_VERSION);
+    return true;
+}
+
+static bool do_self_update(void)
+{
+    char me[LPATH], old[LPATH], dl[LPATH], arc[LPATH], dir[LPATH], got[LPATH], url[320];
+    if (!*s_launcher_new && !check_launcher()) return false;
+    if (!*s_launcher_new) { status("The launcher is already the newest (%s).", LAUNCHER_VERSION); return true; }
+    if (!self_exe(me)) { logf_("Could not find the launcher's own file."); return false; }
+    PHASE("Updating the launcher");
+    pjoin(dl, g_paths.base, "launcher_update");
+    remove_tree(dl);
+    make_dirs(dl);
+#ifdef _WIN32
+    pjoin(arc, dl, "jsrf_launcher-windows.zip");
+    snprintf(url, sizeof url, "https://github.com/" REPO "/releases/download/%s/jsrf_launcher-windows.zip", s_launcher_new);
+#else
+    pjoin(arc, dl, "jsrf_launcher-linux.tar.gz");
+    snprintf(url, sizeof url, "https://github.com/" REPO "/releases/download/%s/jsrf_launcher-linux.tar.gz", s_launcher_new);
+#endif
+    status("Downloading launcher %s...", s_launcher_new + 9);
+    if (!download(url, arc)) return false;
+    pjoin(dir, dl, "unpacked");
+    make_dirs(dir);
+    {
+        const char *argv[] = { "tar", "-xf", arc, "-C", dir, NULL };
+        if (!runv(NULL, argv)) { logf_("Could not unpack the new launcher."); return false; }
+    }
+#ifdef _WIN32
+    pjoin(got, dir, "jsrf_launcher.exe");
+#else
+    pjoin(got, dir, "jsrf_launcher");
+#endif
+    if (!is_file(got)) { logf_("The download has no launcher in it."); return false; }
+    make_executable(got);
+    snprintf(old, sizeof old, "%s.old", me);
+    remove_file(old);
+    if (!move_path(me, old)) { logf_("Could not move this launcher aside (%s).", me); return false; }
+    if (!move_path(got, me)) {
+        logf_("Could not put the new launcher in place.");
+        move_path(old, me);
+        return false;
+    }
+#ifndef _WIN32
+    remove_file(old);                        /* Linux: the running copy stays open as it is */
+#endif
+    remove_tree(dl);
+    status("Launcher updated to %s: starting it.", s_launcher_new + 9);
+    s_launcher_new[0] = 0;
+    s_restart = true;
+    return true;
+}
+
 /* ---- update ---- */
 
 static bool check_update(void)
@@ -1029,7 +1155,8 @@ static int job_thread(void *u)
     case JOB_BUILD:    ok = do_build(); break;
     case JOB_ALL:      ok = do_generate() && !cancelled() && do_build(); break;
     case JOB_UPDATE: ok = do_update(); break;
-    case JOB_CHECK:  ok = check_update(); break;
+    case JOB_CHECK:  ok = check_update(); check_launcher(); break;
+    case JOB_SELF:   ok = do_self_update(); break;
     case JOB_PYTOOL: ok = do_tool(); break;
     }
     if (!ok && s_cancel) status("Cancelled.", NULL);
@@ -1058,7 +1185,7 @@ bool job_start(int job, bool force)
     {
         static const char *const names[] = { "", "Download tools", "Generate code", "Build",
                                              "Generate code + Build", "Update", "Check for updates",
-                                             "Check" };
+                                             "Check", "Update the launcher" };
         char tm[32];
         time_t now = time(NULL);
         strftime(tm, sizeof tm, "%H:%M:%S", localtime(&now));

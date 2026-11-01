@@ -864,6 +864,24 @@ static void tab_update(struct nk_context *ctx, float h)
     if (button(ctx, g_paths.have_source ? "Update" : "Download", !busy)) job_start(JOB_UPDATE, false);
     if (button(ctx, "Cancel", busy)) job_cancel();
     used += s_row * 1.4f + 4;
+    {
+        /* v1r: the launcher itself */
+        const char *ln = launcher_newer();
+        char lt[160];
+        nk_layout_row_begin(ctx, NK_DYNAMIC, s_row * 1.4f, 2);
+        nk_layout_row_push(ctx, 0.66f);
+        if (*ln) {
+            snprintf(lt, sizeof lt, "Launcher %s is available (this one is %s).", ln + 9, LAUNCHER_VERSION);
+            nk_label_colored(ctx, lt, NK_TEXT_LEFT, C_HEAD);
+        } else {
+            snprintf(lt, sizeof lt, "Launcher %s. Check for updates also looks for a newer launcher.", LAUNCHER_VERSION);
+            nk_label_colored(ctx, lt, NK_TEXT_LEFT, C_DIM);
+        }
+        nk_layout_row_push(ctx, 0.34f);
+        if (button(ctx, "Update launcher", *ln && !busy)) job_start(JOB_SELF, false);
+        nk_layout_row_end(ctx);
+        used += s_row * 1.4f + 4;
+    }
     used += failed_hint(ctx);
     log_view(ctx, h - used - 8, true);
 }
@@ -1039,6 +1057,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--all")) job = JOB_ALL;
         else if (!strcmp(argv[i], "--update")) job = JOB_UPDATE;
         else if (!strcmp(argv[i], "--check")) job = JOB_CHECK;
+        else if (!strcmp(argv[i], "--self-update")) job = JOB_SELF;   /* v1r */
         else if (!strcmp(argv[i], "--force")) regen = true;
     }
     if (job != JOB_NONE) {
@@ -1063,6 +1082,7 @@ int main(int argc, char **argv)
     log_init();
     paths_init();
     open_log_file();
+    launcher_cleanup_old();                  /* v1r: what a self-update left */
     snprintf(s_game_dir_edit, sizeof s_game_dir_edit, "%s", g_paths.game);
     load_game_ini();
     req_refresh();
@@ -1276,6 +1296,11 @@ int main(int argc, char **argv)
         s_pad_play = false;
         s_pad_slide = 0;
         if (s_quit_after_play) running = false;
+        if (launcher_restart_wanted() && !job_busy()) {
+            /* v1r: the new launcher, started from the same place */
+            char me[LPATH];
+            if (self_exe(me) && launch(me, g_paths.base)) running = false;
+        }
         /* v1q: this frame's widgets become the ones the next input picks from */
         s_ftcur ^= 1;
         s_ftn[s_ftcur] = 0;

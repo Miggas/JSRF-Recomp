@@ -842,3 +842,28 @@ void sha256_hex(const unsigned char *d, size_t n, char out[65])
     if (tail == 128) sha256_block(h, last + 64);
     for (int i = 0; i < 8; i++) snprintf(out + i * 8, 9, "%08X", h[i]);
 }
+
+/* v1r: the launcher's own file (for updating itself) */
+bool self_exe(char *out)
+{
+#ifdef _WIN32
+    wchar_t w[LPATH];
+    DWORD n = GetModuleFileNameW(NULL, w, LPATH);
+    if (!n || n >= LPATH) return false;
+    return WideCharToMultiByte(CP_UTF8, 0, w, -1, out, LPATH, NULL, NULL) > 0;
+#else
+    ssize_t n = readlink("/proc/self/exe", out, LPATH - 1);
+    if (n <= 0) return false;
+    out[n] = 0;
+    return true;
+#endif
+}
+
+void make_executable(const char *p)
+{
+#ifndef _WIN32
+    chmod(p, 0755);
+#else
+    (void)p;
+#endif
+}

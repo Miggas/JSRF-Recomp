@@ -23,6 +23,13 @@ README on the main branch.
 
 The launcher closes once the game has started.
 
+## Updating the launcher
+
+**Update → Check for updates** also looks for a newer launcher on the
+[Releases](https://github.com/Miggas/JSRF-Recomp/releases) page; **Update launcher**
+downloads it, puts it in place of this one and starts it. From a terminal:
+`jsrf_launcher --self-update`.
+
 ## How it decides what to do
 
 - **Update** only downloads the project (nothing when GitHub says it is

@@ -25,7 +25,9 @@ bool  remove_file(const char *p);
 bool  remove_tree(const char *p);
 bool  move_path(const char *src, const char *dst);
 void  sha256_hex(const unsigned char *d, size_t n, char out[65]);   /* upper-case hex */
-char *read_file(const char *p, size_t *len);                    /* malloc'd, 0-terminated */
+char *read_file(const char *p, size_t *len);
+bool  self_exe(char *out);                 /* v1r: this program's file */
+void  make_executable(const char *p);                    /* malloc'd, 0-terminated */
 bool  write_file(const char *p, const void *data, size_t len);
 /* calls cb for each entry of dir (not . or ..) */
 void  list_dir(const char *dir, void (*cb)(const char *name, bool isdir, void *u), void *u);
