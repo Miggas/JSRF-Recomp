@@ -45,10 +45,13 @@ else()
         FetchContent_Declare(SDL2_headers URL ${XBOXRECOMP_SDL2_URL}
             DOWNLOAD_EXTRACT_TIMESTAMP TRUE SOURCE_SUBDIR no-build)
         FetchContent_MakeAvailable(SDL2_headers)
+        # v255: linked by its full path. IMPORTED_NO_SONAME made CMake write
+        # -lSDL2-2.0 instead, and when the file is in /usr/lib (Arch,
+        # CachyOS: a folder CMake leaves off the link line) Zig's linker,
+        # which searches no system folders, could not find it.
         add_library(SDL2::SDL2 SHARED IMPORTED GLOBAL)
         set_target_properties(SDL2::SDL2 PROPERTIES
             IMPORTED_LOCATION "${XBOXRECOMP_SDL2_SO}"
-            IMPORTED_NO_SONAME TRUE
             INTERFACE_INCLUDE_DIRECTORIES
                 "${CMAKE_CURRENT_LIST_DIR}/../src/third_party/sdl2_linux;${sdl2_headers_SOURCE_DIR}/include")
         message(STATUS "SDL2: system runtime ${XBOXRECOMP_SDL2_SO}, released headers")
