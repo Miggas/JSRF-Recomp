@@ -322,7 +322,15 @@ static int gt_start(SDL_Window *win, SDL_GLContext ctx)
             if (nt) SDL_UnloadObject(nt);
         }
 #endif
+        /* v258: 50 us on native Linux too (as under Wine): with 3 the GL
+         * thread fell asleep between draws ~4 us apart, and waking it again
+         * was a system call per draw for the executor (sem_post, 6% of it
+         * on the Deck, Miggas's profile) */
+#if defined(_WIN32)
         int us = sp ? atoi(sp) : (wine ? 50 : 3);
+#else
+        int us = sp ? atoi(sp) : 50;
+#endif
         Uint64 q0 = SDL_GetPerformanceCounter(), f = SDL_GetPerformanceFrequency();
         uint64_t t0 = __rdtsc(), dt;
         SDL_Delay(10);

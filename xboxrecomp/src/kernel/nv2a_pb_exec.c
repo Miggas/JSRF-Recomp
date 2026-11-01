@@ -43,7 +43,7 @@
 #define NV_TLS __declspec(thread)
 #include "recomp_fastclock.h"   /* v169: per-draw timing from rdtsc */
 #else
-#define fast_qpc_li(q) QueryPerformanceCounter(q)
+#include "recomp_fastclock.h"   /* v258: on Linux too (clock_gettime per draw) */
 #define NV_TLS __thread
 #include <pthread.h>
 #include <unistd.h>
