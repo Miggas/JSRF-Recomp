@@ -51,7 +51,7 @@ the runtime in `xboxrecomp/`.
 | 4 | [Build the game](#4-build-the-game) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
 | 5 | [Play](#5-play) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
 | 6 | [The launcher](#6-the-launcher) | — |
-| 7 | [Playing on a Steam Deck](#7-playing-on-a-steam-deck) | ![Medium](https://img.shields.io/badge/-medium-yellow) |
+| 7 | [Playing on a Steam Deck](#7-playing-on-a-steam-deck) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
 | 8 | [Controls](#8-controls) | — |
 | 9 | [Settings (jsrf.ini)](#9-settings-jsrfini) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
 | 10 | [Saves](#10-saves) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
@@ -140,7 +140,10 @@ On Linux: `cd source/xboxrecomp`, then
 | Step | In the launcher | What it does | How long |
 |:---:|---|---|---|
 | **1** | **Update → Download** | Downloads the project and the build tools (about 150 MB). | a few minutes |
-| **2** | **Play → Build** | Checks your `default.xbe`, translates the game's program into C, and compiles it into `jsrf_recomp` (`.exe` on Windows) in your game folder. | 5–15 min the first time |
+| **2** | **Build → Generate code** (first time, and when an update needs it) | Checks your `default.xbe` and translates the game's program into C. | a few minutes |
+| **3** | **Build → Build** | Compiles it into `jsrf_recomp` (`.exe` on Windows) in your game folder. | 5–15 min the first time |
+
+**Play → Build** does steps 2 and 3 in one go.
 
 The **Play** tab shows a ✓ or ✗ for each part. Click a ✗ to go where it is
 fixed. The **Build** tab has **Generate code** and **Build** separately; each
@@ -184,9 +187,9 @@ The launcher's code is on the [`launcher`](https://github.com/Miggas/JSRF-Recomp
 
 ## 7. Playing on a Steam Deck
 
-![Medium](https://img.shields.io/badge/difficulty-medium-yellow) &nbsp; ⏱️ 20 minutes
+![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) &nbsp; ⏱️ 20 minutes the first time
 
-The game is built on the Deck itself and runs without Proton.
+The game is built on the Deck itself and runs natively, without Proton.
 
 1. Switch to **Desktop Mode**.
 2. Do sections [2](#2-get-the-launcher) to [4](#4-build-the-game) there, with
@@ -195,25 +198,25 @@ The game is built on the Deck itself and runs without Proton.
    set the file type to *All Files*, pick `jsrf_launcher` (or `jsrf_recomp` in
    the game folder, to start the game directly) and add it. **Do not** force a
    Proton version.
-4. Go back to **Gaming Mode** and play. The touchscreen works in the launcher.
+4. Go back to **Gaming Mode** and play. The launcher works with the
+   controller and the touchscreen, and closes when the game starts.
 
-<details>
-<summary>🍷 With Proton instead (the Windows build) &nbsp; <img src="https://img.shields.io/badge/-medium-yellow"></summary>
-
-Build on a Windows PC, copy the game folder to the Deck, add `jsrf_recomp.exe`
-as a non-Steam game, and in **Properties → Compatibility** force **Proton 11**.
-Only Proton 11 is tested.
-</details>
+Nothing else to set up: the native build doesn't need PowerTools or the
+performance governor.
 
 > [!NOTE]
 > The provided `jsrf.ini` already has the settings that suit the Deck:
 > `RECOMP_GL_SCALE=2` (1280×960 inside the game).
 
-### Choose a power mode
+### With Proton instead (the Windows build)
 
-> [!NOTE]
-> These modes are for the Windows build under Proton. The native Linux build
-> already sleeps while it waits (`RECOMP_SLEEP_WAITS=all`) by default.
+![Medium](https://img.shields.io/badge/difficulty-medium-yellow)
+
+Only needed if you want to run `jsrf_recomp.exe`. Build on a Windows PC, copy
+the game folder to the Deck, add `jsrf_recomp.exe` as a non-Steam game, and in
+**Properties → Compatibility** force **Proton 11**. Only Proton 11 is tested.
+
+#### Choose a power mode
 
 Both modes give a steady **60 fps**. They differ in power use and setup.
 
@@ -245,14 +248,14 @@ fixes the side effect by telling the Deck to raise its clock straight away (the
 **performance** CPU governor).
 </details>
 
-#### 🔋 Mode 1 — Standard
+##### 🔋 Mode 1 — Standard
 
 ![Easy](https://img.shields.io/badge/difficulty-nothing%20to%20do-brightgreen)
 
 Leave `jsrf.ini` as it is. The line `;RECOMP_SLEEP_WAITS=vblank` stays switched
 off (it starts with `;`), so the default is used.
 
-#### 🌿 Mode 2 — Power saving
+##### 🌿 Mode 2 — Power saving
 
 ![Medium](https://img.shields.io/badge/difficulty-medium-yellow) &nbsp; ⏱️ 15 minutes the first time
 
