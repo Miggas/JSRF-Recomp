@@ -1091,6 +1091,206 @@ static int vbl_ack_mode(void)
 
 /* v168: set by the title's profiler (RECOMP_PROFILE) to sample a thread */
 void (*g_thread_watch_hook)(const char *name);
+
+/* ── v259: fetch mode, RECOMP_ACK_FAST=1 (see nv2a_pb_scan.c) ───────────
+ *
+ * The game builds frame N+1 while the executor draws frame N. The fetch
+ * thread below answers D3D's flush kick at once, copies the newly submitted
+ * stream (GET..PUT) into this queue and moves GET on; the executor thread
+ * runs the queue. What earlier attempts (v74, v153-v166) ran into, and what
+ * is done about each:
+ *  - the shared ring (D3D lapped it while the executor read it): the copy.
+ *  - D3D's fence wait sleeping on a notify the copy had already passed:
+ *    every fence wakes the title (g_pb_fence_notify, v154).
+ *  - the vblank DPC's acknowledgement waiting for the executor (the broken
+ *    music of v159-v165): D3D's vblank routine acknowledges it itself since
+ *    v196, and the fetch thread also does the register acks.
+ *  - the title running seconds ahead (late input and sound, v165): at most
+ *    RECOMP_FIFO_FRAMES frames (FLIP_STALLs, default 1) fetched and not yet
+ *    run; beyond that the kick is not answered, so KickOff waits, as it
+ *    would for a full FIFO.
+ *  - PGRAPH_STATUS stays idle (v160), as in the default mode.
+ * The queue is [length][frames][words...] records; a length of ~0 means
+ * "continue at the start". */
+#define FQ_WORDS (4u << 20)                 /* 16 MB */
+#if !defined(_WIN32)
+#define MemoryBarrier() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#endif
+static uint32_t *s_fq;
+static volatile LONG s_fq_head, s_fq_tail;  /* word positions, mod FQ_WORDS */
+static volatile LONG s_fq_frames_in, s_fq_frames_done;
+static int g_fetch_mode;
+static int s_fq_ahead = 1;
+static HANDLE g_nv2a_fetch_thread;
+static uint64_t s_fq_segs, s_fq_words, s_fq_full, s_fq_held;
+
+static uint32_t fq_used(void) { return (uint32_t)(s_fq_head - s_fq_tail) & (2 * FQ_WORDS - 1); }
+
+/* one record, or 0 when there is no room yet */
+static int fq_push(const uint32_t *w, uint32_t n, uint32_t frames)
+{
+    uint32_t head = (uint32_t)s_fq_head, at = head % FQ_WORDS, need = n + 2;
+    uint32_t to_end = FQ_WORDS - at;
+    if (need > FQ_WORDS / 2)
+        return -1;                          /* never fits */
+    if (need > to_end) {
+        if (fq_used() + to_end + need > FQ_WORDS) return 0;
+        s_fq[at] = 0xFFFFFFFFu;             /* wrap */
+        head += to_end;
+        at = 0;
+    } else if (fq_used() + need > FQ_WORDS) {
+        return 0;
+    }
+    s_fq[at] = n;
+    s_fq[at + 1] = frames;
+    memcpy(&s_fq[at + 2], w, (size_t)n * 4);
+    MemoryBarrier();
+    InterlockedExchange(&s_fq_head, (LONG)((head + need) & (2 * FQ_WORDS - 1)));
+    return 1;
+}
+
+static DWORD WINAPI nv2a_fetch_thread(LPVOID param)
+{
+    extern int nv2a_pb_fetch(uint32_t, uint32_t, uint32_t *, uint32_t, uint32_t *);
+    volatile uint32_t *regs = (volatile uint32_t *)param;
+    volatile LONG *kick = (volatile LONG *)((char *)regs + 0x100410);
+    volatile uint32_t *putr = (volatile uint32_t *)((char *)regs + NV2A_USER_DMA_PUT);
+    volatile uint32_t *getr = (volatile uint32_t *)((char *)regs + NV2A_USER_DMA_GET);
+    static uint32_t tmp[1u << 20];          /* one fetch, 4 MB */
+    uint32_t pos = 0, written = 0xFFFFFFFFu;
+    int held = 0;
+    DWORD active = GetTickCount();
+    unsigned spins = 0;
+    while (!InterlockedCompareExchange(&g_nv2a_ack_stop, 0, 0)) {
+        int did = 0;
+        /* the register acks too, so nothing D3D spins on waits for the
+         * executor (its run, its frame cap) */
+        for (size_t i = 0; i < sizeof(NV2A_ACK) / sizeof(NV2A_ACK[0]); i++) {
+            volatile uint32_t *r = (volatile uint32_t *)((char *)regs + NV2A_ACK[i].offset);
+            uint32_t m = NV2A_ACK[i].busy_mask;
+            if (NV2A_ACK[i].offset == 0x100410) continue;   /* the kick: below */
+            if (vbl_ack_mode()) {
+                if (NV2A_ACK[i].offset == 0x000100) m &= ~0x01000000u;
+                if (NV2A_ACK[i].offset == 0x600100) m &= ~0x00000001u;
+            }
+            if (*r & m) *r &= ~m;
+        }
+        {
+            uint32_t put = *putr, get = *getr;
+            if (written == 0xFFFFFFFFu) {
+                /* the first PUT seen: start there, as the default mode does */
+                if (!put) {                 /* nothing submitted yet: kicks answered */
+                    if (*kick & 0x00010000) InterlockedAnd(kick, ~0x00010000);
+                    xbox_Nv2aAckedWake();
+                    Sleep(0);
+                    continue;
+                }
+                pos = written = put;
+                InterlockedExchange((volatile LONG *)getr, (LONG)put);
+                get = put;
+            }
+            /* D3D sets GET itself when it restarts the ring */
+            if (get != written && get != pos) {
+                static int said;
+                if (said++ < 8)
+                    fprintf(stderr, "  [NV2A] fetch: title set DMA_GET to 0x%08X (fetch was at 0x%08X)\n",
+                            get, pos);
+                pos = get;
+            }
+            if (put != pos) {
+                if ((uint32_t)(s_fq_frames_in - s_fq_frames_done) >= (uint32_t)s_fq_ahead) {
+                    if (!held) { held = 1; s_fq_held++; }   /* far enough ahead: KickOff waits */
+                } else {
+                    held = 0;
+                    uint32_t frames = 0;
+                    int n = nv2a_pb_fetch(XBOX_CONTIG_BASE | (pos & 0x0FFFFFFFu),
+                                          XBOX_CONTIG_BASE | (put & 0x0FFFFFFFu),
+                                          tmp, (uint32_t)(sizeof tmp / 4), &frames);
+                    int ok = n < 0 ? -1 : n == 0 ? 1 : fq_push(tmp, (uint32_t)n, frames);
+                    if (ok < 0) {
+                        static int said;
+                        if (!said++)
+                            fprintf(stderr, "[NV2A] fetch: a segment of more than 4 MB;"
+                                    " skipped\n");
+                        ok = 1;
+                    }
+                    if (ok) {
+                        if (frames) InterlockedExchangeAdd(&s_fq_frames_in, (LONG)frames);
+                        s_fq_segs++;
+                        s_fq_words += (uint64_t)(n > 0 ? n : 0);
+                        /* consumed by the FIFO: D3D may reuse that ring space
+                         * (only if the title has not moved GET meanwhile) */
+                        InterlockedCompareExchange((volatile LONG *)getr, (LONG)put, (LONG)get);
+                        written = put;
+                        pos = put;
+                        did = 1;
+                    } else {
+                        s_fq_full++;        /* the queue is full: wait */
+                    }
+                }
+            }
+            if ((*kick & 0x00010000) && pos == *putr) {
+                InterlockedAnd(kick, ~0x00010000);
+                did = 1;
+            }
+        }
+        xbox_Nv2aAckedWake();
+        if (did) { active = GetTickCount(); spins = 0; continue; }
+        if (GetTickCount() - active < 4) {
+            YieldProcessor();
+            if (++spins % 256 == 0) SwitchToThread();
+        } else {
+            Sleep(1);
+        }
+    }
+    return 0;
+}
+
+/* the executor's side, once a pass: run what is queued */
+static void fq_exec(void)
+{
+    extern void nv2a_pb_run_buf(const uint32_t *, uint32_t);
+    extern volatile uint64_t g_pb_exec_ticks;
+    static int quiet = -1;
+    static DWORD last_report;
+    DWORD now_ms = GetTickCount();
+    LARGE_INTEGER e0, e1;
+    int any = 0;
+    QueryPerformanceCounter(&e0);
+    while ((uint32_t)s_fq_tail != (uint32_t)s_fq_head) {
+        uint32_t tail = (uint32_t)s_fq_tail, at = tail % FQ_WORDS, n, frames;
+        MemoryBarrier();
+        n = s_fq[at];
+        if (n == 0xFFFFFFFFu) {
+            InterlockedExchange(&s_fq_tail, (LONG)((tail + (FQ_WORDS - at)) & (2 * FQ_WORDS - 1)));
+            continue;
+        }
+        frames = s_fq[at + 1];
+        nv2a_pb_run_buf(&s_fq[at + 2], n);
+        InterlockedExchange(&s_fq_tail, (LONG)((tail + n + 2) & (2 * FQ_WORDS - 1)));
+        if (frames) InterlockedExchangeAdd(&s_fq_frames_done, (LONG)frames);
+        any = 1;
+    }
+    if (any) {
+        QueryPerformanceCounter(&e1);
+        g_pb_exec_ticks += (uint64_t)(e1.QuadPart - e0.QuadPart);
+    }
+    if (quiet < 0)
+        quiet = getenv("RECOMP_QUIET") != NULL;
+    if (now_ms - last_report > 10000) {
+        extern void nv2a_pb_scan_report(void);
+        last_report = now_ms;
+        if (s_nv2a_trace && !quiet)
+            nv2a_pb_scan_report();
+        fprintf(stderr, "[NV2A] fetch mode: %llu segments, %llu words queued; held %llu times"
+                " (%d frame%s ahead), queue full %llu times\n",
+                (unsigned long long)s_fq_segs, (unsigned long long)s_fq_words,
+                (unsigned long long)s_fq_held, s_fq_ahead, s_fq_ahead == 1 ? "" : "s",
+                (unsigned long long)s_fq_full);
+        s_fq_segs = s_fq_words = s_fq_held = s_fq_full = 0;
+    }
+}
+
 static DWORD WINAPI nv2a_ack_thread(LPVOID param)
 {
     volatile uint32_t *regs = (volatile uint32_t *)param;
@@ -1156,6 +1356,9 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
          * RECOMP_PB_EXEC asked for it. Gating the call as well meant
          * RECOMP_PB_EXEC on its own did nothing at all, and the executor
          * only ran when someone happened to also be tracing. */
+        if (g_fetch_mode) {
+            fq_exec();                     /* v259: run what the fetch thread queued */
+        } else
         {
             /* Is the title submitting GPU work at all? PUT is where the
              * title's pushbuffer writer has got to; if it never moves, nothing
@@ -1393,7 +1596,32 @@ static void xbox_Nv2aAckStart(void)
      * (v74) and then hung in D3D_BlockOnTime (v75) on the way to the title,
      * for a reason not yet found; the old single-thread ack works.
      * RECOMP_ACK_FAST=1 turns the separate ack thread back on for testing. */
-    if (getenv("RECOMP_ACK_FAST") && !getenv("RECOMP_ACK_INLINE")) {
+    {
+        /* v259: RECOMP_ACK_FAST=1 is the fetch mode (above); =2 the v74
+         * shared-ring version, kept for comparison */
+        const char *af = getenv("RECOMP_ACK_FAST");
+        if (af && af[0] == '1' && !getenv("RECOMP_ACK_INLINE")) {
+            extern int g_pb_fence_notify;
+            const char *fr = getenv("RECOMP_FIFO_FRAMES");
+            s_fq = (uint32_t *)VirtualAlloc(NULL, FQ_WORDS * 4, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            if (fr && atoi(fr) > 0) s_fq_ahead = atoi(fr);
+            if (s_fq) {
+                g_fetch_mode = 1;
+                g_kick_separate = 1;        /* the executor leaves the kick bit alone */
+                g_pb_fence_notify = 1;
+                g_nv2a_fetch_thread = CreateThread(NULL, 0, nv2a_fetch_thread, g_nv2a_memory, 0, NULL);
+                if (g_nv2a_fetch_thread) {
+                    SetThreadPriority(g_nv2a_fetch_thread, THREAD_PRIORITY_ABOVE_NORMAL);
+                    fprintf(stderr, "  NV2A fetch mode (RECOMP_ACK_FAST=1, experimental): the game runs"
+                            " up to %d frame%s ahead of the GPU emulation (RECOMP_FIFO_FRAMES)\n",
+                            s_fq_ahead, s_fq_ahead == 1 ? "" : "s");
+                } else {
+                    g_fetch_mode = 0; g_kick_separate = 0; g_pb_fence_notify = 0;
+                }
+            }
+        }
+    }
+    if (getenv("RECOMP_ACK_FAST") && getenv("RECOMP_ACK_FAST")[0] == '2' && !getenv("RECOMP_ACK_INLINE")) {
         g_nv2a_kick_thread = CreateThread(NULL, 0, nv2a_kick_ack_thread,
                                           g_nv2a_memory, 0, NULL);
         if (g_nv2a_kick_thread) {

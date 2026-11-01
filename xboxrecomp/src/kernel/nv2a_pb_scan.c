@@ -412,3 +412,114 @@ void nv2a_pb_run(uint32_t get_va, uint32_t put_va)
     s_tot_jumps += jumps;
     s_tot_segments++;
 }
+
+/* ── v259: fetch mode (RECOMP_ACK_FAST=1) ───────────────────────────────
+ *
+ * The game and the GPU emulation overlapped, as on the console, where the
+ * NV2A's PFIFO reads the pushbuffer into its own FIFO while PGRAPH draws.
+ * A fetch thread (xbox_memory_layout.c) answers D3D's kick at once, copies
+ * the newly submitted part of the ring -- from GET to PUT, following the
+ * ring's JUMPs -- into a private queue, and moves GET on, so D3D may reuse
+ * that part of the ring; the executor runs the copies. Sharing the ring
+ * between a running title and a running executor lost commands (v153-v157:
+ * D3D laps its 512 KB ring in bursts while the executor still reads the old
+ * lap); the copy is what the PFIFO does.
+ *
+ * nv2a_pb_fetch copies the stream between two ring addresses: method
+ * headers with their data, CALL and RETURN words as they are (a CALL's
+ * subroutine is a static push buffer, read when it runs), no JUMPs.
+ * Returns the number of words, or -1 when they do not fit in `cap`; *flips
+ * counts the FLIP_STALLs copied (frames). nv2a_pb_run_buf runs such a
+ * copy, decoding it exactly as nv2a_pb_run decodes the ring. */
+int nv2a_pb_fetch(uint32_t get_va, uint32_t put_va, uint32_t *out, uint32_t cap,
+                  uint32_t *flips)
+{
+    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
+    uint32_t va = get_va, n = 0, jumps = 0, steps = 0;
+    *flips = 0;
+    while (va != put_va && steps++ < 0x400000u) {
+        uint32_t w;
+        if ((va & 0x0FFFFFFFu) >= XBOX_CONTIG_SIZE - 4) {
+            static int said;
+            if (said++ < 4)
+                fprintf(stderr, "[PB] fetch: stream left memory at 0x%08X (%08X..%08X)\n",
+                        va, get_va, put_va);
+            break;
+        }
+        w = *(const uint32_t *)(mem + va);
+        if ((w & 3u) == 1u || (w & 0xE0000003u) == 0x20000000u) {      /* JUMP */
+            uint32_t target = (w & 3u) == 1u ? (w & 0xFFFFFFFCu) : (w & 0x1FFFFFFCu);
+            if (++jumps > 64) break;
+            va = XBOX_CONTIG_BASE | (target & 0x0FFFFFFFu);
+            continue;
+        }
+        if (n >= cap) return -1;
+        out[n++] = w;
+        va += 4;
+        if ((w & 0x00030003u) == 0u && (w & 0xFFFF0003u) != 0x00020000u && (w & 3u) != 2u) {
+            uint32_t count = (w >> 18) & 0x7FFu, i;
+            uint32_t subch = (w >> 13) & 7u, method = w & 0x1FFCu;
+            int noninc = (w & 0xE0000000u) == 0x40000000u;
+            if (subch == 0 && (method == 0x0130u || (!noninc && method < 0x0130u
+                                                     && method + count * 4u > 0x0130u)))
+                (*flips)++;
+            for (i = 0; i < count && va != put_va; i++) {
+                if ((va & 0x0FFFFFFFu) >= XBOX_CONTIG_SIZE - 4) break;
+                if (n >= cap) return -1;
+                out[n++] = *(const uint32_t *)(mem + va);
+                va += 4;
+            }
+            if (i < count && va == put_va) {
+                /* a method cut by PUT: keep the count honest for the decoder */
+                out[n - i - 1] = (w & ~(0x7FFu << 18)) | (i << 18);
+            }
+        }
+    }
+    return (int)n;
+}
+
+void nv2a_pb_run_buf(const uint32_t *p, uint32_t n)
+{
+    uint32_t k = 0, jumps = 0, unknown = 0, words = 0;
+    if (s_exec_enabled < 0)
+        s_exec_enabled = getenv("RECOMP_PB_EXEC") != NULL;
+    while (k < n) {
+        uint32_t w = p[k++];
+        words++;
+        if ((w & 0xFFFF0003u) == 0x00020000u)    /* RETURN outside a call */
+            continue;
+        if ((w & 3u) == 2u) {                    /* CALL */
+            uint32_t sub = XBOX_CONTIG_BASE | ((w & 0xFFFFFFFCu) & 0x0FFFFFFFu);
+            s_tot_calls++;
+            words += pb_walk(sub, sub + 0x400000u, 1, &jumps, &unknown);
+            continue;
+        }
+        if ((w & 0x00030003u) == 0u) {
+            uint32_t count = (w >> 18) & 0x7FFu, i;
+            uint32_t subch = (w >> 13) & 7u, method = w & 0x1FFCu;
+            int noninc = (w & 0xE0000000u) == 0x40000000u;
+            if (count > n - k) count = n - k;
+            if (noninc && method == 0x1800u && subch == 0 && s_exec_enabled && bulk_ok()
+                    && nv2a_pb_exec_indices16(p + k, count)) {
+                note_n(subch, method, count);
+                k += count;
+                words += count;
+                continue;
+            }
+            for (i = 0; i < count; i++) {
+                uint32_t m = noninc ? method : method + i * 4;
+                note(subch, m);
+                if (s_exec_enabled)
+                    nv2a_pb_exec_method(subch, m, p[k]);
+                k++;
+                words++;
+            }
+            continue;
+        }
+        unknown++;
+    }
+    s_tot_words += words;
+    s_tot_unknown += unknown;
+    s_tot_jumps += jumps;
+    s_tot_segments++;
+}

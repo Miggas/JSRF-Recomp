@@ -6299,6 +6299,10 @@ static int s_clear_rect_set;
 
 static void (*s_notify_hook)(uint32_t);
 void xbox_Nv2aSetNotifyHook(void (*fn)(uint32_t)) { s_notify_hook = fn; }
+/* v259: in fetch mode every fence also wakes the title (v154): D3D's
+ * BlockOnTime patches NO_OPERATION(notify) into the stream at the fence it
+ * waits for, and the fetch thread may already have copied that spot */
+int g_pb_fence_notify;
 
 /* v145: with RECOMP_PROFILE, executor time per method (rdtsc, cheap),
  * reported as the costliest methods in [PERF]; the draw itself shows under
@@ -6590,6 +6594,8 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
         s_sem_pending = 1;
         if (s_sem_va)
             sem_write(param);
+        if (g_pb_fence_notify && s_notify_hook)
+            s_notify_hook(param);
         break;
     case 0x17C8:                                  /* CLEAR_REPORT_VALUE */
         s_gpu.zpass_count = 0;
