@@ -701,6 +701,7 @@ static bool do_generate(void)
     PHASE("Checking");
     status("Checking the generated code...", NULL);
     if (!s_regen && gen_current()) {
+        s_req_gen = 2;      /* v1o: the Play tab's row, while the job goes on */
         status("The generated code is up to date: nothing to do.", NULL);
         return true;
     }
@@ -721,6 +722,7 @@ static bool do_generate(void)
     char st[LPATH];
     pjoin(st, gen, "launcher_gen.txt");
     gen_stamp_write(st, h);
+    s_req_gen = 2;          /* v1o: shown now, not when the whole job ends */
     status("Code generated.", NULL);
     return true;
 }
@@ -841,6 +843,7 @@ static bool do_build(void)
         logf_("Could not copy the game to %s (is the game still running?)", dest);
         return false;
     }
+    s_req_build = 2;        /* v1o: the Play tab's row, while the job goes on */
     /* the debug file, while Logging is on (an old one is removed either
      * way first: it would not match the new game) */
     {
