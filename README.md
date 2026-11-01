@@ -52,7 +52,7 @@ the runtime in `xboxrecomp/`.
 | 5 | [Play](#5-play) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
 | 6 | [The launcher](#6-the-launcher) | — |
 | 7 | [Playing on a Steam Deck](#7-playing-on-a-steam-deck) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
-| 8 | [Controls](#8-controls) | — |
+| 8 | [Controls](#8-controls) · [Closing the game](#closing-the-game) | — |
 | 9 | [Settings (jsrf.ini)](#9-settings-jsrfini) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
 | 10 | [Saves](#10-saves) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
 | 11 | [Updating to a newer version](#11-updating-to-a-newer-version) | ![Easy](https://img.shields.io/badge/-easy-brightgreen) |
@@ -199,7 +199,8 @@ The game is built on the Deck itself and runs natively, without Proton.
    the game folder, to start the game directly) and add it. **Do not** force a
    Proton version.
 4. Go back to **Gaming Mode** and play. The launcher works with the
-   controller and the touchscreen, and closes when the game starts.
+   controller and the touchscreen, and closes when the game starts. To quit
+   the game, click both sticks ([Closing the game](#closing-the-game)).
 
 Nothing else to set up: the native build doesn't need PowerTools or the
 performance governor.
@@ -326,9 +327,19 @@ controller. **The keyboard** works as controller 1:
 | `1` `3` | Left / Right trigger |
 | `Enter` | START |
 | `Backspace` | BACK |
+| `Shift` / `Ctrl` | Click the left / right stick (L3 / R3) |
 
 > [!NOTE]
 > The game window must have the focus for keys to count.
+
+### Closing the game
+
+| 🎮 Controller | ⌨️ Keyboard | Then |
+|---|---|---|
+| Click **both sticks** (L3 + R3) | `Shift` + `Ctrl` | Pick **YES** with left / right and press **A** (`Z`). **B** (`X`) goes back to the game. |
+
+The game pauses while the window is open. Closing the game window or `Alt+F4`
+also quits.
 
 ---
 
