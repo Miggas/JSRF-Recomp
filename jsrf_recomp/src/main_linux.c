@@ -32,6 +32,8 @@
 #include <dlfcn.h>
 #include <execinfo.h>
 #include <ucontext.h>
+#include <elf.h>
+#include <fcntl.h>
 
 #include <xbox/xboxrecomp.h>
 #include "jsrf_version.h"
@@ -184,12 +186,15 @@ static void sampler_start(void)
  * game thread also those of frames past 18 ms), and the counts restart.
  * Where the time goes on the Steam Deck, where the optimizations start. */
 #define PROF_SIG (SIGRTMIN + 8)
+typedef struct { uintptr_t lo, hi; const char *name; } ExeFn;
+static uintptr_t s_text_lo, s_text_hi;   /* the game's code, for the handler */
 #define PROF_THREADS 4
 #define PROF_RING 8192                     /* samples kept between drains */
 typedef struct {
     pthread_t pt;
     char name[32];
     void *volatile ring[PROF_RING];
+    void *volatile caller[PROF_RING];     /* v257b: [rsp], who called a leaf */
     volatile unsigned char slow[PROF_RING];
     volatile unsigned w;                   /* written by the signal handler */
     unsigned r;
@@ -208,7 +213,20 @@ static void prof_sig(int sig, siginfo_t *si, void *uc)
     for (k = 0; k < n; k++)
         if (pthread_equal(s_prof[k].pt, me)) {
             unsigned w = s_prof[k].w;
-            s_prof[k].ring[w % PROF_RING] = (void *)((ucontext_t *)uc)->uc_mcontext.gregs[REG_RIP];
+            const greg_t *g = ((ucontext_t *)uc)->uc_mcontext.gregs;
+            s_prof[k].ring[w % PROF_RING] = (void *)g[REG_RIP];
+            /* outside the game's code (libc's memcpy and the like): the first
+             * return address into it on the stack, the caller (at a leaf it
+             * is the top word) */
+            {
+                const uintptr_t *sp = (const uintptr_t *)(uintptr_t)g[REG_RSP];
+                uintptr_t rip = (uintptr_t)g[REG_RIP], c = 0;
+                int i;
+                if (rip < s_text_lo || rip >= s_text_hi)
+                    for (i = 0; i < 64; i++)
+                        if (sp[i] >= s_text_lo && sp[i] < s_text_hi) { c = sp[i]; break; }
+                s_prof[k].caller[w % PROF_RING] = (void *)c;
+            }
             s_prof[k].slow[w % PROF_RING] = (unsigned char)(k == 0 && s_prof_slow_now);
             __atomic_store_n(&s_prof[k].w, w + 1, __ATOMIC_RELEASE);
             return;
@@ -233,15 +251,99 @@ static ProfFn s_fn[PROF_THREADS][PROF_FN];
 static int s_nfn[PROF_THREADS];
 static unsigned s_tot[PROF_THREADS], s_tot_slow;
 
-static const char *prof_name(void *a)
+/* v257b: the game's own functions by name, static ones included: from the
+ * executable's symbol table (it is not position-independent, so the values
+ * are the addresses). dladdr only knows the exported ones. */
+static ExeFn *s_exefn;
+static size_t s_exefn_n;
+static char *s_exestr;
+static int exefn_cmp(const void *a, const void *b)
+{
+    uintptr_t x = ((const ExeFn *)a)->lo, y = ((const ExeFn *)b)->lo;
+    return x < y ? -1 : x > y;
+}
+static void exe_symbols_load(void)
+{
+    int fd = open("/proc/self/exe", O_RDONLY);
+    Elf64_Ehdr eh;
+    Elf64_Shdr *sh = NULL;
+    Elf64_Sym *sym = NULL;
+    size_t i, nsym;
+    if (fd < 0) return;
+    if (pread(fd, &eh, sizeof eh, 0) != (ssize_t)sizeof eh || memcmp(eh.e_ident, ELFMAG, SELFMAG)
+            || eh.e_shentsize != sizeof(Elf64_Shdr))
+        goto out;
+    sh = (Elf64_Shdr *)malloc((size_t)eh.e_shnum * sizeof *sh);
+    if (!sh || pread(fd, sh, (size_t)eh.e_shnum * sizeof *sh, (off_t)eh.e_shoff)
+               != (ssize_t)((size_t)eh.e_shnum * sizeof *sh))
+        goto out;
+    for (i = 0; i < eh.e_shnum; i++)
+        if (sh[i].sh_type == SHT_SYMTAB && sh[i].sh_link < eh.e_shnum) {
+            const Elf64_Shdr *st = &sh[sh[i].sh_link];
+            nsym = sh[i].sh_size / sizeof(Elf64_Sym);
+            sym = (Elf64_Sym *)malloc(sh[i].sh_size);
+            s_exestr = (char *)malloc(st->sh_size + 1);
+            s_exefn = (ExeFn *)malloc(nsym * sizeof *s_exefn);
+            if (!sym || !s_exestr || !s_exefn
+                    || pread(fd, sym, sh[i].sh_size, (off_t)sh[i].sh_offset) != (ssize_t)sh[i].sh_size
+                    || pread(fd, s_exestr, st->sh_size, (off_t)st->sh_offset) != (ssize_t)st->sh_size)
+                goto out;
+            s_exestr[st->sh_size] = 0;
+            for (size_t j = 0; j < nsym; j++)
+                if (ELF64_ST_TYPE(sym[j].st_info) == STT_FUNC && sym[j].st_value && sym[j].st_name < st->sh_size) {
+                    s_exefn[s_exefn_n].lo = (uintptr_t)sym[j].st_value;
+                    s_exefn[s_exefn_n].hi = (uintptr_t)(sym[j].st_value + (sym[j].st_size ? sym[j].st_size : 1));
+                    s_exefn[s_exefn_n].name = s_exestr + sym[j].st_name;
+                    s_exefn_n++;
+                }
+            qsort(s_exefn, s_exefn_n, sizeof *s_exefn, exefn_cmp);
+            if (s_exefn_n) {
+                s_text_lo = s_exefn[0].lo;
+                s_text_hi = s_exefn[s_exefn_n - 1].hi;
+            }
+            break;
+        }
+out:
+    free(sym);
+    free(sh);
+    close(fd);
+}
+static const char *exe_name(uintptr_t a)
+{
+    size_t lo = 0, hi = s_exefn_n;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (s_exefn[mid].lo <= a) lo = mid + 1; else hi = mid;
+    }
+    if (lo && a < s_exefn[lo - 1].hi) return s_exefn[lo - 1].name;
+    return NULL;
+}
+
+/* names live as long as the program; library names with their caller are
+ * kept in a small table so the same pair is the same pointer */
+#define PROF_PAIRS 2048
+static char s_pair[PROF_PAIRS][112];
+static int s_pair_n;
+static const char *prof_name2(void *a, void *caller)
 {
     Dl_info di;
-    if (dladdr(a, &di) && di.dli_sname) return di.dli_sname;   /* stays valid */
-    if (dladdr(a, &di) && di.dli_fname) {
-        const char *b = strrchr(di.dli_fname, '/');
-        return b ? b + 1 : di.dli_fname;
-    }
-    return "?";
+    const char *n = exe_name((uintptr_t)a), *lib, *c;
+    char buf[112];
+    int i;
+    if (n) return n;
+    if (dladdr(a, &di) && di.dli_sname) lib = di.dli_sname;
+    else if (dladdr(a, &di) && di.dli_fname) {
+        lib = strrchr(di.dli_fname, '/');
+        lib = lib ? lib + 1 : di.dli_fname;
+    } else lib = "?";
+    c = exe_name((uintptr_t)caller);
+    if (!c) return lib;
+    snprintf(buf, sizeof buf, "%s <- %s", lib, c);
+    for (i = 0; i < s_pair_n; i++)
+        if (!strcmp(s_pair[i], buf)) return s_pair[i];
+    if (s_pair_n == PROF_PAIRS) return lib;
+    memcpy(s_pair[s_pair_n], buf, sizeof buf);
+    return s_pair[s_pair_n++];
 }
 
 static void prof_drain(void)
@@ -251,7 +353,8 @@ static void prof_drain(void)
         unsigned w = __atomic_load_n(&s_prof[k].w, __ATOMIC_ACQUIRE);
         if (w - s_prof[k].r > PROF_RING) s_prof[k].r = w - PROF_RING;
         for (; s_prof[k].r != w; s_prof[k].r++) {
-            const char *nm = prof_name(s_prof[k].ring[s_prof[k].r % PROF_RING]);
+            const char *nm = prof_name2(s_prof[k].ring[s_prof[k].r % PROF_RING],
+                                        s_prof[k].caller[s_prof[k].r % PROF_RING]);
             int slow = s_prof[k].slow[s_prof[k].r % PROF_RING], j;
             for (j = 0; j < s_nfn[k]; j++)
                 if (s_fn[k][j].name == nm) break;
@@ -326,6 +429,8 @@ static void prof_start(void)
     if (!e || atoi(e) <= 0)
         return;
     s_prof_on = 1;
+    exe_symbols_load();
+    fprintf(stderr, "[PROF] %zu functions named from the executable\n", s_exefn_n);
     memset(&sa, 0, sizeof sa);
     sa.sa_sigaction = prof_sig;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
