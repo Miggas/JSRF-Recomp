@@ -406,7 +406,7 @@ switch it on. Steam launch options override the file.
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_ACK_FAST=1` | Experimental: the game runs a frame ahead of the GPU emulation, so the two work at the same time (faster in busy areas). Turn it off if sound, visuals or input go wrong. |
+| `RECOMP_ACK_FAST=0` | Turns off running the game a frame ahead of the GPU emulation (on by default: the two work at the same time, faster in busy areas). Try it if sound, visuals or input go wrong. |
 | `RECOMP_GL_TEX_WATCH=0` | Turns the texture write-watch off (it is on by default on Windows and in the Linux build, off under Proton). Try it if the game stutters. |
 | `RECOMP_SLEEP_WAITS=…` | GPU waits. Default on Windows and Linux (the Steam Deck's native build too): `all` (the game's wait spins 0.2 ms, then sleeps). Default under Proton: `vblank`. `none` = highest CPU use. Steam Deck with Proton: see [section 7](#choose-a-power-mode). |
 

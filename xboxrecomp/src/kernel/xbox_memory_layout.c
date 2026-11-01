@@ -1599,8 +1599,10 @@ static void xbox_Nv2aAckStart(void)
     {
         /* v259: RECOMP_ACK_FAST=1 is the fetch mode (above); =2 the v74
          * shared-ring version, kept for comparison */
+        /* v261: on by default (*Miggas's call* after the Deck and PC runs);
+         * RECOMP_ACK_FAST=0 takes turns again */
         const char *af = getenv("RECOMP_ACK_FAST");
-        if (af && af[0] == '1' && !getenv("RECOMP_ACK_INLINE")) {
+        if ((!af || af[0] == '1') && !getenv("RECOMP_ACK_INLINE")) {
             extern int g_pb_fence_notify;
             const char *fr = getenv("RECOMP_FIFO_FRAMES");
             s_fq = (uint32_t *)VirtualAlloc(NULL, FQ_WORDS * 4, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -1612,7 +1614,7 @@ static void xbox_Nv2aAckStart(void)
                 g_nv2a_fetch_thread = CreateThread(NULL, 0, nv2a_fetch_thread, g_nv2a_memory, 0, NULL);
                 if (g_nv2a_fetch_thread) {
                     SetThreadPriority(g_nv2a_fetch_thread, THREAD_PRIORITY_ABOVE_NORMAL);
-                    fprintf(stderr, "  NV2A fetch mode (RECOMP_ACK_FAST=1, experimental): the game runs"
+                    fprintf(stderr, "  NV2A fetch mode (RECOMP_ACK_FAST=0 to turn off): the game runs"
                             " up to %d frame%s ahead of the GPU emulation (RECOMP_FIFO_FRAMES)\n",
                             s_fq_ahead, s_fq_ahead == 1 ? "" : "s");
                 } else {
