@@ -696,6 +696,11 @@ int run(const char *const *argv, const char *cwd, volatile int *cancel)
         sigemptyset(&none);
         sigprocmask(SIG_SETMASK, &none, NULL);
         setpgid(0, 0);   /* its own group: cancel stops the compilers too */
+        /* Steam's game mode preloads its overlay into everything started
+         * from it; the 32-bit copy makes every 64-bit tool print an ld.so
+         * error, which ended up in the versions read back from git and curl.
+         * The tools don't need the overlay (the game keeps it). */
+        unsetenv("LD_PRELOAD");
         dup2(fd[1], 1);
         dup2(fd[1], 2);
         close(fd[0]);
