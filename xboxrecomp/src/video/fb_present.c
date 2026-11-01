@@ -425,9 +425,43 @@ static void fb_fullscreen(HWND h, int on)
     s_fullscreen = on;
 }
 
+/* v262: the pointer hides itself over the game window once it has been
+ * still for 2 s, and comes back when the mouse moves (*Miggas*: it stayed
+ * in the middle of the picture). RECOMP_CURSOR_HIDE=0 keeps it. */
+static DWORD s_mouse_ms;
+static int s_cursor_hidden, s_cursor_hide = -1;
+static int cursor_hide_on(void)
+{
+    if (s_cursor_hide < 0) {
+        const char *e = getenv("RECOMP_CURSOR_HIDE");
+        s_cursor_hide = !(e && e[0] == '0');
+    }
+    return s_cursor_hide;
+}
+
 static LRESULT CALLBACK fb_wndproc(HWND h, UINT m, WPARAM w, LPARAM l)
 {
     switch (m) {
+    case WM_MOUSEMOVE: {
+        static LPARAM last;
+        if (l != last) {                     /* a real move, not a repeat */
+            last = l;
+            s_mouse_ms = GetTickCount();
+            if (s_cursor_hidden) { s_cursor_hidden = 0; SetCursor(LoadCursorA(NULL, IDC_ARROW)); }
+        }
+        break;
+    }
+    case WM_TIMER:
+        if (w == 0x4A53 && cursor_hide_on() && !s_cursor_hidden && GetTickCount() - s_mouse_ms > 2000) {
+            POINT p;
+            RECT r;
+            if (GetCursorPos(&p) && ScreenToClient(h, &p) && GetClientRect(h, &r)
+                    && PtInRect(&r, p) && GetForegroundWindow() == h) {
+                s_cursor_hidden = 1;
+                SetCursor(NULL);
+            }
+        }
+        return 0;
     case WM_CLOSE:
         /* Closing the game's window ends the game. It used to only stop
          * this thread, and the next flip opened a fresh window, so the only
@@ -483,7 +517,7 @@ static LRESULT CALLBACK fb_wndproc(HWND h, UINT m, WPARAM w, LPARAM l)
         return 0;
 
     case WM_SETCURSOR:
-        if (s_mouse_cap && LOWORD(l) == HTCLIENT) {
+        if ((s_mouse_cap || s_cursor_hidden) && LOWORD(l) == HTCLIENT) {
             SetCursor(NULL);
             return TRUE;
         }
@@ -654,6 +688,8 @@ static DWORD WINAPI fb_thread(LPVOID unused)
     }
     hdc = GetDC(hwnd);
     s_hwnd = hwnd;
+    s_mouse_ms = GetTickCount();
+    SetTimer(hwnd, 0x4A53, 500, NULL);       /* v262: the pointer's idle check */
 
     memset(&bi, 0, sizeof(bi));
     bi.bmiHeader.biSize        = sizeof(bi.bmiHeader);
@@ -1042,6 +1078,9 @@ void xbox_FramebufferWindowAttach(void *sdl_window)
             s_fullscreen ? ", full screen" : "");
 }
 
+static uint64_t s_lx_mouse_ms;               /* v262: the pointer's last move */
+static int s_lx_cursor_hidden;
+
 /* the window's events, once a presented frame (executor thread) */
 void xbox_FramebufferWindowPump(void)
 {
@@ -1084,12 +1123,26 @@ void xbox_FramebufferWindowPump(void)
         case SDL_MOUSEWHEEL:
             __atomic_add_fetch(&s_wheel, e.wheel.y * 120, __ATOMIC_SEQ_CST);
             break;
+        case SDL_MOUSEMOTION:                /* v262: the pointer back */
+            s_lx_mouse_ms = ms_now();
+            if (s_lx_cursor_hidden) { s_lx_cursor_hidden = 0; SDL_ShowCursor(SDL_ENABLE); }
+            break;
         case SDL_WINDOWEVENT:
             if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
                 memset((void *)s_key_down, 0, sizeof s_key_down);
             break;
         default:
             break;
+        }
+    }
+    {
+        /* v262: the pointer hides after 2 s still (RECOMP_CURSOR_HIDE=0 keeps it) */
+        static int on = -1;
+        if (on < 0) { const char *ce = getenv("RECOMP_CURSOR_HIDE"); on = !(ce && ce[0] == '0'); }
+        if (!s_lx_mouse_ms) s_lx_mouse_ms = ms_now();
+        if (on && !s_lx_cursor_hidden && ms_now() - s_lx_mouse_ms > 2000) {
+            s_lx_cursor_hidden = 1;
+            SDL_ShowCursor(SDL_DISABLE);
         }
     }
     {
