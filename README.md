@@ -13,8 +13,10 @@ README on the main branch.
 
 | Button | Does |
 |---|---|
-| Left stick / d-pad | Moves the pointer |
-| A | Clicks |
+| D-pad / left stick | Moves between buttons (the highlighted one has a yellow frame) |
+| A | Presses the highlighted button, opens a list, picks from it |
+| B | Closes an open list |
+| Left / right on a slider | Changes its value |
 | Right stick | Scrolls |
 | LB / RB | Previous / next tab |
 | Start | PLAY |

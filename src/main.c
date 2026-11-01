@@ -20,6 +20,10 @@
 #define NK_INCLUDE_DEFAULT_FONT
 #define NK_IMPLEMENTATION
 #define NK_SDL_RENDERER_IMPLEMENTATION
+/* v1q: every clickable widget reports its box (third_party/nuklear/nuklear.h,
+ * marked "jsrf launcher"), for moving between them with a controller */
+static void focus_hook(float x, float y, float w, float h, int kind, float frac, float step);
+#define NK_FOCUS_HOOK(r, kind, frac, step) focus_hook((r).x, (r).y, (r).w, (r).h, kind, frac, step)
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -176,13 +180,168 @@ static void start_build(void)
     if (job_start(JOB_ALL, false)) s_tab = TAB_BUILD;
 }
 
-/* v1p: a controller drives a pointer (Nuklear has no focus navigation):
- * left stick or d-pad moves it, A clicks, right stick scrolls, LB / RB change
- * tab, Start plays. The pointer is drawn while the controller is in use and
- * hidden again when the mouse moves. */
+/* v1q: controller navigation. The d-pad (or the left stick) moves a
+ * highlight between the clickable widgets -- the nearest one in that
+ * direction -- and A clicks it; on a slider left / right change the value.
+ * B closes an open list, the right stick scrolls, LB / RB change tab, Start
+ * plays. The highlight shows while the controller is in use; the mouse works
+ * as before. Widgets report their boxes while the frame is built
+ * (focus_hook); the next frame's input picks from them. */
+typedef struct { float x, y, w, h, frac, step; int kind, popup; } FocusT;
+#define FOCUS_MAX 512
+static FocusT s_ft[2][FOCUS_MAX];            /* this frame's, last frame's */
+static int s_ftn[2], s_ftcur;
+static struct nk_context *s_fctx;
+static bool s_pad_mode, s_pad_play, s_quit_after_play, s_pad_busy, s_pad_release;
+static bool s_have_focus, s_pad_click_now, s_rep_from_stick;
+static FocusT s_focus;                       /* the highlighted widget */
+static int s_rep_dir = -1, s_stick_dir = -1;  /* a held direction repeats */
+static int s_pad_slide;                       /* -1 / +1 for the highlighted slider */
+static Uint32 s_rep_next;
+static void pad_repeat_start(int dir) { s_rep_dir = dir; s_rep_next = SDL_GetTicks() + 450; }
+static void pad_repeat_stop(void) { s_rep_dir = -1; }
 static SDL_GameController *s_pads[4];
-static float s_cx = 640, s_cy = 400;
-static bool s_pad_cursor, s_pad_play, s_quit_after_play, s_pad_moving;
+
+static void focus_hook(float x, float y, float w, float h, int kind, float frac, float step)
+{
+    FocusT *t;
+    if (s_ftn[s_ftcur] >= FOCUS_MAX || w < 4 || h < 4) return;
+    /* a slider's own +/- buttons and similar come in again inside it: keep one */
+    t = &s_ft[s_ftcur][s_ftn[s_ftcur]];
+    t->x = x; t->y = y; t->w = w; t->h = h; t->kind = kind; t->frac = frac; t->step = step;
+    t->popup = s_fctx && s_fctx->current && s_fctx->current->layout
+               && (s_fctx->current->layout->type & NK_PANEL_SET_POPUP);
+    s_ftn[s_ftcur]++;
+}
+
+/* last frame's targets, only the open list's if one is open */
+static int focus_targets(FocusT **out)
+{
+    int prev = s_ftcur ^ 1, n = s_ftn[prev], np = 0, i;
+    static FocusT tmp[FOCUS_MAX];
+    for (i = 0; i < n; i++) if (s_ft[prev][i].popup) tmp[np++] = s_ft[prev][i];
+    if (np) { *out = tmp; return np; }
+    *out = s_ft[prev];
+    return n;
+}
+
+static float cxf(const FocusT *t) { return t->x + t->w / 2; }
+static float cyf(const FocusT *t) { return t->y + t->h / 2; }
+
+/* keep the highlight on the same widget as the frame changes */
+static void focus_follow(int ww, int wh)
+{
+    FocusT *t;
+    int n = focus_targets(&t), i, best = -1;
+    float bd = 1e30f;
+    float fx = s_have_focus ? cxf(&s_focus) : ww * 0.27f, fy = s_have_focus ? cyf(&s_focus) : wh * 0.7f;
+    for (i = 0; i < n; i++) {
+        float dx = cxf(&t[i]) - fx, dy = cyf(&t[i]) - fy, d = dx * dx + dy * dy;
+        if (s_have_focus && t[i].popup != s_focus.popup) d += 1e8f;   /* into a list that opened */
+        if (d < bd) { bd = d; best = i; }
+    }
+    if (best >= 0) {
+        static FocusT before_list;               /* where a list was opened from */
+        if (!s_focus.popup && t[best].popup) before_list = s_focus;
+        if (s_focus.popup && !t[best].popup && s_have_focus) {
+            /* the list closed: back to its header, the nearest to where it was opened */
+            float bd2 = 1e30f;
+            for (i = 0; i < n; i++) {
+                float dx = cxf(&t[i]) - cxf(&before_list), dy = cyf(&t[i]) - cyf(&before_list);
+                if (dx * dx + dy * dy < bd2) { bd2 = dx * dx + dy * dy; best = i; }
+            }
+        }
+        s_focus = t[best];
+        s_have_focus = true;
+    } else s_have_focus = false;
+}
+
+/* the nearest widget in a direction (0 left, 1 right, 2 up, 3 down) */
+static bool focus_move(int dir)
+{
+    FocusT *t;
+    int n = focus_targets(&t), i, best = -1;
+    float bd = 1e30f, fx = cxf(&s_focus), fy = cyf(&s_focus);
+    for (i = 0; i < n; i++) {
+        float dx = cxf(&t[i]) - fx, dy = cyf(&t[i]) - fy, along, across;
+        switch (dir) {
+        case 0: along = -dx; across = dy; break;
+        case 1: along = dx;  across = dy; break;
+        case 2: along = -dy; across = dx; break;
+        default: along = dy; across = dx; break;
+        }
+        if (along < 4) continue;
+        /* overlapping in the other axis counts as straight ahead */
+        if (dir >= 2) {
+            float ox = NK_MIN(t[i].x + t[i].w, s_focus.x + s_focus.w) - NK_MAX(t[i].x, s_focus.x);
+            if (ox > 0) across = 0;
+        } else {
+            /* left / right stay in the row */
+            float oy = NK_MIN(t[i].y + t[i].h, s_focus.y + s_focus.h) - NK_MAX(t[i].y, s_focus.y);
+            if (oy <= 0) continue;
+            across = 0;
+        }
+        {
+            float d = along + 2.5f * (across < 0 ? -across : across);
+            if (d < bd) { bd = d; best = i; }
+        }
+    }
+    if (best < 0) return false;
+    s_focus = t[best];
+    return true;
+}
+
+/* a click at (x, y): pressed now, released next frame */
+static void pad_click(struct nk_context *ctx, float x, float y)
+{
+    nk_input_motion(ctx, (int)x, (int)y);
+    nk_input_button(ctx, NK_BUTTON_LEFT, (int)x, (int)y, 1);
+    s_pad_release = true;
+    s_pad_click_now = true;
+}
+
+static void pad_dir(struct nk_context *ctx, int dir)
+{
+    s_pad_mode = true;
+    if (!s_have_focus) return;
+    if (s_focus.kind == 1 && dir < 2) {      /* a slider: a step down or up */
+        s_pad_slide = dir ? 1 : -1;          /* taken by pad_slider_* as it is drawn */
+        return;
+    }
+    if (!focus_move(dir) && dir >= 2)        /* nothing further: scroll the page */
+        nk_input_scroll(ctx, nk_vec2(0, dir == 2 ? 1.0f : -1.0f));
+    nk_input_motion(ctx, (int)cxf(&s_focus), (int)cyf(&s_focus));   /* hover it, as a mouse would */
+}
+
+/* sliders that the d-pad can step (Nuklear's own only move when dragged by
+ * the knob): when this one is the highlighted widget, a step of it */
+static bool pad_slider_here(struct nk_context *ctx)
+{
+    struct nk_rect b = nk_widget_bounds(ctx);
+    float fx = s_focus.x + s_focus.w / 2, fy = s_focus.y + s_focus.h / 2;
+    return s_pad_slide && s_have_focus && s_focus.kind == 1
+        && fx >= b.x && fx <= b.x + b.w && fy >= b.y && fy <= b.y + b.h;
+}
+static void pad_slider_int(struct nk_context *ctx, int min, int *v, int max, int step)
+{
+    if (pad_slider_here(ctx)) {
+        *v += s_pad_slide * step;
+        if (*v < min) *v = min;
+        if (*v > max) *v = max;
+        s_pad_slide = 0;
+    }
+    nk_slider_int(ctx, min, v, max, step);
+}
+static void pad_slider_float(struct nk_context *ctx, float min, float *v, float max, float step)
+{
+    if (pad_slider_here(ctx)) {
+        *v += (float)s_pad_slide * step;
+        if (*v < min) *v = min;
+        if (*v > max) *v = max;
+        s_pad_slide = 0;
+    }
+    nk_slider_float(ctx, min, v, max, step);
+}
 
 static void tab_play(struct nk_context *ctx)
 {
@@ -435,7 +594,7 @@ static void panel_input(struct nk_context *ctx, float w)
         nk_layout_row_push(ctx, 0.34f);
         nk_label(ctx, "Rumble strength", NK_TEXT_LEFT);
         nk_layout_row_push(ctx, 0.54f);
-        nk_slider_int(ctx, 0, &v, 100, 5);
+        pad_slider_int(ctx, 0, &v, 100, 5);
         nk_layout_row_push(ctx, 0.12f);
         char t[16];
         snprintf(t, sizeof t, v ? "%d%%" : "Off", v);
@@ -455,7 +614,7 @@ static void panel_audio(struct nk_context *ctx, float w)
     nk_layout_row_push(ctx, 0.34f);
     nk_label(ctx, "Gain", NK_TEXT_LEFT);
     nk_layout_row_push(ctx, 0.54f);
-    nk_slider_float(ctx, 0.0f, &v, 1.5f, 0.05f);
+    pad_slider_float(ctx, 0.0f, &v, 1.5f, 0.05f);
     nk_layout_row_push(ctx, 0.12f);
     char t[16];
     snprintf(t, sizeof t, "%.2f", v);
@@ -919,6 +1078,7 @@ int main(int argc, char **argv)
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
     struct nk_context *ctx = nk_sdl_init(win, ren);
+    s_fctx = ctx;
     load_font(ctx, 20);
     style(ctx);
 
@@ -940,8 +1100,7 @@ int main(int argc, char **argv)
         static bool have_pending;
         bool got;
         if (have_pending) { e = pending; have_pending = false; got = true; }
-        else got = SDL_WaitEventTimeout(&e, s_pad_moving ? 16 : job_busy() ? 33 : 250);   /* idle, but follow a job's log */
-        s_pad_moving = false;
+        else got = SDL_WaitEventTimeout(&e, s_pad_busy ? 16 : job_busy() ? 33 : 250);   /* idle, but follow a job's log */
         if (got) {
             do {
                 if (e.type == SDL_MOUSEBUTTONDOWN && !have_pending &&
@@ -963,83 +1122,70 @@ int main(int argc, char **argv)
                             SDL_GameControllerClose(s_pads[k]);
                             s_pads[k] = NULL;
                         }
-                } else if (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP) {
-                    bool down = e.type == SDL_CONTROLLERBUTTONDOWN;
+                } else if (e.type == SDL_CONTROLLERBUTTONDOWN) {
                     int ntab = debug_menu_pref() ? TAB_COUNT : TAB_DEBUG;
-                    if (!s_pad_cursor) {
-                        s_pad_cursor = true;
-                        nk_input_motion(ctx, (int)s_cx, (int)s_cy);
-                    }
+                    s_pad_mode = true;
                     switch (e.cbutton.button) {
+                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT:  pad_dir(ctx, 0); pad_repeat_start(0); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: pad_dir(ctx, 1); pad_repeat_start(1); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_UP:    pad_dir(ctx, 2); pad_repeat_start(2); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN:  pad_dir(ctx, 3); pad_repeat_start(3); break;
                     case SDL_CONTROLLER_BUTTON_A:
-                        nk_input_motion(ctx, (int)s_cx, (int)s_cy);
-                        nk_input_button(ctx, NK_BUTTON_LEFT, (int)s_cx, (int)s_cy, down);
+                        if (s_have_focus && s_focus.kind != 1) pad_click(ctx, cxf(&s_focus), cyf(&s_focus));
                         break;
-                    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
-                        if (down) s_tab = (s_tab + ntab - 1) % ntab;
+                    case SDL_CONTROLLER_BUTTON_B: {
+                        FocusT *t;
+                        int n = focus_targets(&t);
+                        if (n && t[0].popup) pad_click(ctx, 2, 2);   /* outside: the list closes */
                         break;
-                    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
-                        if (down) s_tab = (s_tab + 1) % ntab;
-                        break;
-                    case SDL_CONTROLLER_BUTTON_START:
-                        if (down) { s_tab = TAB_PLAY; s_pad_play = true; }
-                        break;
+                    }
+                    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  s_tab = (s_tab + ntab - 1) % ntab; break;
+                    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: s_tab = (s_tab + 1) % ntab; break;
+                    case SDL_CONTROLLER_BUTTON_START: s_tab = TAB_PLAY; s_pad_play = true; break;
                     default: break;
                     }
-                    if (e.cbutton.button == SDL_CONTROLLER_BUTTON_A) break;   /* press, release: own frames */
+                    break;                   /* a press is its own frame */
+                } else if (e.type == SDL_CONTROLLERBUTTONUP) {
+                    pad_repeat_stop();
                 } else {
-                    if (e.type == SDL_MOUSEMOTION) {
-                        s_pad_cursor = false;      /* the mouse again */
-                        s_cx = (float)e.motion.x; s_cy = (float)e.motion.y;
-                    }
+                    if (e.type == SDL_MOUSEMOTION) s_pad_mode = false;   /* the mouse again */
                     nk_sdl_handle_event(&e);
                 }
                 if (e.type == SDL_MOUSEBUTTONDOWN) break;
             } while (SDL_PollEvent(&e));
         }
-        /* v1p: the sticks and the d-pad, every frame while they are held */
+        /* v1q: the release of a controller click; the left stick as a
+         * d-pad; held directions repeat; the right stick scrolls */
+        if (s_pad_release && !s_pad_click_now) {
+            nk_input_button(ctx, NK_BUTTON_LEFT, ctx->input.mouse.pos.x, ctx->input.mouse.pos.y, 0);
+            s_pad_release = false;
+        }
+        s_pad_click_now = false;
         {
-            static Uint32 last;
             Uint32 now = SDL_GetTicks();
-            float dt = last ? (now - last) / 1000.0f : 0.0f;
-            int ww, wh;
-            last = now;
-            if (dt > 0.1f) dt = 0.1f;
-            SDL_GetWindowSize(win, &ww, &wh);
+            int stick = -1;
+            float sy = 0;
             for (int k = 0; k < 4; k++) {
                 SDL_GameController *g = s_pads[k];
-                float mx = 0, my = 0, sy = 0;
                 if (!g) continue;
-                {
-                    int lx = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTX);
-                    int ly = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTY);
-                    int ry = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_RIGHTY);
-                    const float dz = 7000.0f;
-                    if (abs(lx) > dz) mx = (lx > 0 ? lx - dz : lx + dz) / (32767.0f - dz);
-                    if (abs(ly) > dz) my = (ly > 0 ? ly - dz : ly + dz) / (32767.0f - dz);
-                    if (abs(ry) > dz) sy = (ry > 0 ? ry - dz : ry + dz) / (32767.0f - dz);
-                }
-                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_LEFT))  mx = -0.6f;
-                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) mx = 0.6f;
-                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_UP))    my = -0.6f;
-                if (SDL_GameControllerGetButton(g, SDL_CONTROLLER_BUTTON_DPAD_DOWN))  my = 0.6f;
-                if (mx || my) {
-                    /* faster the further the stick: fine control near the
-                     * centre, the width of the window in about a second */
-                    float sp = 1400.0f * dt;
-                    s_cx += mx * fabsf(mx) * sp;
-                    s_cy += my * fabsf(my) * sp;
-                    if (s_cx < 0) s_cx = 0; if (s_cx > ww - 1) s_cx = (float)(ww - 1);
-                    if (s_cy < 0) s_cy = 0; if (s_cy > wh - 1) s_cy = (float)(wh - 1);
-                    s_pad_cursor = true;
-                    nk_input_motion(ctx, (int)s_cx, (int)s_cy);
-                    s_pad_moving = true;
-                }
-                if (sy) {
-                    nk_input_scroll(ctx, nk_vec2(0, -sy * 12.0f * dt * 4.0f));
-                    s_pad_moving = true;
-                }
+                int lx = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTX);
+                int ly = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_LEFTY);
+                int ry = SDL_GameControllerGetAxis(g, SDL_CONTROLLER_AXIS_RIGHTY);
+                if (abs(lx) > 20000 || abs(ly) > 20000)
+                    stick = abs(lx) > abs(ly) ? (lx < 0 ? 0 : 1) : (ly < 0 ? 2 : 3);
+                if (abs(ry) > 7000) sy = (ry > 0 ? ry - 7000 : ry + 7000) / 25767.0f;
             }
+            if (stick != s_stick_dir) {
+                s_stick_dir = stick;
+                if (stick >= 0) { pad_dir(ctx, stick); pad_repeat_start(stick); }
+                else if (s_rep_from_stick) pad_repeat_stop();
+                s_rep_from_stick = stick >= 0;
+            } else if (s_rep_dir >= 0 && SDL_TICKS_PASSED(now, s_rep_next)) {
+                pad_dir(ctx, s_rep_dir);
+                s_rep_next = now + 110;
+            }
+            if (sy) { nk_input_scroll(ctx, nk_vec2(0, -sy * 0.5f)); s_pad_mode = true; }
+            s_pad_busy = s_rep_dir >= 0 || sy != 0 || s_pad_release;
         }
         nk_sdl_handle_grab();
         nk_input_end(ctx);
@@ -1117,23 +1263,23 @@ int main(int argc, char **argv)
         SDL_SetRenderDrawColor(ren, 28, 28, 34, 255);
         SDL_RenderClear(ren);
         nk_sdl_render(NK_ANTI_ALIASING_ON);
-        if (s_pad_cursor) {
-            /* v1p: the controller's pointer, an arrow with a dark edge */
-            int x = (int)s_cx, y = (int)s_cy;
-            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-            for (int pass = 0; pass < 2; pass++) {
-                int o = pass ? 0 : 1;
-                if (pass) SDL_SetRenderDrawColor(ren, 245, 200, 40, 255);
-                else SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);
-                for (int r = 0; r < 30; r++) {     /* rows of a right triangle, tip at (x, y) */
-                    int len = r * 2 / 3 + (pass ? 0 : 2);
-                    SDL_RenderDrawLine(ren, x - o, y + r, x + len - o, y + r);
-                }
+        if (s_pad_mode && s_have_focus) {
+            /* v1q: the highlighted widget, a yellow frame around it */
+            SDL_Rect r = { (int)s_focus.x - 3, (int)s_focus.y - 3, (int)s_focus.w + 6, (int)s_focus.h + 6 };
+            SDL_SetRenderDrawColor(ren, 245, 200, 40, 255);
+            for (int k = 0; k < 3; k++) {
+                SDL_RenderDrawRect(ren, &r);
+                r.x++; r.y++; r.w -= 2; r.h -= 2;
             }
         }
         SDL_RenderPresent(ren);
         s_pad_play = false;
+        s_pad_slide = 0;
         if (s_quit_after_play) running = false;
+        /* v1q: this frame's widgets become the ones the next input picks from */
+        s_ftcur ^= 1;
+        s_ftn[s_ftcur] = 0;
+        focus_follow(w, h);
     }
     if (job_busy()) {
         job_cancel();

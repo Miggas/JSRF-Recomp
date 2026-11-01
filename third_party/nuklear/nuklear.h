@@ -24996,6 +24996,9 @@ nk_button_behavior(nk_flags *state, struct nk_rect r,
     const struct nk_input *i, enum nk_button_behavior behavior)
 {
     int ret = 0;
+#ifdef NK_FOCUS_HOOK
+    NK_FOCUS_HOOK(r, 0, 0.0f, 0.0f);   /* jsrf launcher: controller navigation */
+#endif
     nk_widget_state_reset(state);
     if (!i) return 0;
     if (nk_input_is_mouse_hovering_rect(i, r)) {
@@ -26529,6 +26532,10 @@ nk_do_slider(nk_flags *state,
     bounds.w = NK_MAX(bounds.w, 2*style->padding.x + style->cursor_size.x);
     bounds.w -= 2 * style->padding.x;
     bounds.h -= 2 * style->padding.y;
+#ifdef NK_FOCUS_HOOK
+    NK_FOCUS_HOOK(bounds, 1, (max > min) ? (val - min) / (max - min) : 0.0f,
+                  (max > min) ? step / (max - min) : 0.05f);   /* jsrf launcher */
+#endif
 
     /* optional buttons */
     if (style->show_buttons) {
@@ -28570,6 +28577,9 @@ nk_do_edit(nk_flags *state, struct nk_command_buffer *out,
     struct nk_rect old_clip;
     struct nk_rect clip;
 
+#ifdef NK_FOCUS_HOOK
+    NK_FOCUS_HOOK(bounds, 2, 0.0f, 0.0f);   /* jsrf launcher */
+#endif
     NK_ASSERT(state);
     NK_ASSERT(out);
     NK_ASSERT(style);
