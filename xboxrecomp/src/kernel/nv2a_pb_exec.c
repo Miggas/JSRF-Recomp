@@ -601,7 +601,11 @@ static int passthrough_3d(void)
 
 static int fetch_attr(const VertexAttr *a, uint32_t index, float out[4])
 {
-    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
+    /* v260b: the window's address is fixed once mapped; a call into
+     * another file per attribute per vertex was 1.7% of the executor */
+    static const uint8_t *s_fa_mem;
+    const uint8_t *mem = s_fa_mem ? s_fa_mem
+                                  : (s_fa_mem = (const uint8_t *)xbox_GetMemoryOffset());
     const uint8_t *p;
     uint32_t i;
 
@@ -6448,6 +6452,10 @@ int nv2a_pb_exec_indices16(const uint32_t *p, uint32_t n)
     return 1;
 }
 
+/* v260b: the default branch's methods by kind, once seen (method >> 2) */
+enum { DCLS_UNKNOWN, DCLS_CONST, DCLS_PROG, DCLS_UNHANDLED };
+static uint8_t s_dcls[2048];
+
 static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
 {
     if (!s_exec_inited) {
@@ -6934,6 +6942,17 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
     case 0x1D8C: s_gpu.zstencil_clear = param; break; /* ZSTENCIL_CLEAR_VALUE */
 
     default:
+        /* v260b: which way this method went before (s_dcls). The chain
+         * below decides by method number alone, and in a busy area the
+         * vertex program constants (~5 million words in 10 s) and the
+         * methods with nothing to do (~6 million) walked all of it each
+         * time: ~20% of the executor on the Deck (Miggas's profile). */
+        switch (s_dcls[(method >> 2) & 2047]) {
+        case DCLS_CONST:   nv2a_vsh_constant_word(param); return;
+        case DCLS_PROG:    nv2a_vsh_program_word(param); return;
+        case DCLS_UNHANDLED: note_unhandled(method, param); return;
+        default: break;
+        }
         if (method >= 0x0260 && method < 0x0280) {         /* ALPHA_ICW(i) */
             s_gpu.rc.alpha_icw[(method - 0x0260) / 4] = param;
             break;
@@ -7009,10 +7028,12 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
         if (ff_light_method(method, param))
             break;
         if (method >= 0x0B00 && method < 0x0B80) {    /* TRANSFORM_PROGRAM(i) */
+            s_dcls[(method >> 2) & 2047] = DCLS_PROG;
             nv2a_vsh_program_word(param);
             break;
         }
         if (method >= 0x0B80 && method < 0x0C00) {    /* TRANSFORM_CONSTANT(i) */
+            s_dcls[(method >> 2) & 2047] = DCLS_CONST;
             nv2a_vsh_constant_word(param);
             break;
         }
@@ -7034,6 +7055,7 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
             a->size   = (param >> 4)  & 0x0F;
             a->stride = (param >> 8)  & 0xFF;
         } else if (!imm_vertex_method(method, param)) {
+            s_dcls[(method >> 2) & 2047] = DCLS_UNHANDLED;
             note_unhandled(method, param);
         }
         break;
