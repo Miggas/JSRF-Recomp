@@ -15,6 +15,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include <string.h>
 #include <ctype.h>
@@ -645,6 +646,11 @@ static void rumble_send(int pad, const XBOX_VIBRATION *v)
     xbox_InputSetSource(s_slot_src[pad], v);  /* the keyboard: nothing */
 }
 
+/* v264: see usb_gamepad_report */
+volatile float g_xbox_pad0_turn;
+volatile DWORD g_xbox_pad0_turn_ms;
+volatile short g_xbox_pad0_rx, g_xbox_pad0_ry;
+
 int usb_gamepad_report(int pad, uint8_t *out, int max)
 {
     XBOX_INPUT_STATE state;
@@ -714,6 +720,21 @@ int usb_gamepad_report(int pad, uint8_t *out, int max)
     }
 
     g = &state.Gamepad;
+    if (pad == 0) {
+        /* v264: the title's right-stick camera (jsrf recomp_manual.c) reads
+         * player 1's right stick, and turns the left stick by the angle the
+         * view is turned, so "up" stays away from the camera shown. Only
+         * while it says so (within the last 200 ms). */
+        g_xbox_pad0_rx = g->sThumbRX;
+        g_xbox_pad0_ry = g->sThumbRY;
+        if (g_xbox_pad0_turn != 0.0f && GetTickCount() - g_xbox_pad0_turn_ms < 200) {
+            double t = g_xbox_pad0_turn, c = cos(t), sn = sin(t);
+            double x = g->sThumbLX, y = g->sThumbLY;
+            double nx = x * c + y * sn, ny = y * c - x * sn;
+            state.Gamepad.sThumbLX = (SHORT)(nx > 32767 ? 32767 : nx < -32768 ? -32768 : nx);
+            state.Gamepad.sThumbLY = (SHORT)(ny > 32767 ? 32767 : ny < -32768 ? -32768 : ny);
+        }
+    }
     out[2] = (uint8_t)((g->wButtons & 0xFF) | synth);
     out[3] = (uint8_t)((g->wButtons >> 8) & 0xFF);
     for (i = 0; i < 8; i++)
