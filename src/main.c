@@ -680,6 +680,50 @@ static void panel_input(struct nk_context *ctx, float w)
         if (v != cur) { char s2[8]; snprintf(s2, sizeof s2, "%d", v); put("RECOMP_RUMBLE", s2, "input"); }
         desc(ctx, w, "Controller vibration, in percent. 0 turns it off.", C_DIM);
     }
+    /* v1v: the modern camera (the game's v265) */
+    spacer(ctx, 6);
+    nk_layout_row_dynamic(ctx, s_row, 1);
+    nk_label_colored(ctx, "Camera", NK_TEXT_LEFT, C_HEAD);
+    {
+        bool on = strcmp(get_or("RECOMP_CAM_ORBIT", "1"), "0") != 0;
+        bool n = check(ctx, "Modern 3rd person camera", on);
+        if (n != on) { if (n) off("RECOMP_CAM_ORBIT"); else put("RECOMP_CAM_ORBIT", "0", "input"); }
+        desc(ctx, w, "The right stick turns the camera around the skater. While skating it swings back "
+                     "behind a second after you let go; standing still it stays until you move. "
+                     "Off: the original camera.", C_DIM);
+        if (!n) nk_widget_disable_begin(ctx);
+        {
+            bool y = !strcmp(get_or("RECOMP_CAM_INVERT_Y", "0"), "1");
+            bool ny = check(ctx, "Camera invert Up <> Down", y);
+            if (ny != y) { if (ny) put("RECOMP_CAM_INVERT_Y", "1", "input"); else off("RECOMP_CAM_INVERT_Y"); }
+            bool x = !strcmp(get_or("RECOMP_CAM_INVERT_X", "0"), "1");
+            bool nx = check(ctx, "Camera invert Left <> Right", x);
+            if (nx != x) { if (nx) put("RECOMP_CAM_INVERT_X", "1", "input"); else off("RECOMP_CAM_INVERT_X"); }
+        }
+        {
+            float cur = (float)atof(get_or("RECOMP_CAM_SENS", "1.0")), v;
+            if (!(cur >= 0.3f)) cur = cur > 0.0f ? 0.3f : 1.0f;
+            if (cur > 2.0f) cur = 2.0f;
+            v = cur;
+            nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
+            nk_layout_row_push(ctx, 0.34f);
+            nk_label(ctx, "Camera sensitivity", NK_TEXT_LEFT);
+            nk_layout_row_push(ctx, 0.54f);
+            pad_slider_float(ctx, 0.3f, &v, 2.0f, 0.1f);
+            nk_layout_row_push(ctx, 0.12f);
+            v = (float)(int)(v * 10.0f + 0.5f) / 10.0f;
+            char t[16];
+            snprintf(t, sizeof t, "%.1f", v);
+            nk_label(ctx, t, NK_TEXT_RIGHT);
+            nk_layout_row_end(ctx);
+            if (v < cur - 0.01f || v > cur + 0.01f) {
+                if (v > 0.99f && v < 1.01f) off("RECOMP_CAM_SENS");
+                else put("RECOMP_CAM_SENS", t, "input");
+            }
+        }
+        if (!n) nk_widget_disable_end(ctx);
+        desc(ctx, w, "These settings are only for the modern 3rd person camera.", C_DIM);
+    }
 }
 
 static void panel_audio(struct nk_context *ctx, float w)
