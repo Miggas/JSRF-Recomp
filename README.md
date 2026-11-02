@@ -559,6 +559,9 @@ co-author.
 - [sp00nznet](https://github.com/sp00nznet/xboxrecomp) for the `xboxrecomp` toolkit this port is
   built on.
 - Piaka for the borderless window tip.
+- The quit window and the "Building Shaders" message use the
+  [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
+  drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
 - [JuMatt's JetSetRadioFuture-Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed)
   (MIT): building the shaders ahead ("Building Shaders") and the modern 3rd
   person camera were inspired by it, and improved upon by Miggas (the camera
