@@ -559,6 +559,11 @@ co-author.
 - [sp00nznet](https://github.com/sp00nznet/xboxrecomp) for the `xboxrecomp` toolkit this port is
   built on.
 - Piaka for the borderless window tip.
+- [JuMatt's JetSetRadioFuture-Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed)
+  (MIT): building the shaders ahead ("Building Shaders") and the modern 3rd
+  person camera were inspired by it, and improved upon by Miggas (the camera
+  turning when standing still and staying until you move, easing back as soon
+  as you set off, invert and sensitivity settings).
 - The launcher draws its window with [Nuklear](https://github.com/Immediate-Mode-UI/Nuklear)
   (public domain / MIT) on [SDL2](https://libsdl.org) (zlib), and builds with
   [Zig](https://ziglang.org) (MIT).
