@@ -720,7 +720,7 @@ int usb_gamepad_report(int pad, uint8_t *out, int max)
     }
 
     g = &state.Gamepad;
-    if (pad == 0) {
+    {   /* v264b: every pad (the camera is single-player only) */
         /* v264: the title's right-stick camera (jsrf recomp_manual.c) reads
          * player 1's right stick, and turns the left stick by the angle the
          * view is turned, so "up" stays away from the camera shown. Only

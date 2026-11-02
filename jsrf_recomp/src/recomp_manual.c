@@ -3198,13 +3198,16 @@ static int orbit_lookat(void)
     memcpy(a3, (const void *)XBOX_PTR(pt), 12);
     for (k = 0; k < 3; k++) v[k] = (double)e3[k] - a3[k];
     L = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-    if (log_on) {
+    if (1) {   /* v264b: always, to see which cameras run (bounded) */
         static uint32_t seen[32];
         static unsigned nseen;
         for (k = 0; k < nseen && seen[k] != ra; k++) ;
         if (k == nseen && nseen < 32) {
             seen[nseen++] = ra;
-            fprintf(stderr, "[CAM] camera from %08X obj %08X distance %.1f\n", ra, pe - 0x44, L);
+            unsigned j;
+            for (j = 0; j < sizeof s_cam_play / sizeof s_cam_play[0] && s_cam_play[j] != ra; j++) ;
+            fprintf(stderr, "[CAM] camera from %08X obj %08X distance %.1f%s\n", ra, pe - 0x44, L,
+                    j < sizeof s_cam_play / sizeof s_cam_play[0] ? " (play camera)" : "");
         }
     }
     for (k = 0; k < sizeof s_cam_play / sizeof s_cam_play[0] && s_cam_play[k] != ra; k++) ;
@@ -3277,6 +3280,18 @@ static int orbit_lookat(void)
     /* the left stick turned with the view; not in a menu over the game */
     g_xbox_pad0_turn = xbox_MenuScreenNow() ? 0.0f : (float)yaw;
     g_xbox_pad0_turn_ms = GetTickCount();
+    {   /* v264b: the state every 3 s while a play camera runs (80 lines) */
+        static DWORD last_log;
+        static int nlog;
+        DWORD t = GetTickCount();
+        if ((log_on || nlog < 80) && t - last_log > 3000) {
+            last_log = t;
+            nlog++;
+            fprintf(stderr, "[CAM] %08X dist %.1f speed %.1f %s stick %.2f %.2f turn %.0f deg pitch %.0f deg%s\n",
+                    ra, L, speed, moving ? "moving" : "still", rx, ry, yaw * 57.2958, pitch * 57.2958,
+                    xbox_MenuScreenNow() ? " (menu)" : "");
+        }
+    }
     if (yaw == 0.0 && pitch == 0.0)
         return 0;
 
