@@ -3262,6 +3262,14 @@ static void rcam_apply(uint32_t cam)
         moving = s_rcam.speed > RCAM_MOVING;
     }
 
+    /* v265c: setting off from standing still, a turn left from then eases
+     * back at once (no second's wait) */
+    {
+        static int was_moving;
+        if (moving && !was_moving && s_rcam.rx == 0.0f && s_rcam.ry == 0.0f)
+            s_rcam.idle = RCAM_HOLD;
+        was_moving = moving;
+    }
     ok = mode != 12 && mode != 14;
     s_rcam.take_until = ok ? GetTickCount() + 250 : 0;   /* v265b: standing still too */
     if (!ok || s_rcam.lt) {
