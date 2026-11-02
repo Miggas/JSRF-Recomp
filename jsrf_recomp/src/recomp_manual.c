@@ -3114,6 +3114,246 @@ void sub_001BAF70(void)
     memcpy((void *)XBOX_PTR(pt), keep + 3, 12);
 }
 
+
+/* ── v265: the camera on the right stick (RECOMP_CAM_ORBIT) ───────────────
+ *
+ * Players asked for it after the Reddit post; the way it works is JuMatt's
+ * JetSetRadioFuture-Unleashed's (MIT licence; its port/recomp_manual.c,
+ * "the camera on the right stick"), the behaviour Miggas's.
+ *
+ * The game's camera is object class 0x1CD518: sub_000A5070 is its update
+ * (once a game frame), sub_000A28B0 publishes it for drawing. Right after
+ * the publication the eye (+0x44) is turned about the point looked at
+ * (+0x5C), and the heading (+0x228), which the skater's controls go by, is
+ * turned with it, so "up" on the left stick goes where the camera looks.
+ * Before the next update and publication both are put back, so the game's
+ * camera moves exactly as it always did (if something else moved the eye in
+ * between -- an event placing the camera -- the turn is dropped).
+ *
+ * Miggas's behaviour: while the skater moves, the right stick turns the
+ * camera (the game doesn't see it then); standing still it is the game's
+ * own first-person look, as on the Xbox, and the turn is kept until the
+ * skater moves again. Two seconds after the stick is let go (while moving)
+ * the camera eases back behind. The L trigger puts it straight behind, as
+ * the game does with its own. Not in conversations (camera mode +0x208 12)
+ * or the first-person look (14), and only in single player.
+ *
+ * RECOMP_CAM_ORBIT=0: the original camera. RECOMP_CAM_INVERT_X=1,
+ * RECOMP_CAM_INVERT_Y=1: inverted; RECOMP_CAM_SENS (default 1.0): speed.
+ * RECOMP_CAM_LOG=1: its state twice a second. */
+extern void sub_000A5070_gen(void);
+extern void sub_000A28B0_gen(void);
+extern void (*g_xbox_pad_filter)(int pad, short *rx, short *ry, unsigned char lt);
+
+#define RCAM_DEAD    0.20f
+#define RCAM_CURVE(x) ((x) * sqrtf(fabsf(x)))
+#define RCAM_YAW     2.6f       /* radians a second at full deflection */
+#define RCAM_PITCH   1.4f
+#define RCAM_PMAX    0.6f
+#define RCAM_EL_MIN  -0.30f
+#define RCAM_EL_MAX  1.2f
+#define RCAM_HOLD    2.0f       /* seconds after the stick is let go */
+#define RCAM_TAU     0.4f       /* then eased back: e-fold time */
+#define RCAM_MOVING  4.0f       /* units a second: the skater counts as moving */
+
+static struct {
+    int      on, inv_x, inv_y, log;
+    float    sens;
+    volatile float rx, ry;      /* player 1's right stick, dead zone out */
+    volatile int   lt;
+    volatile DWORD take_until;  /* the stick is the camera's, not the game's, until then */
+    float    yaw, pitch, idle;
+    uint32_t frames, last_frame;
+    uint32_t cam;
+    float    game_eye[3], our_eye[3];
+    int32_t  game_hd, our_hd;
+    int      applied;
+    float    ppos[3], speed;
+    int      have_pos;
+} s_rcam = { -1 };
+
+static void rcam_pad(int pad, short *rx, short *ry, unsigned char lt)
+{
+    float x, y, mag;
+    (void)pad;                  /* single player only: whichever pad it is */
+    x = *rx / 32767.0f; y = *ry / 32767.0f;
+    mag = sqrtf(x * x + y * y);
+    if (mag < RCAM_DEAD) {
+        x = y = 0.0f;
+    } else {
+        float k = ((mag > 1.0f ? 1.0f : mag) - RCAM_DEAD) / (1.0f - RCAM_DEAD) / mag;
+        x *= k; y *= k;
+    }
+    s_rcam.rx = s_rcam.inv_x ? -x : x;
+    s_rcam.ry = s_rcam.inv_y ? -y : y;
+    s_rcam.lt = lt > 64;
+    if ((int32_t)(s_rcam.take_until - GetTickCount()) > 0) { *rx = 0; *ry = 0; }
+}
+
+static int rcam_init(void)
+{
+    if (s_rcam.on < 0) {
+        const char *e = getenv("RECOMP_CAM_ORBIT"), *p = getenv("RECOMP_USB_PADS");
+        const char *ix = getenv("RECOMP_CAM_INVERT_X"), *iy = getenv("RECOMP_CAM_INVERT_Y");
+        const char *se = getenv("RECOMP_CAM_SENS"), *lg = getenv("RECOMP_CAM_LOG");
+        int multi = p && atoi(p) > 1;
+        s_rcam.on = !(e && e[0] == '0') && !multi;
+        s_rcam.inv_x = ix && ix[0] == '1';
+        s_rcam.inv_y = iy && iy[0] == '1';
+        s_rcam.sens = se ? (float)atof(se) : 1.0f;
+        if (!(s_rcam.sens > 0.0f && s_rcam.sens < 20.0f)) s_rcam.sens = 1.0f;
+        s_rcam.log = lg && lg[0] == '1';
+        if (s_rcam.on) g_xbox_pad_filter = rcam_pad;
+        fprintf(stderr, "[CAM] camera on the right stick %s%s (RECOMP_CAM_ORBIT=0: the original)\n",
+                s_rcam.on ? "on" : "off", multi ? " (off in multiplayer)" : "");
+    }
+    return s_rcam.on;
+}
+
+static int rcam_cam_ok(uint32_t cam)
+{
+    return cam >= 0x10000u && guest_range_ok(cam, 0x240u) && MEM32(cam) == 0x001CD518u;
+}
+
+/* before the camera's update and its publication: what it published, back */
+static void rcam_restore(uint32_t cam)
+{
+    float e[3];
+    if (!s_rcam.applied) return;
+    s_rcam.applied = 0;
+    if (cam != s_rcam.cam || !rcam_cam_ok(cam)) return;
+    memcpy(e, (const void *)XBOX_PTR(cam + 0x44), 12);
+    if (memcmp(e, s_rcam.our_eye, 12)) {    /* something else placed the camera */
+        s_rcam.yaw = s_rcam.pitch = 0.0f;
+        return;
+    }
+    memcpy((void *)XBOX_PTR(cam + 0x44), s_rcam.game_eye, 12);
+    if ((int32_t)MEM32(cam + 0x228) == s_rcam.our_hd)
+        MEM32(cam + 0x228) = (uint32_t)s_rcam.game_hd;
+}
+
+/* right after the publication: the turn worked out from the stick, and made */
+static void rcam_apply(uint32_t cam)
+{
+    uint32_t frames, mode, who;
+    float dt, e[3], t[3], v[3], h, len, ca, sa;
+    int ok, moving;
+    if (!rcam_cam_ok(cam)) return;
+    frames = s_rcam.last_frame ? s_rcam.frames - s_rcam.last_frame : 0u;
+    if (frames > 6u) frames = 6u;
+    s_rcam.last_frame = s_rcam.frames;
+    dt = (float)frames * (1.0f / 60.0f);
+    mode = MEM32(cam + 0x208);
+
+    /* the skater's speed, from the character the camera follows (+0x24) */
+    moving = 0;
+    who = MEM32(cam + 0x24);
+    if (who >= 0x10000u && guest_range_ok(who, 0x1000u)) {
+        float p[3];
+        memcpy(p, (const void *)XBOX_PTR(who + 0xCA4), 12);
+        if (s_rcam.have_pos && dt > 0.0f) {
+            float dx = p[0] - s_rcam.ppos[0], dy = p[1] - s_rcam.ppos[1], dz = p[2] - s_rcam.ppos[2];
+            float sp = sqrtf(dx * dx + dy * dy + dz * dz) / dt, a = dt * 6.0f;
+            if (sp > 2000.0f) sp = 0.0f;               /* a teleport, a respawn */
+            s_rcam.speed += (sp - s_rcam.speed) * (a < 1.0f ? a : 1.0f);
+        }
+        memcpy(s_rcam.ppos, p, 12);
+        s_rcam.have_pos = 1;
+        moving = s_rcam.speed > RCAM_MOVING;
+    }
+
+    ok = mode != 12 && mode != 14;
+    s_rcam.take_until = ok && moving ? GetTickCount() + 250 : 0;
+    if (!ok || s_rcam.lt) {
+        s_rcam.yaw = s_rcam.pitch = 0.0f;
+        s_rcam.idle = 0.0f;
+    } else if (moving && (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f)) {
+        s_rcam.yaw   += RCAM_CURVE(s_rcam.rx) * RCAM_YAW * s_rcam.sens * dt;
+        s_rcam.pitch += RCAM_CURVE(s_rcam.ry) * RCAM_PITCH * s_rcam.sens * dt;
+        s_rcam.idle = 0.0f;
+    } else if (moving) {
+        s_rcam.idle += dt;
+        if (s_rcam.idle > RCAM_HOLD) {
+            float k = expf(-dt / RCAM_TAU);
+            s_rcam.yaw *= k;
+            s_rcam.pitch *= k;
+        }
+    }                                           /* standing still: kept */
+    while (s_rcam.yaw >  3.14159265f) s_rcam.yaw -= 6.28318531f;
+    while (s_rcam.yaw < -3.14159265f) s_rcam.yaw += 6.28318531f;
+    if (s_rcam.pitch >  RCAM_PMAX) s_rcam.pitch =  RCAM_PMAX;
+    if (s_rcam.pitch < -RCAM_PMAX) s_rcam.pitch = -RCAM_PMAX;
+    if (fabsf(s_rcam.yaw) < 1e-4f && fabsf(s_rcam.pitch) < 1e-4f) s_rcam.yaw = s_rcam.pitch = 0.0f;
+
+    if (s_rcam.log) {
+        static DWORD next;
+        DWORD now = GetTickCount();
+        if ((int32_t)(now - next) >= 0) {
+            next = now + 500;
+            fprintf(stderr, "[CAM] mode %u speed %.1f %s stick %.2f %.2f lt %d | yaw %.1f pitch %.1f\n",
+                    mode, s_rcam.speed, moving ? "moving" : "still", s_rcam.rx, s_rcam.ry, s_rcam.lt,
+                    s_rcam.yaw * 57.29578f, s_rcam.pitch * 57.29578f);
+        }
+    }
+    if (!ok || (s_rcam.yaw == 0.0f && s_rcam.pitch == 0.0f))
+        return;
+
+    /* the eye about the point looked at: turned so the view turns right for
+     * a positive yaw (the right of (x, z) is (z, -x) here), then raised or
+     * lowered -- looking up lowers it -- never past where the game put it */
+    memcpy(e, (const void *)XBOX_PTR(cam + 0x44), 12);
+    memcpy(t, (const void *)XBOX_PTR(cam + 0x5C), 12);
+    memcpy(s_rcam.game_eye, e, 12);
+    v[0] = e[0] - t[0]; v[1] = e[1] - t[1]; v[2] = e[2] - t[2];
+    ca = cosf(s_rcam.yaw); sa = sinf(s_rcam.yaw);
+    {
+        float x = v[0] * ca + v[2] * sa, z = v[2] * ca - v[0] * sa;
+        v[0] = x; v[2] = z;
+    }
+    h = sqrtf(v[0] * v[0] + v[2] * v[2]);
+    len = sqrtf(h * h + v[1] * v[1]);
+    if (s_rcam.pitch != 0.0f && h > 1e-3f && len > 1e-3f) {
+        float el = atan2f(v[1], h), lo = el < RCAM_EL_MIN ? el : RCAM_EL_MIN,
+              hi = el > RCAM_EL_MAX ? el : RCAM_EL_MAX, el2 = el - s_rcam.pitch;
+        if (el2 < lo) el2 = lo;
+        if (el2 > hi) el2 = hi;
+        v[1] = len * sinf(el2);
+        v[0] *= len * cosf(el2) / h;
+        v[2] *= len * cosf(el2) / h;
+    }
+    e[0] = t[0] + v[0]; e[1] = t[1] + v[1]; e[2] = t[2] + v[2];
+    memcpy((void *)XBOX_PTR(cam + 0x44), e, 12);
+    memcpy(s_rcam.our_eye, e, 12);
+    /* the heading turned with it, in the game's range (-0x8000..0x8000) */
+    s_rcam.game_hd = (int32_t)MEM32(cam + 0x228);
+    s_rcam.our_hd = (int32_t)(int16_t)(uint16_t)(s_rcam.game_hd
+                    + (int32_t)lrintf(s_rcam.yaw * (65536.0f / 6.28318531f)));
+    MEM32(cam + 0x228) = (uint32_t)s_rcam.our_hd;
+    s_rcam.cam = cam;
+    s_rcam.applied = 1;
+}
+
+/* the camera's update, once a game frame */
+void sub_000A5070(void)
+{
+    uint32_t cam = g_ecx;
+    if (rcam_init()) {
+        s_rcam.frames++;
+        rcam_restore(cam);
+    }
+    sub_000A5070_gen();
+}
+
+/* its publication for drawing */
+void sub_000A28B0(void)
+{
+    uint32_t cam = g_ecx;
+    int on = rcam_init();
+    if (on) rcam_restore(cam);
+    sub_000A28B0_gen();
+    if (on) rcam_apply(cam);
+}
+
 /* ── v203: 3D sound distance (RECOMP_SND_DIST=1) ─────────────────────────
  *
  * The Chuo Street signs' buzz is heard all over the map, on the Xbox only

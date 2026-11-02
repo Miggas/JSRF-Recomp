@@ -645,6 +645,11 @@ static void rumble_send(int pad, const XBOX_VIBRATION *v)
     xbox_InputSetSource(s_slot_src[pad], v);  /* the keyboard: nothing */
 }
 
+/* v265: a title's look at each pad before the game gets it (the right
+ * stick, the L trigger), which may take the right stick away from the game
+ * (jsrf recomp_manual.c, the camera on the right stick). */
+void (*g_xbox_pad_filter)(int pad, short *rx, short *ry, unsigned char lt);
+
 int usb_gamepad_report(int pad, uint8_t *out, int max)
 {
     XBOX_INPUT_STATE state;
@@ -714,6 +719,9 @@ int usb_gamepad_report(int pad, uint8_t *out, int max)
     }
 
     g = &state.Gamepad;
+    if (g_xbox_pad_filter)
+        g_xbox_pad_filter(pad, &state.Gamepad.sThumbRX, &state.Gamepad.sThumbRY,
+                          state.Gamepad.bAnalogButtons[XBOX_BUTTON_LTRIGGER]);
     out[2] = (uint8_t)((g->wButtons & 0xFF) | synth);
     out[3] = (uint8_t)((g->wButtons >> 8) & 0xFF);
     for (i = 0; i < 8; i++)
