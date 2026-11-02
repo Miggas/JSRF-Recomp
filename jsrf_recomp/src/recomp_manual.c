@@ -3007,7 +3007,7 @@ static double freecam_dt(void)
     return dt < 0.0 ? 0.0 : dt > 0.1 ? 0.1 : dt;
 }
 
-static int freecam_lookat(void)
+void sub_001BAF70(void)
 {
     uint32_t pe = g_ecx, pt = g_edx, ra, roll, k;
     float keep[6], eye[3], at[3], e3[3], a3[3];
@@ -3026,7 +3026,8 @@ static int freecam_lookat(void)
                     " wheel speed (speed %g, sens %g)\n", s_fc_speed, s_fc_sens);
     }
     if (!s_fc_on || pt != pe + 0x18 || !guest_range_ok(pe, 0x24)) {
-        return 0;
+        sub_001BAF70_gen();
+        return;
     }
     ra = MEM32(g_esp);
     memcpy(e3, (const void *)XBOX_PTR(pe), 12);
@@ -3052,7 +3053,8 @@ static int freecam_lookat(void)
     s_fc_f5 = f5;
     xbox_FreecamInput(s_fc_active, &dx, &dy, &wh);
     if (!s_fc_active) {
-        return 0;
+        sub_001BAF70_gen();
+        return;
     }
     if (s_fc_start) {
         /* start where this camera is, unless it is a blank one */
@@ -3110,216 +3112,6 @@ static int freecam_lookat(void)
     MEM32(g_esp - 4) = roll;
     memcpy((void *)XBOX_PTR(pe), keep, 12);
     memcpy((void *)XBOX_PTR(pt), keep + 3, 12);
-    return 1;
-}
-
-
-/* ── v264: the third-person camera on the right stick (RECOMP_CAM_ORBIT) ──
- *
- * Asked for by players after the Reddit post (*idea by Miggas* how it
- * behaves). While the skater moves, the right stick turns the view around
- * the skater (left / right, and up / down within limits); standing still,
- * the right stick is the game's own first-person look, as on the Xbox, and
- * the turned view is kept until the skater moves again. Two seconds after
- * the stick is let go (while moving) the view eases back behind the skater.
- *
- * Done in the LookAt like the free camera: the game's camera runs as it
- * always did, and only for the length of the LookAt call its eye is turned
- * about its target. The game moves the skater relative to its own camera,
- * so player 1's left stick is turned by the same angle (usb_gamepad.c),
- * and "up" is still away from the camera that is shown.
- *
- * Only the play cameras (the classes whose LookAt calls are listed below,
- * seen in play in Miggas's free-camera runs) and only in single player.
- * A change of camera class, or the eye coming much closer to its target
- * (the first-person look), drops the turn at once: the picture jumps there
- * anyway.
- *
- * RECOMP_CAM_ORBIT=0: the original camera. RECOMP_CAM_INVERT_X=1,
- * RECOMP_CAM_INVERT_Y=1: inverted. RECOMP_CAM_SENS (default 1.0): speed.
- * RECOMP_CAM_LOG=1: each camera class once, with its eye-target distance. */
-extern volatile float g_xbox_pad0_turn;
-extern volatile DWORD g_xbox_pad0_turn_ms;
-extern volatile short g_xbox_pad0_rx, g_xbox_pad0_ry;
-extern int xbox_MenuScreenNow(void);
-
-static const uint32_t s_cam_play[] = { 0x00100E4Bu, 0x001016E2u, 0x00105113u, 0x001069B4u };
-
-static double orbit_dt(void)
-{
-    static LARGE_INTEGER fq, last;
-    LARGE_INTEGER now;
-    double dt;
-    if (!fq.QuadPart)
-        QueryPerformanceFrequency(&fq);
-    QueryPerformanceCounter(&now);
-    dt = last.QuadPart ? (double)(now.QuadPart - last.QuadPart) / (double)fq.QuadPart : 0.0;
-    last = now;
-    return dt < 0.0 ? 0.0 : dt > 0.1 ? 0.1 : dt;
-}
-
-static double orbit_env(const char *name, double def)
-{
-    const char *e = getenv(name);
-    return e && *e ? atof(e) : def;
-}
-
-static int orbit_lookat(void)
-{
-    static int on = -1, log_on, inv_x, inv_y;
-    static double sens;
-    static double yaw, pitch;               /* the turn, radians */
-    static double idle;                     /* seconds since the stick was used */
-    static double speed;                    /* the target's, smoothed (units a second) */
-    static double dist_avg;
-    static float  prev_at[3];
-    static uint32_t prev_ra;
-    static int have_prev;
-    uint32_t pe = g_ecx, pt = g_edx, ra, roll, k;
-    float e3[3], a3[3], keep[6], eye[3];
-    double dt, v[3], h, L, el, cy, sy, rx, ry, moved;
-    int moving;
-
-    if (on < 0) {
-        const char *pads = getenv("RECOMP_USB_PADS");
-        on = orbit_env("RECOMP_CAM_ORBIT", 1.0) != 0.0 && !(pads && atoi(pads) > 1);
-        inv_x = orbit_env("RECOMP_CAM_INVERT_X", 0.0) != 0.0;
-        inv_y = orbit_env("RECOMP_CAM_INVERT_Y", 0.0) != 0.0;
-        sens = orbit_env("RECOMP_CAM_SENS", 1.0);
-        if (!(sens > 0.0 && sens < 20.0)) sens = 1.0;
-        log_on = orbit_env("RECOMP_CAM_LOG", 0.0) != 0.0;
-        fprintf(stderr, "[CAM] right-stick camera %s (RECOMP_CAM_ORBIT=0: the original)%s\n",
-                on ? "on" : "off", pads && atoi(pads) > 1 ? ", off in multiplayer" : "");
-    }
-    if (!on || pt != pe + 0x18 || !guest_range_ok(pe, 0x24))
-        return 0;
-    ra = MEM32(g_esp);
-    memcpy(e3, (const void *)XBOX_PTR(pe), 12);
-    memcpy(a3, (const void *)XBOX_PTR(pt), 12);
-    for (k = 0; k < 3; k++) v[k] = (double)e3[k] - a3[k];
-    L = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-    if (1) {   /* v264b: always, to see which cameras run (bounded) */
-        static uint32_t seen[32];
-        static unsigned nseen;
-        for (k = 0; k < nseen && seen[k] != ra; k++) ;
-        if (k == nseen && nseen < 32) {
-            seen[nseen++] = ra;
-            unsigned j;
-            for (j = 0; j < sizeof s_cam_play / sizeof s_cam_play[0] && s_cam_play[j] != ra; j++) ;
-            fprintf(stderr, "[CAM] camera from %08X obj %08X distance %.1f%s\n", ra, pe - 0x44, L,
-                    j < sizeof s_cam_play / sizeof s_cam_play[0] ? " (play camera)" : "");
-        }
-    }
-    for (k = 0; k < sizeof s_cam_play / sizeof s_cam_play[0] && s_cam_play[k] != ra; k++) ;
-    if (k == sizeof s_cam_play / sizeof s_cam_play[0] || L < 1e-3) {
-        g_xbox_pad0_turn = 0.0f;
-        return 0;
-    }
-    dt = orbit_dt();
-
-    /* a jump: another play camera class, the first-person look, or back from
-     * a cutscene or menu (no play camera for half a second) */
-    {
-        static DWORD last_ms;
-        DWORD now_ms = GetTickCount();
-        if (last_ms && now_ms - last_ms > 500) prev_ra = 0;
-        last_ms = now_ms;
-    }
-    if (ra != prev_ra || (dist_avg > 0.0 && L < 0.5 * dist_avg)) {
-        if (have_prev && (yaw != 0.0 || pitch != 0.0) && log_on)
-            fprintf(stderr, "[CAM] turn dropped (camera %08X -> %08X, distance %.1f, was %.1f)\n",
-                    prev_ra, ra, L, dist_avg);
-        yaw = pitch = 0.0;
-        idle = 0.0;
-        dist_avg = L;
-        prev_ra = ra;
-        have_prev = 0;
-    }
-    dist_avg += (L - dist_avg) * (dt * 2.0 < 1.0 ? dt * 2.0 : 1.0);
-
-    /* moving: the target (about the skater) going at more than 3 units a second */
-    moved = 0.0;
-    if (have_prev)
-        for (k = 0; k < 3; k++) moved += ((double)a3[k] - prev_at[k]) * ((double)a3[k] - prev_at[k]);
-    memcpy(prev_at, a3, 12);
-    have_prev = 1;
-    if (dt > 0.0) {
-        double s = sqrt(moved) / dt, a = dt * 6.0 < 1.0 ? dt * 6.0 : 1.0;
-        speed += (s - speed) * a;
-    }
-    moving = speed > 3.0;
-
-    rx = g_xbox_pad0_rx / 32767.0;
-    ry = g_xbox_pad0_ry / 32767.0;
-    if (fabs(rx) < 0.25) rx = 0.0; else rx = (rx - (rx > 0 ? 0.25 : -0.25)) / 0.75;
-    if (fabs(ry) < 0.25) ry = 0.0; else ry = (ry - (ry > 0 ? 0.25 : -0.25)) / 0.75;
-    if (inv_x) rx = -rx;
-    if (inv_y) ry = -ry;
-    if (moving && (rx != 0.0 || ry != 0.0)) {
-        yaw += rx * 2.6 * sens * dt;           /* about 150 degrees a second */
-        pitch += ry * 1.6 * sens * dt;
-        idle = 0.0;
-    } else if (moving) {
-        idle += dt;
-        if (idle > 2.0) {                      /* ease back behind the skater */
-            double a = 1.0 - exp(-dt * 2.5);
-            yaw -= yaw * a;
-            pitch -= pitch * a;
-            if (fabs(yaw) < 1e-3) yaw = 0.0;
-            if (fabs(pitch) < 1e-3) pitch = 0.0;
-        }
-    }                                          /* standing still: kept as it is */
-    while (yaw > 3.14159265358979) yaw -= 6.28318530717959;
-    while (yaw < -3.14159265358979) yaw += 6.28318530717959;
-    /* up / down: the eye between 20 degrees under the skater and 70 over */
-    h = sqrt(v[0] * v[0] + v[2] * v[2]);
-    el = atan2(v[1], h);
-    if (el - pitch > 1.22) pitch = el - 1.22;
-    if (el - pitch < -0.35) pitch = el + 0.35;
-
-    /* the left stick turned with the view; not in a menu over the game */
-    g_xbox_pad0_turn = xbox_MenuScreenNow() ? 0.0f : (float)yaw;
-    g_xbox_pad0_turn_ms = GetTickCount();
-    {   /* v264b: the state every 3 s while a play camera runs (80 lines) */
-        static DWORD last_log;
-        static int nlog;
-        DWORD t = GetTickCount();
-        if ((log_on || nlog < 80) && t - last_log > 3000) {
-            last_log = t;
-            nlog++;
-            fprintf(stderr, "[CAM] %08X dist %.1f speed %.1f %s stick %.2f %.2f turn %.0f deg pitch %.0f deg%s\n",
-                    ra, L, speed, moving ? "moving" : "still", rx, ry, yaw * 57.2958, pitch * 57.2958,
-                    xbox_MenuScreenNow() ? " (menu)" : "");
-        }
-    }
-    if (yaw == 0.0 && pitch == 0.0)
-        return 0;
-
-    cy = cos(yaw); sy = sin(yaw);
-    {
-        double hx = v[0] * cy + v[2] * sy, hz = -v[0] * sy + v[2] * cy, e = el - pitch, hl;
-        hl = h > 1e-6 ? L * cos(e) / h : 0.0;
-        eye[0] = (float)(a3[0] + hx * hl);
-        eye[1] = (float)(a3[1] + L * sin(e));
-        eye[2] = (float)(a3[2] + hz * hl);
-    }
-    memcpy(keep, e3, 12);
-    memcpy(keep + 3, a3, 12);
-    roll = MEM32(g_esp + 4);
-    memcpy((void *)XBOX_PTR(pe), eye, 12);
-    sub_001BAF70_gen();
-    MEM32(g_esp - 4) = roll;
-    memcpy((void *)XBOX_PTR(pe), keep, 12);
-    return 1;
-}
-
-void sub_001BAF70(void)
-{
-    if (freecam_lookat())
-        return;
-    if (orbit_lookat())
-        return;
-    sub_001BAF70_gen();
 }
 
 /* ── v203: 3D sound distance (RECOMP_SND_DIST=1) ─────────────────────────
