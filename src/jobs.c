@@ -647,15 +647,22 @@ static bool gen_current(void)
     if (!is_file(f)) return false;
     unsigned long long h = gen_inputs();
     if (gen_stamp_is(st, h)) return true;
-    char *d = read_file(st, NULL);
-    bool old = d && strncmp(d, GEN_SCHEME, strlen(GEN_SCHEME));
-    free(d);
-    if (old && gen_matches_reference(g)) {
-        logf_("Generated code: made by an older launcher, matches the expected code: kept.");
-        gen_stamp_write(st, h);
-        return true;
+    /* v1u: what the translator reads has changed (recomp_manual.c changes
+     * with most updates, nearly always without changing what comes out), or
+     * the stamp is an older launcher's: if the code is still the project's
+     * expected code (analysis/gen_hashes.txt, as Check generated code does)
+     * it is current, and the stamp is rewritten. Checked once per change. */
+    static unsigned long long checked;
+    static bool checked_ok;
+    if (checked != h) {
+        checked = h;
+        checked_ok = gen_matches_reference(g);
+        if (checked_ok) {
+            logf_("Generated code: matches the project's expected code: kept.");
+            gen_stamp_write(st, h);
+        }
     }
-    return false;
+    return checked_ok;
 }
 
 bool have_gen(void)
