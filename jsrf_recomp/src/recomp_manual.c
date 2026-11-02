@@ -3130,11 +3130,11 @@ void sub_001BAF70(void)
  * camera moves exactly as it always did (if something else moved the eye in
  * between -- an event placing the camera -- the turn is dropped).
  *
- * Miggas's behaviour: while the skater moves, the right stick turns the
- * camera (the game doesn't see it then); standing still it is the game's
- * own first-person look, as on the Xbox, and the turn is kept until the
- * skater moves again. Two seconds after the stick is let go (while moving)
- * the camera eases back behind. The L trigger puts it straight behind, as
+ * Miggas's behaviour: the right stick turns the camera, moving or standing
+ * still (the game doesn't see it, so its first-person look is not used;
+ * v265b, v265 left the stick to it standing still). A second after the
+ * stick is let go while moving the camera eases back behind; standing
+ * still it stays where it was turned until the skater moves. The L trigger puts it straight behind, as
  * the game does with its own. Not in conversations (camera mode +0x208 12)
  * or the first-person look (14), and only in single player.
  *
@@ -3152,7 +3152,7 @@ extern void (*g_xbox_pad_filter)(int pad, short *rx, short *ry, unsigned char lt
 #define RCAM_PMAX    0.6f
 #define RCAM_EL_MIN  -0.30f
 #define RCAM_EL_MAX  1.2f
-#define RCAM_HOLD    2.0f       /* seconds after the stick is let go */
+#define RCAM_HOLD    1.0f       /* seconds after the stick is let go (v265b: was 2) */
 #define RCAM_TAU     0.4f       /* then eased back: e-fold time */
 #define RCAM_MOVING  4.0f       /* units a second: the skater counts as moving */
 
@@ -3263,11 +3263,11 @@ static void rcam_apply(uint32_t cam)
     }
 
     ok = mode != 12 && mode != 14;
-    s_rcam.take_until = ok && moving ? GetTickCount() + 250 : 0;
+    s_rcam.take_until = ok ? GetTickCount() + 250 : 0;   /* v265b: standing still too */
     if (!ok || s_rcam.lt) {
         s_rcam.yaw = s_rcam.pitch = 0.0f;
         s_rcam.idle = 0.0f;
-    } else if (moving && (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f)) {
+    } else if (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f) {
         s_rcam.yaw   += RCAM_CURVE(s_rcam.rx) * RCAM_YAW * s_rcam.sens * dt;
         s_rcam.pitch += RCAM_CURVE(s_rcam.ry) * RCAM_PITCH * s_rcam.sens * dt;
         s_rcam.idle = 0.0f;
