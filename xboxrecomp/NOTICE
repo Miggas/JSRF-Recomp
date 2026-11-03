@@ -68,6 +68,18 @@ Derived algorithms — credited, independently implemented
   label.
 
 
+Public domain and free fonts
+----------------------------
+
+  src/third_party/stb/stb_easy_font.h, src/third_party/stb/stb_truetype.h
+    Sean Barrett's stb libraries (https://github.com/nothings/stb), public
+    domain (or MIT, the reader's choice), as their headers say.
+
+  src/third_party/fonts/nisejsrf_ttf.h
+    The NiseJSRF font (Version 1.10) by Yoyo, as bytes:
+    https://www.dafont.com/nisejsrf.font, marked "100% Free" there.
+
+
 Reference material (no code taken)
 -----------------------------------
 

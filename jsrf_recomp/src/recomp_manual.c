@@ -3118,8 +3118,10 @@ void sub_001BAF70(void)
 /* ── v265: the camera on the right stick (RECOMP_CAM_ORBIT) ───────────────
  *
  * Players asked for it after the Reddit post; the way it works is JuMatt's
- * JetSetRadioFuture-Unleashed's (MIT licence; its port/recomp_manual.c,
- * "the camera on the right stick"), the behaviour Miggas's.
+ * JetSetRadioFuture-Unleashed's (its port/recomp_manual.c, "the camera on
+ * the right stick"), the behaviour Miggas's. Parts of this section are
+ * adapted from that code: Copyright (c) 2026 sp00nz, MIT licence -- the
+ * full notice is in NOTICE at the root of this repository.
  *
  * The game's camera is object class 0x1CD518: sub_000A5070 is its update
  * (once a game frame), sub_000A28B0 publishes it for drawing. Right after

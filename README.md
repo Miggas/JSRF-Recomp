@@ -566,7 +566,8 @@ co-author.
   (MIT): building the shaders ahead ("Building Shaders") and the modern 3rd
   person camera were inspired by it, and improved upon by Miggas (the camera
   turning when standing still and staying until you move, easing back as soon
-  as you set off, invert and sensitivity settings).
+  as you set off, invert and sensitivity settings). Parts of the camera's code
+  are adapted from Unleashed's; its licence notice is in [`NOTICE`](NOTICE).
 - The launcher draws its window with [Nuklear](https://github.com/Immediate-Mode-UI/Nuklear)
   (public domain / MIT) on [SDL2](https://libsdl.org) (zlib), and builds with
   [Zig](https://ziglang.org) (MIT).
