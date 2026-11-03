@@ -1,0 +1,52 @@
+Jet Set Radio Future PC recompilation -- third-party code
+==========================================================
+
+This project's own files are MIT licensed (see LICENSE). The part listed
+below is adapted from someone else's work and keeps its original notice.
+The toolkit in xboxrecomp/ has its own list (xboxrecomp/NOTICE).
+
+
+JetSetRadioFuture-Unleashed (MIT)
+---------------------------------
+
+  https://github.com/JuMatt/JetSetRadioFuture-Unleashed
+
+  jsrf_recomp/src/recomp_manual.c, "the camera on the right stick" (v265
+  onwards): the hooks on the game's camera (its update and publication),
+  turning the eye and the heading and putting them back, the stick's dead
+  zone and response curve, the turning speeds and limits, and the rotation
+  maths are adapted from its port/recomp_manual.c. The behaviour (turning
+  while standing still, easing back on setting off, the timings), the
+  settings and the way the stick is read are this project's.
+
+  Its notice:
+
+    MIT License
+
+    Copyright (c) 2026 sp00nz
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+
+Ideas only (no code taken)
+--------------------------
+
+  The shaders built ahead (v241, "Building Shaders") follow an idea from
+  JetSetRadioFuture-Unleashed; the code is this project's own (it shares no
+  code with Unleashed's shader cache).
