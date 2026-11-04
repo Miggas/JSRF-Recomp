@@ -3309,9 +3309,9 @@ static void rcam_apply(uint32_t cam)
         DWORD now = GetTickCount();
         if ((int32_t)(now - next) >= 0) {
             next = now + 500;
-            fprintf(stderr, "[CAM] mode %u speed %.1f %s stick %.2f %.2f lt %d | yaw %.1f pitch %.1f\n",
+            fprintf(stderr, "[CAM] mode %u speed %.1f %s stick %.2f %.2f lt %d | yaw %.1f pitch %.1f | heading %d\n",
                     mode, s_rcam.speed, moving ? "moving" : "still", s_rcam.rx, s_rcam.ry, s_rcam.lt,
-                    s_rcam.yaw * 57.29578f, s_rcam.pitch * 57.29578f);
+                    s_rcam.yaw * 57.29578f, s_rcam.pitch * 57.29578f, (int)(int32_t)MEM32(cam + 0x228));
         }
     }
     if (ok && s_rcam.commit) {
@@ -3326,9 +3326,23 @@ static void rcam_apply(uint32_t cam)
         memcpy((void *)XBOX_PTR(cam + 0x44), ce, 12);
         MEM32(cam + 0x228) = (uint32_t)(int32_t)(int16_t)(uint16_t)(hd
                              + (int32_t)lrintf(s_rcam.yaw * (65536.0f / 6.28318531f)));
+        /* v266e: and the camera's own eye, which its publication (sub_000A28B0)
+         * copies to +0x44 each frame (from +0x20C, the point looked at from
+         * +0x218, the heading worked out from the two): turned the same way
+         * about its own point, or the next publication put the old one back
+         * (Miggas's run: the view flipped back as the skater moved) */
+        {
+            float ie[3], it[3], iv[3];
+            memcpy(ie, (const void *)XBOX_PTR(cam + 0x20C), 12);
+            memcpy(it, (const void *)XBOX_PTR(cam + 0x218), 12);
+            iv[0] = ie[0] - it[0]; iv[2] = ie[2] - it[2];
+            ie[0] = it[0] + iv[0] * c + iv[2] * sn;
+            ie[2] = it[2] + iv[2] * c - iv[0] * sn;
+            memcpy((void *)XBOX_PTR(cam + 0x20C), ie, 12);
+        }
         if (s_rcam.log)
-            fprintf(stderr, "[CAM] setting off: %.0f degrees given to the game's camera\n",
-                    s_rcam.yaw * 57.29578f);
+            fprintf(stderr, "[CAM] setting off: %.0f degrees given to the game's camera (heading %d -> %d)\n",
+                    s_rcam.yaw * 57.29578f, (int)(int16_t)hd, (int)(int32_t)MEM32(cam + 0x228));
         s_rcam.yaw = 0.0f;
         s_rcam.commit = 0;
     }
