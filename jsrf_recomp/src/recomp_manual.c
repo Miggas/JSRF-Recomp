@@ -3165,6 +3165,7 @@ static struct {
     volatile int   lt;
     volatile DWORD take_until;  /* the stick is the camera's, not the game's, until then */
     float    yaw, pitch, idle;
+    float    pitch_base;        /* v265d: the tilt it eases back to (kept from standing still) */
     uint32_t frames, last_frame;
     uint32_t cam;
     float    game_eye[3], our_eye[3];
@@ -3226,7 +3227,7 @@ static void rcam_restore(uint32_t cam)
     if (cam != s_rcam.cam || !rcam_cam_ok(cam)) return;
     memcpy(e, (const void *)XBOX_PTR(cam + 0x44), 12);
     if (memcmp(e, s_rcam.our_eye, 12)) {    /* something else placed the camera */
-        s_rcam.yaw = s_rcam.pitch = 0.0f;
+        s_rcam.yaw = s_rcam.pitch = s_rcam.pitch_base = 0.0f;
         return;
     }
     memcpy((void *)XBOX_PTR(cam + 0x44), s_rcam.game_eye, 12);
@@ -3265,17 +3266,20 @@ static void rcam_apply(uint32_t cam)
     }
 
     /* v265c: setting off from standing still, a turn left from then eases
-     * back at once (no second's wait) */
+     * back at once (no second's wait). v265d: only left / right does; the
+     * tilt set standing still becomes the camera's new up / down (Miggas) */
     {
         static int was_moving;
-        if (moving && !was_moving && s_rcam.rx == 0.0f && s_rcam.ry == 0.0f)
+        if (moving && !was_moving && s_rcam.rx == 0.0f && s_rcam.ry == 0.0f) {
             s_rcam.idle = RCAM_HOLD;
+            s_rcam.pitch_base = s_rcam.pitch;
+        }
         was_moving = moving;
     }
     ok = mode != 12 && mode != 14;
     s_rcam.take_until = ok ? GetTickCount() + 250 : 0;   /* v265b: standing still too */
     if (!ok || s_rcam.lt) {
-        s_rcam.yaw = s_rcam.pitch = 0.0f;
+        s_rcam.yaw = s_rcam.pitch = s_rcam.pitch_base = 0.0f;
         s_rcam.idle = 0.0f;
     } else if (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f) {
         s_rcam.yaw   += RCAM_CURVE(s_rcam.rx) * RCAM_YAW * s_rcam.sens * dt;
@@ -3286,13 +3290,15 @@ static void rcam_apply(uint32_t cam)
         if (s_rcam.idle > RCAM_HOLD) {
             float k = expf(-dt / RCAM_TAU);
             s_rcam.yaw *= k;
-            s_rcam.pitch *= k;
+            s_rcam.pitch = s_rcam.pitch_base + (s_rcam.pitch - s_rcam.pitch_base) * k;
         }
     }                                           /* standing still: kept */
     while (s_rcam.yaw >  3.14159265f) s_rcam.yaw -= 6.28318531f;
     while (s_rcam.yaw < -3.14159265f) s_rcam.yaw += 6.28318531f;
     if (s_rcam.pitch >  RCAM_PMAX) s_rcam.pitch =  RCAM_PMAX;
     if (s_rcam.pitch < -RCAM_PMAX) s_rcam.pitch = -RCAM_PMAX;
+    if (s_rcam.pitch_base >  RCAM_PMAX) s_rcam.pitch_base =  RCAM_PMAX;
+    if (s_rcam.pitch_base < -RCAM_PMAX) s_rcam.pitch_base = -RCAM_PMAX;
     if (fabsf(s_rcam.yaw) < 1e-4f && fabsf(s_rcam.pitch) < 1e-4f) s_rcam.yaw = s_rcam.pitch = 0.0f;
 
     if (s_rcam.log) {
