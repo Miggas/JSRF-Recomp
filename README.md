@@ -27,6 +27,10 @@ The launcher closes once the game has started.
 
 ## Updating the launcher
 
+When it opens, the launcher checks for a newer game and a newer launcher; if
+there is one, the **Play** tab says so, and clicking that line opens **Update**.
+PLAY and Build can be used while it checks.
+
 **Update → Check for updates** also looks for a newer launcher on the
 [Releases](https://github.com/Miggas/JSRF-Recomp/releases) page; **Update launcher**
 downloads it, puts it in place of this one and starts it. From a terminal:

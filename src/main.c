@@ -420,6 +420,18 @@ static void pad_slider_float(struct nk_context *ctx, float min, float *v, float 
     nk_slider_float(ctx, min, v, max, step);
 }
 
+static bool s_checked_start;   /* v1w: the check for updates at start has been made */
+
+/* v1w: the check for updates (at start) doesn't hold up PLAY or Build: Build
+ * stops it first */
+static bool free_or_checking(void) { return !job_busy() || job_current() == JOB_CHECK; }
+static void stop_check(void)
+{
+    if (job_current() != JOB_CHECK) return;
+    job_cancel();
+    for (int i = 0; i < 100 && job_busy(); i++) SDL_Delay(20);
+}
+
 static void tab_play(struct nk_context *ctx)
 {
     nk_layout_row_dynamic(ctx, s_row, 1);
@@ -470,17 +482,48 @@ static void tab_play(struct nk_context *ctx)
         }
     }
 
-    spacer(ctx, 16);
+    {
+        /* v1w: what the check at start found (or is finding); the line is a
+         * button to the Update tab */
+        const char *r = update_remote(), *ln = launcher_newer();
+        bool game_new = g_paths.have_source && *r && strcmp(r, source_id());
+        bool checking = job_current() == JOB_CHECK;
+        spacer(ctx, 6);
+        nk_layout_row_dynamic(ctx, s_row * 1.2f, 1);
+        if (game_new || *ln) {
+            char t[160];
+            if (game_new && *ln) snprintf(t, sizeof t, "Updates available: the game and launcher %s  >", ln + 9);
+            else if (*ln) snprintf(t, sizeof t, "Update available: launcher %s  >", ln + 9);
+            else snprintf(t, sizeof t, "Update available: the game  >");
+            struct nk_style_button keep = ctx->style.button;
+            ctx->style.button.text_normal = C_HEAD;
+            ctx->style.button.text_hover = C_HEAD;
+            ctx->style.button.border_color = C_HEAD;
+            ctx->style.button.border = 2.0f;
+            if (nk_button_label(ctx, t)) s_tab = TAB_UPDATE;
+            ctx->style.button = keep;
+        } else if (checking) {
+            nk_label_colored(ctx, "Checking for updates...", NK_TEXT_LEFT, C_DIM);
+        } else if (s_checked_start && g_paths.have_source && *r) {
+            nk_label_colored(ctx, "The game and the launcher are up to date.", NK_TEXT_LEFT, C_DIM);
+        } else {
+            nk_spacing(ctx, 1);
+        }
+    }
+
+    spacer(ctx, 10);
     nk_layout_row_dynamic(ctx, s_row * 1.8f, 2);
-    if (button(ctx, "PLAY", exe && !job_busy()) || (s_pad_play && exe && !job_busy())) {
+    if (button(ctx, "PLAY", exe && free_or_checking()) || (s_pad_play && exe && free_or_checking())) {
         if (!play()) snprintf(s_message, sizeof s_message, "Could not start the game.");
         else {
             snprintf(s_message, sizeof s_message, "Game started.");
             s_quit_after_play = true;      /* v1p: the launcher closes behind it */
         }
     }
-    if (button(ctx, exe ? "Build again" : "Build", xbe && g_paths.have_source && !job_busy()))
+    if (button(ctx, exe ? "Build again" : "Build", xbe && g_paths.have_source && free_or_checking())) {
+        stop_check();
         start_build();
+    }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1227,6 +1270,8 @@ int main(int argc, char **argv)
     logf_("Launcher folder: %s", g_paths.base);
     logf_("Project: %s%s", g_paths.source, g_paths.have_source ? "" : " (not downloaded yet)");
     logf_("Game folder: %s", g_paths.game);
+    /* v1w: look for a newer game and launcher at once (no answer: nothing shown) */
+    if (job_start(JOB_CHECK, false)) s_checked_start = true;
 
     int last_result = -1;
     bool running = true;
