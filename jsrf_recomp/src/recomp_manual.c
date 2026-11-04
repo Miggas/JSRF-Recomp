@@ -3165,7 +3165,9 @@ static struct {
     volatile int   lt;
     volatile DWORD take_until;  /* the stick is the camera's, not the game's, until then */
     float    yaw, pitch, idle;
-    float    pitch_base;        /* v265d: the tilt it eases back to (kept from standing still) */
+    float    keep_t;            /* v266c: seconds left of keeping the view's direction */
+    int32_t  last_hd;           /* the game's heading at the last publication */
+    int      have_hd;
     uint32_t frames, last_frame;
     uint32_t cam;
     float    game_eye[3], our_eye[3];
@@ -3227,7 +3229,7 @@ static void rcam_restore(uint32_t cam)
     if (cam != s_rcam.cam || !rcam_cam_ok(cam)) return;
     memcpy(e, (const void *)XBOX_PTR(cam + 0x44), 12);
     if (memcmp(e, s_rcam.our_eye, 12)) {    /* something else placed the camera */
-        s_rcam.yaw = s_rcam.pitch = s_rcam.pitch_base = 0.0f;
+        s_rcam.yaw = s_rcam.pitch = 0.0f;
         return;
     }
     memcpy((void *)XBOX_PTR(cam + 0x44), s_rcam.game_eye, 12);
@@ -3266,39 +3268,57 @@ static void rcam_apply(uint32_t cam)
     }
 
     /* v265c: setting off from standing still, a turn left from then eases
-     * back at once (no second's wait). v265d: only left / right does; the
-     * tilt set standing still becomes the camera's new up / down (Miggas) */
+     * back at once (no second's wait). v266c (Miggas): only up / down does;
+     * left / right becomes the way the camera looks -- the skater heads
+     * there (the controls go by the view) and, as the game's camera swings
+     * round behind him, the turn is taken back by just as much, so the view
+     * stays where it was pointed. A turn that is still left after 3 s (the
+     * game's camera went elsewhere) eases back as before. */
     {
         static int was_moving;
+        int32_t hd = (int32_t)MEM32(cam + 0x228);
         if (moving && !was_moving && s_rcam.rx == 0.0f && s_rcam.ry == 0.0f) {
             s_rcam.idle = RCAM_HOLD;
-            s_rcam.pitch_base = s_rcam.pitch;
+            s_rcam.keep_t = s_rcam.yaw != 0.0f ? 3.0f : 0.0f;
         }
         was_moving = moving;
+        if (s_rcam.keep_t > 0.0f && s_rcam.have_hd) {
+            int32_t d = (int32_t)(int16_t)(uint16_t)(hd - s_rcam.last_hd);   /* wrapped */
+            float y = s_rcam.yaw - (float)d * (6.28318531f / 65536.0f);
+            if ((y > 0.0f) != (s_rcam.yaw > 0.0f) || fabsf(y) < 0.01f) {    /* caught up */
+                y = 0.0f;
+                s_rcam.keep_t = 0.0f;
+            }
+            s_rcam.yaw = y;
+            s_rcam.keep_t -= dt;
+            if (s_rcam.keep_t < 0.0f) s_rcam.keep_t = 0.0f;
+        }
+        s_rcam.last_hd = hd;
+        s_rcam.have_hd = 1;
     }
     ok = mode != 12 && mode != 14;
     s_rcam.take_until = ok ? GetTickCount() + 250 : 0;   /* v265b: standing still too */
     if (!ok || s_rcam.lt) {
-        s_rcam.yaw = s_rcam.pitch = s_rcam.pitch_base = 0.0f;
+        s_rcam.yaw = s_rcam.pitch = 0.0f;
         s_rcam.idle = 0.0f;
+        s_rcam.keep_t = 0.0f;
     } else if (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f) {
         s_rcam.yaw   += RCAM_CURVE(s_rcam.rx) * RCAM_YAW * s_rcam.sens * dt;
         s_rcam.pitch += RCAM_CURVE(s_rcam.ry) * RCAM_PITCH * s_rcam.sens * dt;
         s_rcam.idle = 0.0f;
+        s_rcam.keep_t = 0.0f;
     } else if (moving) {
         s_rcam.idle += dt;
         if (s_rcam.idle > RCAM_HOLD) {
             float k = expf(-dt / RCAM_TAU);
-            s_rcam.yaw *= k;
-            s_rcam.pitch = s_rcam.pitch_base + (s_rcam.pitch - s_rcam.pitch_base) * k;
+            if (s_rcam.keep_t <= 0.0f) s_rcam.yaw *= k;   /* v266c: kept while the camera catches up */
+            s_rcam.pitch *= k;
         }
     }                                           /* standing still: kept */
     while (s_rcam.yaw >  3.14159265f) s_rcam.yaw -= 6.28318531f;
     while (s_rcam.yaw < -3.14159265f) s_rcam.yaw += 6.28318531f;
     if (s_rcam.pitch >  RCAM_PMAX) s_rcam.pitch =  RCAM_PMAX;
     if (s_rcam.pitch < -RCAM_PMAX) s_rcam.pitch = -RCAM_PMAX;
-    if (s_rcam.pitch_base >  RCAM_PMAX) s_rcam.pitch_base =  RCAM_PMAX;
-    if (s_rcam.pitch_base < -RCAM_PMAX) s_rcam.pitch_base = -RCAM_PMAX;
     if (fabsf(s_rcam.yaw) < 1e-4f && fabsf(s_rcam.pitch) < 1e-4f) s_rcam.yaw = s_rcam.pitch = 0.0f;
 
     if (s_rcam.log) {
