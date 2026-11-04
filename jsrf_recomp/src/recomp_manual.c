@@ -3165,6 +3165,12 @@ static struct {
     volatile int   lt;
     volatile DWORD take_until;  /* the stick is the camera's, not the game's, until then */
     float    yaw, pitch, idle;
+    float    follow_t;          /* v266f: seconds left of following the skater's way */
+    float    mvx, mvz;          /* the skater's movement, smoothed (units a second) */
+    float    view;              /* v266h: the view's direction while following, radians */
+    int      have_view;
+    int      commit;            /* v266i: hand the left / right turn to the game's camera */
+    float    setoff_t;          /* v266j: seconds since setting off, counting down */
     uint32_t frames, last_frame;
     uint32_t cam;
     float    game_eye[3], our_eye[3];
@@ -3256,8 +3262,11 @@ static void rcam_apply(uint32_t cam)
         if (s_rcam.have_pos && dt > 0.0f) {
             float dx = p[0] - s_rcam.ppos[0], dy = p[1] - s_rcam.ppos[1], dz = p[2] - s_rcam.ppos[2];
             float sp = sqrtf(dx * dx + dy * dy + dz * dz) / dt, a = dt * 6.0f;
-            if (sp > 2000.0f) sp = 0.0f;               /* a teleport, a respawn */
-            s_rcam.speed += (sp - s_rcam.speed) * (a < 1.0f ? a : 1.0f);
+            if (sp > 2000.0f) { sp = 0.0f; dx = dz = 0.0f; }   /* a teleport, a respawn */
+            if (a > 1.0f) a = 1.0f;
+            s_rcam.speed += (sp - s_rcam.speed) * a;
+            s_rcam.mvx += (dx / dt - s_rcam.mvx) * a;
+            s_rcam.mvz += (dz / dt - s_rcam.mvz) * a;
         }
         memcpy(s_rcam.ppos, p, 12);
         s_rcam.have_pos = 1;
@@ -3265,11 +3274,22 @@ static void rcam_apply(uint32_t cam)
     }
 
     /* v265c: setting off from standing still, a turn left from then eases
-     * back at once (no second's wait) */
+     * back at once (no second's wait). v266f (Miggas): only up / down does.
+     * Left / right: the view looks the way the skater goes -- the turn is
+     * the gap between his direction of travel and the game's camera, which
+     * closes as the game's camera swings round behind him, so the view
+     * follows him at once and the turn is gone once the game's camera has
+     * caught up. (v266c held the view still; v266d / v266e wrote the turn
+     * into the game's camera, which put itself back.) Up to 4 s, then the
+     * turn eases back as before. */
     {
         static int was_moving;
-        if (moving && !was_moving && s_rcam.rx == 0.0f && s_rcam.ry == 0.0f)
+        if (moving && !was_moving && s_rcam.rx == 0.0f && s_rcam.ry == 0.0f) {
             s_rcam.idle = RCAM_HOLD;
+            /* v266i: the turn is handed to the game's camera itself (below) */
+            s_rcam.commit = s_rcam.yaw != 0.0f;
+            s_rcam.setoff_t = 0.6f;     /* v266j: up / down eases back quicker */
+        }
         was_moving = moving;
     }
     ok = mode != 12 && mode != 14;
@@ -3277,17 +3297,58 @@ static void rcam_apply(uint32_t cam)
     if (!ok || s_rcam.lt) {
         s_rcam.yaw = s_rcam.pitch = 0.0f;
         s_rcam.idle = 0.0f;
+        s_rcam.follow_t = 0.0f;
+        s_rcam.commit = 0;
     } else if (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f) {
         s_rcam.yaw   += RCAM_CURVE(s_rcam.rx) * RCAM_YAW * s_rcam.sens * dt;
         s_rcam.pitch += RCAM_CURVE(s_rcam.ry) * RCAM_PITCH * s_rcam.sens * dt;
         s_rcam.idle = 0.0f;
+        s_rcam.follow_t = 0.0f;
+        s_rcam.commit = 0;
     } else if (moving) {
         s_rcam.idle += dt;
-        if (s_rcam.idle > RCAM_HOLD) {
-            float k = expf(-dt / RCAM_TAU);
-            s_rcam.yaw *= k;
-            s_rcam.pitch *= k;
+        if (s_rcam.follow_t > 0.0f) {
+            /* v266f: the view along the skater's way, once he is clearly going somewhere */
+            float hs = sqrtf(s_rcam.mvx * s_rcam.mvx + s_rcam.mvz * s_rcam.mvz);
+            if (hs > 8.0f) {
+                float ge[3], gt[3], gap;
+                memcpy(ge, (const void *)XBOX_PTR(cam + 0x44), 12);
+                memcpy(gt, (const void *)XBOX_PTR(cam + 0x5C), 12);
+                /* v266h: the view's own direction, in the world, eased towards
+                 * the skater's way (0.2 s); the turn is that minus the game's
+                 * camera, worked out again each frame. v266g eased the turn
+                 * itself, so while the game's camera swung round (up to 5
+                 * degrees a frame, Miggas's log) the view swung with it and
+                 * the skater, steered by the view, curved off to the side. */
+                float way = atan2f(s_rcam.mvx, s_rcam.mvz), camd = atan2f(gt[0] - ge[0], gt[2] - ge[2]), d;
+                if (!s_rcam.have_view) { s_rcam.view = camd + s_rcam.yaw; s_rcam.have_view = 1; }
+                d = way - s_rcam.view;
+                while (d >  3.14159265f) d -= 6.28318531f;
+                while (d < -3.14159265f) d += 6.28318531f;
+                s_rcam.view += d * (1.0f - expf(-dt / 0.2f));
+                gap = s_rcam.view - camd;
+                while (gap >  3.14159265f) gap -= 6.28318531f;
+                while (gap < -3.14159265f) gap += 6.28318531f;
+                s_rcam.yaw = gap;
+                if (s_rcam.log)
+                    fprintf(stderr, "[CAM] following: way %.1f camera %.1f view %.1f turn %.1f speed %.1f\n",
+                            way * 57.29578f, camd * 57.29578f, s_rcam.view * 57.29578f,
+                            s_rcam.yaw * 57.29578f, hs);
+                if (fabsf(gap) < 0.05f) { s_rcam.yaw = 0.0f; s_rcam.follow_t = 0.0f; }   /* caught up */
+            }
+            s_rcam.follow_t -= dt;
+            if (s_rcam.follow_t < 0.0f) s_rcam.follow_t = 0.0f;
         }
+        if (s_rcam.idle > RCAM_HOLD) {
+            /* v266j: just after setting off, up / down in about 0.3 s (e-fold
+             * 0.1 s), and the left / right not eased on the frame it is
+             * handed over: that frame's easing (7 degrees of 177 in
+             * Miggas's run) was the snap, and the extra turn after it */
+            float k = expf(-dt / RCAM_TAU), kp = s_rcam.setoff_t > 0.0f ? expf(-dt / 0.1f) : k;
+            if (s_rcam.follow_t <= 0.0f && !s_rcam.commit) s_rcam.yaw *= k;
+            s_rcam.pitch *= kp;
+        }
+        if (s_rcam.setoff_t > 0.0f) s_rcam.setoff_t -= dt;
     }                                           /* standing still: kept */
     while (s_rcam.yaw >  3.14159265f) s_rcam.yaw -= 6.28318531f;
     while (s_rcam.yaw < -3.14159265f) s_rcam.yaw += 6.28318531f;
@@ -3300,10 +3361,43 @@ static void rcam_apply(uint32_t cam)
         DWORD now = GetTickCount();
         if ((int32_t)(now - next) >= 0) {
             next = now + 500;
-            fprintf(stderr, "[CAM] mode %u speed %.1f %s stick %.2f %.2f lt %d | yaw %.1f pitch %.1f\n",
+            fprintf(stderr, "[CAM] mode %u speed %.1f %s stick %.2f %.2f lt %d | yaw %.1f pitch %.1f | heading %d\n",
                     mode, s_rcam.speed, moving ? "moving" : "still", s_rcam.rx, s_rcam.ry, s_rcam.lt,
-                    s_rcam.yaw * 57.29578f, s_rcam.pitch * 57.29578f);
+                    s_rcam.yaw * 57.29578f, s_rcam.pitch * 57.29578f, (int)(int32_t)MEM32(cam + 0x228));
         }
+    }
+    if (ok && s_rcam.commit) {
+        /* v266i: the game's camera takes the left / right turn as its own.
+         * Its mode 3 work-out (sub_000A5B60, called by the publication)
+         * keeps where it is in +0x1E4 (eye) and +0x1F0 (point looked at),
+         * eases them 0.2 a frame towards where it wants to be -- which it
+         * finds along its own direction, from the skater -- and copies
+         * them to +0x20C / +0x218, which the publication copies to +0x44 /
+         * +0x5C. v266d turned only +0x44 and v266e +0x20C: both are copies,
+         * put back the next frame. Turning +0x1E4 about +0x1F0 turns the
+         * camera itself, so it carries on following the skater from the
+         * new angle; the copies are turned too, for this frame. */
+        static const uint32_t pairs[3][2] = { { 0x1E4, 0x1F0 }, { 0x20C, 0x218 }, { 0x44, 0x5C } };
+        float c = cosf(s_rcam.yaw), sn = sinf(s_rcam.yaw);
+        int32_t hd = (int32_t)MEM32(cam + 0x228);
+        int k;
+        for (k = 0; k < 3; k++) {
+            float ce[3], ct[3], vx, vz;
+            memcpy(ce, (const void *)XBOX_PTR(cam + pairs[k][0]), 12);
+            memcpy(ct, (const void *)XBOX_PTR(cam + pairs[k][1]), 12);
+            vx = ce[0] - ct[0]; vz = ce[2] - ct[2];
+            ce[0] = ct[0] + vx * c + vz * sn;
+            ce[2] = ct[2] + vz * c - vx * sn;
+            memcpy((void *)XBOX_PTR(cam + pairs[k][0]), ce, 12);
+        }
+        MEM32(cam + 0x228) = (uint32_t)(int32_t)(int16_t)(uint16_t)(hd
+                             + (int32_t)lrintf(s_rcam.yaw * (65536.0f / 6.28318531f)));
+        if (s_rcam.log)
+            fprintf(stderr, "[CAM] setting off: %.0f degrees given to the game's camera (heading %d -> %d)\n",
+                    s_rcam.yaw * 57.29578f, (int)(int16_t)hd, (int)(int32_t)MEM32(cam + 0x228));
+        s_rcam.yaw = 0.0f;
+        s_rcam.commit = 0;
+        s_rcam.follow_t = 0.0f;
     }
     if (!ok || (s_rcam.yaw == 0.0f && s_rcam.pitch == 0.0f))
         return;

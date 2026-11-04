@@ -384,7 +384,7 @@ switch it on. Steam launch options override the file.
 |---|---|
 | `RECOMP_USB_PADS=1` | Number of players (1 to 4). With 2 or more, players join in the order they press a button. |
 | `RECOMP_RUMBLE=100` | Controller rumble: `0` = off, `1` to `100` = strength in percent. |
-| `RECOMP_CAM_ORBIT=0` | The original camera. By default the right stick turns the camera around the skater (the left stick follows the view). While skating it swings back behind 1 s after you let go; standing still it stays, and swings back as soon as you move. The L trigger puts it behind at once. *How it works: from JuMatt's JetSetRadioFuture-Unleashed.* |
+| `RECOMP_CAM_ORBIT=0` | The original camera. By default the right stick turns the camera around the skater (the left stick follows the view). While skating it swings back behind 1 s after you let go; standing still it stays until you move: then up / down swings back and the left / right you chose becomes the way you go. The L trigger puts it behind at once. *How it works: from JuMatt's JetSetRadioFuture-Unleashed.* |
 | `RECOMP_CAM_INVERT_X=1` / `RECOMP_CAM_INVERT_Y=1` | Inverts the camera's left / right or up / down. |
 | `RECOMP_CAM_SENS=1.0` | Camera speed (`2.0` = twice as fast). |
 | `RECOMP_QUIT_COMBO=0` | Turns the quit window off (on by default: click both sticks, L3 + R3; left / right picks YES or NO, A chooses, B goes back). |
