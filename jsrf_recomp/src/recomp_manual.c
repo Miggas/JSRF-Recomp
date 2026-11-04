@@ -3170,6 +3170,7 @@ static struct {
     float    view;              /* v266h: the view's direction while following, radians */
     int      have_view;
     int      commit;            /* v266i: hand the left / right turn to the game's camera */
+    float    setoff_t;          /* v266j: seconds since setting off, counting down */
     uint32_t frames, last_frame;
     uint32_t cam;
     float    game_eye[3], our_eye[3];
@@ -3287,6 +3288,7 @@ static void rcam_apply(uint32_t cam)
             s_rcam.idle = RCAM_HOLD;
             /* v266i: the turn is handed to the game's camera itself (below) */
             s_rcam.commit = s_rcam.yaw != 0.0f;
+            s_rcam.setoff_t = 0.6f;     /* v266j: up / down eases back quicker */
         }
         was_moving = moving;
     }
@@ -3338,10 +3340,15 @@ static void rcam_apply(uint32_t cam)
             if (s_rcam.follow_t < 0.0f) s_rcam.follow_t = 0.0f;
         }
         if (s_rcam.idle > RCAM_HOLD) {
-            float k = expf(-dt / RCAM_TAU);
-            if (s_rcam.follow_t <= 0.0f) s_rcam.yaw *= k;
-            s_rcam.pitch *= k;
+            /* v266j: just after setting off, up / down in about 0.3 s (e-fold
+             * 0.1 s), and the left / right not eased on the frame it is
+             * handed over: that frame's easing (7 degrees of 177 in
+             * Miggas's run) was the snap, and the extra turn after it */
+            float k = expf(-dt / RCAM_TAU), kp = s_rcam.setoff_t > 0.0f ? expf(-dt / 0.1f) : k;
+            if (s_rcam.follow_t <= 0.0f && !s_rcam.commit) s_rcam.yaw *= k;
+            s_rcam.pitch *= kp;
         }
+        if (s_rcam.setoff_t > 0.0f) s_rcam.setoff_t -= dt;
     }                                           /* standing still: kept */
     while (s_rcam.yaw >  3.14159265f) s_rcam.yaw -= 6.28318531f;
     while (s_rcam.yaw < -3.14159265f) s_rcam.yaw += 6.28318531f;
