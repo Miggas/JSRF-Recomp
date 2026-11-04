@@ -3261,8 +3261,8 @@ static void rcam_apply(uint32_t cam)
             if (sp > 2000.0f) { sp = 0.0f; dx = dz = 0.0f; }   /* a teleport, a respawn */
             if (a > 1.0f) a = 1.0f;
             s_rcam.speed += (sp - s_rcam.speed) * a;
-            s_rcam.mvx += (dx / dt - s_rcam.mvx) * a;
-            s_rcam.mvz += (dz / dt - s_rcam.mvz) * a;
+            s_rcam.mvx += (dx / dt - s_rcam.mvx) * a * 0.5f;   /* v266g: smoother, ~0.33 s */
+            s_rcam.mvz += (dz / dt - s_rcam.mvz) * a * 0.5f;
         }
         memcpy(s_rcam.ppos, p, 12);
         s_rcam.have_pos = 1;
@@ -3309,11 +3309,24 @@ static void rcam_apply(uint32_t cam)
                 float ge[3], gt[3], gap;
                 memcpy(ge, (const void *)XBOX_PTR(cam + 0x44), 12);
                 memcpy(gt, (const void *)XBOX_PTR(cam + 0x5C), 12);
+                float step, d;
                 gap = atan2f(s_rcam.mvx, s_rcam.mvz) - atan2f(gt[0] - ge[0], gt[2] - ge[2]);
                 while (gap >  3.14159265f) gap -= 6.28318531f;
                 while (gap < -3.14159265f) gap += 6.28318531f;
-                s_rcam.yaw = gap;
-                if (fabsf(gap) < 0.05f) { s_rcam.yaw = 0.0f; s_rcam.follow_t = 0.0f; }   /* caught up */
+                /* v266g: towards it smoothly (0.3 s), not locked to it: the
+                 * skater's way wavers from stride to stride, and the view
+                 * wavered with it (Miggas: "follows the player weirdly") */
+                d = gap - s_rcam.yaw;
+                while (d >  3.14159265f) d -= 6.28318531f;
+                while (d < -3.14159265f) d += 6.28318531f;
+                step = d * (1.0f - expf(-dt / 0.3f));
+                s_rcam.yaw += step;
+                if (s_rcam.log)
+                    fprintf(stderr, "[CAM] following: way %.1f camera %.1f gap %.1f turn %.1f speed %.1f\n",
+                            atan2f(s_rcam.mvx, s_rcam.mvz) * 57.29578f,
+                            atan2f(gt[0] - ge[0], gt[2] - ge[2]) * 57.29578f, gap * 57.29578f,
+                            s_rcam.yaw * 57.29578f, hs);
+                if (fabsf(gap) < 0.05f && fabsf(s_rcam.yaw) < 0.05f) { s_rcam.yaw = 0.0f; s_rcam.follow_t = 0.0f; }   /* caught up */
             }
             s_rcam.follow_t -= dt;
             if (s_rcam.follow_t < 0.0f) s_rcam.follow_t = 0.0f;
