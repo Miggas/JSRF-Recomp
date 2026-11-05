@@ -3518,11 +3518,26 @@ void sub_00023790(void)
     sub_00023790_gen();
     if (!hold_skip_on())
         return;
+    now = GetTickCount();
+    {   /* v267b: what the event looks like (each new one, and its state changes) */
+        static uint32_t seen_actor, seen_vt, seen_state;
+        static DWORD last_held_log;
+        uint32_t vt = guest_range_ok(actor, 0x100u) ? MEM32(actor) : 0, st = vt ? MEM32(actor + 0x88) : 0;
+        if (actor != seen_actor || vt != seen_vt || st != seen_state) {
+            fprintf(stderr, "[SKIP] event %08X vtable %08X state %u id %u\n", actor, vt, st,
+                    vt ? MEM32(actor + 0x8C) : 0);
+            seen_actor = actor; seen_vt = vt; seen_state = st;
+        }
+        if (xbox_PadStartHeld() && now - last_held_log > 1000) {
+            last_held_log = now;
+            fprintf(stderr, "[SKIP] START held (armed %d, %u ms)\n", s_armed,
+                    s_begin ? (unsigned)(now - s_begin) : 0);
+        }
+    }
     /* still the event, still playing (its own update did not just end it) */
     if (actor < 0x10000u || !guest_range_ok(actor, 0x100u) || MEM32(actor) != 0x001C4BB0u
             || MEM32(actor + 0x88) != 2u)
         return;
-    now = GetTickCount();
     if (actor != s_actor) { s_actor = actor; s_armed = 0; s_fired = 0; s_begin = 0; }
     if (now - s_last > 250) s_begin = 0;      /* only time while it plays counts */
     s_last = now;
