@@ -3459,7 +3459,7 @@ void sub_000A28B0(void)
 }
 
 
-/* ── v267: hold START for 2 s to skip a cutscene (RECOMP_HOLD_SKIP) ───────
+/* ── v267: hold START to skip a cutscene (RECOMP_HOLD_SKIP; 1.3 s since v267d)
  *
  * The idea from mstan's JSRFRecomp ("Hold Start to skip cutscenes"; GPL,
  * no code taken -- his notes name the two functions). sub_00023790 is a
@@ -3483,7 +3483,7 @@ static int hold_skip_on(void)
     if (on < 0) {
         const char *e = getenv("RECOMP_HOLD_SKIP");
         on = !(e && e[0] == '0');
-        fprintf(stderr, "[SKIP] hold START for 2 s to skip a cutscene: %s (RECOMP_HOLD_SKIP=0: off)\n",
+        fprintf(stderr, "[SKIP] hold START for 1.3 s to skip a cutscene: %s (RECOMP_HOLD_SKIP=0: off)\n",
                 on ? "on" : "off");
     }
     return on;
@@ -3544,9 +3544,9 @@ void sub_00023790(void)
     if (!xbox_PadStartHeld()) { s_armed = 1; s_begin = 0; return; }
     if (!s_armed || s_fired) return;
     if (!s_begin) { s_begin = now; return; }
-    if (now - s_begin < 2000) return;
+    if (now - s_begin < 1333) return;         /* v267d: 2/3 of 2 s (Miggas) */
     s_fired = 1;
-    fprintf(stderr, "[SKIP] START held 2 s: event %u skipped\n", MEM32(actor + 0x8C));
+    fprintf(stderr, "[SKIP] START held 1.3 s: event %u skipped\n", MEM32(actor + 0x8C));
     call_event_end(actor);
 }
 
