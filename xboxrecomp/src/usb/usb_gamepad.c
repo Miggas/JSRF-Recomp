@@ -650,6 +650,14 @@ static void rumble_send(int pad, const XBOX_VIBRATION *v)
  * (jsrf recomp_manual.c, the camera on the right stick). */
 void (*g_xbox_pad_filter)(int pad, short *rx, short *ry, unsigned char lt);
 
+/* v267: START held on a pad, as last reported (a title's hold-to-skip) */
+static volatile unsigned char s_pad_start[USB_GAMEPAD_MAX];
+int xbox_PadStartHeld(void)
+{
+    for (int i = 0; i < USB_GAMEPAD_MAX; i++) if (s_pad_start[i]) return 1;
+    return 0;
+}
+
 int usb_gamepad_report(int pad, uint8_t *out, int max)
 {
     XBOX_INPUT_STATE state;
@@ -719,6 +727,8 @@ int usb_gamepad_report(int pad, uint8_t *out, int max)
     }
 
     g = &state.Gamepad;
+    if (pad >= 0 && pad < USB_GAMEPAD_MAX)
+        s_pad_start[pad] = (g->wButtons & XBOX_GAMEPAD_START) != 0;
     if (g_xbox_pad_filter)
         g_xbox_pad_filter(pad, &state.Gamepad.sThumbRX, &state.Gamepad.sThumbRY,
                           state.Gamepad.bAnalogButtons[XBOX_BUTTON_LTRIGGER]);

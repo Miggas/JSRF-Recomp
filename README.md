@@ -341,6 +341,10 @@ controller. **The keyboard** works as controller 1:
 The game pauses while the window is open. Closing the game window or `Alt+F4`
 also quits.
 
+### Skipping a cutscene
+
+Hold **START** (`Enter`) for about 1.3 seconds, also the first time you see it.
+
 ---
 
 ## 9. Settings (jsrf.ini)
@@ -362,6 +366,7 @@ switch it on. Steam launch options override the file.
 |---|---|
 | `RECOMP_QUIET=1` | Fewer log messages (faster). Put a `;` in front when making a log for a bug report. |
 | `RECOMP_SKIP_INTRO=1` | Skip the intro logos. *By Piaka.* |
+| `RECOMP_HOLD_SKIP=0` | Turns off skipping cutscenes by holding START for about 1.3 seconds (on by default; works the first time you see one too). *Idea from mstan's JSRFRecomp.* |
 | `RECOMP_SAVE_STRICT=1` | Refuse saves from other sources (a real Xbox, emulators, save editors), as the Xbox does. Off by default, so those saves load. |
 
 **`[display]`**

@@ -3458,6 +3458,98 @@ void sub_000A28B0(void)
     if (on) rcam_apply(cam);
 }
 
+
+/* ── v267: hold START to skip a cutscene (RECOMP_HOLD_SKIP; 1.3 s since v267d)
+ *
+ * The idea from mstan's JSRFRecomp ("Hold Start to skip cutscenes"; GPL,
+ * no code taken -- his notes name the two functions). sub_00023790 is a
+ * scripted event's update (the event object: vtable 0x1C4BA8 in this
+ * release, +0x88 its state, 2 while it plays). When the event ends it calls
+ * sub_0001E8C0 on itself, which records it as seen, frees its actors,
+ * animations and voice and lets the mission carry on. (Its code also has a
+ * skip with A / START for an event marked in a bit list at 0x1EFFB0 --
+ * sub_0003A8C0 -- but in the released game that never happens: Miggas.) Here, after the event's own update, if
+ * START has been held for 2 s (let go at least once since the event began,
+ * so a START held from before does not skip it), the same sub_0001E8C0 is
+ * called, as the game itself would. Nothing else is changed: not the
+ * mission, its timers or its flags. RECOMP_HOLD_SKIP=0 turns it off. */
+extern void sub_00023790_gen(void);
+extern void sub_0001E8C0(void);
+extern int  xbox_PadStartHeld(void);
+
+static int hold_skip_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_HOLD_SKIP");
+        on = !(e && e[0] == '0');
+        fprintf(stderr, "[SKIP] hold START for 1.3 s to skip a cutscene: %s (RECOMP_HOLD_SKIP=0: off)\n",
+                on ? "on" : "off");
+    }
+    return on;
+}
+
+/* sub_0001E8C0(this) from here, with the caller's registers kept */
+static void call_event_end(uint32_t actor)
+{
+    uint32_t r[10] = { g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_edi, g_ebp, g_seh_ebp,
+                       (uint32_t)g_df };
+    double fp[8];
+    int top = g_fp_top, cmp = g_fp_cmp;
+    uint16_t cc = g_fp_cc, cw = g_fp_control_word;
+    memcpy(fp, g_fp_stack, sizeof fp);
+    g_ecx = actor;
+    g_esp -= 4;
+    MEM32(g_esp) = 0;                   /* a return address for its ret */
+    sub_0001E8C0();
+    g_eax = r[0]; g_ecx = r[1]; g_edx = r[2]; g_esp = r[3]; g_ebx = r[4];
+    g_esi = r[5]; g_edi = r[6]; g_ebp = r[7]; g_seh_ebp = r[8]; g_df = (int)r[9];
+    memcpy(g_fp_stack, fp, sizeof fp);
+    g_fp_top = top; g_fp_cmp = cmp; g_fp_cc = cc; g_fp_control_word = cw;
+}
+
+void sub_00023790(void)
+{
+    static uint32_t s_actor;
+    static int s_armed, s_fired;
+    static DWORD s_begin, s_last;
+    uint32_t actor = g_ecx;
+    DWORD now;
+    sub_00023790_gen();
+    if (!hold_skip_on())
+        return;
+    now = GetTickCount();
+    {   /* v267b: what the event looks like (each new one, and its state changes) */
+        static uint32_t seen_actor, seen_vt, seen_state;
+        static DWORD last_held_log;
+        uint32_t vt = guest_range_ok(actor, 0x100u) ? MEM32(actor) : 0, st = vt ? MEM32(actor + 0x88) : 0;
+        if (actor != seen_actor || vt != seen_vt || st != seen_state) {
+            fprintf(stderr, "[SKIP] event %08X vtable %08X state %u id %u\n", actor, vt, st,
+                    vt ? MEM32(actor + 0x8C) : 0);
+            seen_actor = actor; seen_vt = vt; seen_state = st;
+        }
+        if (xbox_PadStartHeld() && now - last_held_log > 1000) {
+            last_held_log = now;
+            fprintf(stderr, "[SKIP] START held (armed %d, %u ms)\n", s_armed,
+                    s_begin ? (unsigned)(now - s_begin) : 0);
+        }
+    }
+    /* still the event, still playing (its own update did not just end it) */
+    if (actor < 0x10000u || !guest_range_ok(actor, 0x100u) || MEM32(actor) != 0x001C4BA8u
+            || MEM32(actor + 0x88) != 2u)
+        return;
+    if (actor != s_actor) { s_actor = actor; s_armed = 0; s_fired = 0; s_begin = 0; }
+    if (now - s_last > 250) s_begin = 0;      /* only time while it plays counts */
+    s_last = now;
+    if (!xbox_PadStartHeld()) { s_armed = 1; s_begin = 0; return; }
+    if (!s_armed || s_fired) return;
+    if (!s_begin) { s_begin = now; return; }
+    if (now - s_begin < 1333) return;         /* v267d: 2/3 of 2 s (Miggas) */
+    s_fired = 1;
+    fprintf(stderr, "[SKIP] START held 1.3 s: event %u skipped\n", MEM32(actor + 0x8C));
+    call_event_end(actor);
+}
+
 /* ── v203: 3D sound distance (RECOMP_SND_DIST=1) ─────────────────────────
  *
  * The Chuo Street signs' buzz is heard all over the map, on the Xbox only
