@@ -3463,7 +3463,7 @@ void sub_000A28B0(void)
  *
  * The idea from mstan's JSRFRecomp ("Hold Start to skip cutscenes"; GPL,
  * no code taken -- his notes name the two functions). sub_00023790 is a
- * scripted event's update (the event object: vtable 0x1C4BB0 in this
+ * scripted event's update (the event object: vtable 0x1C4BA8 in this
  * release, +0x88 its state, 2 while it plays). When the event ends it calls
  * sub_0001E8C0 on itself, which records it as seen, frees its actors,
  * animations and voice and lets the mission carry on. (Its code also has a
@@ -3535,7 +3535,7 @@ void sub_00023790(void)
         }
     }
     /* still the event, still playing (its own update did not just end it) */
-    if (actor < 0x10000u || !guest_range_ok(actor, 0x100u) || MEM32(actor) != 0x001C4BB0u
+    if (actor < 0x10000u || !guest_range_ok(actor, 0x100u) || MEM32(actor) != 0x001C4BA8u
             || MEM32(actor + 0x88) != 2u)
         return;
     if (actor != s_actor) { s_actor = actor; s_armed = 0; s_fired = 0; s_begin = 0; }
