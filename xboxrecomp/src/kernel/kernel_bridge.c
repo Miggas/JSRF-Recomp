@@ -345,6 +345,14 @@ static void kernel_data_init(void)
             { KDATA_XE_IMAGE_FILENAME, KDATA_XE_IMAGE_BUF,
               "\\Device\\CdRom0\\default.xbe" },
         };
+        /* RECOMP_IMAGE_NAME: the XBE's own file name, when it is not
+         * default.xbe (JSRF's on the Sega GT 2002 + JSRF disc: SegaJSRF.xbe) */
+        static char img[96];
+        const char *in = getenv("RECOMP_IMAGE_NAME");
+        if (in && *in && strlen(in) < 64 && !strpbrk(in, "\\/")) {
+            snprintf(img, sizeof img, "\\Device\\CdRom0\\%s", in);
+            d[2].text = img;
+        }
         for (int k = 0; k < (int)(sizeof(d) / sizeof(d[0])); k++) {
             uint32_t str_va = XBOX_KERNEL_DATA_BASE + d[k].str_off;
             uint32_t buf_va = XBOX_KERNEL_DATA_BASE + d[k].buf_off;

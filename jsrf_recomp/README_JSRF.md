@@ -657,6 +657,18 @@ next fix.
 - **v267b:** the skip did nothing in Miggas's first run, and the log only said it was on. Each event now logs its object, vtable, state and id when it starts and when its state changes, and START held is logged once a second with the hold time, to see which check stops it.
 - **v267c:** the log showed the event's vtable is 0x1C4BA8, not 0x1C4BB0 (the update sits in its third slot, at 0x1C4BB0; I had taken that slot for the start), so the check never matched and the skip never armed. Fixed.
 - **v267d:** the skip works (Miggas); the hold is now 1.3 s, two thirds of the 2 s (Miggas).
+- **v270:** the PAL (European) release (*Idea by Miggas*). It is the same game built 18 days later (title ID 49470018): `tools/versions/make_version.py` matches every function of our analysis to it by its code, with the addresses inside ignored (11,132 of 12,157), and writes `analysis/eur/`: the toolkit's own analysis of that XBE seeded from ours, and `addr_map.txt`, where each of the 206 game addresses our code uses is there. `generate_code.py` finds the release from the code's fingerprints (`xbe_info.py`); for another release the build compiles `recomp_manual.c` and `jsrf_widescreen.c` from copies with the addresses moved (`tools/translate_release.py`). Changed in PAL and placed by hand: the event's update and end (a 1.2 frame step at 50 Hz, fields moved by 8), the end of the character select's function. The kernel reports NTSC at 60 Hz, so the game takes the 1.0 step. The US code is unchanged.
+- **v270b:** the PAL build ran but never opened its window (Miggas): a seed moved from US cut the DirectSound set-up in two (0x179475), and its first half jumped into nothing. `make_version.py` no longer seeds what the toolkit does not find there (nearly always an entry in the middle of a function that only US code jumped to), removes starts the toolkit found inside functions that are the same code as ours (from numbers that only look like addresses; 112), seeds ours that such a start was hiding, and lifts on their own the ones the toolkit still drops (0x7C6A0). PAL now has as many placeholder functions as US (33). Generate code again.
+- **v270c:** PAL hung on the first loading screen after the tutorial (Miggas): it called 0x2B300 through a pointer over and over, a function never found there. Its code changed (US 0x2AD60), so the matcher could not place it. Functions like it are now found through the data that points to them: the same table slot in the other release. Also lifted on their own: functions inside another that the code jumps to (0x41218). Generate code again.
+- **v270d:** PAL: the Professor K scene showed only the far background (Miggas). v270c's seeds from data cut the event code into pieces: a table of plain numbers (the same in both releases, so not pointers) and the cases of a switch. Only functions that stand on their own in the US analysis are seeded now, and a number that did not move is never taken for a pointer. Generate code again.
+- **v270e:** PAL: the screen went black where a cutscene changes scene, music still playing (Miggas): it called 0x1FD40 through a pointer, a US seed (0x1FD10) whose code changed. US seeds the matcher cannot move are now also found through the data pointing to them, and a pointer-found function the toolkit swallows into a start of its own is lifted on its own (0x1FD40, 0x20F40). Still not found: 7 US seeds (0x22043, 0x22F30, 0x22F93, 0x29FE0, 0x38D98, 0x107106, 0x12A55B); a log line `[ICALL] Failed to resolve VA` names one if the game needs it. Generate code again.
+- **v270f:** `src/recomp/gen/release.txt` also holds the SHA-256 of the default.xbe the code was made from: the launcher (v1y) asks to generate again when the game folder has another one (Miggas: PAL code was built for an NTSC copy).
+- **v271:** `RECOMP_LANGUAGE` (*Idea by Miggas*): the language the kernel reports (XC_LANGUAGE), by name or the Xbox's number; English by default. The PAL release maps English, German, French, Spanish and Italian to its own text (its table at 0x1CD6E0).
+- **v272:** the NTSC-J (Japanese) release (`analysis/jpn/`). Its code is at the same addresses as the US release's, and only its data moved (8 to 32 bytes, the Japanese text): 12,080 of 12,157 functions matched by code, the rest small pieces, every function our code uses among them. It has the US title ID (5345000A); the region (Japan) and the code tell them apart.
+- **v273:** the US Sega GT 2002 + JSRF disc (`analysis/usa-combo/`, *Idea by Miggas*). Its JSRF is `SegaJSRF.xbe` (the disc's `default.xbe` is the menu that picks a game); built in August 2002 (version 4), with the US title ID and region: 11,690 of 12,157 functions matched by code, the rest small pieces and a few functions changed, every function our code uses matched. The exe loads `SegaJSRF.xbe` when the game folder has one, and tells the kernel its name (`RECOMP_IMAGE_NAME`, XeImageFileName).
+- **v273b:** the European Sega GT 2002 + JSRF disc: its `SegaJSRF.xbe` (September 2002, version 5) has the same code and data as the PAL release's `default.xbe`, only the header differs, so it is the `eur` release and needs nothing new (Miggas).
+- **v273c:** the Asian Sega GT 2002 + JSRF disc: its `SegaJSRF.xbe` (February 2003, version 7, region Japan) has the same code and data as the US combo disc's, so it is the `usa-combo` release (Miggas). The launcher (v2e) no longer takes it for the Japanese release by its region.
+- **v274:** Japanese did nothing on the US and Asian Sega GT 2002 + JSRF discs (Miggas): only the PAL release asks the Xbox its language. The others pick their text files (`tex_Jpn.dat` / `tex_Eng.dat`, ...) by one variable that nothing sets: 1 (English) in the US releases' data (0x1FC724; the combo discs 0x1FC6E4), 0 (Japanese) in the Japanese release (0x251F58). `jsrf_apply_language()` sets it from `RECOMP_LANGUAGE` (english or japanese) before the game starts.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
@@ -680,6 +692,21 @@ py -3 -m tools.recomp game_files\default.xbe --all --split 250 --game-name "Jet 
 py -3 ..\jsrf_recomp\tools\apply_xdk_names.py ..\jsrf_recomp\analysis\xbsymboldb_symbols.txt tools\disasm\output\functions.json   :: before the recomp line
 py -3 ..\jsrf_recomp\tools\log_stubs.py ..\jsrf_recomp\src\recomp\gen\recomp_stubs_unresolved.c
 ```
+
+## Other releases
+
+`analysis/` is the US (NTSC) release's; each other release has `analysis/<tag>/`
+(`eur`: PAL Europe), made with both XBEs at hand:
+
+```sh
+python3 tools/versions/make_version.py us/default.xbe eu/default.xbe eur
+```
+
+It needs `OVERRIDES` (in the script) for an address the matcher cannot place,
+and `NOT_ADDRESSES` for a number in the address range that is not one. After
+changing an address in our code, run it again; the build stops if an address
+is missing from `addr_map.txt`. Then regenerate with that XBE and write
+`analysis/<tag>/gen_hashes.txt`.
 
 ## Files in `analysis/`
 

@@ -69,13 +69,50 @@ if(WIN32)
 else()
     set(GAME_MAIN src/main_linux.c)   # v244: the Linux build's start-up
 endif()
-set(GAME_SOURCES
-    ${GAME_MAIN}
+# Which release of the game the generated code is for (generate_code.py
+# writes src/recomp/gen/release.txt; none: the US one). For another release
+# our own code's US addresses are moved to it at build time
+# (tools/translate_release.py, from analysis/<tag>/addr_map.txt), so these
+# two files are compiled from copies in the build folder.
+set(JSRF_RELEASE usa)
+set(_rel_file ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp/gen/release.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_rel_file})
+if(EXISTS ${_rel_file})
+    file(STRINGS ${_rel_file} _rel LIMIT_COUNT 1)
+    if(_rel)
+        set(JSRF_RELEASE ${_rel})
+    endif()
+endif()
+set(JSRF_OWN_SOURCES
     src/recomp_manual.c
     src/jsrf_widescreen.c   # v187n: HUD at the screen edges, 4:3 screens (widescreen only)
-    # Add game-specific sources here, e.g.:
-    # src/asset_loader.c
-    # src/custom_renderer.c
+)
+if(NOT JSRF_RELEASE STREQUAL "usa")
+    find_package(Python3 COMPONENTS Interpreter)
+    if(NOT Python3_Interpreter_FOUND)
+        message(FATAL_ERROR "The ${JSRF_RELEASE} release needs Python at build time "
+                            "(-DPython3_EXECUTABLE=...): update the launcher")
+    endif()
+    message(STATUS "Game release: ${JSRF_RELEASE}")
+    set(_moved)
+    foreach(_src ${JSRF_OWN_SOURCES})
+        get_filename_component(_name ${_src} NAME)
+        set(_out ${CMAKE_CURRENT_BINARY_DIR}/release/${_name})
+        add_custom_command(OUTPUT ${_out}
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/translate_release.py
+                    ${JSRF_RELEASE} ${CMAKE_CURRENT_SOURCE_DIR}/${_src} ${_out}
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${_src}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tools/translate_release.py
+                    ${CMAKE_CURRENT_SOURCE_DIR}/analysis/${JSRF_RELEASE}/addr_map.txt
+            COMMENT "Moving ${_name} to the ${JSRF_RELEASE} release's addresses"
+            VERBATIM)
+        list(APPEND _moved ${_out})
+    endforeach()
+    set(JSRF_OWN_SOURCES ${_moved})
+endif()
+set(GAME_SOURCES
+    ${GAME_MAIN}
+    ${JSRF_OWN_SOURCES}
 )
 
 # The recomp pipeline also generates a dispatch header and function declarations.

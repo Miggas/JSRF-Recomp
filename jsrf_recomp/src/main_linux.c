@@ -561,7 +561,13 @@ static void portable_setup(void)
     if (!slash)
         return;
     *slash = 0;
-    snprintf(xbe, sizeof xbe, "%s/default.xbe", dir);
+    /* v273: a Sega GT 2002 + JSRF disc's game is SegaJSRF.xbe (its
+     * default.xbe is the menu that picks one of the two games) */
+    snprintf(xbe, sizeof xbe, "%s/SegaJSRF.xbe", dir);
+    if (stat(xbe, &st) == 0)
+        setenv("RECOMP_IMAGE_NAME", "SegaJSRF.xbe", 1);
+    else
+        snprintf(xbe, sizeof xbe, "%s/default.xbe", dir);
     if (stat(xbe, &st) == 0) {
         g_portable = 1;
         if (chdir(dir) != 0) { /* keep going from where we are */ }
@@ -755,6 +761,10 @@ static int game_main(void)
         xbox_mmcss_game_thread("main");
     }
     printf("Entry point: 0x%08X\nStarting game...\n", YOUR_GAME_ENTRY_POINT);
+    {
+        extern void jsrf_apply_language(void);   /* v274 (recomp_manual.c) */
+        jsrf_apply_language();
+    }
     XAPILIB_mainCRTStartup();
 
     fprintf(stderr, "[EXIT] game entry point returned (eax=0x%08X)\n", g_eax);

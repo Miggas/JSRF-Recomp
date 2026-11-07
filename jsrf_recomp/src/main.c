@@ -177,7 +177,13 @@ static void portable_setup(void)
     if (!slash)
         return;
     *slash = 0;
-    snprintf(xbe, sizeof xbe, "%s\\default.xbe", dir);
+    /* v273: a Sega GT 2002 + JSRF disc's game is SegaJSRF.xbe (its
+     * default.xbe is the menu that picks one of the two games) */
+    snprintf(xbe, sizeof xbe, "%s\\SegaJSRF.xbe", dir);
+    if (GetFileAttributesA(xbe) != INVALID_FILE_ATTRIBUTES)
+        _putenv_s("RECOMP_IMAGE_NAME", "SegaJSRF.xbe");
+    else
+        snprintf(xbe, sizeof xbe, "%s\\default.xbe", dir);
     if (GetFileAttributesA(xbe) != INVALID_FILE_ATTRIBUTES) {
         g_portable = 1;
         SetCurrentDirectoryA(dir);
@@ -1196,6 +1202,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     printf("\nStarting game...\n");
     fflush(stdout);
+    {
+        extern void jsrf_apply_language(void);   /* v274 (recomp_manual.c) */
+        jsrf_apply_language();
+    }
 
     xbe_entry_point();
     g_game_returned = 1;

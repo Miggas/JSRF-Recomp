@@ -124,27 +124,34 @@ def main():
         die("no xboxrecomp toolkit at %s (pass --xboxrecomp DIR)" % xr)
     if not os.path.isfile(a.xbe):
         die("%s not found -- copy your game files into jsrf_recomp/game/" % a.xbe)
-    for n in ("functions_named.json", "labels.json", "identified_functions.json",
-              "abi_functions.json"):
-        if not os.path.isfile(os.path.join(ANALYSIS, n)):
-            die("analysis/%s is missing" % n)
-
     print("Checking default.xbe...")
     try:
-        ok, info, results = xbe_info.check(a.xbe)
+        rel, info, results = xbe_info.identify(a.xbe)
     except Exception as e:  # not an XBE, truncated, unreadable
         die("could not read %s: %s" % (a.xbe, e))
     digest = info["file_sha256"]
-    if not ok:
-        msg = ("this default.xbe's code is not the one the analysis was made from\n"
+    if not rel:
+        msg = ("this default.xbe's code is not a release the project knows\n"
                + xbe_info.describe(info, results) + "\n"
-               "  Only the NTSC (North American) retail release works; PAL and\n"
-               "  NTSC-J (Japanese) copies are built differently. ")
+               "  Known: %s. " % ", ".join(r[1] for r in xbe_info.releases()))
         if not a.any_xbe:
-            die(msg + "--any-xbe to try anyway; the result will very likely not work.")
+            die(msg + "--any-xbe to try anyway (as the NTSC release); the result will very likely not work.")
         print("WARNING: " + msg)
+        rel = xbe_info.releases()[0][:3]
     else:
-        print("  the NTSC retail release the project is made for")
+        print("  release: %s" % rel[1])
+    tag, an = rel[0], rel[2]
+    for n in ("functions_named.json", "labels.json", "identified_functions.json",
+              "abi_functions.json"):
+        if not os.path.isfile(os.path.join(an, n)):
+            die("%s is missing" % os.path.relpath(os.path.join(an, n), JR))
+    # Another release: our code's US addresses moved to it
+    # (analysis/<tag>/addr_map.txt, tools/translate_release.py).
+    tr = None
+    if tag != "usa":
+        import translate_release
+        amap = translate_release.load_map(tag)
+        tr = lambda text, python=False: translate_release.translate(text, amap, tag, python)
 
     # 1. the toolkit reads <stem>_analysis.json beside the XBE
     gf = os.path.join(xr, "game_files")
@@ -160,21 +167,43 @@ def main():
     print("\n[2/4] Translating the game's code to C (a minute or two)...")
     os.makedirs(GEN, exist_ok=True)
     for f in os.listdir(GEN):
-        if f.endswith((".c", ".h")):
+        if f.endswith((".c", ".h")) or f == "release.txt":
             os.remove(os.path.join(GEN, f))
-    inputs = ["--functions", os.path.join(ANALYSIS, "functions_named.json"),
-              "--labels", os.path.join(ANALYSIS, "labels.json"),
-              "--identified", os.path.join(ANALYSIS, "identified_functions.json"),
-              "--abi", os.path.join(ANALYSIS, "abi_functions.json")]
-    run([py, "-m", "tools.recomp", xbe, "--all", "--split", "250",
-         "--game-name", "Jet Set Radio Future", "--gen-dir", GEN,
-         "--exclude-manual", MANUAL] + inputs, xr)
+    inputs = ["--functions", os.path.join(an, "functions_named.json"),
+              "--labels", os.path.join(an, "labels.json"),
+              "--identified", os.path.join(an, "identified_functions.json"),
+              "--abi", os.path.join(an, "abi_functions.json")]
+    manual = MANUAL
+    tmpdir = None
+    if tr:
+        # the functions recomp_manual.c defines and wraps, at this release's addresses
+        tmpdir = tempfile.mkdtemp(prefix="jsrf_gen_")
+        manual = os.path.join(tmpdir, "recomp_manual.c")
+        with open(manual, "w", encoding="utf-8", newline="\n") as f:
+            f.write(tr(open(MANUAL, encoding="utf-8", errors="replace").read()))
+    try:
+        run([py, "-m", "tools.recomp", xbe, "--all", "--split", "250",
+             "--game-name", "Jet Set Radio Future", "--gen-dir", GEN,
+             "--exclude-manual", manual] + inputs, xr)
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     # 3. recomp_extra.c
     print("\n[3/4] The functions reached only through data tables...")
-    funcs = json.load(open(os.path.join(ANALYSIS, "functions_named.json")))
+    funcs = json.load(open(os.path.join(an, "functions_named.json")))
     have = {f["start"] for f in funcs}
-    for start, end in EXTRA:
+    extra = EXTRA
+    if tr:
+        # at this release's addresses; the ones its function list already
+        # holds (seeded) were lifted with the rest
+        extra = tuple((tr('"%s"' % s)[1:-1], "0x%08X" % (int(tr('"%s"' % s)[1:-1], 16) + int(e, 16) - int(s, 16)))
+                      for s, e in EXTRA)
+        ep = os.path.join(an, "extra.json")
+        if os.path.isfile(ep):   # the release's own (tools/versions/make_version.py)
+            extra += tuple(tuple(x) for x in json.load(open(ep)))
+    extra = tuple(sorted(set((s, e) for s, e in extra if s not in have)))
+    for start, end in extra:
         if start not in have:
             s, e = int(start, 16), int(end, 16)
             funcs.append({"start": start, "end": end, "size": e - s,
@@ -184,7 +213,7 @@ def main():
     tmp.close()
     bodies = []
     try:
-        for start, _ in EXTRA:
+        for start, _ in extra:
             ins = list(inputs)
             ins[1] = tmp.name
             out = run([py, "-m", "tools.recomp", xbe, "-f", start] + ins, xr, capture=True)
@@ -197,7 +226,7 @@ def main():
     with open(os.path.join(GEN, "recomp_extra.c"), "w", newline="\n") as f:
         f.write(EXTRA_HEADER + "\n\n".join(bodies) + "\n")
 
-    names = ["sub_%08X" % int(s, 16) for s, _ in EXTRA]
+    names = ["sub_%08X" % int(s, 16) for s, _ in extra]
 
     # A function the main lift only reached by a direct call or jump got an
     # empty placeholder in recomp_stubs_unresolved.c (v186e: 0x00109FA0, a
@@ -228,7 +257,7 @@ def main():
     if not rows:
         die("unexpected recomp_dispatch.c layout")
     added = 0
-    for (start, _), n in zip(EXTRA, names):
+    for (start, _), n in zip(extra, names):
         va = int(start, 16)
         line = "    { 0x%08Xu, (recomp_func_t)%s },\n" % (va, n)
         if line in d:
@@ -245,7 +274,12 @@ def main():
     # 4. the project's fix-ups
     print("\n[4/4] Project fix-ups...")
     run([py, os.path.join(HERE, "log_stubs.py"), os.path.join(GEN, "recomp_stubs_unresolved.c")], JR)
-    run([py, os.path.join(HERE, "wrap_dsound.py"), GEN], JR)
+    run([py, os.path.join(HERE, "wrap_dsound.py"), GEN, "--release=" + tag], JR)
+    # which release this code is for: the build moves our code's addresses
+    # to it (CMakeLists.txt), the launcher checks it against that release's
+    # expected code
+    with open(os.path.join(GEN, "release.txt"), "w", newline="\n") as f:
+        f.write(tag + "\n" + digest.lower() + "\n")   # v270f: and which file (the launcher checks it)
 
     n = len([f for f in os.listdir(GEN) if f.endswith(".c")])
     print("\nDone: %d files in src/recomp/gen. Now build the game (the launcher's Build)." % n)

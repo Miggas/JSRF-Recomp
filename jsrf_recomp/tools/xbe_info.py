@@ -96,6 +96,50 @@ def check(path):
     return ok, info, results
 
 
+def releases():
+    """The releases the project knows: (tag, name, analysis folder,
+    {section: SHA-256}). The US one is the analysis/ folder itself; each
+    other has its own analysis/<tag>/ with a version.json
+    (tools/versions/make_version.py)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    an = os.path.normpath(os.path.join(here, "..", "analysis"))
+    out = [("usa", "NTSC (North America)", an, dict(EXPECTED_SECTIONS))]
+    for d in sorted(os.listdir(an)) if os.path.isdir(an) else []:
+        vj = os.path.join(an, d, "version.json")
+        if os.path.isfile(vj):
+            import json
+            v = json.load(open(vj))
+            out.append((v["tag"], v.get("name", v["tag"]), os.path.join(an, d), v["sections"]))
+    return out
+
+
+def identify(path):
+    """(release or None, info, results): which release this XBE's code is.
+    release = (tag, name, analysis folder). results as check() gives them,
+    against that release (or the US one when none matches)."""
+    info = read_xbe(path)
+    got = {name: hashlib.sha256(data).hexdigest() for name, data in info["sections"]}
+    found = None
+    for tag, name, folder, secs in releases():
+        code = [n for n in got if n not in OPTIONAL_SECTIONS]
+        if sorted(code) == sorted(secs) and all(got[n] == secs[n] for n in code):
+            found = (tag, name, folder, secs)
+            break
+    if found is None and info["file_sha256"] == DEV_FILE_SHA256:
+        found = releases()[0]
+    ref = found[3] if found else EXPECTED_SECTIONS
+    results = []
+    for name, data in info["sections"]:
+        if name in OPTIONAL_SECTIONS:
+            state = "(icon)"
+        elif ref.get(name) == got[name]:
+            state = "ok"
+        else:
+            state = "DIFFERENT"
+        results.append((name, len(data), got[name], state))
+    return (found[:3] if found else None), info, results
+
+
 def describe(info, results):
     regions = [v for k, v in REGIONS.items() if info["region"] & k] or ["none"]
     lines = [
@@ -117,18 +161,18 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "..", "game", "default.xbe")
     try:
-        ok, info, results = check(path)
+        rel, info, results = identify(path)
     except (OSError, XbeError, struct.error) as e:
         print("ERROR: %s" % e)
         return 1
     print(describe(info, results))
-    if ok:
-        print("\nThe game's code matches: this copy works with the project.")
-        if info["file_sha256"] != DEV_FILE_SHA256:
+    if rel:
+        print("\nRelease: %s. This copy works with the project." % rel[1])
+        if rel[0] == "usa" and info["file_sha256"] != DEV_FILE_SHA256:
             print("(Only the header differs from the developer's copy -- that is normal.)")
         return 0
-    print("\nThe game's code is DIFFERENT from the version the project is made for "
-          "(the NTSC retail release). Please share the lines above.")
+    print("\nThe game's code is not a release the project knows (%s). "
+          "Please share the lines above." % ", ".join(r[1] for r in releases()))
     return 2
 
 

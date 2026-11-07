@@ -8,7 +8,7 @@ Runs on Windows 10/11, Linux and the Steam Deck.
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-native-FCC624?logo=linux&logoColor=black)
 ![Steam Deck](https://img.shields.io/badge/Steam%20Deck-native-1A9FFF?logo=steamdeck&logoColor=white)
-![Version](https://img.shields.io/badge/game-NTSC%20(US)%20retail%20only-orange)
+![Version](https://img.shields.io/badge/game-NTSC%20(US)%20%2B%20PAL%20(EU)%20%2B%20NTSC--J%20(JP,%20testing)-orange)
 ![Bring your own game](https://img.shields.io/badge/game%20files-not%20included-lightgrey)
 
 </div>
@@ -70,7 +70,7 @@ Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
 | | Requirement |
 |---|---|
 | 💻 | **A Windows 10/11 PC, a Linux PC or a Steam Deck.** The game is built on the same system it runs on. |
-| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — the NTSC (North American) retail release**, as its files (`default.xbe` plus the folders next to it) or as a disc image (`.iso`). |
+| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — the NTSC (North American), PAL (European) or NTSC-J (Japanese) retail release**, as its files (`default.xbe` plus the folders next to it) or as a disc image (`.iso`). |
 | 💾 | **About 3 GB of free disk space** (the build tools, the build, and the game's cache). |
 | 🌐 | **An internet connection** the first time: the launcher downloads its tools and the project. |
 | 🎮 | **A graphics card with OpenGL 3.3** or newer — practically any GPU from the last ten years. |
@@ -79,12 +79,16 @@ Nothing else has to be installed: the launcher brings its own tools (Python,
 the Zig compiler, CMake).
 
 > [!WARNING]
-> **Only the NTSC (North American) release works.** The PAL (European) and
-> NTSC-J (Japanese) releases are built differently inside. The build checks the
-> game's code and data inside your `default.xbe` and stops if they are not the
-> right ones. It does **not** compare the whole file: many dumps have a patched
-> header (region, allowed media), which changes the file's SHA-256 but not the
-> game, and those work fine.
+> **Releases:** NTSC (North America) and PAL (Europe) work. NTSC-J (Japan)
+> and the Sega GT 2002 + JSRF discs (US, European and Asian) are new and
+> still being tested. The European disc's game is the PAL release's, and the
+> Asian disc's is the US disc's; only their headers differ. On a combo disc the
+> game is `SegaJSRF.xbe` (its `default.xbe` is the menu): copy the whole disc,
+> and the build and the exe use `SegaJSRF.xbe`. The build checks the game's code and data inside your
+> `default.xbe`, finds which release it is, and stops if it is none of them.
+> It does **not** compare the whole file: many dumps have a patched header
+> (region, allowed media), which changes the file's SHA-256 but not the game,
+> and those work fine.
 
 ---
 
@@ -367,6 +371,7 @@ switch it on. Steam launch options override the file.
 | `RECOMP_QUIET=1` | Fewer log messages (faster). Put a `;` in front when making a log for a bug report. |
 | `RECOMP_SKIP_INTRO=1` | Skip the intro logos. *By Piaka.* |
 | `RECOMP_HOLD_SKIP=0` | Turns off skipping cutscenes by holding START for about 1.3 seconds (on by default; works the first time you see one too). *Idea from mstan's JSRFRecomp.* |
+| `RECOMP_LANGUAGE=french` | The language the game is told the Xbox is set to: `english` (default), `french`, `german`, `spanish`, `italian`, `japanese`. PAL (Europe and its Sega GT 2002 + JSRF disc): the first five. Every other release: English or Japanese (each has both sets of text; the US ones start in English, the Japanese one in Japanese). *Idea by Miggas.* |
 | `RECOMP_SAVE_STRICT=1` | Refuse saves from other sources (a real Xbox, emulators, save editors), as the Xbox does. Off by default, so those saves load. |
 
 **`[display]`**
@@ -488,7 +493,7 @@ Your game files, `jsrf.ini` and saves are kept.
 | ❌ You see | ✅ What to do |
 |---|---|
 | `default.xbe not found` | The game folder must hold `default.xbe` directly (not in a subfolder). **Play → Choose folder** to pick the right one. |
-| `this default.xbe is not the one the analysis was made from` | Your copy is a different version — most likely the PAL (European) or NTSC-J (Japanese) release. Only the NTSC (North American) retail release works. |
+| `this default.xbe's code is not a release the project knows` | Your copy is not a known release: NTSC (North America), PAL (Europe), NTSC-J (Japan) and the three Sega GT 2002 + JSRF discs work. It may be a modified or damaged copy. |
 | `Could not reach GitHub` / a download fails | Check the internet connection and try again. |
 | A build fails | **Open log file** (shown under the buttons after a failure), find the first line with `error`, and report it ([section 13](#13-reporting-a-problem)). |
 | `Could not copy the game … is the game still running?` | Close the game and **Build** again. |
