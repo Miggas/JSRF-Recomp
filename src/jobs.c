@@ -263,11 +263,11 @@ bool have_xbe(void)
 
 /* v1x: default.xbe's title ID and SHA-256, read again only when its size
  * or time changes */
-static bool xbe_facts(uint32_t *title, char sha[65])
+static bool xbe_facts(uint32_t *title, char sha[65], uint32_t *region)
 {
     static char last[LPATH], last_sha[65];
     static long long last_size = -1, last_time;
-    static uint32_t last_title;
+    static uint32_t last_title, last_region;
     char x[LPATH];
     struct stat st;
     pjoin(x, g_paths.game, "default.xbe");
@@ -276,13 +276,16 @@ static bool xbe_facts(uint32_t *title, char sha[65])
         size_t len = 0;
         unsigned char *d = (unsigned char *)read_file(x, &len);
         if (!d) return false;
-        last_title = 0;
+        last_title = last_region = 0;
         if (len > 0x200 && !memcmp(d, "XBEH", 4)) {
             uint32_t base = d[0x104] | d[0x105] << 8 | d[0x106] << 16 | (uint32_t)d[0x107] << 24;
             uint32_t cva = d[0x118] | d[0x119] << 8 | d[0x11A] << 16 | (uint32_t)d[0x11B] << 24;
             uint32_t c = cva - base;
             if (c + 12 <= len)
                 last_title = d[c + 8] | d[c + 9] << 8 | d[c + 10] << 16 | (uint32_t)d[c + 11] << 24;
+            /* v2b: the game region (the Japanese release has the US title ID) */
+            if (c + 0xA4 <= len)
+                last_region = d[c + 0xA0] | d[c + 0xA1] << 8 | d[c + 0xA2] << 16 | (uint32_t)d[c + 0xA3] << 24;
         }
         sha256_hex(d, len, last_sha);
         for (char *c = last_sha; *c; c++) *c = (char)tolower((unsigned char)*c);   /* v1z: as release.txt has it */
@@ -292,13 +295,14 @@ static bool xbe_facts(uint32_t *title, char sha[65])
         last_time = (long long)st.st_mtime;
     }
     if (title) *title = last_title;
+    if (region) *region = last_region;
     if (sha) memcpy(sha, last_sha, 65);
     return true;
 }
 
-static const char *title_tag(uint32_t id)
+static const char *title_tag(uint32_t id, uint32_t region)
 {
-    if (id == 0x5345000Au) return "usa";
+    if (id == 0x5345000Au) return (region & 0x7) == 0x2 ? "jpn" : "usa";
     if (id == 0x49470018u) return "eur";
     return NULL;
 }
@@ -307,11 +311,11 @@ static const char *title_tag(uint32_t id)
  * checks the code itself) */
 const char *xbe_release(void)
 {
-    uint32_t id;
-    if (!xbe_facts(&id, NULL)) return NULL;
-    const char *t = title_tag(id);
+    uint32_t id, rg;
+    if (!xbe_facts(&id, NULL, &rg)) return NULL;
+    const char *t = title_tag(id, rg);
     if (!t) return "a release the project does not know";
-    return !strcmp(t, "usa") ? "NTSC (North America)" : "PAL (Europe)";
+    return !strcmp(t, "usa") ? "NTSC (North America)" : !strcmp(t, "jpn") ? "NTSC-J (Japan)" : "PAL (Europe)";
 }
 
 /* which release the generated code is for (generate_code.py writes
@@ -352,13 +356,13 @@ static void gen_release(char *tag, size_t n) { gen_release_full(tag, n, NULL); }
 static bool gen_for_this_xbe(void)
 {
     char tag[32], gsha[65], xsha[65];
-    uint32_t id;
+    uint32_t id, rg;
     gen_release_full(tag, sizeof tag, gsha);
-    if (!xbe_facts(&id, xsha)) return true;   /* no default.xbe: nothing to say */
+    if (!xbe_facts(&id, xsha, &rg)) return true;   /* no default.xbe: nothing to say */
     bool ok;
     if (gsha[0]) ok = !strcmp(gsha, xsha);
     else {
-        const char *t = title_tag(id);
+        const char *t = title_tag(id, rg);
         ok = !t || !strcmp(t, tag);
     }
     static char said[65];
