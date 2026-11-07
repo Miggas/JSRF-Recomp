@@ -323,7 +323,9 @@ static bool xbe_facts_v(uint32_t *title, char sha[65], uint32_t *region, uint32_
 
 static const char *title_tag(uint32_t id, uint32_t region, uint32_t version)
 {
-    if (id == 0x5345000Au) return (region & 0x7) == 0x2 ? "jpn" : version >= 4 ? "usa-combo" : "usa";
+    /* v2e: the Asian Sega GT 2002 + JSRF disc's game (region Japan, version 7)
+     * is the US combo disc's, header aside */
+    if (id == 0x5345000Au) return version >= 4 ? "usa-combo" : (region & 0x7) == 0x2 ? "jpn" : "usa";
     if (id == 0x49470018u) return "eur";
     return NULL;
 }
@@ -337,7 +339,8 @@ const char *xbe_release(void)
     const char *t = title_tag(id, rg, ver);
     if (!t) return "a release the project does not know";
     return !strcmp(t, "usa") ? "NTSC (North America)" : !strcmp(t, "jpn") ? "NTSC-J (Japan)"
-         : !strcmp(t, "usa-combo") ? "NTSC (North America), Sega GT 2002 + JSRF disc"
+         : !strcmp(t, "usa-combo") ? ((rg & 0x7) == 0x2 ? "Asia, Sega GT 2002 + JSRF disc (the US disc's game)"
+                                                        : "NTSC (North America), Sega GT 2002 + JSRF disc")
          /* v2d: the PAL combo disc's SegaJSRF.xbe is the PAL release's game, header aside */
          : !strcmp(game_xbe_name(), "SegaJSRF.xbe") ? "PAL (Europe), Sega GT 2002 + JSRF disc" : "PAL (Europe)";
 }
