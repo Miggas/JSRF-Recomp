@@ -9,6 +9,7 @@
  * EEPROM-based encryption on PC.
  */
 
+#include <stdlib.h>
 #include "kernel.h"
 #include "xbox_memory_layout.h"   /* RECOMP_TLS (v184) */
 #include <stdio.h>
@@ -138,7 +139,35 @@ NTSTATUS __stdcall xbox_ExQueryNonVolatileSetting(
 
     switch (ValueIndex) {
     case XC_LANGUAGE:
-        /* English = 1 */
+        /* English = 1; RECOMP_LANGUAGE picks another (v271, Miggas):
+         * a name (english, japanese, german, french, spanish, italian,
+         * korean, chinese, portuguese) or the Xbox's number (1-9) */
+        {
+            static int lang = 0;
+            if (!lang) {
+                static const char *const names[] = { "english", "japanese", "german", "french", "spanish",
+                                                      "italian", "korean", "chinese", "portuguese" };
+                const char *e = getenv("RECOMP_LANGUAGE");
+                int v = 1;
+                if (e && *e) {
+                    if (e[0] >= '1' && e[0] <= '9' && !e[1]) v = e[0] - '0';
+                    else
+                        for (int i = 0; i < 9; i++) {
+                            const char *a = e, *b = names[i];
+                            while (*a && (*a | 0x20) == *b) { a++; b++; }
+                            if (!*a && !*b) v = i + 1;
+                        }
+                }
+                lang = v;
+                fprintf(stderr, "  [NVRAM] language: %s (%d)%s\n", names[lang - 1], lang,
+                        (e && *e) ? " (RECOMP_LANGUAGE)" : "");
+            }
+            if (ValueLength >= sizeof(ULONG)) {
+                *(PULONG)Value = (ULONG)lang;
+                if (Type) *Type = 4; /* REG_DWORD */
+                if (ResultLength) *ResultLength = sizeof(ULONG);
+            }
+        }
         {
             /* v184: who asks, and when (a game that picks its text by
              * language shows it in the log; French subtitles were reported) */
@@ -146,13 +175,8 @@ NTSTATUS __stdcall xbox_ExQueryNonVolatileSetting(
             static volatile LONG n_lang;
             LONG k = InterlockedIncrement(&n_lang);
             if (k <= 64)
-                fprintf(stderr, "  [NVRAM] language asked (#%ld) by 0x%08X -> 1 (English)\n",
-                        (long)k, g_xbox_kernel_caller);
-        }
-        if (ValueLength >= sizeof(ULONG)) {
-            *(PULONG)Value = 1;
-            if (Type) *Type = 4; /* REG_DWORD */
-            if (ResultLength) *ResultLength = sizeof(ULONG);
+                fprintf(stderr, "  [NVRAM] language asked (#%ld) by 0x%08X -> %lu\n",
+                        (long)k, g_xbox_kernel_caller, (ValueLength >= sizeof(ULONG)) ? (unsigned long)*(PULONG)Value : 0ul);
         }
         break;
 
