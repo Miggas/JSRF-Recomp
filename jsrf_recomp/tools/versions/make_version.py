@@ -18,6 +18,7 @@ Writes analysis/<tag>/ -- addresses only, no game code:
 generate_code.py reads these when it is given that release's XBE.
 """
 import argparse
+import bisect
 import hashlib
 import json
 import os
@@ -156,28 +157,97 @@ def main():
         xbe = os.path.join(gf, "default.xbe")
         run([py, "-m", "tools.xbe_parser", xbe, "--json", os.path.join(gf, "default_analysis.json")], xr)
         us_named = json.load(open(os.path.join(ANALYSIS, "functions_named.json")))
-        for rnd in range(3):
+        json.dump([{"start": "0x%08X" % e} for e in sorted(moved)],
+                  open(os.path.join(out, "seeds.json"), "w"), indent=0)
+        print("Finding the functions (tools.disasm)...")
+        run([py, "-m", "tools.disasm", xbe, "--force", "--seed-functions",
+             os.path.join(out, "seeds.json")], xr)
+        got = {int(f["start"], 16) for f in json.load(open(os.path.join(xr, "tools/disasm/output/functions.json")))}
+        # Not seeded again: what the toolkit does not find here is, nearly
+        # always, an entry in the middle of a function that only US code
+        # jumped to, and a seed there would cut the function in two (v270b:
+        # 0x179475 cut the DirectSound set-up and the game never opened).
+        fl = sorted((int(f["start"], 16), int(f["end"], 16))
+                    for f in json.load(open(os.path.join(xr, "tools/disasm/output/functions.json"))))
+        starts = [x for x, _ in fl]
+
+        def inside(va):
+            i = bisect.bisect_right(starts, va) - 1
+            return i >= 0 and fl[i][1] > va
+
+        miss = [m.map[int(f["start"], 16)] for f in us_named
+                if int(f["start"], 16) in m.map and m.map[int(f["start"], 16)] not in got]
+        images = set(m.map.values())
+        ours0 = set(moved)
+        pre_drop = set()
+
+        def holder(va):
+            i = bisect.bisect_right(starts, va) - 1
+            return starts[i] if i >= 0 and fl[i][1] > va else None
+
+        free = []
+        for x in miss:
+            h = holder(x)
+            if h is None:
+                free.append(x)
+            elif h not in images and h not in ours0:
+                # inside a start only this release's toolkit run found (in
+                # the padding before it, say): that start goes, ours is seeded
+                pre_drop.add(h)
+                free.append(x)
+        print("  %d functions; of ours not found there: %d inside another (left out), %d seeded"
+              % (len(got), len(miss) - len(free), len(free)))
+        if free:
+            moved |= set(free)
             json.dump([{"start": "0x%08X" % e} for e in sorted(moved)],
                       open(os.path.join(out, "seeds.json"), "w"), indent=0)
-            print("Finding the functions (tools.disasm, round %d)..." % (rnd + 1))
             run([py, "-m", "tools.disasm", xbe, "--force", "--seed-functions",
                  os.path.join(out, "seeds.json")], xr)
-            got = {int(f["start"], 16) for f in json.load(open(os.path.join(xr, "tools/disasm/output/functions.json")))}
-            miss = {m.map[int(f["start"], 16)] for f in us_named
-                    if int(f["start"], 16) in m.map} - got
-            print("  %d functions; %d of ours found by the matcher but not by the toolkit" % (len(got), len(miss)))
-            if not miss:
-                break
-            moved |= miss
-        # what the toolkit still folds into a neighbour is lifted on its own,
-        # as generate_code.py's EXTRA (analysis/<tag>/extra.json)
-        us_end = {int(f["start"], 16): int(f["end"], 16) for f in us_named}
-        extra = sorted((m.map[a], m.map[a] + us_end[a] - a) for a in us_end
-                       if a in m.map and m.map[a] not in got)
-        json.dump([["0x%08X" % s_, "0x%08X" % e_] for s_, e_ in extra],
+        # seeded and still not kept by the toolkit (0x7C6A0, just past a
+        # switch table): lifted on their own, as generate_code.py's EXTRA
+        got2 = {int(f["start"], 16) for f in json.load(open(os.path.join(xr, "tools/disasm/output/functions.json")))}
+        us_end = {m.map[int(f["start"], 16)]: int(f["end"], 16) - int(f["start"], 16)
+                  for f in us_named if int(f["start"], 16) in m.map}
+        extra = sorted(x for x in free if x not in got2)
+        json.dump([["0x%08X" % x, "0x%08X" % (x + us_end[x])] for x in extra],
                   open(os.path.join(out, "extra.json"), "w"), indent=0)
         if extra:
-            print("  lifted on their own: " + " ".join("%X-%X" % x for x in extra))
+            print("  lifted on their own: " + " ".join("%X" % x for x in extra))
+        # A start the toolkit found inside a function that is the same code
+        # as ours (from a number in the code that only looks like an
+        # address) cuts that function short: its end then jumps to a stub
+        # (v270b). Such starts go, and the function keeps its whole length.
+        fp = os.path.join(xr, "tools/disasm/output/functions.json")
+        fl = json.load(open(fp))
+        by = {int(f["start"], 16): f for f in fl}
+        us_starts = sorted(int(f["start"], 16) for f in us_named)
+        ours = set(moved)
+        drop = set(pre_drop)
+        for f in us_named:
+            g = int(f["start"], 16)
+            if g not in m.verified or m.map[g] not in by:
+                continue
+            size = int(f["end"], 16) - g
+            e0 = m.map[g]
+            i = bisect.bisect_right(us_starts, g)
+            inner = set()
+            while i < len(us_starts) and us_starts[i] < g + size:
+                if us_starts[i] in m.map:
+                    inner.add(m.map[us_starts[i]])
+                i += 1
+            for st in by:
+                if e0 < st < e0 + size and st not in inner and st not in ours:
+                    drop.add(st)
+            fe = by[e0]
+            if int(fe["end"], 16) < e0 + size:
+                fe["end"] = "0x%08X" % (e0 + size)
+                fe["size"] = size
+        fl = [f for f in fl if int(f["start"], 16) not in drop]
+        json.dump(fl, open(fp, "w"), indent=2)
+        lp = os.path.join(xr, "tools/disasm/output/labels.json")
+        ll = [x for x in json.load(open(lp)) if not (x.get("type") == "function" and int(x["address"], 16) in drop)]
+        json.dump(ll, open(lp, "w"), indent=2)
+        print("  %d starts inside functions that are the same code as ours removed" % len(drop))
         run([py, "-m", "tools.func_id", xbe], xr)
         run([py, "-m", "tools.abi_analysis", xbe], xr)
         run([py, os.path.join(JR, "tools", "apply_xdk_names.py"), os.path.join(out, "xbsymboldb_symbols.txt"),

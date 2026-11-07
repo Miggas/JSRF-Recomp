@@ -595,13 +595,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00013C68",
-    "name": "sub_00013C68",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00013F50",
     "name": "sub_00013F50",
     "type": "function",
@@ -702,20 +695,6 @@
   {
     "address": "0x00014840",
     "name": "sub_00014840",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00014851",
-    "name": "sub_00014851",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00014881",
-    "name": "sub_00014881",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -917,13 +896,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00015180",
-    "name": "sub_00015180",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000153F0",
     "name": "sub_000153F0",
     "type": "function",
@@ -954,13 +926,6 @@
   {
     "address": "0x00015680",
     "name": "sub_00015680",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00015858",
-    "name": "sub_00015858",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -1274,13 +1239,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00017FD0",
-    "name": "sub_00017FD0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00018090",
     "name": "sub_00018090",
     "type": "function",
@@ -1307,13 +1265,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00018874",
-    "name": "sub_00018874",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000188F0",
@@ -1484,20 +1435,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x0001BFD0",
-    "name": "sub_0001BFD0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0001C000",
-    "name": "sub_0001C000",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x0001C984",
     "name": "sub_0001C984",
     "type": "function",
@@ -1661,27 +1598,6 @@
   {
     "address": "0x0001DF10",
     "name": "sub_0001DF10",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0001DFC0",
-    "name": "sub_0001DFC0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0001E000",
-    "name": "sub_0001E000",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0001E054",
-    "name": "sub_0001E054",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -1925,13 +1841,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x000200BD",
-    "name": "sub_000200BD",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000200D5",
     "name": "sub_000200D5",
     "type": "function",
@@ -1988,13 +1897,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000200F7",
-    "name": "sub_000200F7",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00020127",
     "name": "sub_00020127",
     "type": "function",
@@ -2039,13 +1941,6 @@
   {
     "address": "0x00020360",
     "name": "sub_00020360",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000203D0",
-    "name": "sub_000203D0",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -2319,13 +2214,6 @@
   {
     "address": "0x000232A0",
     "name": "sub_000232A0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.9
-  },
-  {
-    "address": "0x00023630",
-    "name": "sub_00023630",
     "type": "function",
     "section": ".text",
     "confidence": 0.9
@@ -3094,13 +2982,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000288AB",
-    "name": "sub_000288AB",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00028A40",
     "name": "sub_00028A40",
     "type": "function",
@@ -3353,13 +3234,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x0002A8A0",
-    "name": "sub_0002A8A0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x0002AAA0",
     "name": "sub_0002AAA0",
     "type": "function",
@@ -3435,13 +3309,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x0002B300",
-    "name": "sub_0002B300",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x0002B6B0",
@@ -3913,43 +3780,8 @@
     "confidence": 0.95
   },
   {
-    "address": "0x00030001",
-    "name": "sub_00030001",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00030002",
-    "name": "sub_00030002",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00030023",
-    "name": "sub_00030023",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00030400",
-    "name": "sub_00030400",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00030600",
     "name": "sub_00030600",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00030694",
-    "name": "sub_00030694",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -3997,13 +3829,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00030C00",
-    "name": "sub_00030C00",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00030C9E",
     "name": "sub_00030C9E",
     "type": "function",
@@ -4039,13 +3864,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00030D40",
-    "name": "sub_00030D40",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00030DB0",
     "name": "sub_00030DB0",
     "type": "function",
@@ -4072,13 +3890,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x00030E90",
-    "name": "sub_00030E90",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00030EE0",
@@ -4282,13 +4093,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x00033EFA",
-    "name": "sub_00033EFA",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00033F10",
@@ -4723,13 +4527,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x000388B3",
-    "name": "sub_000388B3",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00038B30",
@@ -5432,34 +5229,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x0003BFD1",
-    "name": "sub_0003BFD1",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0003BFD5",
-    "name": "sub_0003BFD5",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0003C000",
-    "name": "sub_0003C000",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0003C08F",
-    "name": "sub_0003C08F",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x0003C096",
     "name": "sub_0003C096",
     "type": "function",
@@ -5570,13 +5339,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x0003C770",
-    "name": "sub_0003C770",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x0003C780",
@@ -5787,13 +5549,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x0003E790",
-    "name": "sub_0003E790",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x0003E945",
@@ -6076,60 +5831,11 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00040002",
-    "name": "sub_00040002",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040031",
-    "name": "sub_00040031",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040034",
-    "name": "sub_00040034",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00040170",
     "name": "sub_00040170",
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x0004028C",
-    "name": "sub_0004028C",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040334",
-    "name": "sub_00040334",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040344",
-    "name": "sub_00040344",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0004037C",
-    "name": "sub_0004037C",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00040590",
@@ -6160,34 +5866,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000407C2",
-    "name": "sub_000407C2",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000407C8",
-    "name": "sub_000407C8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000407DA",
-    "name": "sub_000407DA",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040800",
-    "name": "sub_00040800",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000409F8",
     "name": "sub_000409F8",
     "type": "function",
@@ -6195,78 +5873,8 @@
     "confidence": 0.88
   },
   {
-    "address": "0x000409FC",
-    "name": "sub_000409FC",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040A00",
-    "name": "sub_00040A00",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040A08",
-    "name": "sub_00040A08",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040A1C",
-    "name": "sub_00040A1C",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040A29",
-    "name": "sub_00040A29",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040A39",
-    "name": "sub_00040A39",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00040A50",
     "name": "sub_00040A50",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040A64",
-    "name": "sub_00040A64",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040A68",
-    "name": "sub_00040A68",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040A78",
-    "name": "sub_00040A78",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040A80",
-    "name": "sub_00040A80",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -6286,74 +5894,11 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00040AA8",
-    "name": "sub_00040AA8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040AAC",
-    "name": "sub_00040AAC",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00040AB4",
-    "name": "sub_00040AB4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00040AC0",
     "name": "sub_00040AC0",
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00040AE0",
-    "name": "sub_00040AE0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040AE8",
-    "name": "sub_00040AE8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040AF4",
-    "name": "sub_00040AF4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040AF8",
-    "name": "sub_00040AF8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040AFC",
-    "name": "sub_00040AFC",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00040B0C",
-    "name": "sub_00040B0C",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00040C50",
@@ -6391,20 +5936,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x00041188",
-    "name": "sub_00041188",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000411F4",
-    "name": "sub_000411F4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00041207",
     "name": "sub_00041207",
     "type": "function",
@@ -6414,55 +5945,6 @@
   {
     "address": "0x00041212",
     "name": "sub_00041212",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00041214",
-    "name": "sub_00041214",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00041218",
-    "name": "sub_00041218",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00041224",
-    "name": "sub_00041224",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00041230",
-    "name": "sub_00041230",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0004123C",
-    "name": "sub_0004123C",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00041244",
-    "name": "sub_00041244",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0004124C",
-    "name": "sub_0004124C",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -6496,43 +5978,8 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00041D78",
-    "name": "sub_00041D78",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.86
-  },
-  {
-    "address": "0x00041D90",
-    "name": "sub_00041D90",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.86
-  },
-  {
     "address": "0x00041DB0",
     "name": "sub_00041DB0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00041E24",
-    "name": "sub_00041E24",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00041E40",
-    "name": "sub_00041E40",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00041E4C",
-    "name": "sub_00041E4C",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -6568,55 +6015,6 @@
   {
     "address": "0x000424B0",
     "name": "sub_000424B0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000425C4",
-    "name": "sub_000425C4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000425E0",
-    "name": "sub_000425E0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000425E8",
-    "name": "sub_000425E8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000425EC",
-    "name": "sub_000425EC",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000425F0",
-    "name": "sub_000425F0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000425F4",
-    "name": "sub_000425F4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000425FC",
-    "name": "sub_000425FC",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -6911,13 +6309,6 @@
   {
     "address": "0x00044760",
     "name": "sub_00044760",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00044780",
-    "name": "sub_00044780",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -7308,13 +6699,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00047800",
-    "name": "sub_00047800",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00047810",
     "name": "sub_00047810",
     "type": "function",
@@ -7607,13 +6991,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x000493E0",
-    "name": "sub_000493E0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00049540",
@@ -8629,41 +8006,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000507C0",
-    "name": "sub_000507C0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000507C1",
-    "name": "sub_000507C1",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000507C2",
-    "name": "sub_000507C2",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000507C3",
-    "name": "sub_000507C3",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000507C4",
-    "name": "sub_000507C4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000507D0",
@@ -9975,13 +9317,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00060746",
-    "name": "sub_00060746",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00060840",
     "name": "sub_00060840",
     "type": "function",
@@ -10113,20 +9448,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.85
-  },
-  {
-    "address": "0x00061240",
-    "name": "sub_00061240",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00061268",
-    "name": "sub_00061268",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00061270",
@@ -11718,13 +11039,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00070027",
-    "name": "sub_00070027",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00070050",
     "name": "sub_00070050",
     "type": "function",
@@ -11832,13 +11146,6 @@
   {
     "address": "0x00070780",
     "name": "sub_00070780",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00070807",
-    "name": "sub_00070807",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -12306,13 +11613,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00074874",
-    "name": "sub_00074874",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x0007487A",
     "name": "sub_0007487A",
     "type": "function",
@@ -12325,13 +11625,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.85
-  },
-  {
-    "address": "0x0007489B",
-    "name": "sub_0007489B",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x0007489D",
@@ -12507,27 +11800,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000758C7",
-    "name": "sub_000758C7",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000758EE",
-    "name": "sub_000758EE",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00075CB1",
-    "name": "sub_00075CB1",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00075D00",
@@ -12733,20 +12005,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00078870",
-    "name": "sub_00078870",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000788C6",
-    "name": "sub_000788C6",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000788F0",
     "name": "sub_000788F0",
     "type": "function",
@@ -12780,20 +12038,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x00079138",
-    "name": "sub_00079138",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0007913A",
-    "name": "sub_0007913A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00079240",
@@ -13116,13 +12360,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x0007C870",
-    "name": "sub_0007C870",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x0007C890",
@@ -13619,7 +12856,7 @@
     "name": "sub_0007E1A0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.85
   },
   {
     "address": "0x0007E210",
@@ -13683,13 +12920,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x0007E8A0",
-    "name": "sub_0007E8A0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x0007E8B0",
@@ -13888,13 +13118,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x0007F527",
-    "name": "sub_0007F527",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x0007F590",
     "name": "sub_0007F590",
     "type": "function",
@@ -14035,69 +13258,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00080004",
-    "name": "sub_00080004",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00080062",
-    "name": "sub_00080062",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00080066",
-    "name": "sub_00080066",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00080069",
-    "name": "sub_00080069",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0008006B",
-    "name": "sub_0008006B",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0008006E",
-    "name": "sub_0008006E",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00080070",
-    "name": "sub_00080070",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00080074",
-    "name": "sub_00080074",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0008007A",
-    "name": "sub_0008007A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000800C0",
     "name": "sub_000800C0",
     "type": "function",
@@ -14105,74 +13265,11 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000800E2",
-    "name": "sub_000800E2",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000800E3",
-    "name": "sub_000800E3",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000800E4",
-    "name": "sub_000800E4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000800EA",
-    "name": "sub_000800EA",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000800EB",
-    "name": "sub_000800EB",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000800F0",
     "name": "sub_000800F0",
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000800F1",
-    "name": "sub_000800F1",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000800F3",
-    "name": "sub_000800F3",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000800F8",
-    "name": "sub_000800F8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000800FE",
-    "name": "sub_000800FE",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00080120",
@@ -14308,13 +13405,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x000808A4",
-    "name": "sub_000808A4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000808B0",
     "name": "sub_000808B0",
     "type": "function",
@@ -14329,25 +13419,11 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000808C8",
-    "name": "sub_000808C8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00080910",
     "name": "sub_00080910",
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00080916",
-    "name": "sub_00080916",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00080920",
@@ -14362,62 +13438,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00080981",
-    "name": "sub_00080981",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00080983",
-    "name": "sub_00080983",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00080989",
-    "name": "sub_00080989",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0008098A",
-    "name": "sub_0008098A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00080990",
-    "name": "sub_00080990",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00080995",
-    "name": "sub_00080995",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00080999",
-    "name": "sub_00080999",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x0008099D",
-    "name": "sub_0008099D",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000809B0",
@@ -14481,13 +13501,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x0008205C",
-    "name": "sub_0008205C",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00082063",
@@ -15015,13 +14028,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00088000",
-    "name": "sub_00088000",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00088270",
     "name": "sub_00088270",
     "type": "function",
@@ -15069,13 +14075,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x0008916A",
-    "name": "sub_0008916A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000897D0",
@@ -15379,13 +14378,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00090000",
-    "name": "sub_00090000",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000906B0",
     "name": "sub_000906B0",
     "type": "function",
@@ -15395,13 +14387,6 @@
   {
     "address": "0x00090810",
     "name": "sub_00090810",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000908C9",
-    "name": "sub_000908C9",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -17381,13 +16366,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000A08FD",
-    "name": "sub_000A08FD",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000A09AA",
     "name": "sub_000A09AA",
     "type": "function",
@@ -17568,13 +16546,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000A1664",
-    "name": "sub_000A1664",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000A1690",
@@ -17995,13 +16966,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x000A3833",
-    "name": "sub_000A3833",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x000A3B50",
@@ -18872,13 +17836,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000B002B",
-    "name": "sub_000B002B",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000B00A0",
     "name": "sub_000B00A0",
     "type": "function",
@@ -18928,22 +17885,8 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000B0840",
-    "name": "sub_000B0840",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000B08A0",
     "name": "sub_000B08A0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000B08C1",
-    "name": "sub_000B08C1",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -18965,13 +17908,6 @@
   {
     "address": "0x000B0A50",
     "name": "sub_000B0A50",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000B0D0D",
-    "name": "sub_000B0D0D",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -19003,20 +17939,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x000B114B",
-    "name": "sub_000B114B",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000B1219",
-    "name": "sub_000B1219",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x000B121C",
@@ -19334,13 +18256,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000B676A",
-    "name": "sub_000B676A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000B6F5A",
     "name": "sub_000B6F5A",
     "type": "function",
@@ -19441,13 +18356,6 @@
   {
     "address": "0x000B8850",
     "name": "sub_000B8850",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000B88D3",
-    "name": "sub_000B88D3",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -20013,13 +18921,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x000C002C",
-    "name": "sub_000C002C",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000C02E0",
     "name": "sub_000C02E0",
     "type": "function",
@@ -20057,13 +18958,6 @@
   {
     "address": "0x000C08A0",
     "name": "sub_000C08A0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000C08EC",
-    "name": "sub_000C08EC",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -20433,13 +19327,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000C20E0",
-    "name": "sub_000C20E0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000C20F0",
     "name": "sub_000C20F0",
     "type": "function",
@@ -20515,13 +19402,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000C2958",
-    "name": "sub_000C2958",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000C2980",
@@ -20813,13 +19693,6 @@
   {
     "address": "0x000C3CF0",
     "name": "sub_000C3CF0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000C3DE0",
-    "name": "sub_000C3DE0",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -22715,20 +21588,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x000D0004",
-    "name": "sub_000D0004",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000D002D",
-    "name": "sub_000D002D",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000D0090",
     "name": "sub_000D0090",
     "type": "function",
@@ -22846,20 +21705,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000D0958",
-    "name": "sub_000D0958",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000D09EB",
-    "name": "sub_000D09EB",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000D0A40",
@@ -23168,13 +22013,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000D2978",
-    "name": "sub_000D2978",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000D2A20",
@@ -24395,13 +23233,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000D8EB9",
-    "name": "sub_000D8EB9",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000D8FB0",
     "name": "sub_000D8FB0",
     "type": "function",
@@ -25515,13 +24346,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x000E0059",
-    "name": "sub_000E0059",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000E00B0",
     "name": "sub_000E00B0",
     "type": "function",
@@ -25625,13 +24449,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x000E060E",
-    "name": "sub_000E060E",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000E06D0",
@@ -25751,13 +24568,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x000E15E7",
-    "name": "sub_000E15E7",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000E16F0",
@@ -26642,13 +25452,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000E7E50",
-    "name": "sub_000E7E50",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000E7EE0",
     "name": "sub_000E7EE0",
     "type": "function",
@@ -26756,13 +25559,6 @@
   {
     "address": "0x000E88D0",
     "name": "sub_000E88D0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000E88DA",
-    "name": "sub_000E88DA",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -27489,13 +26285,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x000EEB30",
-    "name": "sub_000EEB30",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000EEDD0",
     "name": "sub_000EEDD0",
     "type": "function",
@@ -27643,13 +26432,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000F093F",
-    "name": "sub_000F093F",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000F0B70",
     "name": "sub_000F0B70",
     "type": "function",
@@ -27769,13 +26551,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000F1C00",
-    "name": "sub_000F1C00",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000F1CE0",
     "name": "sub_000F1CE0",
     "type": "function",
@@ -27825,13 +26600,6 @@
     "confidence": 0.85
   },
   {
-    "address": "0x000F2710",
-    "name": "sub_000F2710",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x000F28D0",
     "name": "sub_000F28D0",
     "type": "function",
@@ -27844,13 +26612,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x000F2988",
-    "name": "sub_000F2988",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x000F29A0",
@@ -28084,13 +26845,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x000F3C00",
-    "name": "sub_000F3C00",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000F3C10",
     "name": "sub_000F3C10",
     "type": "function",
@@ -28180,27 +26934,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x000F4510",
-    "name": "sub_000F4510",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x000F4633",
-    "name": "sub_000F4633",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000F4660",
-    "name": "sub_000F4660",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x000F4670",
@@ -28821,13 +27554,6 @@
   {
     "address": "0x000F7E50",
     "name": "sub_000F7E50",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x000F8000",
-    "name": "sub_000F8000",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -29582,13 +28308,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x000FF000",
-    "name": "sub_000FF000",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x000FF030",
     "name": "sub_000FF030",
     "type": "function",
@@ -29792,151 +28511,11 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00100014",
-    "name": "sub_00100014",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00100042",
-    "name": "sub_00100042",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00100043",
-    "name": "sub_00100043",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00100045",
-    "name": "sub_00100045",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0010004A",
-    "name": "sub_0010004A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0010004B",
-    "name": "sub_0010004B",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0010004D",
-    "name": "sub_0010004D",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00100052",
-    "name": "sub_00100052",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0010005A",
-    "name": "sub_0010005A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000C2",
-    "name": "sub_001000C2",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000C3",
-    "name": "sub_001000C3",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000C9",
-    "name": "sub_001000C9",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000CE",
-    "name": "sub_001000CE",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000D0",
-    "name": "sub_001000D0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000D2",
-    "name": "sub_001000D2",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000D4",
-    "name": "sub_001000D4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000D5",
-    "name": "sub_001000D5",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000DC",
-    "name": "sub_001000DC",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001000DF",
-    "name": "sub_001000DF",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00100220",
     "name": "sub_00100220",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x00100225",
-    "name": "sub_00100225",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00100240",
@@ -30023,125 +28602,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x00100A61",
-    "name": "sub_00100A61",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100A67",
-    "name": "sub_00100A67",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100A6A",
-    "name": "sub_00100A6A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100A6D",
-    "name": "sub_00100A6D",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100A73",
-    "name": "sub_00100A73",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100A75",
-    "name": "sub_00100A75",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100A78",
-    "name": "sub_00100A78",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100A7A",
-    "name": "sub_00100A7A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AA4",
-    "name": "sub_00100AA4",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AE3",
-    "name": "sub_00100AE3",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AE9",
-    "name": "sub_00100AE9",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AEB",
-    "name": "sub_00100AEB",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AF0",
-    "name": "sub_00100AF0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AF6",
-    "name": "sub_00100AF6",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AFB",
-    "name": "sub_00100AFB",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AFD",
-    "name": "sub_00100AFD",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00100AFE",
-    "name": "sub_00100AFE",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00100FF0",
     "name": "sub_00100FF0",
     "type": "function",
@@ -30182,13 +28642,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x00101417",
-    "name": "sub_00101417",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.86
   },
   {
     "address": "0x001014D0",
@@ -30289,11 +28742,11 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00101E37",
-    "name": "sub_00101E37",
+    "address": "0x00101FC3",
+    "name": "sub_00101FC3",
     "type": "function",
     "section": ".text",
-    "confidence": 0.95
+    "confidence": 0.85
   },
   {
     "address": "0x00102000",
@@ -30310,25 +28763,11 @@
     "confidence": 0.95
   },
   {
-    "address": "0x00102078",
-    "name": "sub_00102078",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00102490",
     "name": "sub_00102490",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x00102562",
-    "name": "sub_00102562",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.85
   },
   {
     "address": "0x001025E0",
@@ -30989,13 +29428,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00108400",
-    "name": "sub_00108400",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x001084D0",
     "name": "sub_001084D0",
     "type": "function",
@@ -31353,13 +29785,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x0010C126",
-    "name": "sub_0010C126",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.85
-  },
-  {
     "address": "0x0010C140",
     "name": "sub_0010C140",
     "type": "function",
@@ -31647,13 +30072,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00110001",
-    "name": "sub_00110001",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00110040",
     "name": "sub_00110040",
     "type": "function",
@@ -31698,13 +30116,6 @@
   {
     "address": "0x00110390",
     "name": "sub_00110390",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0011041B",
-    "name": "sub_0011041B",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -31771,13 +30182,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00110A31",
-    "name": "sub_00110A31",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00110B80",
@@ -31883,13 +30287,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00112078",
-    "name": "sub_00112078",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00112110",
@@ -32702,13 +31099,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00118800",
-    "name": "sub_00118800",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00118880",
@@ -34041,13 +32431,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x00124F80",
-    "name": "sub_00124F80",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x001250D0",
     "name": "sub_001250D0",
     "type": "function",
@@ -34169,13 +32552,6 @@
   {
     "address": "0x00127A50",
     "name": "sub_00127A50",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00127AC9",
-    "name": "sub_00127AC9",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -34676,13 +33052,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00132078",
-    "name": "sub_00132078",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x001320C0",
@@ -35303,13 +33672,6 @@
   {
     "address": "0x001383F0",
     "name": "sub_001383F0",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00138452",
-    "name": "sub_00138452",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -37037,13 +35399,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00140B04",
-    "name": "sub_00140B04",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00140B60",
     "name": "sub_00140B60",
     "type": "function",
@@ -37511,13 +35866,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x00142417",
-    "name": "sub_00142417",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.86
   },
   {
     "address": "0x00142430",
@@ -39135,13 +37483,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.95
-  },
-  {
-    "address": "0x001488E7",
-    "name": "sub_001488E7",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
   },
   {
     "address": "0x00148903",
@@ -41193,13 +39534,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.88
-  },
-  {
-    "address": "0x00152AF8",
-    "name": "sub_00152AF8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00152B90",
@@ -43841,13 +42175,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00160036",
-    "name": "sub_00160036",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00160050",
     "name": "sub_00160050",
     "type": "function",
@@ -44119,13 +42446,6 @@
     "type": "function",
     "section": ".text",
     "confidence": 0.9
-  },
-  {
-    "address": "0x00160B66",
-    "name": "sub_00160B66",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
   },
   {
     "address": "0x00160B80",
@@ -47579,13 +45899,6 @@
     "confidence": 0.88
   },
   {
-    "address": "0x00170B87",
-    "name": "sub_00170B87",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00170BC0",
     "name": "sub_00170BC0",
     "type": "function",
@@ -48986,13 +47299,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x001788F5",
-    "name": "sub_001788F5",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.88
-  },
-  {
     "address": "0x00178950",
     "name": "sub_00178950",
     "type": "function",
@@ -49177,13 +47483,6 @@
   {
     "address": "0x0017940A",
     "name": "sub_0017940A",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00179475",
-    "name": "sub_00179475",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -51324,13 +49623,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x00180AD8",
-    "name": "sub_00180AD8",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
     "address": "0x00180B03",
     "name": "sub_00180B03",
     "type": "function",
@@ -51564,13 +49856,6 @@
   {
     "address": "0x0018129D",
     "name": "sub_0018129D",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x001812A0",
-    "name": "sub_001812A0",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -52446,13 +50731,6 @@
   {
     "address": "0x00184A64",
     "name": "sub_00184A64",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x00184AA0",
-    "name": "sub_00184AA0",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -59619,13 +57897,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x001988F8",
-    "name": "sub_001988F8",
-    "type": "function",
-    "section": "D3D",
-    "confidence": 0.88
-  },
-  {
     "address": "0x001989B0",
     "name": "sub_001989B0",
     "type": "function",
@@ -61364,13 +59635,6 @@
   {
     "address": "0x001A2AF4",
     "name": "sub_001A2AF4",
-    "type": "function",
-    "section": "DSOUND",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x001A2B38",
-    "name": "sub_001A2B38",
     "type": "function",
     "section": "DSOUND",
     "confidence": 0.95
@@ -63350,20 +61614,6 @@
     "confidence": 0.9
   },
   {
-    "address": "0x001BE2C0",
-    "name": "sub_001BE2C0",
-    "type": "function",
-    "section": "XPP",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x001BE2F4",
-    "name": "sub_001BE2F4",
-    "type": "function",
-    "section": "XPP",
-    "confidence": 0.88
-  },
-  {
     "address": "0x001BE2F9",
     "name": "sub_001BE2F9",
     "type": "function",
@@ -64246,13 +62496,6 @@
     "confidence": 0.95
   },
   {
-    "address": "0x001C2078",
-    "name": "sub_001C2078",
-    "type": "function",
-    "section": "XPP",
-    "confidence": 0.88
-  },
-  {
     "address": "0x001C2121",
     "name": "sub_001C2121",
     "type": "function",
@@ -64687,39 +62930,11 @@
     "confidence": 0.95
   },
   {
-    "address": "0x001C42C0",
-    "name": "sub_001C42C0",
-    "type": "function",
-    "section": "XPP",
-    "confidence": 0.95
-  },
-  {
-    "address": "0x001C42D6",
-    "name": "sub_001C42D6",
-    "type": "function",
-    "section": "XPP",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x001C4348",
-    "name": "sub_001C4348",
-    "type": "function",
-    "section": "XPP",
-    "confidence": 0.88
-  },
-  {
     "address": "0x001C436E",
     "name": "sub_001C436E",
     "type": "function",
     "section": "XPP",
     "confidence": 0.95
-  },
-  {
-    "address": "0x001C43F6",
-    "name": "sub_001C43F6",
-    "type": "function",
-    "section": "XPP",
-    "confidence": 0.88
   },
   {
     "address": "0x001C4443",

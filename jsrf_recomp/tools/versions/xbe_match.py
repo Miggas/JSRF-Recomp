@@ -210,6 +210,7 @@ class Matcher:
                 taken.add(r[0])
         self.map = good
         self.keys = sorted(good)
+        self.verified = set(good)   # matched by their whole code (not by a vtable slot)
 
     def _data_moves(self):
         votes = collections.defaultdict(collections.Counter)
