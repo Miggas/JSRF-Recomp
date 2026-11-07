@@ -39,7 +39,8 @@ from translate_release import addresses_in_text, strip_comments, ADDR_LO, ADDR_H
 ANALYSIS = os.path.join(JR, "analysis")
 
 # The files whose game addresses are moved for another release.
-SOURCES = ["src/recomp_manual.c", "src/jsrf_widescreen.c", "tools/wrap_dsound.py",
+SOURCES = ["src/recomp_manual.c", "src/jsrf_widescreen.c", "src/jsrf_dsound_lift.c",
+           "tools/wrap_dsound.py",
            "tools/generate_code.py"]
 
 # Numbers in the range of addresses that are not addresses: kept as they are.

@@ -58643,14 +58643,14 @@
     "name": "sub_0019E47C",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E481",
     "name": "sub_0019E481",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E486",
@@ -58692,7 +58692,7 @@
     "name": "sub_0019E4E3",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E502",
@@ -60141,7 +60141,7 @@
     "name": "sub_001A2463",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.85
+    "confidence": 0.95
   },
   {
     "address": "0x001A247E",

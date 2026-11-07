@@ -215,6 +215,7 @@ override the file.
 | Setting | What it does |
 |---|---|
 | `RECOMP_APU_GAIN=0.5` | Master volume. |
+| `RECOMP_DSOUND_LIFT=1` | PC sound mixing (testing): the game's sounds are played through the PC's audio directly, instead of the emulated Xbox sound chip. May fix sounds that cut off or don't play when many skaters are around. *From andeecollard's jsrf-recomp.* |
 
 **`[files]`**
 
@@ -334,6 +335,8 @@ co-author.
 - The quit window and the "Building Shaders" message use the
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
+- [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)
+  for the DirectSound lift (PC sound mixing, `RECOMP_DSOUND_LIFT`).
 - [JuMatt's JetSetRadioFuture-Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed)
   (MIT): building the shaders ahead ("Building Shaders") and the modern 3rd
   person camera were inspired by it, and improved upon by Miggas (the camera

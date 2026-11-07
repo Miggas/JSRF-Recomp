@@ -58307,14 +58307,14 @@
     "name": "sub_0019EF7C",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019EF81",
     "name": "sub_0019EF81",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019EF86",
@@ -58356,7 +58356,7 @@
     "name": "sub_0019EFE3",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019F002",
@@ -59805,7 +59805,7 @@
     "name": "sub_001A2F63",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.85
+    "confidence": 0.95
   },
   {
     "address": "0x001A2F7E",

@@ -2,7 +2,7 @@ Jet Set Radio Future PC recompilation -- third-party code
 ==========================================================
 
 This project's own files are MIT licensed (see LICENSE). The part listed
-below is adapted from someone else's work and keeps its original notice.
+below are adapted from other people's work and keeps its original notice.
 The toolkit in xboxrecomp/ has its own list (xboxrecomp/NOTICE).
 
 
@@ -50,3 +50,40 @@ Ideas only (no code taken)
   The shaders built ahead (v241, "Building Shaders") follow an idea from
   JetSetRadioFuture-Unleashed; the code is this project's own (it shares no
   code with Unleashed's shader cache).
+
+
+andeecollard/jsrf-recomp (MIT)
+------------------------------
+
+  https://github.com/andeecollard/jsrf-recomp
+
+  The DSOUND lift (v275, RECOMP_DSOUND_LIFT=1):
+  xboxrecomp/src/apu/dsound_host.c, dsound_host.h and dsound_host_out.c are
+  its src/apu files of the same names (the master volume added to
+  dsound_host_out.c), and jsrf_recomp/src/jsrf_dsound_lift.c is adapted from
+  its diagnostics/jsrf_first_fault/dsound_lift.c (register names, locking,
+  timing, off by default, the wrappers).
+
+  Its notice:
+
+    MIT License
+
+    Copyright (c) 2026 sp00nz
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.

@@ -59112,14 +59112,14 @@
     "name": "sub_0019E4BC",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E4C1",
     "name": "sub_0019E4C1",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E4C6",
@@ -59161,7 +59161,7 @@
     "name": "sub_0019E523",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E542",
@@ -60617,7 +60617,7 @@
     "name": "sub_001A24A3",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.85
+    "confidence": 0.95
   },
   {
     "address": "0x001A24BE",

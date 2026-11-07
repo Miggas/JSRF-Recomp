@@ -626,10 +626,15 @@ void recomp_stub_hit(uint32_t stub_va, uint32_t ret_va, uint32_t eax_val)
 extern void DSOUND_IDirectSound_SetI3DL2Listener_gen(void);
 extern void DSOUND_IDirectSound_SetEffectData_gen(void);
 extern void mcpx_apu_set_i3dl2(const float p[12]);
+/* v275: the DSOUND lift (jsrf_dsound_lift.c) answers these two itself */
+extern int jsrf_dsound_lift_on(void);
+extern void dsl_IDirectSound_SetI3DL2Listener(void);
+extern void dsl_IDirectSound_SetEffectData(void);
 
 void DSOUND_IDirectSound_SetI3DL2Listener(void)
 {
     uint32_t pl = MEM32(g_esp + 8), apply = MEM32(g_esp + 12);
+    if (jsrf_dsound_lift_on()) { dsl_IDirectSound_SetI3DL2Listener(); return; }
     if (pl) {
         float p[12];
         int32_t li[12];
@@ -656,6 +661,7 @@ void DSOUND_IDirectSound_SetEffectData(void)
     uint32_t idx = MEM32(g_esp + 8), off = MEM32(g_esp + 12), data = MEM32(g_esp + 16),
              size = MEM32(g_esp + 20), apply = MEM32(g_esp + 24);
     static unsigned n;
+    if (jsrf_dsound_lift_on()) { dsl_IDirectSound_SetEffectData(); return; }
     if (n++ < 200) {
         uint32_t k;
         fprintf(stderr, "[DSOUND] SetEffectData(effect %u, offset 0x%X, %u bytes, apply %u):",
