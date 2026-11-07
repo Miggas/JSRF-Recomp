@@ -70,7 +70,7 @@ Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
 | | Requirement |
 |---|---|
 | 💻 | **A Windows 10/11 PC, a Linux PC or a Steam Deck.** The game is built on the same system it runs on. |
-| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — any retail release**, as its files (`default.xbe` plus the folders next to it) or as a disc image (`.iso`). See the table below. |
+| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — any retail release**, as its files (`default.xbe` (or `SegaJSRF.xbe` for the combo discs) plus the folders next to it) or as a disc image (`.iso`). See the table below. |
 | 💾 | **About 3 GB of free disk space** (the build tools, the build, and the game's cache). |
 | 🌐 | **An internet connection** the first time: the launcher downloads its tools and the project. |
 | 🎮 | **A graphics card with OpenGL 3.3** or newer — practically any GPU from the last ten years. |
