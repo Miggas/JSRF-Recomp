@@ -145,6 +145,9 @@ def main():
             us_starts_all.add(_s)
         _top = max(_top, _e)
     ot_text = m.ot.section(".text")
+    lost_set = set(lost)
+    us_end_all = {a: b - a for a, b in _un}
+    ptr_size = {}
     by_ptr = 0
     for sec in (".rdata", ".data"):
         su = m.us.section(sec)
@@ -152,7 +155,9 @@ def main():
             continue
         for p in range(su[1], su[1] + min(su[2], su[4]) - 3, 4):
             v = struct.unpack_from("<I", m.us.mem, p)[0]
-            if v not in us_starts_all or v in m.map:
+            # standalone US functions, and US seeds the matcher could not move
+            # (v270e: 0x1FD10 -> 0x1FD40, a cutscene change went black)
+            if (v not in us_starts_all and v not in lost_set) or v in m.map:
                 continue
             ep = m.data(p)
             if ep is None:
@@ -168,7 +173,11 @@ def main():
             if abs((ev - v) - d) > 0x400:
                 continue
             moved.add(ev)
+            ptr_size[ev] = us_end_all.get(v, 0x40)
             by_ptr += 1
+            if v in lost_set:
+                lost_set.discard(v)
+    lost = sorted(lost_set)
     print("  %d more found through the data pointing to them" % by_ptr)
     print("  seeds: %d moved, %d not found%s" % (len(moved), len(lost),
           (" (" + " ".join("%X" % x for x in lost) + ")") if lost else ""))
@@ -269,8 +278,13 @@ def main():
                 continue
             if t_ in want and holder(t_) != holder(q):
                 hit.add(t_)
-        extra = sorted(set(x for x in free if x not in got2) | hit)
-        json.dump([["0x%08X" % x, "0x%08X" % (x + us_end[x])] for x in extra],
+        # seeds found through data pointers that the toolkit swallowed into
+        # a start of its own (0x1FD40, inside a "gap" start at 0x1FD02)
+        swallowed = set(x for x in ptr_size if x not in got2)
+        extra = sorted(set(x for x in free if x not in got2) | hit | swallowed)
+        size_of = dict(ptr_size)
+        size_of.update(us_end)
+        json.dump([["0x%08X" % x, "0x%08X" % (x + size_of[x])] for x in extra],
                   open(os.path.join(out, "extra.json"), "w"), indent=0)
         if extra:
             print("  lifted on their own: " + " ".join("%X" % x for x in extra))
