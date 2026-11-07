@@ -16,6 +16,7 @@
 
 #include <time.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 #include <SDL.h>
 
@@ -260,41 +261,65 @@ bool have_xbe(void)
     return is_file(x);
 }
 
-/* v1x: which release default.xbe is, by the title ID in its certificate
- * (shown on the Play tab; generate_code.py checks the code itself) */
+/* v1x: default.xbe's title ID and SHA-256, read again only when its size
+ * or time changes */
+static bool xbe_facts(uint32_t *title, char sha[65])
+{
+    static char last[LPATH], last_sha[65];
+    static long long last_size = -1, last_time;
+    static uint32_t last_title;
+    char x[LPATH];
+    struct stat st;
+    pjoin(x, g_paths.game, "default.xbe");
+    if (stat(x, &st) != 0) return false;
+    if (strcmp(x, last) || (long long)st.st_size != last_size || (long long)st.st_mtime != last_time) {
+        size_t len = 0;
+        unsigned char *d = (unsigned char *)read_file(x, &len);
+        if (!d) return false;
+        last_title = 0;
+        if (len > 0x200 && !memcmp(d, "XBEH", 4)) {
+            uint32_t base = d[0x104] | d[0x105] << 8 | d[0x106] << 16 | (uint32_t)d[0x107] << 24;
+            uint32_t cva = d[0x118] | d[0x119] << 8 | d[0x11A] << 16 | (uint32_t)d[0x11B] << 24;
+            uint32_t c = cva - base;
+            if (c + 12 <= len)
+                last_title = d[c + 8] | d[c + 9] << 8 | d[c + 10] << 16 | (uint32_t)d[c + 11] << 24;
+        }
+        sha256_hex(d, len, last_sha);
+        free(d);
+        snprintf(last, sizeof last, "%s", x);
+        last_size = (long long)st.st_size;
+        last_time = (long long)st.st_mtime;
+    }
+    if (title) *title = last_title;
+    if (sha) memcpy(sha, last_sha, 65);
+    return true;
+}
+
+static const char *title_tag(uint32_t id)
+{
+    if (id == 0x5345000Au) return "usa";
+    if (id == 0x49470018u) return "eur";
+    return NULL;
+}
+
+/* which release default.xbe is (shown on the Play tab; generate_code.py
+ * checks the code itself) */
 const char *xbe_release(void)
 {
-    static char last[LPATH];
-    static const char *name;
-    char x[LPATH];
-    pjoin(x, g_paths.game, "default.xbe");
-    if (!strcmp(x, last) && name) return name;
-    snprintf(last, sizeof last, "%s", x);
-    name = NULL;
-    size_t len = 0;
-    unsigned char *d = (unsigned char *)read_file(x, &len);
-    if (!d) return NULL;
-    if (len > 0x200 && !memcmp(d, "XBEH", 4)) {
-        uint32_t base = d[0x104] | d[0x105] << 8 | d[0x106] << 16 | (uint32_t)d[0x107] << 24;
-        uint32_t cva = d[0x118] | d[0x119] << 8 | d[0x11A] << 16 | (uint32_t)d[0x11B] << 24;
-        uint32_t c = cva - base;
-        if (c + 12 <= len) {
-            uint32_t id = d[c + 8] | d[c + 9] << 8 | d[c + 10] << 16 | (uint32_t)d[c + 11] << 24;
-            if (id == 0x5345000Au) name = "NTSC (North America)";
-            else if (id == 0x49470018u) name = "PAL (Europe)";
-            else name = "a release the project does not know";
-        }
-    }
-    free(d);
-    return name;
+    uint32_t id;
+    if (!xbe_facts(&id, NULL)) return NULL;
+    const char *t = title_tag(id);
+    if (!t) return "a release the project does not know";
+    return !strcmp(t, "usa") ? "NTSC (North America)" : "PAL (Europe)";
 }
 
 /* which release the generated code is for (generate_code.py writes
  * src/recomp/gen/release.txt; none: the US one) */
-static void gen_release(char *tag, size_t n)
+static void gen_release_full(char *tag, size_t n, char sha[65])
 {
     char g[LPATH], f[LPATH];
     snprintf(tag, n, "usa");
+    if (sha) sha[0] = 0;
     pjoin3(g, g_paths.source, "jsrf_recomp", "src");
     pjoin3(f, g, "recomp", "gen");
     pjoin(g, f, "release.txt");
@@ -304,7 +329,44 @@ static void gen_release(char *tag, size_t n)
     while (d[k] && k + 1 < n && (isalnum((unsigned char)d[k]) || d[k] == '-' || d[k] == '_')) { tag[k] = d[k]; k++; }
     tag[k] = 0;
     if (!k) snprintf(tag, n, "usa");
+    /* line 2 (generate_code.py since v270f): the SHA-256 of the default.xbe
+     * it was made from */
+    if (sha) {
+        const char *nl = strchr(d, '\n');
+        if (nl) {
+            size_t j = 0;
+            nl++;
+            while (j < 64 && isxdigit((unsigned char)nl[j])) { sha[j] = (char)tolower((unsigned char)nl[j]); j++; }
+            sha[j == 64 ? 64 : 0] = 0;
+        }
+    }
     free(d);
+}
+
+static void gen_release(char *tag, size_t n) { gen_release_full(tag, n, NULL); }
+
+/* v1y: the generated code is for the default.xbe in the game folder: a copy
+ * of another release, or another file (a combo disc's game, say), means
+ * generating again (Miggas) */
+static bool gen_for_this_xbe(void)
+{
+    char tag[32], gsha[65], xsha[65];
+    uint32_t id;
+    gen_release_full(tag, sizeof tag, gsha);
+    if (!xbe_facts(&id, xsha)) return true;   /* no default.xbe: nothing to say */
+    bool ok;
+    if (gsha[0]) ok = !strcmp(gsha, xsha);
+    else {
+        const char *t = title_tag(id);
+        ok = !t || !strcmp(t, tag);
+    }
+    static char said[65];
+    if (!ok && strcmp(said, xsha)) {
+        snprintf(said, sizeof said, "%s", xsha);
+        logf_("Generated code: made from a different default.xbe (%s): Generate code again.",
+              xbe_release() ? xbe_release() : "?");
+    }
+    return ok;
 }
 
 bool have_game_exe(void)
@@ -699,6 +761,7 @@ static bool gen_current(void)
     pjoin(f, g, "recomp_dispatch.c");
     pjoin(st, g, "launcher_gen.txt");
     if (!is_file(f)) return false;
+    if (!gen_for_this_xbe()) return false;
     unsigned long long h = gen_inputs();
     if (gen_stamp_is(st, h)) return true;
     /* v1u: what the translator reads has changed (recomp_manual.c changes
