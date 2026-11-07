@@ -2892,12 +2892,13 @@ static void surf_store(GlSurf *s, const uint32_t *px)
 /* Resolve the multisampled colour buffer into the single-sampled texture. */
 static void surf_resolve(GlSurf *s)
 {
-    GLuint prev;
+    GLuint prev_draw, prev_read;
     if (s_msaa <= 1 || !s || !s->ms_tex)
         return;
     if (!s_resolve_fbo)
         glGenFramebuffers(1, &s_resolve_fbo);
-    prev = s_bound_fbo;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, (GLint *)&prev_draw);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, (GLint *)&prev_read);
     bind_draw_fbo(s_resolve_fbo);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, s->tex, 0);
@@ -2905,16 +2906,20 @@ static void surf_resolve(GlSurf *s)
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), 0, 0, SC(s->w), SC(s->h),
-                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glEnable(GL_SCISSOR_TEST);
-    bind_draw_fbo(prev == (GLuint)-1 ? 0 : prev);
+    s_ap_valid = 0;
+    bind_draw_fbo(prev_draw == (GLuint)-1 ? 0 : prev_draw);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read);
+    s_bound_fbo = (prev_draw == (GLuint)-1 ? 0 : prev_draw);
 }
 
-typedef struct { GLenum target; GLsizei samples; GLenum internalformat;
+typedef struct { GLuint tex; GLenum target; GLsizei samples; GLenum internalformat;
                  GLsizei w, h; GLboolean fixed; } MsTexCreateArgs;
 static void ms_tex_create_cb(void *p)
 {
     MsTexCreateArgs *a = (MsTexCreateArgs *)p;
+    glBindTexture(a->target, a->tex);
     glTexImage2DMultisample(a->target, a->samples, a->internalformat, a->w, a->h, a->fixed);
 }
 
@@ -2942,12 +2947,12 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
             s_zeta[lru].is_tex = 1;
         }
         if (s_zeta[lru].is_tex) {
-            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, s_zeta[lru].rb);
             {
                 MsTexCreateArgs za;
+                za.tex = s_zeta[lru].rb;
                 za.target = GL_TEXTURE_2D_MULTISAMPLE;
                 za.samples = s_msaa;
-                za.internalformat = GL_DEPTH24_STENCIL8;
+                za.internalformat = wdepth() ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8;
                 za.w = (GLsizei)w;
                 za.h = (GLsizei)h;
                 za.fixed = GL_TRUE;
@@ -2959,7 +2964,7 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
             glGenRenderbuffers(1, &s_zeta[lru].rb);
         s_zeta[lru].is_tex = 0;
         glBindRenderbuffer(GL_RENDERBUFFER, s_zeta[lru].rb);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
+        glRenderbufferStorage(GL_RENDERBUFFER, wdepth() ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8,
                               (GLsizei)w, (GLsizei)h);
     }
     s_zeta[lru].key = key; s_zeta[lru].w = w; s_zeta[lru].h = h;
@@ -3038,11 +3043,14 @@ static GlSurf *surf_get(const NvGlState *st)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         if (s_msaa > 1) {
-            glActiveTexture(GL_TEXTURE0);
+            if (s->ms_tex) {
+                glDeleteTextures(1, &s->ms_tex);
+                s->ms_tex = 0;
+            }
             glGenTextures(1, &s->ms_tex);
-            glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, s->ms_tex);
             {
                 MsTexCreateArgs ma;
+                ma.tex = s->ms_tex;
                 ma.target = GL_TEXTURE_2D_MULTISAMPLE;
                 ma.samples = s_msaa;
                 ma.internalformat = s->alpha ? GL_RGBA8 : GL_RGB8;
@@ -3118,7 +3126,7 @@ static GlSurf *bind_surface(const NvGlState *st)
                                       GL_RENDERBUFFER, rb);
         s->ds = rb;
         {
-            GLenum fs = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+            GLenum fs = s_gt_on ? GL_FRAMEBUFFER_COMPLETE : glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
             if (fs != GL_FRAMEBUFFER_COMPLETE) {
                 static int said;
                 if (said++ < 4)
@@ -4653,11 +4661,11 @@ static void start_present_read(GlSurf *s, int win)
             s_pend.bytes = bytes;
         }
         /* the window takes the full-size frame; guest memory its own size */
-        if (win && s_msaa > 1)
+        if (s_msaa > 1)
             surf_resolve(s);            /* glReadPixels can't read multisamples */
         glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                win ? s_msaa > 1 ? s_resolve_fbo : s->fbo
-                    : guest_res_fbo(s->fbo, s->w, s->h));
+                win ? (s_msaa > 1 ? s_resolve_fbo : s->fbo)
+                    : guest_res_fbo(s_msaa > 1 ? s_resolve_fbo : s->fbo, s->w, s->h));
         glBindBuffer(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
         glReadPixels(0, 0, (GLsizei)pw, (GLsizei)ph, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, (void *)0);
