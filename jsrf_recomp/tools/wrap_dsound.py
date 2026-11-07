@@ -7,7 +7,7 @@ generated definitions in src/recomp/gen to <name>_gen. Callers and the
 dispatch table keep the plain names, so they reach the hand-written
 wrappers. Idempotent; run it again after any future lift.
 
-usage: py -3 wrap_dsound.py [path to src/recomp/gen]
+usage: py -3 wrap_dsound.py [path to src/recomp/gen] [--release=TAG]
 """
 import os
 import re
@@ -57,7 +57,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    gen = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "..", "src", "recomp", "gen")
+    args = [x for x in sys.argv[1:] if not x.startswith("--release=")]
+    gen = args[0] if args else os.path.join(here, "..", "src", "recomp", "gen")
     done = {n: 0 for n in NAMES}
     already = {n: 0 for n in NAMES}
     for fn in sorted(os.listdir(gen)):
@@ -256,6 +257,7 @@ def spin_pass(gen):
 # so saves from a real Xbox or another emulator never match. Each such compare
 # is routed through recomp_sig_cmp() (recomp_manual.c), which accepts a
 # mismatch unless RECOMP_SAVE_STRICT=1. Idempotent.
+SIG_CALL = "RECOMP_ABI_CALL(0x00146BE7u,"
 SIG_PROTO = "int recomp_sig_cmp(int equal); /* v188 */\n"
 SIG_OLD = "        _flags = (MEM32(esi) == MEM32(edi));\n"
 SIG_NEW = "        _flags = recomp_sig_cmp(MEM32(esi) == MEM32(edi)); /* v188: save signature */\n"
@@ -272,7 +274,7 @@ def sig_pass(gen):
         lines = orig.split("\n")
         out, n, since = [], 0, 1000
         for ln in lines:
-            if "RECOMP_ABI_CALL(0x00146BE7u," in ln:
+            if SIG_CALL in ln:
                 since = 0
             else:
                 since += 1
@@ -300,9 +302,28 @@ def sig_pass(gen):
         print("WARNING: expected 21 save-signature compares, found %d" % total)
 
 
+def for_release(tag):
+    """Another release: the same functions and patterns at its addresses
+    (analysis/<tag>/addr_map.txt)."""
+    global NAMES, UNWRAP, SPINS, UNSPINS, SIG_CALL
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import translate_release
+    amap = translate_release.load_map(tag)
+    t = lambda x: translate_release.translate(x, amap, tag)
+    NAMES = tuple(t(n) for n in NAMES)
+    UNWRAP = tuple(t(n) for n in UNWRAP)
+    SPINS = tuple((t(a), t(b)) for a, b in SPINS)
+    UNSPINS = tuple((t(a), t(b)) for a, b in UNSPINS)
+    SIG_CALL = t(SIG_CALL)
+
+
 if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
-    gen_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "..", "src", "recomp", "gen")
+    rel = [x.split("=", 1)[1] for x in sys.argv[1:] if x.startswith("--release=")]
+    if rel and rel[0] != "usa":
+        for_release(rel[0])
+    args = [x for x in sys.argv[1:] if not x.startswith("--release=")]
+    gen_dir = args[0] if args else os.path.join(here, "..", "src", "recomp", "gen")
     unwrap_pass(gen_dir)
     unspin_pass(gen_dir)
     rc = main()

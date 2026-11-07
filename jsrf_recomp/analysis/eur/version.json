@@ -1,0 +1,16 @@
+{
+ "tag": "eur",
+ "name": "PAL (Europe)",
+ "title_id": "49470018",
+ "sections": {
+  ".text": "babc4ac0710082c50e1267c55e69b225d414dc1d7c42d0de763a7ccb895f1b5f",
+  "D3D": "57a1528dbbc19049596b9651241fac83e0910423632fcc833a5837079a1cd923",
+  "DSOUND": "f8b074fbd41f577f178b8e202b61855a9672e5f5073f7e66a03eeeff4af18c92",
+  "MMATRIX": "39b1f4cde2ee067fd170b3390aacba935226b908db87f4afb9216e3a8c8cd37d",
+  "XGRPH": "0ab10744ee50e97c12535f050db023bab3661f316df70bdd559a3e7e15fd51b2",
+  "XPP": "ab411d6961283a4336f09bb59877a94ed20983a7e7f6473fc7df210e6b2f036d",
+  ".rdata": "de0ce62a80c8cd86169910a6e3506a52f58d23ee9ec6f88fe14794bb908bea65",
+  ".data": "bcb453481cf4cd409be68fb3f0daa26ad072f98ffe3264ee04f34c4c7793a91f",
+  "DOLBY": "c493eb6f8390ec48cde2da2995c114662059f7790f99d68adbda76a63b4b46ae"
+ }
+}

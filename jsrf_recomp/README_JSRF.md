@@ -657,6 +657,7 @@ next fix.
 - **v267b:** the skip did nothing in Miggas's first run, and the log only said it was on. Each event now logs its object, vtable, state and id when it starts and when its state changes, and START held is logged once a second with the hold time, to see which check stops it.
 - **v267c:** the log showed the event's vtable is 0x1C4BA8, not 0x1C4BB0 (the update sits in its third slot, at 0x1C4BB0; I had taken that slot for the start), so the check never matched and the skip never armed. Fixed.
 - **v267d:** the skip works (Miggas); the hold is now 1.3 s, two thirds of the 2 s (Miggas).
+- **v270:** the PAL (European) release (*Idea by Miggas*). It is the same game built 18 days later (title ID 49470018): `tools/versions/make_version.py` matches every function of our analysis to it by its code, with the addresses inside ignored (11,132 of 12,157), and writes `analysis/eur/`: the toolkit's own analysis of that XBE seeded from ours, and `addr_map.txt`, where each of the 206 game addresses our code uses is there. `generate_code.py` finds the release from the code's fingerprints (`xbe_info.py`); for another release the build compiles `recomp_manual.c` and `jsrf_widescreen.c` from copies with the addresses moved (`tools/translate_release.py`). Changed in PAL and placed by hand: the event's update and end (a 1.2 frame step at 50 Hz, fields moved by 8), the end of the character select's function. The kernel reports NTSC at 60 Hz, so the game takes the 1.0 step. The US code is unchanged.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
@@ -680,6 +681,21 @@ py -3 -m tools.recomp game_files\default.xbe --all --split 250 --game-name "Jet 
 py -3 ..\jsrf_recomp\tools\apply_xdk_names.py ..\jsrf_recomp\analysis\xbsymboldb_symbols.txt tools\disasm\output\functions.json   :: before the recomp line
 py -3 ..\jsrf_recomp\tools\log_stubs.py ..\jsrf_recomp\src\recomp\gen\recomp_stubs_unresolved.c
 ```
+
+## Other releases
+
+`analysis/` is the US (NTSC) release's; each other release has `analysis/<tag>/`
+(`eur`: PAL Europe), made with both XBEs at hand:
+
+```sh
+python3 tools/versions/make_version.py us/default.xbe eu/default.xbe eur
+```
+
+It needs `OVERRIDES` (in the script) for an address the matcher cannot place,
+and `NOT_ADDRESSES` for a number in the address range that is not one. After
+changing an address in our code, run it again; the build stops if an address
+is missing from `addr_map.txt`. Then regenerate with that XBE and write
+`analysis/<tag>/gen_hashes.txt`.
 
 ## Files in `analysis/`
 

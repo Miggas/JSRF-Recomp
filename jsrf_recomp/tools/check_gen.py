@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
 """Compare src/recomp/gen with the code this version of the project is expected
-to produce from the NTSC default.xbe (analysis/gen_hashes.txt, SHA-256 of each
+to produce from the game's default.xbe (analysis/gen_hashes.txt, or
+analysis/<release>/gen_hashes.txt for another release; SHA-256 of each
 file with Linux line endings). The launcher's Debug tab runs it (Check generated
 code), or:  python3 tools/check_gen.py"""
 import hashlib, os, sys
 here = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 gen = os.path.join(here, "src", "recomp", "gen")
+# the release the code was generated for (generate_code.py writes it):
+# the US one's expected code is analysis/gen_hashes.txt, another's
+# analysis/<tag>/gen_hashes.txt
+rel = "usa"
+rp = os.path.join(gen, "release.txt")
+if os.path.isfile(rp):
+    rel = open(rp).read().strip() or "usa"
+an = os.path.join(here, "analysis") if rel == "usa" else os.path.join(here, "analysis", rel)
+print("release", rel)
 want = {}
-for line in open(os.path.join(here, "analysis", "gen_hashes.txt")):
+for line in open(os.path.join(an, "gen_hashes.txt")):
     h, name = line.split()
     want[name] = h
 try:
