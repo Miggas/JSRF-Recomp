@@ -80,8 +80,10 @@ the Zig compiler, CMake).
 
 > [!WARNING]
 > **Releases:** NTSC (North America) and PAL (Europe) work. NTSC-J (Japan)
-> is new and still being tested. The Sega GT 2002 + JSRF discs are not
-> supported yet. The build checks the game's code and data inside your
+> and the US Sega GT 2002 + JSRF disc are new and still being tested; the
+> European and Asian combo discs are not supported yet. On a combo disc the
+> game is `SegaJSRF.xbe` (its `default.xbe` is the menu): copy the whole disc,
+> and the build and the exe use `SegaJSRF.xbe`. The build checks the game's code and data inside your
 > `default.xbe`, finds which release it is, and stops if it is none of them.
 > It does **not** compare the whole file: many dumps have a patched header
 > (region, allowed media), which changes the file's SHA-256 but not the game,
@@ -490,7 +492,7 @@ Your game files, `jsrf.ini` and saves are kept.
 | ❌ You see | ✅ What to do |
 |---|---|
 | `default.xbe not found` | The game folder must hold `default.xbe` directly (not in a subfolder). **Play → Choose folder** to pick the right one. |
-| `this default.xbe's code is not a release the project knows` | Your copy is a release not supported yet — most likely a Sega GT 2002 + JSRF disc. NTSC (North America), PAL (Europe) and NTSC-J (Japan) work. |
+| `this default.xbe's code is not a release the project knows` | Your copy is a release not supported yet — most likely a European or Asian Sega GT 2002 + JSRF disc. NTSC (North America), PAL (Europe), NTSC-J (Japan) and the US combo disc work. |
 | `Could not reach GitHub` / a download fails | Check the internet connection and try again. |
 | A build fails | **Open log file** (shown under the buttons after a failure), find the first line with `error`, and report it ([section 13](#13-reporting-a-problem)). |
 | `Could not copy the game … is the game still running?` | Close the game and **Build** again. |

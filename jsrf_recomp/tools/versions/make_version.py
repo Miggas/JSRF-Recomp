@@ -49,7 +49,8 @@ NOT_ADDRESSES = {
     0x00100410,   # wrap_dsound.py SPINS: an NV2A register offset
 }
 
-NAMES = {"eur": "PAL (Europe)", "jpn": "NTSC-J (Japan)"}
+NAMES = {"eur": "PAL (Europe)", "jpn": "NTSC-J (Japan)",
+         "usa-combo": "NTSC (North America), Sega GT 2002 + JSRF disc"}
 
 # Addresses the matcher cannot place, checked by hand (tag -> {US: other}).
 OVERRIDES = {

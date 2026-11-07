@@ -561,7 +561,13 @@ static void portable_setup(void)
     if (!slash)
         return;
     *slash = 0;
-    snprintf(xbe, sizeof xbe, "%s/default.xbe", dir);
+    /* v273: a Sega GT 2002 + JSRF disc's game is SegaJSRF.xbe (its
+     * default.xbe is the menu that picks one of the two games) */
+    snprintf(xbe, sizeof xbe, "%s/SegaJSRF.xbe", dir);
+    if (stat(xbe, &st) == 0)
+        setenv("RECOMP_IMAGE_NAME", "SegaJSRF.xbe", 1);
+    else
+        snprintf(xbe, sizeof xbe, "%s/default.xbe", dir);
     if (stat(xbe, &st) == 0) {
         g_portable = 1;
         if (chdir(dir) != 0) { /* keep going from where we are */ }

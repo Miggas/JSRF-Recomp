@@ -1,0 +1,16 @@
+{
+ "tag": "usa-combo",
+ "name": "NTSC (North America), Sega GT 2002 + JSRF disc",
+ "title_id": "5345000A",
+ "sections": {
+  ".text": "dd763f0488fa3dae257a7c9eed39f2bb2b7dd9f7ecdc73572b2eff60efe0ed65",
+  "D3D": "c13291458ead1b29fa38f6596e4b06148fb81537a60cabcee206e71b26c2a9e2",
+  "DSOUND": "2e009bac68f9d5e4b78720288449228d2c274862f66169c373cc9ed7b90ea569",
+  "MMATRIX": "40a8d4024be0b89166cdb8ad1be1aa4838503f71b6311a0c1400b2000397f0c1",
+  "XGRPH": "8052f15c6a60a808607b7be237fe481e769a3ccf41755ccde58aaa44f76a8e33",
+  "XPP": "a15f8fcce01319ced15c24e9e9bee4423db32111c6d594dc06872e76c8e0059d",
+  ".rdata": "95c55767209e16fc3a0be12f3de3f3d4382d2dbc9e14b2a76893f00695763f7b",
+  ".data": "f5fefcaab8195f06c71b29f6113a4b018136827e06787847764f2afc3391bef0",
+  "DOLBY": "c493eb6f8390ec48cde2da2995c114662059f7790f99d68adbda76a63b4b46ae"
+ }
+}
