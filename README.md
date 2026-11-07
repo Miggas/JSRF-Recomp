@@ -371,7 +371,7 @@ switch it on. Steam launch options override the file.
 | `RECOMP_QUIET=1` | Fewer log messages (faster). Put a `;` in front when making a log for a bug report. |
 | `RECOMP_SKIP_INTRO=1` | Skip the intro logos. *By Piaka.* |
 | `RECOMP_HOLD_SKIP=0` | Turns off skipping cutscenes by holding START for about 1.3 seconds (on by default; works the first time you see one too). *Idea from mstan's JSRFRecomp.* |
-| `RECOMP_LANGUAGE=french` | The language the game is told the Xbox is set to: `english` (default), `french`, `german`, `spanish`, `italian`. The PAL (European) release has all five; the NTSC release is in English. *Idea by Miggas.* |
+| `RECOMP_LANGUAGE=french` | The language the game is told the Xbox is set to: `english` (default), `french`, `german`, `spanish`, `italian`, `japanese`. PAL (Europe and its Sega GT 2002 + JSRF disc): the first five. The US and Asian Sega GT 2002 + JSRF discs: English and Japanese. The other releases use their own language. *Idea by Miggas.* |
 | `RECOMP_SAVE_STRICT=1` | Refuse saves from other sources (a real Xbox, emulators, save editors), as the Xbox does. Off by default, so those saves load. |
 
 **`[display]`**
