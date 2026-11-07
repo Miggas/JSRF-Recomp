@@ -616,14 +616,15 @@ static void panel_gameplay(struct nk_context *ctx, float w)
     desc(ctx, w, "Skips the logos at start.", C_DIM);
     /* v2a: the game's language (the game's v271) */
     {
-        static const char *const items[] = { "English", "French", "German", "Spanish", "Italian" };
-        static const char *const vals[] = { "", "french", "german", "spanish", "italian" };
-        int cur = find(vals, 5, get_or("RECOMP_LANGUAGE", ""));
+        static const char *const items[] = { "English", "French", "German", "Spanish", "Italian", "Japanese" };
+        static const char *const vals[] = { "", "french", "german", "spanish", "italian", "japanese" };
+        int cur = find(vals, 6, get_or("RECOMP_LANGUAGE", ""));
         if (cur < 0) cur = 0;
-        int sel = combo(ctx, "Language", items, 5, cur);
+        int sel = combo(ctx, "Language", items, 6, cur);
         if (sel != cur) { if (sel) put("RECOMP_LANGUAGE", vals[sel], "game"); else off("RECOMP_LANGUAGE"); }
-        desc(ctx, w, "The game's text and menus. The PAL (European) release has all five; "
-                     "the NTSC release is in English.", C_DIM);
+        desc(ctx, w, "The game's text and menus. PAL (Europe and its Sega GT 2002 + JSRF disc): English, French, "
+                     "German, Spanish, Italian. The US and Asian Sega GT 2002 + JSRF discs: English, Japanese. "
+                     "The other releases use their own language.", C_DIM);
     }
 }
 
