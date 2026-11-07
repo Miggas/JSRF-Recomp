@@ -337,7 +337,9 @@ const char *xbe_release(void)
     const char *t = title_tag(id, rg, ver);
     if (!t) return "a release the project does not know";
     return !strcmp(t, "usa") ? "NTSC (North America)" : !strcmp(t, "jpn") ? "NTSC-J (Japan)"
-         : !strcmp(t, "usa-combo") ? "NTSC (North America), Sega GT 2002 + JSRF disc" : "PAL (Europe)";
+         : !strcmp(t, "usa-combo") ? "NTSC (North America), Sega GT 2002 + JSRF disc"
+         /* v2d: the PAL combo disc's SegaJSRF.xbe is the PAL release's game, header aside */
+         : !strcmp(game_xbe_name(), "SegaJSRF.xbe") ? "PAL (Europe), Sega GT 2002 + JSRF disc" : "PAL (Europe)";
 }
 
 /* which release the generated code is for (generate_code.py writes
