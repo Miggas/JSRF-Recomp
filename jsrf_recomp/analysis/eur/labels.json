@@ -1789,53 +1789,193 @@
     "name": "sub_0001FD80",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0001FEB0",
     "name": "sub_0001FEB0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0001FF00",
     "name": "sub_0001FF00",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0001FF60",
     "name": "sub_0001FF60",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0001FFC0",
     "name": "sub_0001FFC0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0001FFFF",
-    "name": "sub_0001FFFF",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.86
+    "confidence": 0.95
   },
   {
     "address": "0x00020002",
     "name": "sub_00020002",
     "type": "function",
     "section": ".text",
-    "confidence": 0.86
+    "confidence": 0.88
   },
   {
     "address": "0x00020004",
     "name": "sub_00020004",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.95
+  },
+  {
+    "address": "0x00020020",
+    "name": "sub_00020020",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.95
+  },
+  {
+    "address": "0x00020023",
+    "name": "sub_00020023",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x00020024",
+    "name": "sub_00020024",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x00020025",
+    "name": "sub_00020025",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.95
+  },
+  {
+    "address": "0x00020026",
+    "name": "sub_00020026",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x00020028",
+    "name": "sub_00020028",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.95
+  },
+  {
+    "address": "0x0002002A",
+    "name": "sub_0002002A",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x0002003D",
+    "name": "sub_0002003D",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x0002003F",
+    "name": "sub_0002003F",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.95
+  },
+  {
+    "address": "0x0002005B",
+    "name": "sub_0002005B",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x0002005E",
+    "name": "sub_0002005E",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x00020060",
+    "name": "sub_00020060",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.95
+  },
+  {
+    "address": "0x0002007D",
+    "name": "sub_0002007D",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200A1",
+    "name": "sub_000200A1",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200A5",
+    "name": "sub_000200A5",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200A7",
+    "name": "sub_000200A7",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200AA",
+    "name": "sub_000200AA",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200AF",
+    "name": "sub_000200AF",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200B2",
+    "name": "sub_000200B2",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200B7",
+    "name": "sub_000200B7",
+    "type": "function",
+    "section": ".text",
+    "confidence": 0.88
+  },
+  {
+    "address": "0x000200BA",
+    "name": "sub_000200BA",
     "type": "function",
     "section": ".text",
     "confidence": 0.88
@@ -1922,7 +2062,7 @@
     "name": "sub_00020190",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000201F0",
@@ -1936,18 +2076,18 @@
     "name": "sub_000202D0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020360",
     "name": "sub_00020360",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
-    "address": "0x00020438",
-    "name": "sub_00020438",
+    "address": "0x000203D0",
+    "name": "sub_000203D0",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -1964,49 +2104,42 @@
     "name": "sub_00020450",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020500",
     "name": "sub_00020500",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000205A0",
     "name": "sub_000205A0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000206A0",
     "name": "sub_000206A0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020730",
     "name": "sub_00020730",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020790",
     "name": "sub_00020790",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x00020806",
-    "name": "sub_00020806",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.86
+    "confidence": 0.95
   },
   {
     "address": "0x00020912",
@@ -2027,35 +2160,35 @@
     "name": "sub_000209E0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020A40",
     "name": "sub_00020A40",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020AC0",
     "name": "sub_00020AC0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020C30",
     "name": "sub_00020C30",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00020DA0",
     "name": "sub_00020DA0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00021002",
@@ -2069,28 +2202,28 @@
     "name": "sub_00021040",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00021140",
     "name": "sub_00021140",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000211B0",
     "name": "sub_000211B0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00021230",
     "name": "sub_00021230",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00021350",
@@ -2230,7 +2363,7 @@
     "name": "sub_000236F0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000237D0",
@@ -2930,7 +3063,7 @@
     "name": "sub_00028010",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000281B0",
@@ -3311,8 +3444,8 @@
     "confidence": 0.9
   },
   {
-    "address": "0x0002B6B0",
-    "name": "sub_0002B6B0",
+    "address": "0x0002B300",
+    "name": "sub_0002B300",
     "type": "function",
     "section": ".text",
     "confidence": 0.95
@@ -3329,7 +3462,7 @@
     "name": "sub_0002B8E0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0002C5A0",
@@ -3406,7 +3539,7 @@
     "name": "sub_0002C950",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0002D280",
@@ -3665,7 +3798,7 @@
     "name": "sub_0002F320",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0002FAB0",
@@ -4029,7 +4162,7 @@
     "name": "sub_00032CA0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00032E20",
@@ -4043,7 +4176,7 @@
     "name": "sub_00033300",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00033810",
@@ -4225,7 +4358,7 @@
     "name": "sub_00034F20",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000359A0",
@@ -4512,7 +4645,7 @@
     "name": "sub_00037C20",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00038000",
@@ -4533,7 +4666,7 @@
     "name": "sub_00038B30",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00038C00",
@@ -4554,7 +4687,7 @@
     "name": "sub_00038FE0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0003922A",
@@ -4568,28 +4701,21 @@
     "name": "sub_00039260",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000392A0",
     "name": "sub_000392A0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000392E0",
     "name": "sub_000392E0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
-  },
-  {
-    "address": "0x0003950F",
-    "name": "sub_0003950F",
-    "type": "function",
-    "section": ".text",
-    "confidence": 0.85
+    "confidence": 0.95
   },
   {
     "address": "0x00039520",
@@ -7242,7 +7368,7 @@
     "name": "sub_0004B870",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0004B8D0",
@@ -7270,7 +7396,7 @@
     "name": "sub_0004B9C0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0004BA30",
@@ -7298,7 +7424,7 @@
     "name": "sub_0004BB20",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0004BB80",
@@ -12394,7 +12520,7 @@
     "name": "sub_0007C920",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0007C980",
@@ -12422,7 +12548,7 @@
     "name": "sub_0007CA10",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0007CAF0",
@@ -14858,7 +14984,7 @@
     "name": "sub_00093AE0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00093B00",
@@ -15964,7 +16090,7 @@
     "name": "sub_0009BBA0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0009BBB0",
@@ -55927,42 +56053,42 @@
     "name": "sub_0018B950",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0018B9C0",
     "name": "sub_0018B9C0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0018B9E0",
     "name": "sub_0018B9E0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0018B9F0",
     "name": "sub_0018B9F0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0018BA00",
     "name": "sub_0018BA00",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0018BA20",
     "name": "sub_0018BA20",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0018BA40",
@@ -55976,7 +56102,7 @@
     "name": "sub_0018BA60",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0018BA70",

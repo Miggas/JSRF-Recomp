@@ -2600,7 +2600,7 @@
     "heuristic_notes": "ecx-read-before-write + vtable category"
   },
   {
-    "address": "0x0001FFFF",
+    "address": "0x00020002",
     "calling_convention": "cdecl",
     "estimated_params": 0,
     "return_hint": "int_or_void",
@@ -2608,16 +2608,6 @@
     "stack_frame_size": 0,
     "heuristic_confidence": 0.5,
     "heuristic_notes": "low-confidence default"
-  },
-  {
-    "address": "0x00020002",
-    "calling_convention": "cdecl",
-    "estimated_params": 1,
-    "return_hint": "int_or_void",
-    "frame_type": "fpo_leaf",
-    "stack_frame_size": 0,
-    "heuristic_confidence": 0.65,
-    "heuristic_notes": "ret cleaned 4 bytes"
   },
   {
     "address": "0x00020004",
@@ -2628,6 +2618,216 @@
     "stack_frame_size": 0,
     "heuristic_confidence": 0.65,
     "heuristic_notes": "ret cleaned 4 bytes"
+  },
+  {
+    "address": "0x00020020",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x00020023",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x00020024",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x00020025",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x00020026",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x00020028",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x0002002A",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x0002003D",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x0002003F",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x0002005B",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x0002005E",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x00020060",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x0002007D",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200A1",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200A5",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200A7",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200AA",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200AF",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200B2",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200B7",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
+  },
+  {
+    "address": "0x000200BA",
+    "calling_convention": "cdecl",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "fpo_leaf",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
   },
   {
     "address": "0x000200D5",
@@ -2780,14 +2980,14 @@
     "heuristic_notes": "ecx-read-before-write + vtable category; ret cleaned 16 bytes"
   },
   {
-    "address": "0x00020438",
-    "calling_convention": "cdecl",
-    "estimated_params": 0,
+    "address": "0x000203D0",
+    "calling_convention": "thiscall",
+    "estimated_params": 4,
     "return_hint": "int_or_void",
     "frame_type": "fpo_leaf",
     "stack_frame_size": 0,
-    "heuristic_confidence": 0.5,
-    "heuristic_notes": "low-confidence default"
+    "heuristic_confidence": 0.9,
+    "heuristic_notes": "ecx-read-before-write + vtable category; ret cleaned 16 bytes"
   },
   {
     "address": "0x0002043D",
@@ -2852,22 +3052,12 @@
   {
     "address": "0x00020790",
     "calling_convention": "thiscall",
-    "estimated_params": 0,
-    "return_hint": "int_or_void",
-    "frame_type": "fpo_leaf",
-    "stack_frame_size": 0,
-    "heuristic_confidence": 0.75,
-    "heuristic_notes": "ecx-read-before-write + vtable category"
-  },
-  {
-    "address": "0x00020806",
-    "calling_convention": "cdecl",
     "estimated_params": 4,
     "return_hint": "int_or_void",
     "frame_type": "fpo_leaf",
     "stack_frame_size": 0,
-    "heuristic_confidence": 0.65,
-    "heuristic_notes": "ret cleaned 16 bytes"
+    "heuristic_confidence": 0.9,
+    "heuristic_notes": "ecx-read-before-write + vtable category; ret cleaned 16 bytes"
   },
   {
     "address": "0x00020912",
@@ -4730,7 +4920,17 @@
     "heuristic_notes": "low-confidence default"
   },
   {
-    "address": "0x0002B6B0",
+    "address": "0x0002B300",
+    "calling_convention": "thiscall",
+    "estimated_params": 0,
+    "return_hint": "int_or_void",
+    "frame_type": "standard_frame",
+    "stack_frame_size": 0,
+    "heuristic_confidence": 0.75,
+    "heuristic_notes": "ecx-read-before-write + vtable category"
+  },
+  {
+    "address": "0x0002B8C6",
     "calling_convention": "cdecl",
     "estimated_params": 0,
     "return_hint": "int_or_void",
@@ -4738,16 +4938,6 @@
     "stack_frame_size": 0,
     "heuristic_confidence": 0.5,
     "heuristic_notes": "low-confidence default"
-  },
-  {
-    "address": "0x0002B8C6",
-    "calling_convention": "cdecl",
-    "estimated_params": 1,
-    "return_hint": "int_or_void",
-    "frame_type": "fpo_leaf",
-    "stack_frame_size": 0,
-    "heuristic_confidence": 0.65,
-    "heuristic_notes": "ret cleaned 4 bytes"
   },
   {
     "address": "0x0002B8E0",
@@ -6512,12 +6702,12 @@
   {
     "address": "0x0003922A",
     "calling_convention": "cdecl",
-    "estimated_params": 1,
+    "estimated_params": 0,
     "return_hint": "int_or_void",
     "frame_type": "fpo_leaf",
     "stack_frame_size": 0,
-    "heuristic_confidence": 0.65,
-    "heuristic_notes": "ret cleaned 4 bytes"
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
   },
   {
     "address": "0x00039260",
@@ -6548,16 +6738,6 @@
     "stack_frame_size": 0,
     "heuristic_confidence": 0.9,
     "heuristic_notes": "ecx-read-before-write + vtable category; ret cleaned 4 bytes"
-  },
-  {
-    "address": "0x0003950F",
-    "calling_convention": "cdecl",
-    "estimated_params": 1,
-    "return_hint": "int_or_void",
-    "frame_type": "fpo_leaf",
-    "stack_frame_size": 0,
-    "heuristic_confidence": 0.65,
-    "heuristic_notes": "ret cleaned 4 bytes"
   },
   {
     "address": "0x00039520",

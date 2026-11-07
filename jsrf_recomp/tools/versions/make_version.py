@@ -131,6 +131,36 @@ def main():
             e = move(int(x, 16))
             if e:
                 moved.add(e)
+    # functions our analysis has whose code changed (so the matcher could
+    # not place them), found through the data that points to them: the same
+    # table slot in the other release (v270c: 0x2AD60 -> 0x2B300, called
+    # through a pointer, never found, and the first level's loading hung)
+    us_starts_all = {int(f["start"], 16) for f in json.load(open(os.path.join(ANALYSIS, "functions_named.json")))}
+    ot_text = m.ot.section(".text")
+    by_ptr = 0
+    for sec in (".rdata", ".data"):
+        su = m.us.section(sec)
+        if not su:
+            continue
+        for p in range(su[1], su[1] + min(su[2], su[4]) - 3, 4):
+            v = struct.unpack_from("<I", m.us.mem, p)[0]
+            if v not in us_starts_all or v in m.map:
+                continue
+            ep = m.data(p)
+            if ep is None:
+                continue
+            ev = struct.unpack_from("<I", m.ot.mem, ep)[0]
+            if not (ot_text[1] <= ev < ot_text[1] + ot_text[2]) or ev in moved:
+                continue
+            i = bisect.bisect_right(m.keys, v) - 1
+            d = (m.map[m.keys[i]] - m.keys[i]) if i >= 0 else 0
+            if ev == v and d != 0:
+                continue        # the same number, not a moved pointer
+            if abs((ev - v) - d) > 0x400:
+                continue
+            moved.add(ev)
+            by_ptr += 1
+    print("  %d more found through the data pointing to them" % by_ptr)
     print("  seeds: %d moved, %d not found%s" % (len(moved), len(lost),
           (" (" + " ".join("%X" % x for x in lost) + ")") if lost else ""))
 
@@ -208,7 +238,26 @@ def main():
         got2 = {int(f["start"], 16) for f in json.load(open(os.path.join(xr, "tools/disasm/output/functions.json")))}
         us_end = {m.map[int(f["start"], 16)]: int(f["end"], 16) - int(f["start"], 16)
                   for f in us_named if int(f["start"], 16) in m.map}
-        extra = sorted(x for x in free if x not in got2)
+        # and ours inside another function there that its code jumps or
+        # calls to (0x41218: a tail jump into 0x41212; the US toolkit made it
+        # an alias of its own, here it did not, and a seed would cut 0x41212)
+        mem = m.ot.mem
+        tlo, thi = ot_text[1], ot_text[1] + ot_text[2]
+        want = set(x for x in miss if x not in free)
+        hit = set()
+        for q in range(tlo, thi - 5):
+            b = mem[q]
+            if b in (0xE8, 0xE9):
+                t_ = q + 5 + struct.unpack_from("<i", mem, q + 1)[0]
+            elif b == 0x0F and 0x80 <= mem[q + 1] <= 0x8F:
+                t_ = q + 6 + struct.unpack_from("<i", mem, q + 2)[0]
+            elif b == 0xEB or 0x70 <= b <= 0x7F:
+                t_ = q + 2 + struct.unpack_from("<b", mem, q + 1)[0]
+            else:
+                continue
+            if t_ in want and holder(t_) != holder(q):
+                hit.add(t_)
+        extra = sorted(set(x for x in free if x not in got2) | hit)
         json.dump([["0x%08X" % x, "0x%08X" % (x + us_end[x])] for x in extra],
                   open(os.path.join(out, "extra.json"), "w"), indent=0)
         if extra:
