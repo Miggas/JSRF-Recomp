@@ -614,6 +614,17 @@ static void panel_gameplay(struct nk_context *ctx, float w)
     bool nv = check(ctx, "Skip intros", on);
     if (nv != on) { if (nv) put("RECOMP_SKIP_INTRO", "1", "game"); else off("RECOMP_SKIP_INTRO"); }
     desc(ctx, w, "Skips the logos at start.", C_DIM);
+    /* v2a: the game's language (the game's v271) */
+    {
+        static const char *const items[] = { "English", "French", "German", "Spanish", "Italian" };
+        static const char *const vals[] = { "", "french", "german", "spanish", "italian" };
+        int cur = find(vals, 5, get_or("RECOMP_LANGUAGE", ""));
+        if (cur < 0) cur = 0;
+        int sel = combo(ctx, "Language", items, 5, cur);
+        if (sel != cur) { if (sel) put("RECOMP_LANGUAGE", vals[sel], "game"); else off("RECOMP_LANGUAGE"); }
+        desc(ctx, w, "The game's text and menus. The PAL (European) release has all five; "
+                     "the NTSC release is in English.", C_DIM);
+    }
 }
 
 static void panel_video(struct nk_context *ctx, float w)
