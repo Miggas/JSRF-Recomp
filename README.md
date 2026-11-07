@@ -77,17 +77,14 @@ allowed media) work too: the build checks the game's code, not the whole file.
 
 1. **Get the launcher** from [Releases](https://github.com/Miggas/JSRF-Recomp/releases)
    (`jsrf_launcher-windows.zip` or `jsrf_launcher-linux.tar.gz`) and unpack it
-   into an **empty folder** with a short path, like `C:\JSRF\` or
-   `~/Games/JSRF`. Avoid synced folders (OneDrive, Dropbox).
+   into an **empty folder** of your choosing. Avoid synced folders (OneDrive, Dropbox).
    On Linux, mark `jsrf_launcher` as executable (right-click →
    **Properties → Permissions**).
-2. **Start it.** It makes a `jsrf` folder next to itself.
-3. **Copy all of the game's files** into `jsrf`: `default.xbe` (and
-   `SegaJSRF.xbe` on a combo disc) and every folder next to it. Files somewhere
+2. **Copy the game's folder** into the same folder with the launcher and rename it to `jsrf`. Files somewhere
    else? **Play → Choose folder**.
-4. **Play → Build.** The first time it downloads the tools and the project,
+3. **Play → Build.** The first time it downloads the tools and the project,
    translates the game and compiles it: 10–20 minutes, with a progress bar.
-5. **PLAY.** You can also start `jsrf_recomp` (`jsrf_recomp.exe` on Windows) in
+4. **PLAY.** You can also start `jsrf_recomp` (`jsrf_recomp.exe` on Windows) in
    the game folder directly.
 
 **F11** or **Alt+Enter** switches between window and full screen.
@@ -161,9 +158,9 @@ controller. The keyboard works as controller 1:
 | `Backspace` | BACK |
 | `Shift` / `Ctrl` | Click the left / right stick (L3 / R3) |
 
-- **Quit:** click both sticks (`Shift` + `Ctrl`), pick **YES** and press **A**.
+- **Quit:** click both sticks **R3+L3** (`Shift` + `Ctrl`), pick **YES** and press **A**.
   Closing the window or `Alt+F4` works too.
-- **Skip a cutscene:** hold **START** (`Enter`) for about 1.3 seconds.
+- **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
 
 ---
 
@@ -183,9 +180,9 @@ override the file.
 | Setting | What it does |
 |---|---|
 | `RECOMP_QUIET=1` | Fewer log messages (faster). |
-| `RECOMP_SKIP_INTRO=1` | Skip the intro logos. *By Piaka.* |
-| `RECOMP_HOLD_SKIP=0` | Turns off skipping cutscenes by holding START. *Idea from mstan's JSRFRecomp.* |
-| `RECOMP_LANGUAGE=french` | The game's language: `english` (default), `french`, `german`, `spanish`, `italian`, `japanese`. Which ones each release has: see [section 1](#1-what-you-need). *Idea by Miggas.* |
+| `RECOMP_SKIP_INTRO=1` | Skip the intro logos. |
+| `RECOMP_HOLD_SKIP=0` | Turns off skipping cutscenes by holding START. |
+| `RECOMP_LANGUAGE=french` | The game's language: `english` (default), `french`, `german`, `spanish`, `italian`, `japanese`. Which ones each release has: see [section 1](#1-what-you-need). |
 | `RECOMP_SAVE_STRICT=1` | Refuse saves from other sources (a real Xbox, emulators, save editors), as the Xbox does. |
 
 **`[display]`**
@@ -196,8 +193,8 @@ override the file.
 | `RECOMP_GL_ANISO=16` | Anisotropic filtering: `2`, `4`, `8` or `16`. |
 | `RECOMP_GL_AA=smaa_high` | Anti-aliasing: `fxaa`, `smaa_low`, `smaa_medium`, `smaa_high` or `smaa_ultra`. |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
-| `RECOMP_GL_PRESENT=dxgi` | Borderless window (Windows only). May lower performance. *Tip from Piaka.* |
-| `RECOMP_WIDESCREEN=auto` | Widescreen: `1` = 16:9, `auto` = your monitor's shape, or `RECOMP_ASPECT=21:9` for others. *HUD placement from Piaka's widescreen work.* |
+| `RECOMP_GL_PRESENT=dxgi` | Borderless window (Windows only). May lower performance. |
+| `RECOMP_WIDESCREEN=auto` | Widescreen: `1` = 16:9, `auto` = your monitor's shape, or `RECOMP_ASPECT=21:9` for others. |
 | `RECOMP_GL_VSYNC=1` | VSync. |
 | `RECOMP_GL_PREBUILD=0` | Don't build the shaders at start; build them during play instead. |
 | `RECOMP_CURSOR_HIDE=0` | Keep the mouse pointer visible over the game. |
@@ -208,7 +205,7 @@ override the file.
 |---|---|
 | `RECOMP_USB_PADS=1` | Number of players (1 to 4). |
 | `RECOMP_RUMBLE=100` | Rumble strength in percent (`0` = off). |
-| `RECOMP_CAM_ORBIT=0` | The original camera. By default the right stick turns the camera around the skater, and it swings back behind you; the L trigger puts it behind at once. *How it works: from JuMatt's JetSetRadioFuture-Unleashed.* |
+| `RECOMP_CAM_ORBIT=0` | The original camera. By default the right stick turns the camera around the skater, and it swings back behind you; the L trigger puts it behind at once. |
 | `RECOMP_CAM_INVERT_X=1` / `RECOMP_CAM_INVERT_Y=1` | Invert the camera's left / right or up / down. |
 | `RECOMP_CAM_SENS=1.0` | Camera speed. |
 | `RECOMP_QUIT_COMBO=0` | Turn the quit window (both sticks) off. |
@@ -230,11 +227,11 @@ override the file.
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_DRAW_AREAS=…` | Pop-in fix. `hops` (default) fixes almost all of it; `hops3`, `hops4`… reach further; `game` = as on the Xbox; `all` = draw everything. *Idea by Miggas.* |
+| `RECOMP_DRAW_AREAS=…` | Pop-in fix. `hops` (default) fixes almost all of it; `hops3`, `hops4`… reach further; `game` = as on the Xbox; `all` = draw everything. |
 | `RECOMP_DRAW_AREAS_SKIP=EE7A:96,105` | Map pieces never to draw (`MapID:area,area;MapID:area`; a map ID alone = no fix on that map). |
 | `RECOMP_DRAW_AREAS_ADD=` | Map pieces always to draw. Same format. |
 | `RECOMP_AREA_PICKER=1` | Finds the numbers for the two lists above (`1` = skip, `2` = add). F6/F7 select an area, F8 toggles it, F10 clears all; the list goes to the log. |
-| `RECOMP_OBJ_DRAW_DIST=2` | Draw distance of street objects (tanks, police, vehicles). `1` = original. *Idea by Miggas.* |
+| `RECOMP_OBJ_DRAW_DIST=2` | Draw distance of street objects (tanks, police, vehicles). `1` = original. |
 
 **`[tools]`**
 
@@ -331,7 +328,8 @@ co-author.
 
 - [sp00nznet](https://github.com/sp00nznet/xboxrecomp) for the `xboxrecomp` toolkit this port is
   built on.
-- Piaka for the borderless window tip.
+- Piaka for the borderless window and skip logos tip.
+- Hold start to skip cutscenes idea from mstan's JSRFRecomp.
 - The quit window and the "Building Shaders" message use the
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
