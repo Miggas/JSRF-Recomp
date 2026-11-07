@@ -285,6 +285,7 @@ static bool xbe_facts(uint32_t *title, char sha[65])
                 last_title = d[c + 8] | d[c + 9] << 8 | d[c + 10] << 16 | (uint32_t)d[c + 11] << 24;
         }
         sha256_hex(d, len, last_sha);
+        for (char *c = last_sha; *c; c++) *c = (char)tolower((unsigned char)*c);   /* v1z: as release.txt has it */
         free(d);
         snprintf(last, sizeof last, "%s", x);
         last_size = (long long)st.st_size;
