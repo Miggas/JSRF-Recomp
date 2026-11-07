@@ -623,8 +623,7 @@ static void panel_gameplay(struct nk_context *ctx, float w)
         int sel = combo(ctx, "Language", items, 6, cur);
         if (sel != cur) { if (sel) put("RECOMP_LANGUAGE", vals[sel], "game"); else off("RECOMP_LANGUAGE"); }
         desc(ctx, w, "The game's text and menus. PAL (Europe and its Sega GT 2002 + JSRF disc): English, French, "
-                     "German, Spanish, Italian. The US and Asian Sega GT 2002 + JSRF discs: English, Japanese. "
-                     "The other releases use their own language.", C_DIM);
+                     "German, Spanish, Italian. Every other release: English or Japanese.", C_DIM);
     }
 }
 
