@@ -8,7 +8,7 @@ Runs on Windows 10/11, Linux and the Steam Deck.
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-native-FCC624?logo=linux&logoColor=black)
 ![Steam Deck](https://img.shields.io/badge/Steam%20Deck-native-1A9FFF?logo=steamdeck&logoColor=white)
-![Version](https://img.shields.io/badge/game-NTSC%20(US)%20%2B%20PAL%20(EU)%20%2B%20NTSC--J%20(JP,%20testing)-orange)
+![Version](https://img.shields.io/badge/game-every%20release%3A%20US%20%7C%20EU%20%7C%20JP%20%7C%20Sega%20GT%202002%20combo%20discs-orange)
 ![Bring your own game](https://img.shields.io/badge/game%20files-not%20included-lightgrey)
 
 </div>
@@ -70,7 +70,7 @@ Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
 | | Requirement |
 |---|---|
 | 💻 | **A Windows 10/11 PC, a Linux PC or a Steam Deck.** The game is built on the same system it runs on. |
-| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — the NTSC (North American), PAL (European) or NTSC-J (Japanese) retail release**, as its files (`default.xbe` plus the folders next to it) or as a disc image (`.iso`). |
+| 💿 | **Your copy of Jet Set Radio Future for the original Xbox — any retail release**, as its files (`default.xbe` plus the folders next to it) or as a disc image (`.iso`). See the table below. |
 | 💾 | **About 3 GB of free disk space** (the build tools, the build, and the game's cache). |
 | 🌐 | **An internet connection** the first time: the launcher downloads its tools and the project. |
 | 🎮 | **A graphics card with OpenGL 3.3** or newer — practically any GPU from the last ten years. |
@@ -78,17 +78,26 @@ Debug and advanced settings, not in `jsrf.ini`: [DEBUG.md](DEBUG.md).
 Nothing else has to be installed: the launcher brings its own tools (Python,
 the Zig compiler, CMake).
 
-> [!WARNING]
-> **Releases:** NTSC (North America) and PAL (Europe) work. NTSC-J (Japan)
-> and the Sega GT 2002 + JSRF discs (US, European and Asian) are new and
-> still being tested. The European disc's game is the PAL release's, and the
-> Asian disc's is the US disc's; only their headers differ. On a combo disc the
-> game is `SegaJSRF.xbe` (its `default.xbe` is the menu): copy the whole disc,
-> and the build and the exe use `SegaJSRF.xbe`. The build checks the game's code and data inside your
-> `default.xbe`, finds which release it is, and stops if it is none of them.
-> It does **not** compare the whole file: many dumps have a patched header
-> (region, allowed media), which changes the file's SHA-256 but not the game,
-> and those work fine.
+Every retail release works, the standalone discs and the Sega GT 2002 + JSRF
+combo discs:
+
+| Release | Disc | Game file | Languages |
+|---|---|---|---|
+| North America (NTSC) | standalone | `default.xbe` | English, Japanese |
+| Europe (PAL) | standalone | `default.xbe` | English, French, German, Spanish, Italian |
+| Japan (NTSC-J) | standalone | `default.xbe` | Japanese, English |
+| North America | Sega GT 2002 + JSRF | `SegaJSRF.xbe` | English, Japanese |
+| Europe | Sega GT 2002 + JSRF | `SegaJSRF.xbe` | English, French, German, Spanish, Italian |
+| Asia | Sega GT 2002 + JSRF | `SegaJSRF.xbe` | English, Japanese |
+
+On a combo disc, `default.xbe` is only the menu that picks the game: copy the
+whole disc, and the launcher and the game use `SegaJSRF.xbe`.
+
+> [!NOTE]
+> The build checks the game's code and data inside your game file, finds which
+> release it is, and stops if it is none of them. It does **not** compare the
+> whole file: many dumps have a patched header (region, allowed media), which
+> changes the file's SHA-256 but not the game, and those work fine.
 
 ---
 
@@ -114,7 +123,8 @@ the Zig compiler, CMake).
 ![Easy](https://img.shields.io/badge/difficulty-easy-brightgreen) &nbsp; ⏱️ a few minutes
 
 Copy **all** of the game's files into the `jsrf` folder — `default.xbe` and
-every folder next to it — so that `jsrf\default.xbe` exists.
+every folder next to it — so that `jsrf\default.xbe` exists (and
+`jsrf\SegaJSRF.xbe` for a combo disc).
 
 Your game files are somewhere else? In **Play**, click **Choose folder** and
 pick that folder, or drop `default.xbe` onto the launcher's window.
@@ -147,7 +157,7 @@ On Linux: `cd source/xboxrecomp`, then
 | **2** | **Build → Generate code** (first time, and when an update needs it) | Checks your `default.xbe` and translates the game's program into C. | a few minutes |
 | **3** | **Build → Build** | Compiles it into `jsrf_recomp` (`.exe` on Windows) in your game folder. | 5–15 min the first time |
 
-**Play → Build** does steps 2 and 3 in one go.
+**Play → Build** does steps 2 and 3 in one go, with a progress bar.
 
 The **Play** tab shows a ✓ or ✗ for each part. Click a ✗ to go where it is
 fixed. The **Build** tab has **Generate code** and **Build** separately; each
@@ -173,15 +183,17 @@ another computer of the same system as it is.
 | Tab | What it does |
 |---|---|
 | **Play** | The game folder, what is ready (✓ / ✗), **PLAY**. |
-| **Settings** | `jsrf.ini` in tabs: Gameplay, Video, Input, Audio, Debug, and **All settings** for every line. |
+| **Settings** | `jsrf.ini` in tabs: Gameplay, Video, Input, Audio, Debug (and **All settings** for every line when the launcher's Debug is on). |
 | **Build** | **Generate code** and **Build**, each skipping what is up to date. |
 | **Update** | Gets the newest version of the project. Your game files, `jsrf.ini` and saves are kept. Then **Build**. |
+| **Launcher** | Close the launcher when the game starts, the project branch (`main` / `test`), Debug. |
 
-`launcher.ini`, next to the launcher, holds its own settings:
+`launcher.ini`, next to the launcher, holds the **Launcher** tab's settings:
 
 | Setting | What it does |
 |---|---|
 | `BRANCH=test` | Update downloads the `test` branch (newest, less tested). Not set: `main`. |
+| `CLOSE_ON_PLAY=0` | Keeps the launcher open when the game starts. |
 | `DEBUG_MENU=1` | Shows the **Debug** tab: Force Generate/Build, the checks (generated code, `default.xbe`, the hard-disk cache), Play stopping after 30 s with a dump, Sample a hang, Trace one frame, and the whole log. |
 
 Everything the launcher does is also written to `launcher_log.txt` next to it.
@@ -493,7 +505,7 @@ Your game files, `jsrf.ini` and saves are kept.
 | ❌ You see | ✅ What to do |
 |---|---|
 | `default.xbe not found` | The game folder must hold `default.xbe` directly (not in a subfolder). **Play → Choose folder** to pick the right one. |
-| `this default.xbe's code is not a release the project knows` | Your copy is not a known release: NTSC (North America), PAL (Europe), NTSC-J (Japan) and the three Sega GT 2002 + JSRF discs work. It may be a modified or damaged copy. |
+| `this default.xbe's code is not a release the project knows` | Your copy is not a known release (see [section 1](#1-what-you-need)). It may be a modified or damaged copy. |
 | `Could not reach GitHub` / a download fails | Check the internet connection and try again. |
 | A build fails | **Open log file** (shown under the buttons after a failure), find the first line with `error`, and report it ([section 13](#13-reporting-a-problem)). |
 | `Could not copy the game … is the game still running?` | Close the game and **Build** again. |
