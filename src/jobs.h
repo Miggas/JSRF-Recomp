@@ -28,6 +28,8 @@ bool debug_menu_pref(void);               /* DEBUG_MENU=1: the Debug tab */
 
 /* what is there */
 bool have_xbe(void);
+const char *game_xbe_name(void);   /* v2c: "SegaJSRF.xbe" on the combo disc, else "default.xbe" */
+void game_xbe(char *out);
 const char *xbe_release(void);   /* v1x: e.g. "PAL (Europe)", NULL: no default.xbe */
 bool have_game_exe(void);
 bool have_tools(void);

@@ -254,29 +254,46 @@ bool have_tools(void)
 void game_exe(char *out) { pjoin(out, g_paths.game, "jsrf_recomp" EXE); }
 void game_ini(char *out) { pjoin(out, g_paths.game, "jsrf.ini"); }
 
+/* v2c: the game's XBE: on a Sega GT 2002 + JSRF disc it is SegaJSRF.xbe
+ * (that disc's default.xbe is the menu that picks one of the two games) */
+const char *game_xbe_name(void)
+{
+    char x[LPATH];
+    pjoin(x, g_paths.game, "SegaJSRF.xbe");
+    return is_file(x) ? "SegaJSRF.xbe" : "default.xbe";
+}
+
+void game_xbe(char *out) { pjoin(out, g_paths.game, game_xbe_name()); }
+
 bool have_xbe(void)
 {
     char x[LPATH];
-    pjoin(x, g_paths.game, "default.xbe");
+    game_xbe(x);
     return is_file(x);
 }
 
 /* v1x: default.xbe's title ID and SHA-256, read again only when its size
  * or time changes */
+static bool xbe_facts_v(uint32_t *title, char sha[65], uint32_t *region, uint32_t *version);
 static bool xbe_facts(uint32_t *title, char sha[65], uint32_t *region)
+{
+    return xbe_facts_v(title, sha, region, NULL);
+}
+
+static bool xbe_facts_v(uint32_t *title, char sha[65], uint32_t *region, uint32_t *version)
 {
     static char last[LPATH], last_sha[65];
     static long long last_size = -1, last_time;
-    static uint32_t last_title, last_region;
+    static uint32_t last_title, last_region, last_version;
     char x[LPATH];
     struct stat st;
-    pjoin(x, g_paths.game, "default.xbe");
+    game_xbe(x);
     if (stat(x, &st) != 0) return false;
     if (strcmp(x, last) || (long long)st.st_size != last_size || (long long)st.st_mtime != last_time) {
         size_t len = 0;
         unsigned char *d = (unsigned char *)read_file(x, &len);
         if (!d) return false;
-        last_title = last_region = 0;
+        last_title = last_region = last_version = 0;
         if (len > 0x200 && !memcmp(d, "XBEH", 4)) {
             uint32_t base = d[0x104] | d[0x105] << 8 | d[0x106] << 16 | (uint32_t)d[0x107] << 24;
             uint32_t cva = d[0x118] | d[0x119] << 8 | d[0x11A] << 16 | (uint32_t)d[0x11B] << 24;
@@ -286,6 +303,9 @@ static bool xbe_facts(uint32_t *title, char sha[65], uint32_t *region)
             /* v2b: the game region (the Japanese release has the US title ID) */
             if (c + 0xA4 <= len)
                 last_region = d[c + 0xA0] | d[c + 0xA1] << 8 | d[c + 0xA2] << 16 | (uint32_t)d[c + 0xA3] << 24;
+            /* v2c: the version (the Sega GT 2002 + JSRF disc's JSRF is 4, the US release's 1) */
+            if (c + 0xB0 <= len)
+                last_version = d[c + 0xAC] | d[c + 0xAD] << 8 | d[c + 0xAE] << 16 | (uint32_t)d[c + 0xAF] << 24;
         }
         sha256_hex(d, len, last_sha);
         for (char *c = last_sha; *c; c++) *c = (char)tolower((unsigned char)*c);   /* v1z: as release.txt has it */
@@ -296,13 +316,14 @@ static bool xbe_facts(uint32_t *title, char sha[65], uint32_t *region)
     }
     if (title) *title = last_title;
     if (region) *region = last_region;
+    if (version) *version = last_version;
     if (sha) memcpy(sha, last_sha, 65);
     return true;
 }
 
-static const char *title_tag(uint32_t id, uint32_t region)
+static const char *title_tag(uint32_t id, uint32_t region, uint32_t version)
 {
-    if (id == 0x5345000Au) return (region & 0x7) == 0x2 ? "jpn" : "usa";
+    if (id == 0x5345000Au) return (region & 0x7) == 0x2 ? "jpn" : version >= 4 ? "usa-combo" : "usa";
     if (id == 0x49470018u) return "eur";
     return NULL;
 }
@@ -311,11 +332,12 @@ static const char *title_tag(uint32_t id, uint32_t region)
  * checks the code itself) */
 const char *xbe_release(void)
 {
-    uint32_t id, rg;
-    if (!xbe_facts(&id, NULL, &rg)) return NULL;
-    const char *t = title_tag(id, rg);
+    uint32_t id, rg, ver;
+    if (!xbe_facts_v(&id, NULL, &rg, &ver)) return NULL;
+    const char *t = title_tag(id, rg, ver);
     if (!t) return "a release the project does not know";
-    return !strcmp(t, "usa") ? "NTSC (North America)" : !strcmp(t, "jpn") ? "NTSC-J (Japan)" : "PAL (Europe)";
+    return !strcmp(t, "usa") ? "NTSC (North America)" : !strcmp(t, "jpn") ? "NTSC-J (Japan)"
+         : !strcmp(t, "usa-combo") ? "NTSC (North America), Sega GT 2002 + JSRF disc" : "PAL (Europe)";
 }
 
 /* which release the generated code is for (generate_code.py writes
@@ -356,19 +378,19 @@ static void gen_release(char *tag, size_t n) { gen_release_full(tag, n, NULL); }
 static bool gen_for_this_xbe(void)
 {
     char tag[32], gsha[65], xsha[65];
-    uint32_t id, rg;
+    uint32_t id, rg, ver;
     gen_release_full(tag, sizeof tag, gsha);
-    if (!xbe_facts(&id, xsha, &rg)) return true;   /* no default.xbe: nothing to say */
+    if (!xbe_facts_v(&id, xsha, &rg, &ver)) return true;   /* no default.xbe: nothing to say */
     bool ok;
     if (gsha[0]) ok = !strcmp(gsha, xsha);
     else {
-        const char *t = title_tag(id, rg);
+        const char *t = title_tag(id, rg, ver);
         ok = !t || !strcmp(t, tag);
     }
     static char said[65];
     if (!ok && strcmp(said, xsha)) {
         snprintf(said, sizeof said, "%s", xsha);
-        logf_("Generated code: made from a different default.xbe (%s): Generate code again.",
+        logf_("Generated code: made from a different %s (%s): Generate code again.", game_xbe_name(),
               xbe_release() ? xbe_release() : "?");
     }
     return ok;
@@ -650,7 +672,7 @@ static unsigned long long gen_inputs(void)
         NULL };
     /* the translator's own work folder (it writes there while running) */
     static const char *const skip[] = { "xboxrecomp/tools/recomp/output", NULL };
-    static const char *const xbe[] = { "default.xbe", NULL };
+    static const char *const xbe[] = { "default.xbe", "SegaJSRF.xbe", NULL };
     unsigned long long h = fingerprint(g_paths.source, src, skip, HASH_SEED);
     return fingerprint(g_paths.game, xbe, NULL, h);
 }
@@ -798,7 +820,7 @@ bool have_gen(void)
 static bool need_source_and_xbe(void)
 {
     if (!g_paths.have_source) { logf_("The project is not downloaded yet: Update -> Download."); return false; }
-    if (!have_xbe()) { logf_("default.xbe not found in %s", g_paths.game); return false; }
+    if (!have_xbe()) { logf_("default.xbe (or SegaJSRF.xbe) not found in %s", g_paths.game); return false; }
     return true;
 }
 
@@ -840,12 +862,13 @@ static bool do_generate(void)
     char jr[LPATH], py[LPATH], xbe[LPATH], gen[LPATH], tool[LPATH];
     pjoin(jr, g_paths.source, "jsrf_recomp");
     py_exe(py);
-    pjoin(xbe, g_paths.game, "default.xbe");
+    game_xbe(xbe);
     gen_dir(gen);
     /* taken before: a file changing while it runs makes it run again next time */
     unsigned long long h = gen_inputs();
     PHASE("Generating code");
-    status("Translating the game's code from default.xbe (a few minutes)...", NULL);
+    status(!strcmp(game_xbe_name(), "SegaJSRF.xbe") ? "Translating the game's code from SegaJSRF.xbe (a few minutes)..."
+                                                    : "Translating the game's code from default.xbe (a few minutes)...", NULL);
     pjoin3(tool, jr, "tools", "generate_code.py");
     const char *argv[] = { py, tool, xbe, NULL };
     if (!runv(jr, argv)) return false;
@@ -1268,7 +1291,7 @@ static bool do_tool(void)
         /* default.xbe is the release the project is made for */
         PHASE("Checking default.xbe");
         pjoin3(tool, jr, "tools", "xbe_info.py");
-        pjoin(arg, g_paths.game, "default.xbe");
+        game_xbe(arg);
         argv[2] = arg;
         break;
     default:
