@@ -761,6 +761,10 @@ static int game_main(void)
         xbox_mmcss_game_thread("main");
     }
     printf("Entry point: 0x%08X\nStarting game...\n", YOUR_GAME_ENTRY_POINT);
+    {
+        extern void jsrf_apply_language(void);   /* v274 (recomp_manual.c) */
+        jsrf_apply_language();
+    }
     XAPILIB_mainCRTStartup();
 
     fprintf(stderr, "[EXIT] game entry point returned (eax=0x%08X)\n", g_eax);

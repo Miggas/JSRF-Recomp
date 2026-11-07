@@ -3919,3 +3919,38 @@ void sub_000C1340(void)
     }
     sub_000C1340_gen();
 }
+
+
+/* ── v274: the game's language on the releases that do not ask the Xbox ──
+ *
+ * Only the PAL release asks the Xbox's language (XC_LANGUAGE, the kernel's
+ * RECOMP_LANGUAGE answer). The others keep the language the game's text
+ * files are picked by (0 Japanese, 1 English, ... -- tex_Jpn.dat /
+ * tex_Eng.dat) in one variable that nothing sets: the US releases' starts at
+ * 1 (English), the Japanese release's at 0. Every release has both sets of
+ * files (Miggas: the Asian Sega GT 2002 + JSRF disc has English and
+ * Japanese). RECOMP_LANGUAGE=japanese or english sets it before the game
+ * starts. The addresses are written as (page << 12) | offset so the
+ * per-release copy of this file (tools/translate_release.py) leaves them be:
+ * each release's own is chosen here. */
+void jsrf_apply_language(void)
+{
+    const char *e = getenv("RECOMP_LANGUAGE");
+    uint32_t a = 0;
+    int v;
+    if (!e || !*e) return;
+    if (!strcmp(e, "japanese") || !strcmp(e, "2")) v = 0;
+    else if (!strcmp(e, "english") || !strcmp(e, "1")) v = 1;
+    else return;              /* the others: only the PAL release has them */
+#if defined(JSRF_RELEASE_EUR)
+    return;                   /* asks the Xbox (the kernel answers RECOMP_LANGUAGE) */
+#elif defined(JSRF_RELEASE_JPN)
+    a = (0x251u << 12) | 0xF58u;
+#elif defined(JSRF_RELEASE_USA_COMBO)
+    a = (0x1FCu << 12) | 0x6E4u;
+#else
+    a = (0x1FCu << 12) | 0x724u;   /* US */
+#endif
+    MEM32(a) = (uint32_t)v;
+    fprintf(stderr, "[LANG] the game's language set to %s (%d) at 0x%08X\n", v ? "English" : "Japanese", v, a);
+}

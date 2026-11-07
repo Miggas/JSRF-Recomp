@@ -1202,6 +1202,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     printf("\nStarting game...\n");
     fflush(stdout);
+    {
+        extern void jsrf_apply_language(void);   /* v274 (recomp_manual.c) */
+        jsrf_apply_language();
+    }
 
     xbe_entry_point();
     g_game_returned = 1;
