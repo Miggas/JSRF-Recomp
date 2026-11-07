@@ -14,7 +14,7 @@ whole log.
 > Most of these are for testing and finding problems. Some slow the game down
 > or write very large logs. If something breaks, remove the line first.
 
-Back to the main guide: [README.md](README.md#9-settings-jsrfini).
+Back to the main guide: [README.md](README.md#6-settings-jsrfini).
 
 ---
 
