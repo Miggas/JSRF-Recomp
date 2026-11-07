@@ -279,7 +279,7 @@ def main():
     # to it (CMakeLists.txt), the launcher checks it against that release's
     # expected code
     with open(os.path.join(GEN, "release.txt"), "w", newline="\n") as f:
-        f.write(tag + "\n")
+        f.write(tag + "\n" + digest.lower() + "\n")   # v270f: and which file (the launcher checks it)
 
     n = len([f for f in os.listdir(GEN) if f.endswith(".c")])
     print("\nDone: %d files in src/recomp/gen. Now build the game (the launcher's Build)." % n)

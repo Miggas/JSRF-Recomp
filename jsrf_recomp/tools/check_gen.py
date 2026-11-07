@@ -13,7 +13,7 @@ gen = os.path.join(here, "src", "recomp", "gen")
 rel = "usa"
 rp = os.path.join(gen, "release.txt")
 if os.path.isfile(rp):
-    rel = open(rp).read().strip() or "usa"
+    rel = (open(rp).read().split() or ["usa"])[0]
 an = os.path.join(here, "analysis") if rel == "usa" else os.path.join(here, "analysis", rel)
 print("release", rel)
 want = {}
