@@ -80,8 +80,8 @@ allowed media) work too: the build checks the game's code, not the whole file.
    into an **empty folder** of your choosing. Avoid synced folders (OneDrive, Dropbox).
    On Linux, mark `jsrf_launcher` as executable (right-click →
    **Properties → Permissions**).
-2. **Copy the game's folder** into the same folder with the launcher and rename it to `jsrf`. Files somewhere
-   else? **Play → Choose folder**.
+2. **Copy the game's folder** into the launcher's folder and rename it to `jsrf`.
+   Files somewhere else? **Play → Choose folder**.
 3. **Play → Build.** The first time it downloads the tools and the project,
    translates the game and compiles it: 10–20 minutes, with a progress bar.
 4. **PLAY.** You can also start `jsrf_recomp` (`jsrf_recomp.exe` on Windows) in
@@ -158,7 +158,7 @@ controller. The keyboard works as controller 1:
 | `Backspace` | BACK |
 | `Shift` / `Ctrl` | Click the left / right stick (L3 / R3) |
 
-- **Quit:** click both sticks **R3+L3** (`Shift` + `Ctrl`), pick **YES** and press **A**.
+- **Quit:** click both sticks, **L3 + R3** (`Shift` + `Ctrl`), pick **YES** and press **A**.
   Closing the window or `Alt+F4` works too.
 - **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
 
@@ -328,8 +328,9 @@ co-author.
 
 - [sp00nznet](https://github.com/sp00nznet/xboxrecomp) for the `xboxrecomp` toolkit this port is
   built on.
-- Piaka for the borderless window and skip logos tip.
-- Hold start to skip cutscenes idea from mstan's JSRFRecomp.
+- Piaka for the borderless window tip, skipping the intro logos, and the HUD
+  placement from his widescreen work.
+- mstan's JSRFRecomp for the idea of holding START to skip cutscenes.
 - The quit window and the "Building Shaders" message use the
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
