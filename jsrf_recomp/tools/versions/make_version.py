@@ -135,7 +135,15 @@ def main():
     # not place them), found through the data that points to them: the same
     # table slot in the other release (v270c: 0x2AD60 -> 0x2B300, called
     # through a pointer, never found, and the first level's loading hung)
-    us_starts_all = {int(f["start"], 16) for f in json.load(open(os.path.join(ANALYSIS, "functions_named.json")))}
+    _un = sorted((int(f["start"], 16), int(f["end"], 16))
+                 for f in json.load(open(os.path.join(ANALYSIS, "functions_named.json"))))
+    # only functions of their own: an entry inside another US function (a
+    # switch's case, a return address) seeded here would cut that function
+    us_starts_all, _top = set(), 0
+    for _s, _e in _un:
+        if _s >= _top:
+            us_starts_all.add(_s)
+        _top = max(_top, _e)
     ot_text = m.ot.section(".text")
     by_ptr = 0
     for sec in (".rdata", ".data"):
@@ -154,8 +162,9 @@ def main():
                 continue
             i = bisect.bisect_right(m.keys, v) - 1
             d = (m.map[m.keys[i]] - m.keys[i]) if i >= 0 else 0
-            if ev == v and d != 0:
-                continue        # the same number, not a moved pointer
+            if ev == v:
+                continue        # the same number: not a moved pointer (v270d: 0x20004..0x200EF,
+                                # a table of numbers, cut the event code into pieces)
             if abs((ev - v) - d) > 0x400:
                 continue
             moved.add(ev)
@@ -216,7 +225,10 @@ def main():
             return starts[i] if i >= 0 and fl[i][1] > va else None
 
         free = []
+        alone = {m.map[g] for g in us_starts_all if g in m.map}
         for x in miss:
+            if x not in alone:
+                continue        # inside another US function: never seeded (it would cut one)
             h = holder(x)
             if h is None:
                 free.append(x)
