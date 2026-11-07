@@ -28,6 +28,7 @@ bool debug_menu_pref(void);               /* DEBUG_MENU=1: the Debug tab */
 
 /* what is there */
 bool have_xbe(void);
+const char *xbe_release(void);   /* v1x: e.g. "PAL (Europe)", NULL: no default.xbe */
 bool have_game_exe(void);
 bool have_tools(void);
 bool have_gen(void);                      /* generated code is there (maybe not current) */

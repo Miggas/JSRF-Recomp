@@ -456,7 +456,12 @@ static void tab_play(struct nk_context *ctx)
     spacer(ctx, 10);
     /* in the order they are needed; a missing one links to where it is fixed */
     bool xbe = have_xbe(), exe = have_game_exe(), tools = have_tools();
-    if (req_line(ctx, "Game files", xbe, "default.xbe found", "default.xbe not found here: choose the game folder"))
+    char xbe_ok[96];
+    {
+        const char *rn = xbe ? xbe_release() : NULL;
+        snprintf(xbe_ok, sizeof xbe_ok, "default.xbe found%s%s", rn ? ": " : "", rn ? rn : "");
+    }
+    if (req_line(ctx, "Game files", xbe, xbe_ok, "default.xbe not found here: choose the game folder"))
         choose_game_folder();
     if (req_line(ctx, "Project source", g_paths.have_source, "downloaded", "not downloaded yet: go to Update"))
         s_tab = TAB_UPDATE;

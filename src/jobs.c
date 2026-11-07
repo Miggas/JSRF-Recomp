@@ -260,6 +260,53 @@ bool have_xbe(void)
     return is_file(x);
 }
 
+/* v1x: which release default.xbe is, by the title ID in its certificate
+ * (shown on the Play tab; generate_code.py checks the code itself) */
+const char *xbe_release(void)
+{
+    static char last[LPATH];
+    static const char *name;
+    char x[LPATH];
+    pjoin(x, g_paths.game, "default.xbe");
+    if (!strcmp(x, last) && name) return name;
+    snprintf(last, sizeof last, "%s", x);
+    name = NULL;
+    size_t len = 0;
+    unsigned char *d = (unsigned char *)read_file(x, &len);
+    if (!d) return NULL;
+    if (len > 0x200 && !memcmp(d, "XBEH", 4)) {
+        uint32_t base = d[0x104] | d[0x105] << 8 | d[0x106] << 16 | (uint32_t)d[0x107] << 24;
+        uint32_t cva = d[0x118] | d[0x119] << 8 | d[0x11A] << 16 | (uint32_t)d[0x11B] << 24;
+        uint32_t c = cva - base;
+        if (c + 12 <= len) {
+            uint32_t id = d[c + 8] | d[c + 9] << 8 | d[c + 10] << 16 | (uint32_t)d[c + 11] << 24;
+            if (id == 0x5345000Au) name = "NTSC (North America)";
+            else if (id == 0x49470018u) name = "PAL (Europe)";
+            else name = "a release the project does not know";
+        }
+    }
+    free(d);
+    return name;
+}
+
+/* which release the generated code is for (generate_code.py writes
+ * src/recomp/gen/release.txt; none: the US one) */
+static void gen_release(char *tag, size_t n)
+{
+    char g[LPATH], f[LPATH];
+    snprintf(tag, n, "usa");
+    pjoin3(g, g_paths.source, "jsrf_recomp", "src");
+    pjoin3(f, g, "recomp", "gen");
+    pjoin(g, f, "release.txt");
+    char *d = read_file(g, NULL);
+    if (!d) return;
+    size_t k = 0;
+    while (d[k] && k + 1 < n && (isalnum((unsigned char)d[k]) || d[k] == '-' || d[k] == '_')) { tag[k] = d[k]; k++; }
+    tag[k] = 0;
+    if (!k) snprintf(tag, n, "usa");
+    free(d);
+}
+
 bool have_game_exe(void)
 {
     char x[LPATH];
@@ -521,13 +568,12 @@ static void gen_dir(char *out)
 static unsigned long long gen_inputs(void)
 {
     static const char *const src[] = {
-        "jsrf_recomp/analysis/functions_named.json",
-        "jsrf_recomp/analysis/labels.json",
-        "jsrf_recomp/analysis/identified_functions.json",
-        "jsrf_recomp/analysis/abi_functions.json",
+        /* v1x: every release's analysis (analysis/<tag>/ for the others) */
+        "jsrf_recomp/analysis",
         "jsrf_recomp/src/recomp_manual.c",
         "jsrf_recomp/tools/generate_code.py",
         "jsrf_recomp/tools/xbe_info.py",
+        "jsrf_recomp/tools/translate_release.py",
         "jsrf_recomp/tools/log_stubs.py",
         "jsrf_recomp/tools/wrap_dsound.py",
         "xboxrecomp/tools/__init__.py",
@@ -548,6 +594,8 @@ static unsigned long long build_inputs(void)
 {
     static const char *const src[] = {
         "jsrf_recomp/src", "jsrf_recomp/CMakeLists.txt", "jsrf_recomp/cmake",
+        /* v1x: another release's build moves our code's addresses */
+        "jsrf_recomp/analysis", "jsrf_recomp/tools/translate_release.py",
         "xboxrecomp/src", "xboxrecomp/include", "xboxrecomp/cmake", "xboxrecomp/CMakeLists.txt",
         NULL };
     unsigned long long h = hash_text("zig " TOOLCHAIN_ID, HASH_SEED);
@@ -608,8 +656,14 @@ static void ref_extra_cb(const char *name, bool isdir, void *u)
 
 static bool gen_matches_reference(const char *g)
 {
-    char ref[LPATH], an[LPATH];
+    char ref[LPATH], an[LPATH], tag[32];
     pjoin3(an, g_paths.source, "jsrf_recomp", "analysis");
+    gen_release(tag, sizeof tag);
+    if (strcmp(tag, "usa")) {   /* another release: analysis/<tag>/gen_hashes.txt */
+        char t[LPATH];
+        snprintf(t, sizeof t, "%s", an);
+        pjoin(an, t, tag);
+    }
     pjoin(ref, an, "gen_hashes.txt");
     char *t = read_file(ref, NULL);
     if (!t) return false;
@@ -793,7 +847,15 @@ static bool do_build(void)
     /* the build folder holds absolute paths: made again if the launcher,
      * the project or the tools moved */
     pjoin(stamp, bdir, "launcher_stamp.txt");
-    snprintf(want, sizeof want, "%s|%s|" TOOLCHAIN_ID " " WRAP_ID, g_paths.source, g_paths.tools);
+    /* v1x: another release's build runs Python (tools/translate_release.py) */
+    char rtag[32], pyx[LPATH];
+    static char dpy[LPATH + 32];
+    gen_release(rtag, sizeof rtag);
+    bool other = strcmp(rtag, "usa") != 0;
+    py_exe(pyx);
+    snprintf(dpy, sizeof dpy, "-DPython3_EXECUTABLE=%s", pyx);
+    snprintf(want, sizeof want, "%s|%s|" TOOLCHAIN_ID " " WRAP_ID "%s", g_paths.source, g_paths.tools,
+             other ? "|py" : "");
     {
         char *d = read_file(stamp, NULL);
         bool same = d && !strcmp(d, want);
@@ -822,6 +884,7 @@ static bool do_build(void)
             argv[n++] = "-DCMAKE_BUILD_TYPE=Release";
             argv[n++] = d1;
             argv[n++] = d2;
+            if (other) argv[n++] = dpy;
 #ifndef _WIN32
             /* SDL2's released headers + the system's SDL2 (SteamOS has
              * no development package; a distro's would mix its own C
