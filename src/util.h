@@ -52,6 +52,8 @@ void  log_init(void);
 void  log_file_open(const char *path);
 void  log_text(const char *s, size_t n);     /* raw program output; \r rewrites the line */
 void  logf_(const char *fmt, ...);           /* one line */
+void  log_progress_reset(void);              /* v2i: a new step starts */
+float log_progress(void);                    /* v2i: 0..1, -1 not known */
 void  log_clear(void);
 /* the UI copies the lines out under the lock */
 int   log_lock(const char ***lines);         /* returns the line count */

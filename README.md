@@ -23,7 +23,16 @@ README on the main branch.
 
 In the settings lists, up / down go through the whole list and it scrolls along; up from the top of a list goes back to the tabs.
 
-The launcher closes once the game has started.
+The launcher closes once the game has started (can be turned off in the
+**Launcher** tab).
+
+## The Launcher tab
+
+- **Close the launcher when the game starts** (on by default).
+- **Project branch**: `main` (tested releases) or `test` (newest, less tested).
+- **Debug**: shows the Debug tab and **Settings → All settings**.
+
+Generate code, Build and Update show a progress bar.
 
 ## Updating the launcher
 
@@ -45,11 +54,11 @@ downloads it, puts it in place of this one and starts it. From a terminal:
   `xboxrecomp/tools`.
 - **Build** runs only when the source, the generated code or the compiler
   changed. It asks for Generate code first when the code is missing or old.
-- **Play → Build** does both. **Force Generate/Build** (Debug tab) forces them.
+- **Play → Build** does both, staying on Play. **Force Generate/Build** (Debug tab) forces them.
 
 ## The Debug tab
 
-`DEBUG_MENU=1` in `launcher.ini` shows it: Force Generate/Build, Download
+**Launcher → Debug** shows it: Force Generate/Build, Download
 tools, the checks (generated code, `default.xbe`, the
 hard-disk cache), Play stopping after 30 s with a dump, Sample a hang, Trace
 one frame, and the whole log.
@@ -69,7 +78,7 @@ system's SDL2 (SteamOS has it).
 
 | | |
 |---|---|
-| `src/main.c` | the window: Play, Settings, Build, Update |
+| `src/main.c` | the window: Play, Settings, Build, Update, Launcher |
 | `src/jobs.c` | setting up the tools, building, updating, starting the game |
 | `src/ini.c` | reading and saving `jsrf.ini`, keeping its comments |
 | `src/util.c` | files, the log, running programs |
@@ -88,4 +97,4 @@ Next to the launcher:
 | `tools/` | Python, Zig, CMake, Ninja (about 400 MB) |
 | `build/` | the compiler's work files |
 | `launcher_log.txt` | the log of the last run (the one before: `launcher_log.txt.old`) |
-| `launcher.ini` | the launcher's settings: `BRANCH=test` makes Update download the `test` branch (missing = `main`); `DEBUG_MENU=1` shows the Debug tab |
+| `launcher.ini` | the Launcher tab's settings: `BRANCH`, `DEBUG_MENU`, `CLOSE_ON_PLAY` |

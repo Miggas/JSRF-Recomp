@@ -46,8 +46,8 @@ static void focus_hook(float x, float y, float w, float h, int kind, float frac,
 #include <windows.h>
 #endif
 
-enum { TAB_PLAY, TAB_SETTINGS, TAB_BUILD, TAB_UPDATE, TAB_DEBUG, TAB_COUNT };
-static const char *const TAB_NAMES[TAB_COUNT] = { "Play", "Settings", "Build", "Update", "Debug" };
+enum { TAB_PLAY, TAB_SETTINGS, TAB_BUILD, TAB_UPDATE, TAB_LAUNCHER, TAB_DEBUG, TAB_COUNT };
+static const char *const TAB_NAMES[TAB_COUNT] = { "Play", "Settings", "Build", "Update", "Launcher", "Debug" };
 
 static int s_tab = TAB_PLAY;
 static int s_win_h = 800;             /* the window's height, for the drop-down lists */
@@ -174,10 +174,35 @@ static void spacer(struct nk_context *ctx, float h)
     nk_spacing(ctx, 1);
 }
 
-/* Play's Build: generate (if needed) and build (if needed) */
+/* Play's Build: generate (if needed) and build (if needed); v2i: it stays
+ * on Play, where the progress shows (Miggas) */
 static void start_build(void)
 {
-    if (job_start(JOB_ALL, false)) s_tab = TAB_BUILD;
+    job_start(JOB_ALL, false);
+}
+
+/* v2i: the running step and how far it is. A step whose length is not known
+ * (a download, a check) gets a bar that just moves. */
+static float progress_bar(struct nk_context *ctx)
+{
+    if (!job_busy()) return 0;
+    float p = log_progress();
+    nk_size cur;
+    char t[96];
+    if (p >= 0) {
+        cur = (nk_size)(p * 1000.0f + 0.5f);
+        snprintf(t, sizeof t, "%s  %d%%", job_phase(), (int)(p * 100.0f + 0.5f));
+    } else {
+        cur = (nk_size)((SDL_GetTicks() / 2) % 1000);
+        snprintf(t, sizeof t, "%s...", job_phase());
+    }
+    nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
+    nk_layout_row_push(ctx, 0.36f);
+    nk_label(ctx, t, NK_TEXT_LEFT);
+    nk_layout_row_push(ctx, 0.64f);
+    nk_progress(ctx, &cur, 1000, NK_FIXED);
+    nk_layout_row_end(ctx);
+    return s_row + 4;
 }
 
 /* v1q: controller navigation. The d-pad (or the left stick) moves a
@@ -487,6 +512,11 @@ static void tab_play(struct nk_context *ctx)
         }
     }
 
+    /* v2i: Build's progress, here on Play */
+    if (job_busy()) {
+        spacer(ctx, 4);
+        progress_bar(ctx);
+    }
     {
         /* v1w: what the check at start found (or is finding); the line is a
          * button to the Update tab */
@@ -522,7 +552,8 @@ static void tab_play(struct nk_context *ctx)
         if (!play()) snprintf(s_message, sizeof s_message, "Could not start the game.");
         else {
             snprintf(s_message, sizeof s_message, "Game started.");
-            s_quit_after_play = true;      /* v1p: the launcher closes behind it */
+            /* v1p: the launcher closes behind it; v2i: unless set to stay */
+            s_quit_after_play = close_on_play_pref();
         }
     }
     if (button(ctx, exe ? "Build again" : "Build", xbe && g_paths.have_source && free_or_checking())) {
@@ -913,8 +944,11 @@ static void tab_settings(struct nk_context *ctx, float h)
     nk_layout_row_end(ctx);
 
     /* the sections */
-    nk_layout_row_dynamic(ctx, s_row * 1.1f, SET_COUNT);
-    for (int i = 0; i < SET_COUNT; i++) {
+    /* v2i: All settings only with the launcher's debug menu on (Miggas) */
+    int nset = debug_menu_pref() ? SET_COUNT : SET_ALL;
+    if (s_set_tab >= nset) s_set_tab = SET_GAMEPLAY;
+    nk_layout_row_dynamic(ctx, s_row * 1.1f, nset);
+    for (int i = 0; i < nset; i++) {
         nk_bool sel = s_set_tab == i;
         if (nk_selectable_label(ctx, SET_NAMES[i], NK_TEXT_CENTERED, &sel)) s_set_tab = i;
     }
@@ -1007,6 +1041,7 @@ static void tab_build(struct nk_context *ctx, float h)
     if (button(ctx, "Build", ready)) job_start(JOB_BUILD, s_regen);
     if (button(ctx, "Cancel", busy)) job_cancel();
     used += s_row * 1.4f + 4;
+    used += progress_bar(ctx);
     nk_layout_row_dynamic(ctx, s_row, 1);
     if (!have_xbe())
         nk_label_colored(ctx, "Choose the game folder (with default.xbe) in Play first.", NK_TEXT_LEFT, C_BAD);
@@ -1020,6 +1055,37 @@ static void tab_build(struct nk_context *ctx, float h)
     log_view(ctx, h - used - 8, true);
 }
 
+/* v2i: the launcher's own settings (launcher.ini), saved at once (Miggas) */
+static void tab_launcher(struct nk_context *ctx, float h)
+{
+    (void)h;
+    float w = nk_window_get_content_region(ctx).w;
+    {
+        bool on = close_on_play_pref();
+        bool n = check(ctx, "Close the launcher when the game starts", on);
+        if (n != on) launcher_pref_set("CLOSE_ON_PLAY", n ? "1" : "0");
+        desc(ctx, w, "Off: the launcher stays open while you play.", C_DIM);
+    }
+    {
+        static const char *const items[] = { "main (tested releases)", "test (newest, less tested)" };
+        static const char *const vals[] = { "main", "test" };
+        int cur = !strcmp(update_branch(), "test") ? 1 : 0;
+        int sel = combo(ctx, "Project branch", items, 2, cur);
+        if (sel != cur && !job_busy()) {
+            launcher_pref_set("BRANCH", vals[sel]);
+            job_start(JOB_CHECK, false);      /* what that branch has now */
+        }
+        desc(ctx, w, "Which version of the project Update downloads. After changing it, Update and then Build.", C_DIM);
+    }
+    {
+        bool on = debug_menu_pref();
+        bool n = check(ctx, "Debug", on);
+        if (n != on) launcher_pref_set("DEBUG_MENU", n ? "1" : "0");
+        desc(ctx, w, "Shows the Debug tab (the tools, the checks, the whole log) and Settings > All settings "
+                     "(every line of jsrf.ini).", C_DIM);
+    }
+}
+
 static void tab_update(struct nk_context *ctx, float h)
 {
     float used = 0;
@@ -1030,7 +1096,7 @@ static void tab_update(struct nk_context *ctx, float h)
     else if (*id) snprintf(t, sizeof t, "Project version: %.10s", id);
     else snprintf(t, sizeof t, "Project version: unknown");
     size_t tl = strlen(t);
-    snprintf(t + tl, sizeof t - tl, "   (branch: %s, set in launcher.ini)", update_branch());
+    snprintf(t + tl, sizeof t - tl, "   (branch: %s, set in Launcher)", update_branch());
     nk_label(ctx, t, NK_TEXT_LEFT);
     const char *r = update_remote();
     if (*r && strcmp(r, id))
@@ -1045,6 +1111,7 @@ static void tab_update(struct nk_context *ctx, float h)
     if (button(ctx, g_paths.have_source ? "Update" : "Download", !busy)) job_start(JOB_UPDATE, false);
     if (button(ctx, "Cancel", busy)) job_cancel();
     used += s_row * 1.4f + 4;
+    used += progress_bar(ctx);
     {
         /* v1r: the launcher itself */
         const char *ln = launcher_newer();
@@ -1437,6 +1504,7 @@ int main(int argc, char **argv)
                 case TAB_SETTINGS: tab_settings(ctx, inner); break;
                 case TAB_BUILD:    tab_build(ctx, inner); break;
                 case TAB_UPDATE:   tab_update(ctx, inner); break;
+                case TAB_LAUNCHER: tab_launcher(ctx, inner); break;
                 case TAB_DEBUG:    tab_debug(ctx, inner); break;
                 }
                 nk_group_end(ctx);

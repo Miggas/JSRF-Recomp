@@ -178,6 +178,20 @@ bool debug_menu_pref(void)
     return v && v[0] == '1';
 }
 
+/* v2i: CLOSE_ON_PLAY= in launcher.ini: 0 keeps the launcher open when the game starts */
+bool close_on_play_pref(void)
+{
+    const char *v = ini_get(&g_launcher_ini, "CLOSE_ON_PLAY");
+    return !(v && v[0] == '0');
+}
+
+/* v2i: the Launcher tab's settings, saved at once */
+void launcher_pref_set(const char *key, const char *val)
+{
+    ini_put(&g_launcher_ini, key, val, "launcher");
+    ini_save(&g_launcher_ini);
+}
+
 
 
 /* ======================================================================
@@ -450,7 +464,7 @@ static char s_remote[64];
 
 const char *job_status(void) { return s_status; }
 const char *job_phase(void) { return s_phase; }
-#define PHASE(x) (s_phase = (x))
+#define PHASE(x) (log_progress_reset(), s_phase = (x))
 const char *update_remote(void) { return s_remote; }
 bool job_busy(void) { return SDL_AtomicGet(&s_busy) != 0; }
 int  job_current(void) { return job_busy() ? s_job : JOB_NONE; }
@@ -460,6 +474,7 @@ void job_cancel(void) { s_cancel = 1; }
 static void status(const char *fmt, const char *a)
 {
     snprintf(s_status, sizeof s_status, fmt, a ? a : "");
+    log_progress_reset();      /* v2i: a new sub-step: its own bar */
     logf_("== %s", s_status);
 }
 
@@ -875,7 +890,7 @@ static bool do_generate(void)
     status(!strcmp(game_xbe_name(), "SegaJSRF.xbe") ? "Translating the game's code from SegaJSRF.xbe (a few minutes)..."
                                                     : "Translating the game's code from default.xbe (a few minutes)...", NULL);
     pjoin3(tool, jr, "tools", "generate_code.py");
-    const char *argv[] = { py, tool, xbe, NULL };
+    const char *argv[] = { py, "-u", tool, xbe, NULL };   /* v2i: -u, its step lines as they come */
     if (!runv(jr, argv)) return false;
     char st[LPATH];
     pjoin(st, gen, "launcher_gen.txt");

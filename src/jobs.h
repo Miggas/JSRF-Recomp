@@ -24,7 +24,9 @@ void paths_refresh_source(void);          /* after Update */
 bool debug_files_wanted(void);
 int  debug_files_sync(void);              /* copies or removes it: 1 there, 0 not wanted, -1 missing */
 bool debug_files_missing(void);           /* wanted but not there */
-bool debug_menu_pref(void);               /* DEBUG_MENU=1: the Debug tab */
+bool debug_menu_pref(void);
+bool close_on_play_pref(void);
+void launcher_pref_set(const char *key, const char *val);               /* DEBUG_MENU=1: the Debug tab */
 
 /* what is there */
 bool have_xbe(void);

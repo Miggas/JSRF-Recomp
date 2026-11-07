@@ -429,6 +429,57 @@ static void append(const char *s, size_t n)
     (*l)[m + n] = 0;
 }
 
+/* v2i: how far the running step is, from its output: ninja's "[n/m]",
+ * generate_code.py's "[k/4]" steps and the translator's own lines. -1: not
+ * known (the bar then just moves). */
+static float s_prog = -1.0f;
+static int s_gen_stage;
+
+void log_progress_reset(void)
+{
+    if (s_log_mx) SDL_LockMutex(s_log_mx);
+    s_prog = -1.0f;
+    s_gen_stage = 0;
+    if (s_log_mx) SDL_UnlockMutex(s_log_mx);
+}
+
+float log_progress(void) { return s_prog; }
+
+static void prog_line(const char *l)
+{
+    int a, b;
+    while (*l == ' ') l++;
+    if (sscanf(l, "[%d/%d]", &a, &b) == 2 && b > 0 && a >= 0 && a <= b) {
+        if (b == 4 && !strstr(l, "Building") && !strstr(l, "Linking")) {
+            /* generate_code.py: [1/4] layout, [2/4] translating, [3/4] the
+             * functions lifted on their own, [4/4] fix-ups */
+            static const float at[5] = { 0, 0.02f, 0.05f, 0.62f, 0.94f };
+            s_gen_stage = a;
+            s_prog = at[a];
+        } else {
+            s_prog = (float)a / (float)b;
+        }
+        return;
+    }
+    {
+        /* curl -#: "######    45.3%" */
+        size_t n = strlen(l);
+        if (n > 1 && l[n - 1] == '%') {
+            const char *q = l + n - 1;
+            while (q > l && (q[-1] == '.' || (q[-1] >= '0' && q[-1] <= '9'))) q--;
+            if (q < l + n - 1) {
+                float v = (float)atof(q);
+                if (v >= 0 && v <= 100) { s_prog = v / 100.0f; return; }
+            }
+        }
+    }
+    if (!s_gen_stage) return;
+    if (s_gen_stage == 2 && strstr(l, "Translating ") && strstr(l, "functions")) s_prog = 0.30f;
+    else if (s_gen_stage == 2 && strstr(l, "Split Translation Complete")) s_prog = 0.58f;
+    else if (s_gen_stage == 3 && strstr(l, "Loading data files")) { s_prog += 0.07f; if (s_prog > 0.92f) s_prog = 0.92f; }
+    else if (strncmp(l, "Done:", 5) == 0) s_prog = 1.0f;
+}
+
 void log_text(const char *s, size_t n)
 {
     SDL_LockMutex(s_log_mx);
@@ -436,6 +487,7 @@ void log_text(const char *s, size_t n)
     for (size_t i = 0; i < n; i++) {
         if (s[i] == '\n' || s[i] == '\r') {
             if (i > a) append(s + a, i - a);
+            if (s_open) prog_line(s_lines[s_nlines - 1]);
             if (s[i] == '\n') {
                 if (!s_open) push_line();
                 if (s_log_file) {
