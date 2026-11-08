@@ -3969,8 +3969,10 @@ static GLuint present_aa(GLuint src, GLuint src_fbo, int w, int h)
         glDrawArrays(GL_TRIANGLES, 0, 3);
     } else {
         float m0 = 1.0f / (float)w, m1 = 1.0f / (float)h;
-        /* the frame, upside down (row 0 at the top) */
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
+        /* the frame, upside down (row 0 at the top); v277: with MSAA from the
+         * resolved copy (the caller resolved it), as a flipping copy out of
+         * a multisampled framebuffer is not allowed */
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : src_fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.f_col);
         glBlitFramebuffer(0, 0, w, h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -4851,10 +4853,16 @@ static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ONE);
         e->alloc = s_scale == 1 ? 1 : 2;
     }
+    /* v277: with MSAA the surface's samples are resolved first: a copy out
+     * of a multisampled framebuffer may not flip or move (GL), so the
+     * game's frame-as-texture effects (the boost blur, the garage previews)
+     * would read nothing */
+    if (s_msaa > 1)
+        surf_resolve(g);
     bind_draw_fbo(s_copy_fbo);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            e->id, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : g->fbo);
     glDisable(GL_SCISSOR_TEST);             /* v172: as blit_fb */
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glBlitFramebuffer(0, SC(g->h - t->height), SC(t->width), SC(g->h),
