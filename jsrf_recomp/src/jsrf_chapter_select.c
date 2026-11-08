@@ -327,21 +327,31 @@ static void mm_list(void)
 /* v278b: Quit to Title (the quit window), as the game's own game-over
  * choice does it (0x4AF0C, in sub_0004AE90): the next sequence state after
  * the stage, VAR[0x199], is 0xA (build the title), and the stage's game
- * object (the action manager's slot 0xB, made by the stage, 0xA82D0) goes to
- * its end state 0x63; the stage closes, sequence state 0x1F reads VAR[0x199].
- * Offered while a stage runs (sequence state 0x1E). */
-#define AM_SLOTS   0x98u          /* the action manager's object slots: AM + 0x98 + 4*id */
-#define SLOT_GAME  0x0Bu
+ * object goes to its end state 0x63; the stage closes, sequence state 0x1F
+ * reads VAR[0x199]. Offered while a stage runs (sequence state 0x1E).
+ * v278c: the game object is the one whose update, sub_00051FC0 (its state
+ * +0x5C through the 119-handler table at 0x1F9888, 0x4AE90 among them), ran
+ * in the last half second: v278b looked in the action manager's slot 0xB,
+ * which isn't it, so Quit to Title was always greyed (Miggas). */
 #define VAR_NEXT   0x199u
 #define SEQ_TITLE  0x0Au
 #define GAME_END   0x63u
 
+extern void sub_00051FC0_gen(void);
+static volatile uint32_t s_game_this;
+static volatile DWORD s_game_seen;
+
+void sub_00051FC0(void)
+{
+    s_game_this = g_ecx;
+    s_game_seen = GetTickCount();
+    sub_00051FC0_gen();
+}
+
 static uint32_t game_obj(void)
 {
-    uint32_t a = am(), o;
-    if (!a) return 0;
-    o = MEM32(a + AM_SLOTS + 4u * SLOT_GAME);
-    return o && MEM32(o + 0xFB8u) ? o : 0;  /* +0xFB8: what 0x4AE90 reads first */
+    uint32_t o = s_game_this;
+    return o && GetTickCount() - s_game_seen < 500u ? o : 0;
 }
 
 static void quit_to_title_tick(uint32_t state)
