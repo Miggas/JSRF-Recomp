@@ -180,6 +180,8 @@ static int chs_on(void)
 }
 
 
+static void pick_setup(unsigned c, unsigned m);
+
 /* Before 0x7C9E0 builds the stage: chapter C, mission M instead of the new
  * game's 1:1 (the spec's tutorial redirect, steps 2-4; the fade, the stage
  * reset 0x4EAF0 and the character are already the new game's). */
@@ -225,6 +227,7 @@ static void chs_new_game(void)
      * 0x4E930(VAR[2], VAR[3], 0). */
     var_set(VAR_CHAPTER, c);
     var_set(VAR_MISSION, m);
+    pick_setup(c, m);                   /* v280: where the player starts, what the parent set */
 
     fprintf(stderr, "[CHAPTER-SELECT] the new game starts mssn%02u%02u (chapter %u, mission %u)%s\n",
             c, m, c, m, c == 1u && m != 101u ? ", chapter-1 opening flags set" :
@@ -265,13 +268,10 @@ static char s_mm_obj[MSN_MAX][80];      /* v279: the objective line, "" when non
  * +0x10, the arguments after it). The game shows it as the mission starts.
  * Hubs, free roam, cutscenes and openings have none. Read from the disc's
  * file; the $ markup (line and page breaks, colours) is dropped. */
-static void mm_objective(unsigned id, char *out, size_t cap)
+static FILE *mm_open(unsigned id)
 {
     char xp[64];
     FILE *f = NULL;
-    uint8_t h[8], c[0x54];
-    uint32_t off, cnt, i;
-    out[0] = 0;
     snprintf(xp, sizeof xp, "D:\\Media\\Mission\\mssn%02u%02u.bin", id / 100u, id % 100u);
 #if defined(_WIN32)
     {
@@ -284,6 +284,16 @@ static void mm_objective(unsigned id, char *out, size_t cap)
         if (xbox_translate_path(xp, hp, (DWORD)sizeof hp)) f = fopen(hp, "rb");
     }
 #endif
+    return f;
+}
+
+static void mm_objective(unsigned id, char *out, size_t cap)
+{
+    FILE *f;
+    uint8_t h[8], c[0x54];
+    uint32_t off, cnt, i;
+    out[0] = 0;
+    f = mm_open(id);
     if (!f) return;
     if (fseek(f, 0x174, SEEK_SET) || fread(h, 1, 8, f) != 8) goto done;
     off = (uint32_t)h[0] | (uint32_t)h[1] << 8 | (uint32_t)h[2] << 16 | (uint32_t)h[3] << 24;
@@ -414,6 +424,138 @@ extern void sub_00051FC0_gen(void);
 static volatile uint32_t s_game_this;
 static volatile uint32_t s_game_seen;    /* v278d: the sequence step it last updated at */
 static uint32_t s_seq_ticks;             /* sequence steps (game frames) */
+
+/* ---- v280: start a picked mission the way its parent would (Miggas: 0451
+ * started outside the arena's barrier, 0461's helicopters never came) ----
+ * In the story a challenge is entered from its area (the parent: a mission of
+ * the same chapter with an exit to it, header +0x194, 0x44-byte commands:
+ * opcode 0xFB/0xFC/0xFD, target CC*100+MM, entry). The entry is global 0x4D,
+ * which opcode 0x48 uses to place the player (the mission's spawn table
+ * +0x3C, record 0x4D + slot); -1 keeps the player where they are, inside the
+ * challenge, which a new game can't. And the parent writes the chapter flags
+ * the challenge's start tests (0460 sets chapter[150..153], the four
+ * helicopters 0461 spawns). So, for a pick with a parent:
+ *  - an entry from the parent: global 0x4D = it;
+ *  - entry -1 (a challenge started in place): global 0x4D = the spawn its
+ *    clear puts the player at (opcode 0xE5, args[1]; 0451: 3, in the arena),
+ *    if it has one, and the chapter flags its immediate list tests for 1
+ *    that a parent writes as 1, written with 0x39BE0.
+ * Flag words: bits 0-2 the set (1 = chapter), 3-18 the index, 19 the value. */
+static int rd(FILE *f, uint32_t off, void *buf, size_t n)
+{
+    return !fseek(f, (long)off, SEEK_SET) && fread(buf, 1, n, f) == n;
+}
+static uint32_t le32(const uint8_t *b)
+{
+    return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
+}
+
+/* calls fn(word, ctx) for each condition (writes = 0) or write (writes = 1)
+ * word of list li's commands; with op_only, only opcode op_only's */
+typedef void (*word_fn)(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx);
+static void mm_walk(FILE *f, int li, int writes, word_fn fn, void *ctx)
+{
+    uint8_t h[8], c[0x54], wb[4 * 32];
+    uint32_t off, cnt, i, k;
+    if (!rd(f, 0x174u + 8u * (uint32_t)li, h, 8)) return;
+    off = le32(h); cnt = le32(h + 4);
+    if (cnt > 1024u) cnt = 1024u;
+    for (i = 0; i < cnt; i++) {
+        uint32_t wo, wc, op;
+        if (!rd(f, off + 0x54u * i, c, sizeof c)) return;
+        op = le32(c + 0x10);
+        wo = le32(c + (writes ? 8 : 0)); wc = le32(c + (writes ? 12 : 4));
+        if (!wc) { fn(0xFFFFFFFFu, op, c, ctx); continue; }
+        if (wc > 32u) wc = 32u;
+        if (!rd(f, wo, wb, 4u * wc)) continue;
+        for (k = 0; k < wc; k++) fn(le32(wb + 4u * k), op, c, ctx);
+    }
+}
+
+struct pk { uint32_t need[64]; int nn; uint32_t set[64]; int ns; int spawn; };
+static void pk_need(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
+{
+    struct pk *p = (struct pk *)ctx;
+    (void)op; (void)cmd;
+    if (w != 0xFFFFFFFFu && (w & 7u) == 1u && (w >> 19 & 1u) && p->nn < 64) p->need[p->nn++] = w;
+}
+static void pk_wrote(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
+{
+    struct pk *p = (struct pk *)ctx;
+    int i, j;
+    (void)op; (void)cmd;
+    for (i = 0; i < p->nn; i++)
+        if (p->need[i] == w) {
+            for (j = 0; j < p->ns && p->set[j] != w; j++) ;
+            if (j == p->ns && p->ns < 64) p->set[p->ns++] = w;
+        }
+}
+static void pk_clear(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
+{
+    struct pk *p = (struct pk *)ctx;
+    (void)w;
+    if (op == 0xE5u && p->spawn < 0) p->spawn = (int)le32(cmd + 0x14 + 4);
+}
+
+static void pick_setup(unsigned c, unsigned m)
+{
+    const unsigned id = c * 100u + m;
+    unsigned par[16];
+    int np = 0, entry = -1, i, li;
+    struct pk pk;
+    FILE *f;
+    if (m == 0u || (m >= 94u && m <= 97u)) return;     /* Garages, openings: as they are */
+    if (!s_mm_state) mm_list();
+    for (i = 0; i < s_mm_n && np < 16; i++) {
+        uint8_t h[8], e[12];
+        uint32_t off, cnt, k;
+        const unsigned p = s_mm_id[i];
+        int is_parent = 0;
+        if (p / 100u != c || p == id) continue;
+        f = mm_open(p);
+        if (!f) continue;
+        if (rd(f, 0x194u, h, 8)) {
+            off = le32(h); cnt = le32(h + 4);
+            if (cnt > 64u) cnt = 64u;
+            for (k = 0; k < cnt; k++) {
+                uint32_t op, t;
+                if (!rd(f, off + 0x44u * k, e, sizeof e)) break;
+                op = le32(e); t = le32(e + 4);
+                if ((op == 0xFBu || op == 0xFCu || op == 0xFDu) && (t == id || (t < 100u && t == m))) {
+                    is_parent = 1;
+                    if ((int32_t)le32(e + 8) >= 0 && entry < 0) entry = (int32_t)le32(e + 8);
+                }
+            }
+        }
+        fclose(f);
+        if (is_parent) par[np++] = p;
+    }
+    if (!np) return;
+    if (entry >= 0) {
+        var_set(0x4Du, (uint32_t)entry);
+        fprintf(stderr, "[MISSION-SELECT] mssn%04u: starts at spawn %d, the entry from mssn%04u\n", id, entry, par[0]);
+        return;
+    }
+    memset(&pk, 0, sizeof pk);
+    pk.spawn = -1;
+    f = mm_open(id);
+    if (!f) return;
+    mm_walk(f, 0, 0, pk_need, &pk);
+    for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clear, &pk);
+    fclose(f);
+    for (i = 0; i < np && pk.nn; i++) {
+        f = mm_open(par[i]);
+        if (!f) continue;
+        for (li = 0; li < 4; li++) mm_walk(f, li, 1, pk_wrote, &pk);
+        fclose(f);
+    }
+    if (pk.spawn >= 0) var_set(0x4Du, (uint32_t)pk.spawn);
+    for (i = 0; i < pk.ns; i++) save_call1(0x00039BE0u, sub_00039BE0, pk.set[i]);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u (entered in place from mssn%04u): spawn %d%s", id, par[0],
+            pk.spawn, pk.ns ? ", chapter flags set:" : "");
+    for (i = 0; i < pk.ns; i++) fprintf(stderr, " %u", (pk.set[i] >> 3) & 0xFFFFu);
+    fprintf(stderr, "\n");
+}
 
 /* v279: a mission picked in mission select goes back to the title when it
  * ends (Miggas). A mission ends through one of its exit commands, 0x53FB0
