@@ -663,11 +663,13 @@ static void panel_video(struct nk_context *ctx, float w)
 {
     /* resolution scale: RECOMP_GL_SCALE */
     {
-        static const char *const items[] = { "1x (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)" };
+        static const char *const items[] = { "1x (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)",
+                                             "5x (3200x2400)" };   /* v2p: 5x (Miggas) */
+        enum { NS = sizeof items / sizeof items[0] };
         int cur = atoi(get_or("RECOMP_GL_SCALE", "1"));
         if (cur < 1) cur = 1;
-        if (cur > 4) cur = 4;
-        int sel = combo(ctx, "Resolution scale", items, 4, cur - 1);
+        if (cur > NS) cur = NS;
+        int sel = combo(ctx, "Resolution scale", items, NS, cur - 1);
         if (sel != cur - 1) {
             char v[4];
             snprintf(v, sizeof v, "%d", sel + 1);
