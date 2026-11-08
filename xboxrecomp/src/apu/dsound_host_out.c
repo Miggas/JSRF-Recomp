@@ -57,8 +57,17 @@ static void wav_open(void)
  * the APU does (Miggas). */
 static float g_gain = -1.0f;
 
+/* jsrf (v276c): the game held (quit window, shader build; v252) holds its
+ * sounds too, as the APU's output does (apu_core.c): silence, and the voices'
+ * positions stay where they are, so the music resumes where it stopped. */
+extern volatile int32_t g_xbox_game_held;   /* LONG: 32 bits on Windows and Linux */
+
 static void mix_out(int16_t *out, uint32_t frames)
 {
+    if (g_xbox_game_held) {
+        memset(out, 0, sizeof(int16_t) * 2u * frames);
+        return;
+    }
     dsh_mix(out, frames);
     if (g_gain < 0.0f) {
         const char *e = getenv("RECOMP_APU_GAIN");
