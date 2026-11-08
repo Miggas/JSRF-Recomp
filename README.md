@@ -192,6 +192,7 @@ override the file.
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920, `5` = 3200×2400, `6` = 3840×2880 (4K) (up to `8`, if the graphics card allows). |
 | `RECOMP_GL_ANISO=16` | Anisotropic filtering: `2`, `4`, `8` or `16`. |
 | `RECOMP_GL_AA=smaa_high` | Anti-aliasing: `fxaa`, `smaa_low`, `smaa_medium`, `smaa_high` or `smaa_ultra`. |
+| `RECOMP_GL_MSAA=4` | MSAA (multisample anti-aliasing): `2`, `4` or `8`. Smooths 3D edges at a lower cost than a higher `RECOMP_GL_SCALE`, good for 4K; cut-out textures (fences, leaves) aren't smoothed. *By s-ilent.* |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
 | `RECOMP_GL_PRESENT=dxgi` | Borderless window (Windows only). May lower performance. |
 | `RECOMP_WIDESCREEN=auto` | Widescreen: `1` = 16:9, `auto` = your monitor's shape, or `RECOMP_ASPECT=21:9` for others. |
@@ -336,6 +337,7 @@ co-author.
 - The quit window and the "Building Shaders" message use the
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
+- s-ilent for MSAA (`RECOMP_GL_MSAA`, [pull request #4](https://github.com/Miggas/JSRF-Recomp/pull/4)).
 - [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)
   for the DirectSound lift (PC sound mixing, `RECOMP_DSOUND_LIFT`) and chapter
   select (`RECOMP_CHAPTER_SELECT`).

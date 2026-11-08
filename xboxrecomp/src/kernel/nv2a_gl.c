@@ -47,6 +47,8 @@
 
 static int s_state = -1;              /* -1 untried, 0 failed/off, 1 active */
 static int s_scale = 1;               /* v87: internal resolution, see SC() */
+static int s_msaa  = 1;               /* multisampled colour/depth (1 = off) */
+static GLuint s_resolve_fbo;
 static SDL_Window *s_win;
 static SDL_GLContext s_ctx;
 static GLuint s_vao, s_vbo, s_ebo, s_white2d, s_whitecube;
@@ -2377,6 +2379,17 @@ static int init_gl(void)
             fprintf(stderr, "[GL] internal resolution x%d (640x480 renders at %dx%d)"
                     " -- RECOMP_GL_SCALE\n", s_scale, 640 * s_scale, 480 * s_scale);
     }
+    {
+        const char *e = getenv("RECOMP_GL_MSAA");
+        GLint mx = 0;
+        s_msaa = e ? atoi(e) : 1;
+        if (s_msaa < 1) s_msaa = 1;
+        glGetIntegerv(GL_MAX_SAMPLES, &mx);
+        if (mx > 0 && s_msaa > mx) s_msaa = mx;
+        if (s_msaa < 2) s_msaa = 1;
+        if (s_msaa > 1)
+            fprintf(stderr, "[GL] MSAA %dx (RECOMP_GL_MSAA)\n", s_msaa);
+    }
 
     glGenVertexArrays(1, &s_vao);
     glBindVertexArray(s_vao); s_cur_attr_ok = 0;
@@ -2622,6 +2635,7 @@ typedef struct {
     int      alpha;
     uint8_t *host;
     GLuint   tex, fbo;
+    GLuint   ms_tex;          /* multisampled colour texture (0 = off) */
     GLuint   ds;              /* depth-stencil renderbuffer attached */
     int      dirty;           /* GPU holds newer pixels than guest memory */
     uint32_t draws;           /* draws and clears into it, for nv2a_gl_present */
@@ -2656,6 +2670,14 @@ static int    s_ap_valid;        /* apply_state's cache is usable */
 #define SC(v) ((int)(v) * s_scale)
 static GLuint s_dn_fbo, s_dn_rb, s_up_fbo, s_up_tex;
 static uint32_t s_dn_w, s_dn_h, s_up_w, s_up_h;
+
+/* MSAA: draw a single-sampled image into a multisample framebuffer. A
+ * single->multi glBlitFramebuffer is invalid, so the frame goes in through
+ * a fullscreen triangle with the image as a texture (the LINEAR sampler
+ * also does the RECOMP_GL_SCALE upscale). Runs on the GL thread. */
+typedef struct { GLuint src_tex, dst_fbo; int w, h; } MsUpArgs;
+static void ms_up_run(void *p);
+static void surf_resolve(GlSurf *s);
 
 /* Copy a whole surface between two framebuffers with no scissor or masks in
  * the way; restores the draw binding. */
@@ -2726,7 +2748,7 @@ static void bind_draw_fbo(GLuint fbo)
     }
 }
 
-typedef struct { uint32_t key, w, h; GLuint rb; } GlZeta;
+typedef struct { uint32_t key, w, h; GLuint rb; int is_tex; } GlZeta;
 static GlZeta s_zeta[8];
 
 static uint32_t *s_scratch;
@@ -2775,6 +2797,12 @@ static void surf_upload(GlSurf *s)
         unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s->tex); active_unit(NV_GL_SCRATCH_UNIT);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)s->w, (GLsizei)s->h,
                         GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
+        if (s_msaa > 1) {
+            /* single -> multi goes through a draw: a single to multi
+             * glBlitFramebuffer is invalid */
+            MsUpArgs a = { s->tex, s->fbo, SC(s->w), SC(s->h) };
+            gt_call_sync(ms_up_run, &a);
+        }
     } else {
         /* guest size into a staging texture, then scaled up into the surface */
         if (!s_up_fbo) {
@@ -2797,7 +2825,13 @@ static void surf_upload(GlSurf *s)
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)s->w, (GLsizei)s->h,
                             GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
         }
-        blit_fb(s_up_fbo, (int)s->w, (int)s->h, s->fbo, SC(s->w), SC(s->h), GL_LINEAR);
+        if (s_msaa > 1) {
+            /* the LINEAR sampler of the upsample draw does the upscale */
+            MsUpArgs a = { s_up_tex, s->fbo, SC(s->w), SC(s->h) };
+            gt_call_sync(ms_up_run, &a);
+        } else {
+            blit_fb(s_up_fbo, (int)s->w, (int)s->h, s->fbo, SC(s->w), SC(s->h), GL_LINEAR);
+        }
     }
     xbox_gw_mark(s->va, (uint32_t)surf_bytes(s), &s->wm);
     s->hash = hash_bytes(s->host, surf_bytes(s));
@@ -2820,7 +2854,10 @@ static void surf_readback(GlSurf *s)
     if (!px)
         return;
     uint64_t t0 = TM_NOW();
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, guest_res_fbo(s->fbo, s->w, s->h));
+    if (s_msaa > 1)
+        surf_resolve(s);            /* glReadPixels can't read multisamples */
+    glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                      guest_res_fbo(s_msaa > 1 ? s_resolve_fbo : s->fbo, s->w, s->h));
     glReadPixels(0, 0, (GLsizei)s->w, (GLsizei)s->h, GL_BGRA,
                  GL_UNSIGNED_INT_8_8_8_8_REV, px);
     surf_store(s, px);
@@ -2855,6 +2892,40 @@ static void surf_store(GlSurf *s, const uint32_t *px)
     textures_invalidate_range(s->va, (uint32_t)surf_bytes(s));
 }
 
+/* Resolve the multisampled colour buffer into the single-sampled texture. */
+static void surf_resolve(GlSurf *s)
+{
+    GLuint prev_draw, prev_read;
+    if (s_msaa <= 1 || !s || !s->ms_tex)
+        return;
+    if (!s_resolve_fbo)
+        glGenFramebuffers(1, &s_resolve_fbo);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, (GLint *)&prev_draw);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, (GLint *)&prev_read);
+    bind_draw_fbo(s_resolve_fbo);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, s->tex, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, s->fbo);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), 0, 0, SC(s->w), SC(s->h),
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glEnable(GL_SCISSOR_TEST);
+    s_ap_valid = 0;
+    bind_draw_fbo(prev_draw == (GLuint)-1 ? 0 : prev_draw);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read);
+    s_bound_fbo = (prev_draw == (GLuint)-1 ? 0 : prev_draw);
+}
+
+typedef struct { GLuint tex; GLenum target; GLsizei samples; GLenum internalformat;
+                 GLsizei w, h; GLboolean fixed; } MsTexCreateArgs;
+static void ms_tex_create_cb(void *p)
+{
+    MsTexCreateArgs *a = (MsTexCreateArgs *)p;
+    glBindTexture(a->target, a->tex);
+    glTexImage2DMultisample(a->target, a->samples, a->internalformat, a->w, a->h, a->fixed);
+}
+
 static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
 {
     int i, lru = 0;
@@ -2866,11 +2937,34 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
         if (!s_zeta[i].rb) { lru = i; break; }
     if (i == 8)
         lru = (int)(s_use_clock % 8);       /* rare: evict something */
-    if (!s_zeta[lru].rb)
-        glGenRenderbuffers(1, &s_zeta[lru].rb);
-    glBindRenderbuffer(GL_RENDERBUFFER, s_zeta[lru].rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, wdepth() ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8,
-                          (GLsizei)w, (GLsizei)h);
+    if (s_msaa > 1) {
+        /* evict: free a prior name of the other kind before (re)creating */
+        if (s_zeta[lru].rb && !s_zeta[lru].is_tex) {
+            glDeleteRenderbuffers(1, &s_zeta[lru].rb);
+            s_zeta[lru].rb = 0;
+        }
+        if (!s_zeta[lru].rb)
+            glGenTextures(1, &s_zeta[lru].rb);
+        s_zeta[lru].is_tex = 1;
+        {
+            MsTexCreateArgs za;
+            za.tex = s_zeta[lru].rb;
+            za.target = GL_TEXTURE_2D_MULTISAMPLE;
+            za.samples = s_msaa;
+            za.internalformat = wdepth() ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8;
+            za.w = (GLsizei)w;
+            za.h = (GLsizei)h;
+            za.fixed = GL_TRUE;
+            gt_call_sync(ms_tex_create_cb, &za);
+        }
+    } else {
+        if (!s_zeta[lru].rb)
+            glGenRenderbuffers(1, &s_zeta[lru].rb);
+        s_zeta[lru].is_tex = 0;
+        glBindRenderbuffer(GL_RENDERBUFFER, s_zeta[lru].rb);
+        glRenderbufferStorage(GL_RENDERBUFFER, wdepth() ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8,
+                              (GLsizei)w, (GLsizei)h);
+    }
     s_zeta[lru].key = key; s_zeta[lru].w = w; s_zeta[lru].h = h;
     /* A new depth buffer starts at "far" with stencil 0, as the software
      * one does. */
@@ -2878,8 +2972,12 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
         GLuint tmp;
         glGenFramebuffers(1, &tmp);
         bind_draw_fbo(tmp);
-        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                                  GL_RENDERBUFFER, s_zeta[lru].rb);
+        if (s_zeta[lru].is_tex)
+            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                   GL_TEXTURE_2D_MULTISAMPLE, s_zeta[lru].rb, 0);
+        else
+            glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                      GL_RENDERBUFFER, s_zeta[lru].rb);
         glDisable(GL_SCISSOR_TEST);
         glDepthMask(GL_TRUE);
         glStencilMask(0xFF);
@@ -2926,18 +3024,46 @@ static GlSurf *surf_get(const NvGlState *st)
             glGenFramebuffers(1, &s->fbo);
             glGenTextures(1, &s->tex);
         }
+        /* clear any stale attachments */
+        bind_draw_fbo(s->fbo);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               s_msaa > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                               s_msaa > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
+        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
+        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
         s->va = st->surf_va; s->pitch = st->pitch; s->bpp = st->bpp;
         s->w = st->width; s->h = st->height; s->alpha = st->surf_has_alpha;
         s->ds = 0;
+        if (s->ms_tex)
+            glDeleteTextures(1, &s->ms_tex);    /* the previous shape's */
+        s->ms_tex = 0;
         unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s->tex); active_unit(NV_GL_SCRATCH_UNIT);
         glTexImage2D(GL_TEXTURE_2D, 0, s->alpha ? GL_RGBA8 : GL_RGB8,
                      (GLsizei)SC(s->w), (GLsizei)SC(s->h), 0, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        if (s_msaa > 1) {
+            MsTexCreateArgs ma;
+            glGenTextures(1, &s->ms_tex);
+            ma.tex = s->ms_tex;
+            ma.target = GL_TEXTURE_2D_MULTISAMPLE;
+            ma.samples = s_msaa;
+            ma.internalformat = s->alpha ? GL_RGBA8 : GL_RGB8;
+            ma.w = (GLsizei)SC(s->w);
+            ma.h = (GLsizei)SC(s->h);
+            ma.fixed = GL_TRUE;
+            gt_call_sync(ms_tex_create_cb, &ma);
+        }
         bind_draw_fbo(s->fbo);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, s->tex, 0);
+        if (s_msaa > 1) {
+            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D_MULTISAMPLE, s->ms_tex, 0);
+        } else {
+            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, s->tex, 0);
+        }
         s->hash = ~0ull;                /* force the first upload */
         s->wm.ok = 0;
         s->dirty = 0;
@@ -2984,11 +3110,17 @@ static GlSurf *bind_surface(const NvGlState *st)
     rb = zeta_rb(st->zeta_key, (uint32_t)SC(s->w), (uint32_t)SC(s->h));
     bind_draw_fbo(s->fbo);
     if (rb != s->ds) {
-        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                                  GL_RENDERBUFFER, rb);
+        int zi, is_tex = 0;
+        for (zi = 0; zi < 8; zi++)
+            if (s_zeta[zi].rb == rb) { is_tex = s_zeta[zi].is_tex; break; }
+        if (is_tex)
+            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                   GL_TEXTURE_2D_MULTISAMPLE, rb, 0);
+        else
+            glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                      GL_RENDERBUFFER, rb);
         s->ds = rb;
         {
-            /* v172: a wait for the GL thread each time; only checked without it */
             GLenum fs = s_gt_on ? GL_FRAMEBUFFER_COMPLETE : glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
             if (fs != GL_FRAMEBUFFER_COMPLETE) {
                 static int said;
@@ -3837,8 +3969,10 @@ static GLuint present_aa(GLuint src, GLuint src_fbo, int w, int h)
         glDrawArrays(GL_TRIANGLES, 0, 3);
     } else {
         float m0 = 1.0f / (float)w, m1 = 1.0f / (float)h;
-        /* the frame, upside down (row 0 at the top) */
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
+        /* the frame, upside down (row 0 at the top); v277: with MSAA from the
+         * resolved copy (the caller resolved it), as a flipping copy out of
+         * a multisampled framebuffer is not allowed */
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : src_fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.f_col);
         glBlitFramebuffer(0, 0, w, h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -3903,6 +4037,110 @@ static GLuint present_aa(GLuint src, GLuint src_fbo, int w, int h)
     return s_fx.fbo;
 }
 
+/* ── MSAA upsample: draw the single-sampled frame into a multisample target ──
+ * A single->multi glBlitFramebuffer is INVALID_OPERATION (multi -> single is
+ * the only direction the spec allows), so this runs the image as a texture
+ * through a fullscreen triangle instead; the LINEAR sampler also does the
+ * RECOMP_GL_SCALE upscale. Runs inside gt_call_sync, so the whole save /
+ * draw / restore stays coherent against the executor's caches. */
+static const char *MS_UP_FS =
+"#version 330 core\n"
+"uniform sampler2D u_tex;\n"
+"in vec2 v_uv;\n"
+"out vec4 o_col;\n"
+"void main() {\n"
+"  o_col = texture(u_tex, v_uv);\n"
+"}\n";
+
+static struct {
+    int state;                 /* 0 not built, 1 ready, -1 failed */
+    GLuint prog, vao, samp;
+    GLint l_tex;
+} s_ms_up;
+
+static void ms_up_run(void *p)
+{
+    MsUpArgs *a = (MsUpArgs *)p;
+    static const GLenum caps[9] = { GL_DEPTH_TEST, GL_BLEND, GL_CULL_FACE, GL_STENCIL_TEST,
+                                    GL_SCISSOR_TEST, GL_POLYGON_OFFSET_FILL,
+                                    GL_CLIP_DISTANCE0, GL_CLIP_DISTANCE1, GL_CLIP_DISTANCE2 };
+    GLint prog, vao, unit, tex0, samp0, dfbo, rfbo, vp[4], align;
+    GLfloat cc[4];
+    GLboolean cm[4], dm, en[9];
+    int i;
+
+    if (s_ms_up.state == 0) {
+        glGenVertexArrays(1, &s_ms_up.vao);        /* no attributes enabled */
+        glGenSamplers(1, &s_ms_up.samp);
+        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        s_ms_up.prog = aa_link(compile(GL_VERTEX_SHADER, FXAA_VS),
+                               compile(GL_FRAGMENT_SHADER, MS_UP_FS));
+        if (!s_ms_up.prog) {
+            fprintf(stderr, "[GL] MSAA upsample shader did not build: draws dropped\n");
+            s_ms_up.state = -1;
+            return;
+        }
+        s_ms_up.l_tex = glGetUniformLocation(s_ms_up.prog, "u_tex");
+        s_ms_up.state = 1;
+    }
+    if (s_ms_up.state < 0)
+        return;
+
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &unit);
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &align);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
+    glGetIntegerv(GL_SAMPLER_BINDING, &samp0);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dfbo);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfbo);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, cc);
+    glGetBooleanv(GL_COLOR_WRITEMASK, cm);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &dm);
+    for (i = 0; i < 9; i++) {
+        en[i] = glIsEnabled(caps[i]);
+        if (en[i]) glDisable(caps[i]);
+    }
+
+    glViewport(0, 0, a->w, a->h);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_FALSE);
+    bind_draw_fbo(a->dst_fbo);
+    glBindVertexArray(s_ms_up.vao);
+    glUseProgram(s_ms_up.prog);
+    glBindSampler(0, s_ms_up.samp);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, a->src_tex);
+    glUniform1i(s_ms_up.l_tex, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    s_bound_fbo = a->dst_fbo;
+
+    /* put it all back */
+    glBindSampler(0, (GLuint)samp0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
+    glActiveTexture((GLenum)unit);
+    glBindVertexArray((GLuint)vao);
+    glUseProgram((GLuint)prog);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, align);
+    glColorMask(cm[0], cm[1], cm[2], cm[3]);
+    glDepthMask(dm);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    for (i = 0; i < 9; i++)
+        if (en[i]) glEnable(caps[i]);
+    if ((GLuint)dfbo != (GLuint)a->dst_fbo) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dfbo);
+        s_bound_fbo = (GLuint)dfbo;
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfbo);
+    s_ap_valid = 0;
+}
+
 #if defined(_WIN32)
 /* Present s through DXGI; 0 = not available (caller falls back). */
 static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int dw, int dh)
@@ -3924,9 +4162,11 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
     if (!s_dx.lock(s_dx.hdev, 1, &s_dx.hobj))
         return 1;
     {
+        surf_resolve(s);
         GLuint fx = present_aa(s->tex, s->fbo, SC(s->w), SC(s->h));   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dx.fbo);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : s->fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
+                         : s_msaa > 1 ? s_resolve_fbo : s->fbo);
     }
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -4086,9 +4326,11 @@ static int gl_window_present_impl(GlSurf *s)
         return 0;
     }
     {
+        surf_resolve(s);
         GLuint fx = present_aa(s->tex, s->fbo, SC(s->w), SC(s->h));   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : s->fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
+                         : s_msaa > 1 ? s_resolve_fbo : s->fbo);
     }
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -4138,7 +4380,8 @@ static void gw_present_gl(void *arg)
     {
         GLuint fx = present_aa(f->tex, f->fbo, SC(f->w), SC(f->h));   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : f->fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
+                         : s_msaa > 1 ? s_resolve_fbo : f->fbo);
     }
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -4170,6 +4413,7 @@ static int gl_window_present(GlSurf *s)
 {
     if (s_gt_on && t_gt_mode == 1) {
         if (s_gw.state == 1) {
+            surf_resolve(s);
             GwFrame f;
             f.fbo = s->fbo; f.tex = s->tex; f.w = s->w; f.h = s->h;
             f.rowk = s_rf_k;
@@ -4213,7 +4457,10 @@ static void gw_present_sdl(void *arg)
     {
         GLuint fx = present_aa(f->tex, f->fbo, SC(f->w), SC(f->h));
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : f->fbo);
+        /* the default framebuffer takes no multisample blit (driver raises
+         * INVALID_OPERATION), so under MSAA read the resolve target */
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
+                         : s_msaa > 1 ? s_resolve_fbo : f->fbo);
     }
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -4252,6 +4499,7 @@ static int gl_window_present(GlSurf *s)
     }
     xbox_FramebufferWindowPump();
     f.fbo = s->fbo; f.tex = s->tex; f.w = s->w; f.h = s->h;
+    surf_resolve(s);
     f.rowk = s_rf_k;
     f.queued = TM_NOW();
     if (s_gt_on && t_gt_mode == 1)
@@ -4426,7 +4674,11 @@ static void start_present_read(GlSurf *s, int win)
             s_pend.bytes = bytes;
         }
         /* the window takes the full-size frame; guest memory its own size */
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, win ? s->fbo : guest_res_fbo(s->fbo, s->w, s->h));
+        if (s_msaa > 1)
+            surf_resolve(s);            /* glReadPixels can't read multisamples */
+        glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                win ? (s_msaa > 1 ? s_resolve_fbo : s->fbo)
+                    : guest_res_fbo(s_msaa > 1 ? s_resolve_fbo : s->fbo, s->w, s->h));
         glBindBuffer(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
         glReadPixels(0, 0, (GLsizei)pw, (GLsizei)ph, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, (void *)0);
@@ -4601,10 +4853,16 @@ static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ONE);
         e->alloc = s_scale == 1 ? 1 : 2;
     }
+    /* v277: with MSAA the surface's samples are resolved first: a copy out
+     * of a multisampled framebuffer may not flip or move (GL), so the
+     * game's frame-as-texture effects (the boost blur, the garage previews)
+     * would read nothing */
+    if (s_msaa > 1)
+        surf_resolve(g);
     bind_draw_fbo(s_copy_fbo);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            e->id, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, g->fbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : g->fbo);
     glDisable(GL_SCISSOR_TEST);             /* v172: as blit_fb */
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glBlitFramebuffer(0, SC(g->h - t->height), SC(t->width), SC(g->h),
@@ -6427,7 +6685,10 @@ void nv2a_gl_probe_top(uint32_t out[5])
     for (i = 0; i < 5; i++) out[i] = 0;
     if (s_state != 1 || !s_cur || !s_cur->fbo)
         return;
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_cur->fbo);
+    if (s_msaa > 1)
+        surf_resolve(s_cur);        /* glReadPixels can't read multisamples */
+    glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                      s_msaa > 1 ? s_resolve_fbo : s_cur->fbo);
     for (i = 0; i < 5; i++) {
         uint32_t c = 0;
         int x = px[i] < (int)s_cur->w ? px[i] : (int)s_cur->w - 1;
@@ -6450,7 +6711,10 @@ void nv2a_gl_probe_at(const int *x, const int *y, int n, uint32_t *out)
     for (i = 0; i < 16; i++) s_probe_z[i] = -1.0f;
     if (s_state != 1 || !s_cur || !s_cur->fbo)
         return;
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_cur->fbo);
+    if (s_msaa > 1)
+        surf_resolve(s_cur);        /* glReadPixels can't read multisamples */
+    glBindFramebuffer(GL_READ_FRAMEBUFFER,
+                      s_msaa > 1 ? s_resolve_fbo : s_cur->fbo);
     for (i = 0; i < n; i++) {
         uint32_t c = 0;
         int xx = x[i] < 0 ? 0 : x[i] < (int)s_cur->w ? x[i] : (int)s_cur->w - 1;
@@ -6458,7 +6722,8 @@ void nv2a_gl_probe_at(const int *x, const int *y, int n, uint32_t *out)
         glReadPixels(SC(xx), SC((int)s_cur->h - 1 - yy), 1, 1, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, &c);
         out[i] = c & 0xFFFFFFu;
-        if (i < 16) {
+        /* the resolve target has no depth: MSAA traces stay at -1 */
+        if (i < 16 && s_msaa <= 1) {
             float z = -1.0f;
             glReadPixels(SC(xx), SC((int)s_cur->h - 1 - yy), 1, 1, GL_DEPTH_COMPONENT,
                          GL_FLOAT, &z);
