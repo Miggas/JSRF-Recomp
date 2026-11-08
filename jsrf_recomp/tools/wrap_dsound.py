@@ -52,7 +52,62 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_00124BD0",                # v228c: graffiti select's 3D scene: no side fill
          "sub_000C1340",                # v233: street objects' draw distance
          "sub_001133A0",                # v235: the start menu in battles in widescreen
-         "sub_0006A7C0")                # v239b: the stage's light pass (marked as the map's)
+         "sub_0006A7C0",                # v239b: the stage's light pass (marked as the map's)
+         "sub_0007C9E0",                # v276b: chapter select on a new game (jsrf_chapter_select.c)
+         # v275: the DSOUND lift (jsrf_dsound_lift.c), every entry point the game calls
+         "sub_0019E4BC",
+         "sub_0019E4C1",
+         "DSOUND_IDirectSound_AddRef",
+         "DSOUND_IDirectSound_Release",
+         "DSOUND_IDirectSoundBuffer_Unlock",
+         "DSOUND_IDirectSoundBuffer_AddRef",
+         "DSOUND_IDirectSoundBuffer_Release",
+         "sub_0019E523",
+         "DSOUND_CDirectSound_GetSpeakerConfig",
+         "DSOUND_IDirectSound_GetCaps",
+         "DSOUND_IDirectSound_GetSpeakerConfig",
+         "DSOUND_IDirectSound_DownloadEffectsImage",
+         "DSOUND_IDirectSound_GetEffectData",
+         "DSOUND_IDirectSoundBuffer_SetVolume",
+         "DSOUND_IDirectSoundBuffer_SetLFO",
+         "DSOUND_IDirectSoundBuffer_SetEG",
+         "DSOUND_IDirectSoundBuffer_SetFilter",
+         "DSOUND_IDirectSoundBuffer_SetHeadroom",
+         "DSOUND_IDirectSoundBuffer_SetMixBins",
+         "DSOUND_IDirectSoundBuffer_Play",
+         "DSOUND_IDirectSoundBuffer_Stop",
+         "DSOUND_IDirectSoundBuffer_SetLoopRegion",
+         "DSOUND_IDirectSoundBuffer_GetStatus",
+         "DSOUND_IDirectSoundBuffer_GetCurrentPosition",
+         "DSOUND_IDirectSoundBuffer_SetCurrentPosition",
+         "DSOUND_IDirectSoundBuffer_Lock",
+         "DSOUND_DirectSoundDoWork",
+         "DSOUND_IDirectSound_CommitDeferredSettings",
+         "DSOUND_IDirectSoundBuffer_SetFrequency",
+         "DSOUND_IDirectSoundBuffer_SetAllParameters",
+         "DSOUND_IDirectSoundBuffer_SetConeAngles",
+         "DSOUND_IDirectSoundBuffer_SetConeOrientation",
+         "DSOUND_IDirectSoundBuffer_SetConeOutsideVolume",
+         "DSOUND_IDirectSoundBuffer_SetMaxDistance",
+         "DSOUND_IDirectSoundBuffer_SetMinDistance",
+         "DSOUND_IDirectSoundBuffer_SetMode",
+         "DSOUND_IDirectSoundBuffer_SetPosition",
+         "DSOUND_IDirectSoundBuffer_SetVelocity",
+         "DSOUND_IDirectSoundBuffer_SetDistanceFactor",
+         "DSOUND_IDirectSoundBuffer_SetDopplerFactor",
+         "DSOUND_IDirectSoundBuffer_SetRolloffFactor",
+         "DSOUND_IDirectSoundBuffer_SetI3DL2Source",
+         "DSOUND_IDirectSound_SetAllParameters",
+         "DSOUND_IDirectSound_SetDistanceFactor",
+         "DSOUND_IDirectSound_SetDopplerFactor",
+         "DSOUND_IDirectSound_SetOrientation",
+         "DSOUND_IDirectSound_SetPosition",
+         "DSOUND_IDirectSound_SetRolloffFactor",
+         "DSOUND_IDirectSound_SetVelocity",
+         "DSOUND_IDirectSoundBuffer_SetBufferData",
+         "DSOUND_IDirectSound_CreateSoundBuffer",
+         "DSOUND_DirectSoundCreate",
+         "sub_001A24A3")
 
 
 def main():

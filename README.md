@@ -189,7 +189,7 @@ override the file.
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920. |
+| `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920, `5` = 3200×2400, `6` = 3840×2880 (4K) (up to `8`, if the graphics card allows). |
 | `RECOMP_GL_ANISO=16` | Anisotropic filtering: `2`, `4`, `8` or `16`. |
 | `RECOMP_GL_AA=smaa_high` | Anti-aliasing: `fxaa`, `smaa_low`, `smaa_medium`, `smaa_high` or `smaa_ultra`. |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
@@ -215,6 +215,7 @@ override the file.
 | Setting | What it does |
 |---|---|
 | `RECOMP_APU_GAIN=0.5` | Master volume. |
+| `RECOMP_DSOUND_LIFT=0` | Turns PC sound mixing off (on by default: the game's sounds are mixed on the PC and played through its audio directly) and uses the emulated Xbox sound chip instead. *From andeecollard's jsrf-recomp.* |
 
 **`[files]`**
 
@@ -240,6 +241,7 @@ override the file.
 | `RECOMP_FREECAM=1` | Free camera. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed. |
 | `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
 | `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
+| `RECOMP_CHAPTER_SELECT=2` | Chapter select: a new game starts at chapter 2's opening; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the game's save points save over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
 
 **`[compatibility]`**: try these if something goes wrong.
 
@@ -334,6 +336,9 @@ co-author.
 - The quit window and the "Building Shaders" message use the
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
+- [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)
+  for the DirectSound lift (PC sound mixing, `RECOMP_DSOUND_LIFT`) and chapter
+  select (`RECOMP_CHAPTER_SELECT`).
 - [JuMatt's JetSetRadioFuture-Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed)
   (MIT): building the shaders ahead ("Building Shaders") and the modern 3rd
   person camera were inspired by it, and improved upon by Miggas (the camera

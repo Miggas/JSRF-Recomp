@@ -424,7 +424,7 @@
     "name": "sub_000127C0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x000127E0",
@@ -4967,7 +4967,7 @@
     "name": "sub_00039BE0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x00039C70",
@@ -5086,7 +5086,7 @@
     "name": "sub_00039F40",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x00039F60",
@@ -5331,14 +5331,14 @@
     "name": "sub_0003AE20",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003AEA0",
     "name": "sub_0003AEA0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003AED0",
@@ -8222,7 +8222,7 @@
     "name": "sub_0004EAF0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0004EB80",
@@ -12989,7 +12989,7 @@
     "name": "sub_0007C9E0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0007CA60",
@@ -59112,14 +59112,14 @@
     "name": "sub_0019E4BC",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E4C1",
     "name": "sub_0019E4C1",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E4C6",
@@ -59161,7 +59161,7 @@
     "name": "sub_0019E523",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0019E542",
@@ -60617,7 +60617,7 @@
     "name": "sub_001A24A3",
     "type": "function",
     "section": "DSOUND",
-    "confidence": 0.85
+    "confidence": 0.95
   },
   {
     "address": "0x001A24BE",

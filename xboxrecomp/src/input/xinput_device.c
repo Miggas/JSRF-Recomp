@@ -487,10 +487,12 @@ static DWORD input_get(DWORD dwPort, XBOX_INPUT_STATE *pState, int merge_kbd)
  * is let go again. Any controller (and the keyboard: Shift + Ctrl, then the
  * arrows and Z / X) works it. RECOMP_QUIT_COMBO=0 turns it off. */
 #define QD_IDX 64
-static volatile LONG s_qd_open;           /* 0 closed, 1 open, 2 closed, waiting for release */
+static volatile LONG s_qd_open;           /* 0 closed, 1 open (v276f: no state 2; s_qd_block per device) */
 static WORD s_qd_prev_btn[QD_IDX];
 static BYTE s_qd_prev_ab[QD_IDX];
 static signed char s_qd_prev_x[QD_IDX];   /* left stick: -1 left, 0, 1 right */
+static BYTE s_qd_held[QD_IDX];            /* v276d: a button down on this device */
+static volatile BYTE s_qd_block[QD_IDX];  /* v276f: closed with a button down: the game gets nothing from it yet */
 static volatile LONG s_qd_sel = 1;        /* 0 YES, 1 NO */
 static int  s_qd_off = -1;
 
@@ -545,7 +547,16 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
     s_qd_prev_ab[idx] = ab;
     s_qd_prev_x[idx] = (signed char)sx;
     int held = b != 0 || ab != 0 || g->bAnalogButtons[XBOX_BUTTON_X] > 30 || g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
+    if (s_qd_open == 1) s_qd_held[idx] = (BYTE)held;   /* v276d: every device, while open */
 
+    if (s_qd_open == 0 && s_qd_block[idx]) {
+        if (held) {                         /* v276f: still the button that closed it */
+            memset(g, 0, sizeof *g);
+            st->dwPacketNumber ^= 0x80000000u;
+            return;
+        }
+        s_qd_block[idx] = 0;                /* let go: this device is the game's again */
+    }
     if (s_qd_open == 0) {
         if ((b & sticks) == sticks && (pb & sticks) != sticks) {
             InterlockedExchange(&s_qd_sel, 1);
@@ -563,11 +574,20 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         }
         if ((ab & 1) && !(pab & 1) && s_qd_sel == 0) quit_now();
         if (((ab & 2) && !(pab & 2)) || ((ab & 1) && !(pab & 1))) {
-            InterlockedExchange(&s_qd_open, 2);
+            /* v276f: each device that still has a button down gives the
+             * game nothing until that device lets go (v276d waited for
+             * every device, up to 2 seconds: a device the game no longer
+             * reads -- the same pad seen twice, as XInput and SDL -- kept
+             * the game deaf that long, Miggas). The ports the game reads
+             * directly (0-3, merged sources) wait too if anything was down. */
+            int any = 0;
+            s_qd_held[idx] = (BYTE)held;
+            for (int k = 8; k < QD_IDX; k++) { s_qd_block[k] = s_qd_held[k]; any |= s_qd_held[k]; }
+            for (int k = 0; k < 8; k++) s_qd_block[k] = (BYTE)(s_qd_held[k] | any);
+            memset(s_qd_held, 0, sizeof s_qd_held);
+            InterlockedExchange(&s_qd_open, 0);
             fprintf(stderr, "[QUIT] back to the game\n");
         }
-    } else if (!held) {
-        InterlockedExchange(&s_qd_open, 0);   /* everything let go: the game's again */
     }
     /* a controller at rest for the game; a new packet number so it reads it */
     memset(g, 0, sizeof *g);

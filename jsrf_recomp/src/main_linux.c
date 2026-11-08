@@ -592,6 +592,7 @@ static void portable_setup(void)
 
 typedef struct MCPXAPUState MCPXAPUState;
 extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
+extern int jsrf_dsound_lift_on(void);   /* v275: jsrf_dsound_lift.c */
 extern MCPXAPUState *g_apu_state;
 extern bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
                                  uint32_t fault_xbox_va, int is_write);
@@ -729,7 +730,8 @@ static int game_main(void)
     }
     g_xbox_mem_offset = xbox_GetMemoryOffset();
 
-    if (getenv("RECOMP_AC97_READY")) {
+    /* v275: not with the DSOUND lift, which mixes on the PC instead */
+    if (getenv("RECOMP_AC97_READY") && !jsrf_dsound_lift_on()) {
         g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
         fprintf(stderr, "[BOOT] emulated APU %s\n", g_apu_state ? "up" : "FAILED to initialise");
     }

@@ -86,6 +86,8 @@ endif()
 set(JSRF_OWN_SOURCES
     src/recomp_manual.c
     src/jsrf_widescreen.c   # v187n: HUD at the screen edges, 4:3 screens (widescreen only)
+    src/jsrf_dsound_lift.c  # v275: the DSOUND lift (RECOMP_DSOUND_LIFT=1)
+    src/jsrf_chapter_select.c  # v276: chapter select (RECOMP_CHAPTER_SELECT)
 )
 if(NOT JSRF_RELEASE STREQUAL "usa")
     find_package(Python3 COMPONENTS Interpreter)
