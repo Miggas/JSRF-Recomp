@@ -871,6 +871,28 @@ static void panel_debug(struct nk_context *ctx, float w)
         else { off("RECOMP_LOG"); put("RECOMP_QUIET", "1", "game"); }
     }
     if (np != prof) { if (np) put("RECOMP_PROFILE", "1", "files"); else off("RECOMP_PROFILE"); }
+    /* v2k: chapter select (the game's v276, RECOMP_CHAPTER_SELECT=<chapter>[:<mission>]):
+     * each chapter's opening (mission 96, the default) and its Garage
+     * (mission 0; chapter 5's is 10) */
+    {
+        static const char *const items[] = { "Off",
+            "Chapter 1: opening", "Chapter 1: Garage", "Chapter 2: opening", "Chapter 2: Garage",
+            "Chapter 3: opening", "Chapter 3: Garage", "Chapter 4: opening", "Chapter 4: Garage",
+            "Chapter 5: opening", "Chapter 5: Garage", "Chapter 6: opening", "Chapter 6: Garage",
+            "Chapter 7: opening", "Chapter 7: Garage", "Chapter 8: opening", "Chapter 8: Garage" };
+        static const char *const vals[] = { "",
+            "1", "1:0", "2", "2:0", "3", "3:0", "4", "4:0",
+            "5", "5:10", "6", "6:0", "7", "7:0", "8", "8:0" };
+        enum { N = sizeof vals / sizeof vals[0] };
+        const char *v = ini_get(gi(), "RECOMP_CHAPTER_SELECT");
+        int cur = (v && *v) ? find(vals, N, v) : 0;
+        if (cur < 0) cur = 0;   /* a value typed by hand: shown as Off until changed */
+        int sel = combo(ctx, "Chapter select", items, N, cur);
+        if (sel != cur) { if (sel) put("RECOMP_CHAPTER_SELECT", vals[sel], "tools"); else off("RECOMP_CHAPTER_SELECT"); }
+        desc(ctx, w, "New game starts from selected chapter", C_DIM);
+        desc(ctx, w, "The chapter's earlier events are skipped, and the game's next save point saves the new "
+                     "chapter over your progress: back up the UDATA folder first.", C_BAD);
+    }
 }
 
 /* every line of jsrf.ini, ticked = on */
