@@ -743,6 +743,17 @@ static void panel_video(struct nk_context *ctx, float w)
         if (sel != cur) { if (sel == 0) off("RECOMP_GL_AA"); else put("RECOMP_GL_AA", vals[sel], "display"); }
         desc(ctx, w, "Smooths jagged edges. FXAA is the lightest, SMAA looks better. A higher resolution scale smooths edges too.", C_DIM);
     }
+    /* v2r: MSAA, RECOMP_GL_MSAA (the game's v277, by s-ilent) */
+    {
+        static const char *const items[] = { "Off", "2x", "4x", "8x" };
+        static const char *const vals[] = { "", "2", "4", "8" };
+        int cur = find(vals, 4, get_or("RECOMP_GL_MSAA", ""));
+        if (cur < 0) cur = 0;
+        int sel = combo(ctx, "MSAA", items, 4, cur);
+        if (sel != cur) { if (sel == 0) off("RECOMP_GL_MSAA"); else put("RECOMP_GL_MSAA", vals[sel], "display"); }
+        desc(ctx, w, "Multisample anti-aliasing: smooths the edges of 3D models at a lower cost than a higher resolution scale, "
+                     "good for 4K screens. Fences and leaves (cut-out textures) aren't smoothed. Limited to what the graphics card supports.", C_DIM);
+    }
 }
 
 static void panel_input(struct nk_context *ctx, float w)
