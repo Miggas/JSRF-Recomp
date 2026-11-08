@@ -161,7 +161,7 @@ controller. The keyboard works as controller 1:
 - **Quit:** click both sticks (`Shift` + `Ctrl`): **Quit Game**, **Quit to Title** (while in a level) or **Return**, then **A**.
   Closing the window or `Alt+F4` works too.
 - **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
-- **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of every mission, then choose **NEW GAME** to start straight in it. Refight a boss or redo a race without touching your save (just don't save afterwards); **Quit to Title** in the quit window brings you back. *Idea by Miggas.*
+- **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of every mission, then choose **NEW GAME** to start straight in it. Each mission shows its objective. Refight a boss or redo a race without touching your save (just don't save afterwards): when the mission ends, the game goes back to the title. *Idea by Miggas.*
 
 ---
 
@@ -244,6 +244,7 @@ override the file.
 | `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
 | `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
 | `RECOMP_CHAPTER_SELECT=2` | Chapter select: a new game starts at chapter 2's opening; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the game's save points save over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
+| `RECOMP_SHOW_MISSION=1` | The window title shows the current mission (`mssnCCMM`) and its objective. |
 
 **`[compatibility]`**: try these if something goes wrong.
 

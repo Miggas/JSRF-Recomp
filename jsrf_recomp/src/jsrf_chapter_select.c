@@ -156,6 +156,8 @@ static int mission_file_state(unsigned c, unsigned m)
  * the next new game; wins over RECOMP_CHAPTER_SELECT, used once */
 static volatile int s_armed;
 static unsigned s_ac, s_am;
+static unsigned s_pick;                /* v279: the picked mission, CC * 100 + MM */
+static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to the title */
 
 static int chs_on(void)
 {
@@ -164,6 +166,8 @@ static int chs_on(void)
         s_armed = 0;
         g_xbox_note[0] = 0;
         s_c = s_ac; s_m = s_am;
+        s_pick = s_ac * 100u + s_am;    /* v279: back to the title when it ends */
+        s_pick_live = s_pick_obj;
         return 1;                       /* listed from the disc: there */
     }
     if (!s_on) return 0;
@@ -246,12 +250,74 @@ void sub_0007C9E0(void)
  * The pick is armed for the next new game: "choose NEW GAME" shows at the
  * bottom, and the new game's stage starts that mission (the same path as
  * RECOMP_CHAPTER_SELECT). Choosing it again, or B, changes or keeps it. */
-#define MM_MAX 512
+#define MSN_MAX 512
 static int s_mm_state;                 /* 0 not listed, 1 listed, -1 nothing found */
 static int s_mm_n;
-static uint16_t s_mm_id[MM_MAX];       /* CC * 100 + MM */
-static char s_mm_text[MM_MAX][48];
-static const char *s_mm_ptr[MM_MAX];
+static uint16_t s_mm_id[MSN_MAX];       /* CC * 100 + MM */
+static char s_mm_text[MSN_MAX][96];
+static const char *s_mm_ptr[MSN_MAX];
+static char s_mm_obj[MSN_MAX][80];      /* v279: the objective line, "" when none */
+
+/* v279: a mission's objective, the English text of the first message
+ * command (opcode 0xEF, args 0-6 the file offsets of the text in Japanese,
+ * English, French, German, Spanish, Italian, -) with text in its immediate
+ * list (header +0x174: offset, count; commands 0x54 bytes, the opcode at
+ * +0x10, the arguments after it). The game shows it as the mission starts.
+ * Hubs, free roam, cutscenes and openings have none. Read from the disc's
+ * file; the $ markup (line and page breaks, colours) is dropped. */
+static void mm_objective(unsigned id, char *out, size_t cap)
+{
+    char xp[64];
+    FILE *f = NULL;
+    uint8_t h[8], c[0x54];
+    uint32_t off, cnt, i;
+    out[0] = 0;
+    snprintf(xp, sizeof xp, "D:\\Media\\Mission\\mssn%02u%02u.bin", id / 100u, id % 100u);
+#if defined(_WIN32)
+    {
+        WCHAR hp[1024];
+        if (xbox_translate_path(xp, hp, 1024)) f = _wfopen(hp, L"rb");
+    }
+#else
+    {
+        char hp[1024];
+        if (xbox_translate_path(xp, hp, (DWORD)sizeof hp)) f = fopen(hp, "rb");
+    }
+#endif
+    if (!f) return;
+    if (fseek(f, 0x174, SEEK_SET) || fread(h, 1, 8, f) != 8) goto done;
+    off = (uint32_t)h[0] | (uint32_t)h[1] << 8 | (uint32_t)h[2] << 16 | (uint32_t)h[3] << 24;
+    cnt = (uint32_t)h[4] | (uint32_t)h[5] << 8 | (uint32_t)h[6] << 16 | (uint32_t)h[7] << 24;
+    if (cnt > 1024u) cnt = 1024u;
+    for (i = 0; i < cnt && !out[0]; i++) {
+        uint32_t op, en;
+        char t[160];
+        size_t k, n, o = 0;
+        if (fseek(f, (long)(off + 0x54u * i), SEEK_SET) || fread(c, 1, sizeof c, f) != sizeof c) break;
+        op = (uint32_t)c[0x10] | (uint32_t)c[0x11] << 8 | (uint32_t)c[0x12] << 16 | (uint32_t)c[0x13] << 24;
+        en = (uint32_t)c[0x18] | (uint32_t)c[0x19] << 8 | (uint32_t)c[0x1A] << 16 | (uint32_t)c[0x1B] << 24;
+        if (op != 0xEFu || !en || fseek(f, (long)en, SEEK_SET)) continue;
+        n = fread(t, 1, sizeof t - 1, f);
+        t[n] = 0;
+        for (k = 0; k < n && t[k] && o + 1 < cap; k++) {
+            unsigned char ch = (unsigned char)t[k];
+            if (ch == '$' && k + 1 < n) {          /* $n $r $a $e $p ...; $cN: a colour */
+                if (t[k + 1] == 'c' && k + 2 < n) k++;
+                k++;
+                if (t[k] == 'n' && o && out[o - 1] != ' ') out[o++] = ' ';
+                continue;
+            }
+            if (ch == 0x81 && k + 1 < n && (t[k + 1] == 'g' || t[k + 1] == 'h')) { out[o++] = '"'; k++; continue; }
+            if (ch < 0x20 || ch >= 0x7F) continue;
+            if (ch == ' ' && (!o || out[o - 1] == ' ')) continue;
+            out[o++] = (char)ch;
+        }
+        while (o && out[o - 1] == ' ') o--;
+        out[o] = 0;
+    }
+done:
+    fclose(f);
+}
 
 static int mm_cmp(const void *a, const void *b)
 {
@@ -272,7 +338,7 @@ static int mm_name(const char *f)      /* "mssnCCMM.bin" -> CCMM, else -1 */
 
 static void mm_list(void)
 {
-    uint16_t ids[MM_MAX];
+    uint16_t ids[MSN_MAX];
     int n = 0, i;
 #if defined(_WIN32)
     WCHAR hp[1024];
@@ -286,7 +352,7 @@ static void mm_list(void)
                 for (k = 0; k < 63 && fd.cFileName[k]; k++) a[k] = fd.cFileName[k] < 128 ? (char)fd.cFileName[k] : '?';
                 a[k] = 0;
                 v = mm_name(a);
-                if (v >= 0 && n < MM_MAX) ids[n++] = (uint16_t)v;
+                if (v >= 0 && n < MSN_MAX) ids[n++] = (uint16_t)v;
             } while (FindNextFileW(h, &fd));
             FindClose(h);
         }
@@ -299,7 +365,7 @@ static void mm_list(void)
             struct dirent *de;
             while ((de = readdir(d)) != NULL) {
                 int v = mm_name(de->d_name);
-                if (v >= 0 && n < MM_MAX) ids[n++] = (uint16_t)v;
+                if (v >= 0 && n < MSN_MAX) ids[n++] = (uint16_t)v;
             }
             closedir(d);
         }
@@ -309,18 +375,25 @@ static void mm_list(void)
     for (i = 0; i < n; i++) {
         unsigned c = ids[i] / 100u, m = ids[i] % 100u;
         s_mm_id[i] = ids[i];
-        if (m == 96u)
-            snprintf(s_mm_text[i], sizeof s_mm_text[i], "Chapter %u: opening (%02u%02u)", c, c, m);
+        mm_objective(ids[i], s_mm_obj[i], sizeof s_mm_obj[i]);
+        if (s_mm_obj[i][0])
+            snprintf(s_mm_text[i], sizeof s_mm_text[i], "%02u%02u  %s", c, m, s_mm_obj[i]);
+        else if (m == 96u)
+            snprintf(s_mm_text[i], sizeof s_mm_text[i], "%02u%02u  Chapter %u: opening", c, m, c);
         else if (m == 0u || (c == 5u && m == 10u))
-            snprintf(s_mm_text[i], sizeof s_mm_text[i], "Chapter %u: Garage (%02u%02u)", c, c, m);
+            snprintf(s_mm_text[i], sizeof s_mm_text[i], "%02u%02u  Chapter %u: Garage", c, m, c);
         else
-            snprintf(s_mm_text[i], sizeof s_mm_text[i], "Chapter %u: mission %02u%02u", c, c, m);
+            snprintf(s_mm_text[i], sizeof s_mm_text[i], "%02u%02u  Chapter %u", c, m, c);
         s_mm_ptr[i] = s_mm_text[i];
     }
     s_mm_n = n;
     s_mm_state = n ? 1 : -1;
-    fprintf(stderr, "[MISSION-SELECT] %d missions on the disc%s\n", n,
-            n ? "; LB + RB at the title opens the list" : "");
+    {
+        int k = 0;
+        for (i = 0; i < n; i++) k += s_mm_obj[i][0] != 0;
+        fprintf(stderr, "[MISSION-SELECT] %d missions on the disc, %d with an objective%s\n", n, k,
+                n ? "; LB + RB at the title opens the list" : "");
+    }
 }
 
 /* every sequence step (recomp_manual.c, sub_0007BDD0), with its state */
@@ -342,11 +415,86 @@ static volatile uint32_t s_game_this;
 static volatile uint32_t s_game_seen;    /* v278d: the sequence step it last updated at */
 static uint32_t s_seq_ticks;             /* sequence steps (game frames) */
 
+/* v279: a mission picked in mission select goes back to the title when it
+ * ends (Miggas). A mission ends through one of its exit commands, 0x53FB0
+ * (handleMssnExit), which sets the mission object's state: 0x5D, 0x5F, 0x61
+ * go to mission +0x54 (cut, fade, paused), 0x63 quits to the title, 0x65
+ * is the next chapter, 0x67 the stored mission. Any of them but the mission
+ * itself again (a retry) becomes the quit to the title, the same way as the
+ * quit window's Quit to Title. Only for a pick with an objective: openings,
+ * Garages and free roam play on as usual. Checked before and after the
+ * object's update, as the exit is set from inside it. */
+static void pick_exit_check(uint32_t o)
+{
+    uint32_t st, tgt;
+    if (!s_pick_live || !o) return;
+    st = MEM32(o + 0x5Cu);
+    if (st != 0x5Du && st != 0x5Fu && st != 0x61u && st != 0x65u && st != 0x67u) return;
+    if (st <= 0x61u) {
+        tgt = MEM32(o + 0x54u);
+        if (tgt == s_pick || (tgt < 100u && tgt == s_pick % 100u && (MEM32(o + 0x4Cu) & 0xFFFFu) == s_pick / 100u))
+            return;                                 /* the same mission again */
+    } else {
+        tgt = 0;
+    }
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u ended (state 0x%X, next %u): back to the title\n",
+            s_pick, st, tgt);
+    s_pick_live = 0;
+    var_set(VAR_NEXT, SEQ_TITLE);
+    MEM32(o + 0x5Cu) = GAME_END;
+}
+
 void sub_00051FC0(void)
 {
-    s_game_this = g_ecx;
+    const uint32_t o = g_ecx;
+    s_game_this = o;
     s_game_seen = s_seq_ticks;
+    if (s_pick_live) {
+        pick_exit_check(o);
+        g_ecx = o;
+    }
     sub_00051FC0_gen();
+    if (s_pick_live) {
+        const uint32_t a = g_eax, d = g_edx;
+        pick_exit_check(o);
+        g_eax = a; g_edx = d;
+    }
+}
+
+/* v279: RECOMP_SHOW_MISSION=1 adds the current mission (mssnCCMM, from the
+ * mission object: chapter +0x4C, number +0x50, an exit's three-digit target
+ * being a whole id) and its objective to the window title */
+extern void xbox_SetTitleMission(const char *t);
+static void show_mission_tick(void)
+{
+    static int on = -1;
+    static uint32_t last = 0xFFFFFFFFu;
+    uint32_t o, id = 0xFFFFFFFEu;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_SHOW_MISSION");
+        on = e && e[0] == '1';
+    }
+    if (!on) return;
+    o = s_game_this && s_seq_ticks - s_game_seen <= 30u ? s_game_this : 0;
+    if (o) {
+        uint32_t c = MEM32(o + 0x4Cu) & 0xFFFFu, m = MEM32(o + 0x50u) & 0xFFFFu;
+        id = m >= 100u ? m : c * 100u + m;
+    }
+    if (id == last) return;
+    last = id;
+    if (id > 9999u) {
+        xbox_SetTitleMission("");
+    } else {
+        char t[96];
+        const char *ob = "";
+        int i;
+        if (!s_mm_state) mm_list();
+        for (i = 0; i < s_mm_n; i++)
+            if (s_mm_id[i] == id) { ob = s_mm_obj[i]; break; }
+        snprintf(t, sizeof t, "mission %04u%s%.80s", id, ob[0] ? ": " : "", ob);
+        xbox_SetTitleMission(t);
+        fprintf(stderr, "[MISSION] mssn%04u%s%s\n", id, ob[0] ? ": " : "", ob);
+    }
 }
 
 /* v278d: counted in game frames, not real time: the quit window holds the
@@ -379,6 +527,8 @@ void jsrf_mission_select_tick(uint32_t state)
 {
     int pick;
     quit_to_title_tick(state);
+    show_mission_tick();
+    if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0;   /* v279: back at the title */
     if (state != 0x0Cu) {
         xbox_ListMenuSet(NULL, NULL, 0);
         if (s_armed && state > 0x1Cu) {             /* a game started without the new game's 1:1 */
@@ -395,6 +545,7 @@ void jsrf_mission_select_tick(uint32_t state)
         s_ac = s_mm_id[pick] / 100u;
         s_am = s_mm_id[pick] % 100u;
         s_armed = 1;
+        s_pick_obj = s_mm_obj[pick][0] != 0;
         snprintf(g_xbox_note, sizeof g_xbox_note, "%s ready: choose NEW GAME", s_mm_text[pick]);
         fprintf(stderr, "[MISSION-SELECT] mssn%02u%02u armed for the next new game\n", s_ac, s_am);
     }

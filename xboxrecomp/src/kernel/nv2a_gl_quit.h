@@ -393,7 +393,7 @@ static void present_overlay_f(int cw, int ch, int flip)
             static const float red[4] = { 0.85f, 0.29f, 0.28f, 1 }, redfill[4] = { 0.13f, 0.04f, 0.04f, 1 },
                                redtext[4] = { 1.0f, 0.33f, 0.33f, 1 }, black[4] = { 0.04f, 0.04f, 0.04f, 1 };
             enum { ROWS = 11 };
-            const float x0 = 150.0f, x1 = 490.0f, top = 128.0f, rh = 22.0f;
+            const float x0 = 90.0f, x1 = 550.0f, top = 128.0f, rh = 22.0f;   /* v279: wider, for the objectives */
             int n = xbox_ListMenuCount(), sel = xbox_ListMenuSel(), first, i;
             const char *ttl = xbox_ListMenuTitle();
             static int last_sel = -1;
