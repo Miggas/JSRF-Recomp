@@ -37,6 +37,14 @@
 #include "win32_compat.h"
 #endif
 #include "gen/recomp_types.h"
+#if !defined(_WIN32)
+#include <dirent.h>
+#endif
+
+/* v278: mission select (input/xinput_device.c, kernel/nv2a_gl_quit.h) */
+void xbox_ListMenuSet(const char *title, const char *const *items, int n);
+int xbox_ListMenuTake(void);
+extern char g_xbox_note[96];
 
 #if defined(_WIN32)
 BOOL xbox_translate_path(const char *xbox_path, WCHAR *host_path_buf, DWORD buf_size);
@@ -142,9 +150,20 @@ static int mission_file_state(unsigned c, unsigned m)
 #endif
 }
 
+/* v278: a mission picked in mission select (the title's LB + RB menu), for
+ * the next new game; wins over RECOMP_CHAPTER_SELECT, used once */
+static volatile int s_armed;
+static unsigned s_ac, s_am;
+
 static int chs_on(void)
 {
     init_once();
+    if (s_armed) {
+        s_armed = 0;
+        g_xbox_note[0] = 0;
+        s_c = s_ac; s_m = s_am;
+        return 1;                       /* listed from the disc: there */
+    }
     if (!s_on) return 0;
     if (mission_file_state(s_c, s_m) == 0) {
         fprintf(stderr, "[CHAPTER-SELECT] mssn%02u%02u.bin is not on the disc; the new game starts as usual\n",
@@ -216,4 +235,113 @@ void sub_0007C9E0(void)
         g_ecx = seq;
     }
     sub_0007C9E0_gen();
+}
+
+/* ---- v278: mission select (Miggas's idea, for a player who asked to
+ * refight bosses and redo races without save files) ----
+ * At the title (sequence state 0xC: the title stage running), LB + RB opens
+ * a list of every mission file on the disc (D:\Media\Mission\mssnCCMM.bin).
+ * The pick is armed for the next new game: "choose NEW GAME" shows at the
+ * bottom, and the new game's stage starts that mission (the same path as
+ * RECOMP_CHAPTER_SELECT). Choosing it again, or B, changes or keeps it. */
+#define MM_MAX 512
+static int s_mm_state;                 /* 0 not listed, 1 listed, -1 nothing found */
+static int s_mm_n;
+static uint16_t s_mm_id[MM_MAX];       /* CC * 100 + MM */
+static char s_mm_text[MM_MAX][48];
+static const char *s_mm_ptr[MM_MAX];
+
+static int mm_cmp(const void *a, const void *b)
+{
+    return (int)*(const uint16_t *)a - (int)*(const uint16_t *)b;
+}
+
+static int mm_name(const char *f)      /* "mssnCCMM.bin" -> CCMM, else -1 */
+{
+    int k, v = 0;
+    if ((f[0] | 32) != 'm' || (f[1] | 32) != 's' || (f[2] | 32) != 's' || (f[3] | 32) != 'n') return -1;
+    for (k = 4; k < 8; k++) {
+        if (f[k] < '0' || f[k] > '9') return -1;
+        v = v * 10 + (f[k] - '0');
+    }
+    if (f[8] != '.' || (f[9] | 32) != 'b' || (f[10] | 32) != 'i' || (f[11] | 32) != 'n' || f[12]) return -1;
+    return v;
+}
+
+static void mm_list(void)
+{
+    uint16_t ids[MM_MAX];
+    int n = 0, i;
+#if defined(_WIN32)
+    WCHAR hp[1024];
+    if (xbox_translate_path("D:\\Media\\Mission\\mssn*.bin", hp, 1024)) {
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(hp, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                char a[64];
+                int v, k;
+                for (k = 0; k < 63 && fd.cFileName[k]; k++) a[k] = fd.cFileName[k] < 128 ? (char)fd.cFileName[k] : '?';
+                a[k] = 0;
+                v = mm_name(a);
+                if (v >= 0 && n < MM_MAX) ids[n++] = (uint16_t)v;
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+    }
+#else
+    char hp[1024];
+    if (xbox_translate_path("D:\\Media\\Mission", hp, (DWORD)sizeof hp)) {
+        DIR *d = opendir(hp);
+        if (d) {
+            struct dirent *de;
+            while ((de = readdir(d)) != NULL) {
+                int v = mm_name(de->d_name);
+                if (v >= 0 && n < MM_MAX) ids[n++] = (uint16_t)v;
+            }
+            closedir(d);
+        }
+    }
+#endif
+    qsort(ids, (size_t)n, sizeof ids[0], mm_cmp);
+    for (i = 0; i < n; i++) {
+        unsigned c = ids[i] / 100u, m = ids[i] % 100u;
+        s_mm_id[i] = ids[i];
+        if (m == 96u)
+            snprintf(s_mm_text[i], sizeof s_mm_text[i], "Chapter %u: opening (%02u%02u)", c, c, m);
+        else if (m == 0u || (c == 5u && m == 10u))
+            snprintf(s_mm_text[i], sizeof s_mm_text[i], "Chapter %u: Garage (%02u%02u)", c, c, m);
+        else
+            snprintf(s_mm_text[i], sizeof s_mm_text[i], "Chapter %u: mission %02u%02u", c, c, m);
+        s_mm_ptr[i] = s_mm_text[i];
+    }
+    s_mm_n = n;
+    s_mm_state = n ? 1 : -1;
+    fprintf(stderr, "[MISSION-SELECT] %d missions on the disc%s\n", n,
+            n ? "; LB + RB at the title opens the list" : "");
+}
+
+/* every sequence step (recomp_manual.c, sub_0007BDD0), with its state */
+void jsrf_mission_select_tick(uint32_t state)
+{
+    int pick;
+    if (state != 0x0Cu) {
+        xbox_ListMenuSet(NULL, NULL, 0);
+        if (s_armed && state > 0x1Cu) {             /* a game started without the new game's 1:1 */
+            s_armed = 0;
+            g_xbox_note[0] = 0;
+        }
+        return;
+    }
+    if (!s_mm_state) mm_list();
+    if (s_mm_state != 1) return;
+    xbox_ListMenuSet("Mission select", s_mm_ptr, s_mm_n);
+    pick = xbox_ListMenuTake();
+    if (pick >= 0 && pick < s_mm_n) {
+        s_ac = s_mm_id[pick] / 100u;
+        s_am = s_mm_id[pick] % 100u;
+        s_armed = 1;
+        snprintf(g_xbox_note, sizeof g_xbox_note, "%s ready: choose NEW GAME", s_mm_text[pick]);
+        fprintf(stderr, "[MISSION-SELECT] mssn%02u%02u armed for the next new game\n", s_ac, s_am);
+    }
 }

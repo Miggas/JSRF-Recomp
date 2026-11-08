@@ -4568,6 +4568,7 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
  * the controllers itself. Only when that frame went to the game window (the
  * window is drawn on that path); otherwise the game runs on under it. */
 extern int xbox_QuitDialogOpen(void);
+extern int xbox_DialogOpen(void);       /* v278: the quit window or a list menu */
 extern void xbox_QuitDialogPoll(void);
 extern volatile LONG g_xbox_game_held;
 
@@ -4587,11 +4588,11 @@ static void game_unhold(void)
 
 void nv2a_gl_quit_hold(void)
 {
-    if (!xbox_QuitDialogOpen() || !s_last_win || s_state != 1)
+    if (!xbox_DialogOpen() || !s_last_win || s_state != 1)
         return;
     InterlockedExchange(&g_xbox_game_held, 1);
     fprintf(stderr, "[QUIT] game held\n");
-    while (xbox_QuitDialogOpen()) {
+    while (xbox_DialogOpen()) {
         xbox_QuitDialogPoll();
         if (!gl_window_present(s_last_win))
             break;

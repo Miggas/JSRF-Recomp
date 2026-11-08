@@ -30,6 +30,10 @@
 #endif
 
 extern int xbox_QuitDialogOpen(void);   /* input/xinput_device.c */
+/* v278: the list menu (mission select) and the note line, same file */
+extern int xbox_ListMenuOpen(void), xbox_ListMenuCount(void), xbox_ListMenuSel(void);
+extern const char *xbox_ListMenuTitle(void), *xbox_ListMenuItem(int i);
+extern char g_xbox_note[96];
 
 typedef struct { float x, y, u, v, r, g, b, a; } QdVert;   /* u < 0: no texture */
 #define QD_MAX (6 * 6000)
@@ -301,9 +305,9 @@ extern char g_gl_build_msg[64];   /* v253: nv2a_gl.c, while shaders are built */
 
 static void present_overlay_f(int cw, int ch, int flip)
 {
-    int quit = xbox_QuitDialogOpen();
+    int quit = xbox_QuitDialogOpen(), menu = xbox_ListMenuOpen();
     if (!quit) s_qd_last_sel = -1;
-    if ((!quit && !g_gl_build_msg[0]) || cw <= 0 || ch <= 0) return;
+    if ((!quit && !menu && !g_gl_build_msg[0] && !g_xbox_note[0]) || cw <= 0 || ch <= 0) return;
     if (!s_qd_state) {
         GLint p0 = 0, va0 = 0, ab0 = 0;
         glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
@@ -347,6 +351,64 @@ static void present_overlay_f(int cw, int ch, int flip)
                 float w = qd_text_w(m, 1.45f) + 22.0f;
                 qd_frame(320.0f - w / 2, 428.0f, 320.0f + w / 2, 452.0f, 1.6f, 0.9f, edge, box);
                 qd_text(320.5f, 440.0f, 1.45f, 1.9f, 0.45f, 0.22f, m, white);
+            }
+        }
+        if (g_xbox_note[0] && !g_gl_build_msg[0] && !menu) {
+            /* v278: a note (mission select: "... ready: choose NEW GAME"), bottom middle */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 };
+            char m[96];
+            memcpy(m, g_xbox_note, sizeof m);
+            m[95] = 0;
+            if (s_qd_font) {
+                float k = qd_ttf_scale(m, 9.0f, 560.0f), w = qd_ttf_w(m) * k + 22.0f;
+                qd_frame(320.0f - w / 2, 428.0f, 320.0f + w / 2, 452.0f, 1.6f, 0.9f, edge, box);
+                qd_ttf_text(320.0f, 440.0f, k, m, white);
+            } else {
+                float w = qd_text_w(m, 1.45f) + 22.0f;
+                qd_frame(320.0f - w / 2, 428.0f, 320.0f + w / 2, 452.0f, 1.6f, 0.9f, edge, box);
+                qd_text(320.5f, 440.0f, 1.45f, 1.9f, 0.45f, 0.22f, m, white);
+            }
+        }
+        if (menu) {
+            /* v278: the list menu: a title bar, 11 rows around the pick, a hint line */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 }, dim[4] = { 0.62f, 0.63f, 0.62f, 1 };
+            static const float red[4] = { 0.85f, 0.29f, 0.28f, 1 }, redfill[4] = { 0.13f, 0.04f, 0.04f, 1 },
+                               redtext[4] = { 1.0f, 0.33f, 0.33f, 1 }, black[4] = { 0.04f, 0.04f, 0.04f, 1 };
+            enum { ROWS = 11 };
+            const float x0 = 150.0f, x1 = 490.0f, top = 128.0f, rh = 22.0f;
+            int n = xbox_ListMenuCount(), sel = xbox_ListMenuSel(), first, i;
+            const char *ttl = xbox_ListMenuTitle();
+            static int last_sel = -1;
+            static unsigned long long m0;
+            if (sel != last_sel) { last_sel = sel; m0 = now; }
+            float mt = (float)((now - m0) % 1000) / 1000.0f;
+            first = sel - ROWS / 2;
+            if (first > n - ROWS) first = n - ROWS;
+            if (first < 0) first = 0;
+            qd_frame(x0 - 6.0f, 76.0f, x1 + 6.0f, top + ROWS * rh + 34.0f, 1.8f, 1.1f, edge, box);
+            qd_frame(x0 - 2.0f, 82.0f, x1 + 2.0f, 106.0f, 0.0f, 0.8f, bar_edge, teal);
+            if (s_qd_font) qd_ttf_text(320.0f, 94.0f, qd_ttf_scale(ttl, 12.0f, x1 - x0 - 20.0f), ttl, ink);
+            else qd_text(320.5f, 93.5f, 2.05f, 2.55f, 0.6f, 0.24f, ttl, ink);
+            for (i = 0; i < ROWS && first + i < n; i++) {
+                const char *it = xbox_ListMenuItem(first + i);
+                float y0 = top + i * rh, cy = y0 + rh / 2 - 1.0f;
+                float e4[4], f4[4], t4[4];
+                if (first + i == sel) {
+                    qd_mix(e4, red, white, mt);
+                    qd_mix(f4, redfill, black, mt);
+                    qd_mix(t4, redtext, white, mt);
+                    qd_frame(x0, y0, x1, y0 + rh - 3.0f, 1.4f, 0.6f, e4, f4);
+                } else {
+                    memcpy(t4, dim, sizeof t4);
+                }
+                if (s_qd_font) qd_ttf_text(320.0f, cy, qd_ttf_scale(it, 8.5f, x1 - x0 - 16.0f), it, t4);
+                else qd_text(320.5f, cy, 1.4f, 1.8f, 0.4f, 0.15f, it, t4);
+            }
+            {
+                char h[96];
+                snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = page", sel + 1, n);
+                if (s_qd_font) qd_ttf_text(320.0f, top + ROWS * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
+                else qd_text(320.5f, top + ROWS * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
             }
         }
         if (quit) {

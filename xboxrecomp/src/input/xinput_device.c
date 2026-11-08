@@ -499,6 +499,36 @@ static int  s_qd_off = -1;
 int xbox_QuitDialogOpen(void) { return s_qd_open == 1; }
 int xbox_QuitDialogSel(void) { return (int)s_qd_sel; }
 
+/* v278: a list menu over the game (s_qd_open == 3), offered by the game's
+ * code (jsrf: mission select at the title) with xbox_ListMenuSet; opened by
+ * pressing LB + RB together (White + Black; Q + E on the keyboard), it holds
+ * the game like the quit window. Up / down picks (held: repeats), left /
+ * right a page, A takes the pick (xbox_ListMenuTake), B closes it. Drawn by
+ * kernel/nv2a_gl_quit.h. */
+#define LM_MAX 512
+static const char *s_lm_title;
+static const char *const *s_lm_items;
+static volatile LONG s_lm_n;              /* 0: not offered now */
+static volatile LONG s_lm_sel, s_lm_pick = -1;
+static BYTE s_qd_prev_wb[QD_IDX];         /* 1 White (LB), 2 Black (RB) */
+static signed char s_qd_prev_y[QD_IDX];   /* left stick: -1 down, 0, 1 up */
+static DWORD s_lm_rep_at[QD_IDX];         /* when a held up / down repeats next */
+char g_xbox_note[96];                     /* a line drawn at the bottom of the picture while not empty */
+
+void xbox_ListMenuSet(const char *title, const char *const *items, int n)
+{
+    if (n > LM_MAX) n = LM_MAX;
+    if (n > 0) { s_lm_title = title; s_lm_items = items; }
+    InterlockedExchange(&s_lm_n, n > 0 ? n : 0);
+}
+int xbox_ListMenuOpen(void) { return s_qd_open == 3; }
+int xbox_ListMenuCount(void) { return (int)s_lm_n; }
+int xbox_ListMenuSel(void) { return (int)s_lm_sel; }
+const char *xbox_ListMenuTitle(void) { return s_lm_title ? s_lm_title : ""; }
+const char *xbox_ListMenuItem(int i) { return s_lm_items && i >= 0 && i < s_lm_n ? s_lm_items[i] : ""; }
+int xbox_ListMenuTake(void) { return (int)InterlockedExchange(&s_lm_pick, -1); }
+int xbox_DialogOpen(void) { return s_qd_open == 1 || s_qd_open == 3; }
+
 /* v252: while the window is open the game is held (kernel/nv2a_gl.c holds
  * it at its next frame), its sound too (apu/apu_core.c) */
 volatile LONG g_xbox_game_held;
@@ -535,19 +565,27 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         const char *e = getenv("RECOMP_QUIT_COMBO");
         s_qd_off = e && e[0] == '0';
     }
-    if (s_qd_off || idx < 0 || idx >= QD_IDX) return;
+    if (idx < 0 || idx >= QD_IDX) return;
+    if (s_qd_off && s_lm_n <= 0 && s_qd_open == 0 && !s_qd_block[idx]) return;   /* v278: the menu works without the quit combo */
     WORD b = g->wButtons;
     BYTE ab = (BYTE)((g->bAnalogButtons[XBOX_BUTTON_A] > 30 ? 1 : 0) |
                      (g->bAnalogButtons[XBOX_BUTTON_B] > 30 ? 2 : 0));
     WORD pb = s_qd_prev_btn[idx];
     BYTE pab = s_qd_prev_ab[idx];
+    BYTE wb = (BYTE)((g->bAnalogButtons[XBOX_BUTTON_WHITE] > 30 ? 1 : 0) |
+                     (g->bAnalogButtons[XBOX_BUTTON_BLACK] > 30 ? 2 : 0));
+    BYTE pwb = s_qd_prev_wb[idx];
+    int ly = g->sThumbLY, sy = ly > 16000 ? 1 : ly < -16000 ? -1 : (ly > -8000 && ly < 8000) ? 0 : s_qd_prev_y[idx];
+    int psy = s_qd_prev_y[idx];
+    s_qd_prev_wb[idx] = wb;
+    s_qd_prev_y[idx] = (signed char)sy;
     int lx = g->sThumbLX, sx = lx > 16000 ? 1 : lx < -16000 ? -1 : (lx > -8000 && lx < 8000) ? 0 : s_qd_prev_x[idx];
     int psx = s_qd_prev_x[idx];
     s_qd_prev_btn[idx] = b;
     s_qd_prev_ab[idx] = ab;
     s_qd_prev_x[idx] = (signed char)sx;
-    int held = b != 0 || ab != 0 || g->bAnalogButtons[XBOX_BUTTON_X] > 30 || g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
-    if (s_qd_open == 1) s_qd_held[idx] = (BYTE)held;   /* v276d: every device, while open */
+    int held = b != 0 || ab != 0 || wb != 0 || g->bAnalogButtons[XBOX_BUTTON_X] > 30 || g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
+    if (s_qd_open == 1 || s_qd_open == 3) s_qd_held[idx] = (BYTE)held;   /* v276d: every device, while open */
 
     if (s_qd_open == 0 && s_qd_block[idx]) {
         if (held) {                         /* v276f: still the button that closed it */
@@ -558,12 +596,57 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         s_qd_block[idx] = 0;                /* let go: this device is the game's again */
     }
     if (s_qd_open == 0) {
-        if ((b & sticks) == sticks && (pb & sticks) != sticks) {
+        if (!s_qd_off && (b & sticks) == sticks && (pb & sticks) != sticks) {
             InterlockedExchange(&s_qd_sel, 1);
             InterlockedExchange(&s_qd_open, 1);
             fprintf(stderr, "[QUIT] quit window open (left / right, A = choose, B = back)\n");
+        } else if (s_lm_n > 0 && wb == 3 && pwb != 3) {
+            if (s_lm_sel >= s_lm_n) InterlockedExchange(&s_lm_sel, 0);
+            s_lm_rep_at[idx] = 0;
+            InterlockedExchange(&s_qd_open, 3);
+            fprintf(stderr, "[MENU] %s open (%ld entries)\n", xbox_ListMenuTitle(), (long)s_lm_n);
         } else {
             return;                         /* the game's input, untouched */
+        }
+    } else if (s_qd_open == 3) {
+        /* v278: the list menu */
+        LONG n = s_lm_n, sel = s_lm_sel;
+        int dir = 0;
+        int up = (b & XBOX_GAMEPAD_DPAD_UP) || sy > 0, dn = (b & XBOX_GAMEPAD_DPAD_DOWN) || sy < 0;
+        int pup = (pb & XBOX_GAMEPAD_DPAD_UP) || psy > 0, pdn = (pb & XBOX_GAMEPAD_DPAD_DOWN) || psy < 0;
+        DWORD now = GetTickCount();
+        if ((up && !pup) || (dn && !pdn)) {
+            dir = up ? -1 : 1;
+            s_lm_rep_at[idx] = now + 400;           /* held: repeats after 0.4 s */
+        } else if ((up || dn) && s_lm_rep_at[idx] && (LONG)(now - s_lm_rep_at[idx]) >= 0) {
+            dir = up ? -1 : 1;
+            s_lm_rep_at[idx] = now + 70;
+        } else if (!up && !dn) {
+            s_lm_rep_at[idx] = 0;
+        }
+        if (((b & XBOX_GAMEPAD_DPAD_LEFT) && !(pb & XBOX_GAMEPAD_DPAD_LEFT)) || (sx < 0 && psx >= 0)) dir = -10;
+        if (((b & XBOX_GAMEPAD_DPAD_RIGHT) && !(pb & XBOX_GAMEPAD_DPAD_RIGHT)) || (sx > 0 && psx <= 0)) dir = 10;
+        if (dir && n > 0) {
+            sel += dir;
+            if (dir == -1 && sel < 0) sel = n - 1;          /* one step wraps around */
+            else if (dir == 1 && sel >= n) sel = 0;
+            if (sel < 0) sel = 0;
+            if (sel >= n) sel = n - 1;
+            InterlockedExchange(&s_lm_sel, sel);
+        }
+        if (n <= 0 || ((ab & 2) && !(pab & 2)) || ((ab & 1) && !(pab & 1))) {
+            int any = 0;
+            if (n > 0 && (ab & 1) && !(pab & 1)) {
+                InterlockedExchange(&s_lm_pick, sel);
+                fprintf(stderr, "[MENU] picked %ld: %s\n", (long)sel, xbox_ListMenuItem((int)sel));
+            } else {
+                fprintf(stderr, "[MENU] closed\n");
+            }
+            s_qd_held[idx] = (BYTE)held;
+            for (int k = 8; k < QD_IDX; k++) { s_qd_block[k] = s_qd_held[k]; any |= s_qd_held[k]; }
+            for (int k = 0; k < 8; k++) s_qd_block[k] = (BYTE)(s_qd_held[k] | any);
+            memset(s_qd_held, 0, sizeof s_qd_held);
+            InterlockedExchange(&s_qd_open, 0);
         }
     } else if (s_qd_open == 1) {
         WORD lr = XBOX_GAMEPAD_DPAD_LEFT | XBOX_GAMEPAD_DPAD_RIGHT;

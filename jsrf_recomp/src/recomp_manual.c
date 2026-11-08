@@ -1567,6 +1567,8 @@ static void boot_ws_hold(uint32_t handler)
         xbox_MenuScreen();
 }
 
+void jsrf_mission_select_tick(uint32_t state);   /* v278: jsrf_chapter_select.c */
+
 void sub_0007BDD0(void)
 {
     uint32_t self = g_ecx;
@@ -1574,6 +1576,7 @@ void sub_0007BDD0(void)
     {
         uint32_t st = MEM32(self + 0x48);
         DWORD now = GetTickCount();
+        jsrf_mission_select_tick(st);   /* v278: the title's mission select */
         if (st < 0x40)
             boot_ws_hold(MEM32(0x0020D2B8u + 4 * st));
         if (st != boot_state) {
