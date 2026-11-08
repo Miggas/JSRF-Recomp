@@ -339,24 +339,30 @@ static void mm_list(void)
 
 extern void sub_00051FC0_gen(void);
 static volatile uint32_t s_game_this;
-static volatile DWORD s_game_seen;
+static volatile uint32_t s_game_seen;    /* v278d: the sequence step it last updated at */
+static uint32_t s_seq_ticks;             /* sequence steps (game frames) */
 
 void sub_00051FC0(void)
 {
     s_game_this = g_ecx;
-    s_game_seen = GetTickCount();
+    s_game_seen = s_seq_ticks;
     sub_00051FC0_gen();
 }
 
+/* v278d: counted in game frames, not real time: the quit window holds the
+ * game for as long as it is open, and v278c's half second had always run
+ * out by the time the game went on ("no stage running", Miggas) */
 static uint32_t game_obj(void)
 {
     uint32_t o = s_game_this;
-    return o && GetTickCount() - s_game_seen < 500u ? o : 0;
+    return o && s_seq_ticks - s_game_seen <= 30u ? o : 0;
 }
 
 static void quit_to_title_tick(uint32_t state)
 {
-    uint32_t o = state == 0x1Eu ? game_obj() : 0;
+    uint32_t o;
+    s_seq_ticks++;
+    o = state == 0x1Eu ? game_obj() : 0;
     xbox_QuitTitleAvailable(o != 0);
     if (!xbox_QuitToTitleTake()) return;
     if (!o) {
