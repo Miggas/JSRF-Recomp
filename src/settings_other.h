@@ -33,6 +33,7 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_FREECAM", "1", "Free camera. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed." },
     { "RECOMP_FREECAM_SPEED", "2", "The free camera's start speed." },
     { "RECOMP_FREECAM_SENS", "0.003", "The free camera's mouse sensitivity." },
+    { "RECOMP_SHOW_MISSION", "1", "Shows the current mission number (mssnCCMM) and its objective in the window title." },
 
     { NULL, NULL, "Graphics" },
     { "RECOMP_GL_VSYNC", "1", "VSync: frames wait for the monitor's refresh." },
