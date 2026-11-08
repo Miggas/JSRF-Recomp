@@ -4322,6 +4322,21 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
 extern int xbox_QuitDialogOpen(void);
 extern void xbox_QuitDialogPoll(void);
 extern volatile LONG g_xbox_game_held;
+
+/* v276e: after a hold, the sound chip catches up before the game goes on.
+ * While the game is held the APU runs no voices, so a voice DirectSound had
+ * just stopped never reports it is idle. Released at once, the game's next
+ * Play of that buffer waited for the report inside DirectSound's critical
+ * section (sub_001A308E, from sub_001A3E58), where the APU interrupt that
+ * brings it is held off: the game froze for good, opening and closing the
+ * quit window a few times in a row (reported by Miggas). Here, at the flip,
+ * no DirectSound call is in progress, so the interrupt gets through. */
+static void game_unhold(void)
+{
+    InterlockedExchange(&g_xbox_game_held, 0);
+    Sleep(50);                            /* ~30 APU frames: the voices run, the interrupt is taken */
+}
+
 void nv2a_gl_quit_hold(void)
 {
     if (!xbox_QuitDialogOpen() || !s_last_win || s_state != 1)
@@ -4334,7 +4349,7 @@ void nv2a_gl_quit_hold(void)
             break;
         Sleep(16);
     }
-    InterlockedExchange(&g_xbox_game_held, 0);
+    game_unhold();
     fprintf(stderr, "[QUIT] game goes on\n");
 }
 
@@ -4390,7 +4405,7 @@ void nv2a_gl_prebuild_hold(void)
                 rcp_build(&s_rcp[todo[i]]);
         }
         g_gl_build_msg[0] = 0;
-        InterlockedExchange(&g_xbox_game_held, 0);
+        game_unhold();
         fprintf(stderr, "[GL] shaders built before the start: %u in %.1f s\n", s_rcp_built,
                 (double)(TM_NOW() - t0) / (double)sec);
     }
