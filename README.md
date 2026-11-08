@@ -215,7 +215,7 @@ override the file.
 | Setting | What it does |
 |---|---|
 | `RECOMP_APU_GAIN=0.5` | Master volume. |
-| `RECOMP_DSOUND_LIFT=1` | PC sound mixing (testing): the game's sounds are played through the PC's audio directly, instead of the emulated Xbox sound chip. May fix sounds that cut off or don't play when many skaters are around. *From andeecollard's jsrf-recomp.* |
+| `RECOMP_DSOUND_LIFT=0` | Turns PC sound mixing off (on by default: the game's sounds are mixed on the PC and played through its audio directly) and uses the emulated Xbox sound chip instead. *From andeecollard's jsrf-recomp.* |
 
 **`[files]`**
 

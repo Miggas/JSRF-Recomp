@@ -1,4 +1,4 @@
-/* The DSOUND lift (v275, RECOMP_DSOUND_LIFT=1): the game's DirectSound
+/* The DSOUND lift (v275, on by default since v276g; RECOMP_DSOUND_LIFT=0 turns it off): the game's DirectSound
  * calls answered on the PC instead of by the game's own DSOUND library on the
  * emulated Xbox sound chip (the APU). With it on, the APU is never started;
  * the game's sounds are mixed by xboxrecomp/src/apu/dsound_host.c and played
@@ -59,10 +59,10 @@ static int g_lift = -1;
 int jsrf_dsound_lift_on(void)
 {
     if (g_lift < 0) {
-        /* Off unless RECOMP_DSOUND_LIFT=1: the title's own DSOUND on the
-         * emulated APU stays the default until the lift is played enough. */
+        /* v276g: on unless RECOMP_DSOUND_LIFT=0 (the title's own DSOUND on
+         * the emulated APU), after Miggas's play on NTSC-U and PAL. */
         const char *v = getenv("RECOMP_DSOUND_LIFT");
-        g_lift = v && v[0] == '1';
+        g_lift = !(v && v[0] == '0');
         if (g_lift) fprintf(stderr, "[DSOUND-LIFT] on: the game's sounds are mixed on the PC\n");
     }
     return g_lift;
