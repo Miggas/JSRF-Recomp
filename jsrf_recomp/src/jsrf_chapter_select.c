@@ -158,6 +158,7 @@ static volatile int s_armed;
 static unsigned s_ac, s_am;
 static unsigned s_pick;                /* v279: the picked mission, CC * 100 + MM */
 static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to the title */
+static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
 
 static int chs_on(void)
 {
@@ -168,6 +169,15 @@ static int chs_on(void)
         s_c = s_ac; s_m = s_am;
         s_pick = s_ac * 100u + s_am;    /* v279: back to the title when it ends */
         s_pick_live = s_pick_obj;
+        /* v281: the chapter's character select (mssnCC95, Roboy's menu in
+         * the Garage) first, for a pick in chapters 1-9 that isn't an
+         * opening or Garage */
+        s_sel_target = 0;
+        if (s_ac >= 1u && s_ac <= 9u && s_am != 0u && !(s_am >= 94u && s_am <= 97u)
+            && mission_file_state(s_ac, 95u) == 1) {
+            s_sel_target = s_pick;
+            s_m = 95u;
+        }
         return 1;                       /* listed from the disc: there */
     }
     if (!s_on) return 0;
@@ -228,6 +238,16 @@ static void chs_new_game(void)
     var_set(VAR_CHAPTER, c);
     var_set(VAR_MISSION, m);
     pick_setup(c, m);                   /* v280: where the player starts, what the parent set */
+
+    /* v281: a mission select pick has every character unlocked, as the
+     * game's UnlockCharacter (0x39CB0) does it: bit <id> of the unlocked
+     * set at SAVE+0x14 and global 0x151 + id = -1, for the 24 ids */
+    if (s_pick) {
+        MEM32(SAVE + 0x14u) |= 0x00FFFFFFu;
+        for (k = 0; k < 24u; ++k) var_set(0x151u + k, 0xFFFFFFFFu);
+        fprintf(stderr, "[MISSION-SELECT] all characters unlocked%s\n",
+                s_sel_target ? "; the character select first" : "");
+    }
 
     fprintf(stderr, "[CHAPTER-SELECT] the new game starts mssn%02u%02u (chapter %u, mission %u)%s\n",
             c, m, c, m, c == 1u && m != 101u ? ", chapter-1 opening flags set" :
@@ -569,8 +589,20 @@ static void pick_setup(unsigned c, unsigned m)
 static void pick_exit_check(uint32_t o)
 {
     uint32_t st, tgt;
-    if (!s_pick_live || !o) return;
+    if (!o) return;
     st = MEM32(o + 0x5Cu);
+    /* v281: the character select's exit (to the Garage, CC00) goes to the
+     * pick instead, started as v280 does */
+    if (s_sel_target && (st == 0x5Du || st == 0x5Fu || st == 0x61u)
+        && ((MEM32(o + 0x50u) & 0xFFFFu) == 95u || MEM32(o + 0x54u) == s_sel_target / 100u * 100u)) {
+        const unsigned id = s_sel_target;
+        s_sel_target = 0;
+        MEM32(o + 0x54u) = id;
+        fprintf(stderr, "[MISSION-SELECT] character chosen: on to mssn%04u\n", id);
+        pick_setup(id / 100u, id % 100u);
+        return;
+    }
+    if (!s_pick_live) return;
     if (st != 0x5Du && st != 0x5Fu && st != 0x61u && st != 0x65u && st != 0x67u) return;
     if (st <= 0x61u) {
         tgt = MEM32(o + 0x54u);
@@ -591,12 +623,12 @@ void sub_00051FC0(void)
     const uint32_t o = g_ecx;
     s_game_this = o;
     s_game_seen = s_seq_ticks;
-    if (s_pick_live) {
+    if (s_pick_live || s_sel_target) {
         pick_exit_check(o);
         g_ecx = o;
     }
     sub_00051FC0_gen();
-    if (s_pick_live) {
+    if (s_pick_live || s_sel_target) {
         const uint32_t a = g_eax, d = g_edx;
         pick_exit_check(o);
         g_eax = a; g_edx = d;
@@ -670,7 +702,7 @@ void jsrf_mission_select_tick(uint32_t state)
     int pick;
     quit_to_title_tick(state);
     show_mission_tick();
-    if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0;   /* v279: back at the title */
+    if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0, s_sel_target = 0, s_pick = 0;   /* v279: back at the title */
     if (state != 0x0Cu) {
         xbox_ListMenuSet(NULL, NULL, 0);
         if (s_armed && state > 0x1Cu) {             /* a game started without the new game's 1:1 */
