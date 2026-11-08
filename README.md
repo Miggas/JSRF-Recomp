@@ -189,7 +189,7 @@ override the file.
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920, `5` = 3200×2400 (up to `8`, if the graphics card allows). |
+| `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920, `5` = 3200×2400, `6` = 3840×2880 (4K) (up to `8`, if the graphics card allows). |
 | `RECOMP_GL_ANISO=16` | Anisotropic filtering: `2`, `4`, `8` or `16`. |
 | `RECOMP_GL_AA=smaa_high` | Anti-aliasing: `fxaa`, `smaa_low`, `smaa_medium`, `smaa_high` or `smaa_ultra`. |
 | `RECOMP_FULLSCREEN=1` | Start in full screen. |
