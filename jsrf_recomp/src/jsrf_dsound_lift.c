@@ -60,7 +60,7 @@ int jsrf_dsound_lift_on(void)
 {
     if (g_lift < 0) {
         /* v276g: on unless RECOMP_DSOUND_LIFT=0 (the title's own DSOUND on
-         * the emulated APU), after Miggas's play on NTSC-U and PAL. */
+         * the emulated APU), on every release. */
         const char *v = getenv("RECOMP_DSOUND_LIFT");
         g_lift = !(v && v[0] == '0');
         if (g_lift) fprintf(stderr, "[DSOUND-LIFT] on: the game's sounds are mixed on the PC\n");
