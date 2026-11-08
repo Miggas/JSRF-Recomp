@@ -2180,7 +2180,6 @@
    "0x0007C560",
    "0x0007C600",
    "0x0007C800",
-   "0x0007C9BE",
    "0x0007C9E0",
    "0x0007CAE0",
    "0x0007CBE0",
@@ -22954,7 +22953,6 @@
    "0x0007B978",
    "0x0007C160",
    "0x0007C720",
-   "0x0007C9BE",
    "0x0007C9E0",
    "0x0007CAE0",
    "0x0007CC40",
@@ -26077,7 +26075,6 @@
   ],
   "called_by": [
    "0x0007C160",
-   "0x0007C9BE",
    "0x0007C9E0",
    "0x0007CAE0",
    "0x0007CC40",
@@ -39613,13 +39610,9 @@
   "section": ".text",
   "confidence": 0.85,
   "detection_method": "gap_prologue",
-  "num_instructions": 41,
+  "num_instructions": 7,
   "has_prologue": false,
-  "calls_to": [
-   "0x000127C0",
-   "0x0004A8F0",
-   "0x0004ECD0"
-  ],
+  "calls_to": [],
   "called_by": []
  },
  {
@@ -39628,8 +39621,8 @@
   "size": 125,
   "name": "sub_0007C9E0",
   "section": ".text",
-  "confidence": 0.88,
-  "detection_method": "tail_jump_alias",
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
   "num_instructions": 34,
   "has_prologue": false,
   "calls_to": [
@@ -39690,9 +39683,9 @@
   "size": 208,
   "name": "sub_0007CAE0",
   "section": ".text",
-  "confidence": 0.95,
-  "detection_method": "seed_vtable_thunk",
-  "num_instructions": 53,
+  "confidence": 0.88,
+  "detection_method": "tail_jump_alias",
+  "num_instructions": 59,
   "has_prologue": false,
   "calls_to": [
    "0x000127C0",

@@ -12597,7 +12597,7 @@
     "name": "sub_0007D280",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0007D300",
@@ -12625,7 +12625,7 @@
     "name": "sub_0007D380",
     "type": "function",
     "section": ".text",
-    "confidence": 0.95
+    "confidence": 0.88
   },
   {
     "address": "0x0007D450",

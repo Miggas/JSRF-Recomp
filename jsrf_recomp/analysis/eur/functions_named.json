@@ -2155,7 +2155,6 @@
    "0x0007CE00",
    "0x0007CEA0",
    "0x0007D0A0",
-   "0x0007D25E",
    "0x0007D280",
    "0x0007D380",
    "0x0007D480",
@@ -22270,7 +22269,6 @@
    "0x0007C1E8",
    "0x0007CA10",
    "0x0007CFC0",
-   "0x0007D25E",
    "0x0007D280",
    "0x0007D380",
    "0x0007D4E0",
@@ -25389,7 +25387,6 @@
   ],
   "called_by": [
    "0x0007CA10",
-   "0x0007D25E",
    "0x0007D280",
    "0x0007D380",
    "0x0007D4E0",
@@ -38811,19 +38808,15 @@
  },
  {
   "start": "0x0007D25E",
-  "end": "0x0007D2FD",
-  "size": 159,
+  "end": "0x0007D280",
+  "size": 34,
   "name": "sub_0007D25E",
   "section": ".text",
   "confidence": 0.85,
   "detection_method": "gap_prologue",
-  "num_instructions": 41,
+  "num_instructions": 7,
   "has_prologue": false,
-  "calls_to": [
-   "0x00012790",
-   "0x0004B080",
-   "0x0004F490"
-  ],
+  "calls_to": [],
   "called_by": []
  },
  {
@@ -38832,8 +38825,8 @@
   "size": 125,
   "name": "sub_0007D280",
   "section": ".text",
-  "confidence": 0.88,
-  "detection_method": "tail_jump_alias",
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
   "num_instructions": 34,
   "has_prologue": false,
   "calls_to": [
@@ -38894,9 +38887,9 @@
   "size": 208,
   "name": "sub_0007D380",
   "section": ".text",
-  "confidence": 0.95,
-  "detection_method": "seed_vtable_thunk",
-  "num_instructions": 53,
+  "confidence": 0.88,
+  "detection_method": "tail_jump_alias",
+  "num_instructions": 59,
   "has_prologue": false,
   "calls_to": [
    "0x00012790",

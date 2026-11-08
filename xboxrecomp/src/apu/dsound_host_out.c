@@ -51,8 +51,10 @@ static void wav_open(void)
     }
 }
 
-/* jsrf (v275): the master volume, RECOMP_APU_GAIN as for the APU's output:
- * its default 0.5 plays the mix as it is, 1.0 twice as loud (clipped). */
+/* jsrf (v275): the master volume, RECOMP_APU_GAIN, applied as the APU's
+ * output applies it (apu_dsp.c: the mixed bins times the gain, default 0.5).
+ * v276: was the gain times 2, which played music and voices twice as loud as
+ * the APU does (Miggas). */
 static float g_gain = -1.0f;
 
 static void mix_out(int16_t *out, uint32_t frames)
@@ -60,7 +62,7 @@ static void mix_out(int16_t *out, uint32_t frames)
     dsh_mix(out, frames);
     if (g_gain < 0.0f) {
         const char *e = getenv("RECOMP_APU_GAIN");
-        g_gain = e && *e ? (float)atof(e) * 2.0f : 1.0f;
+        g_gain = e && *e ? (float)atof(e) : 0.5f;
         if (g_gain < 0.0f) g_gain = 0.0f;
         if (g_gain > 4.0f) g_gain = 4.0f;
     }

@@ -20854,8 +20854,8 @@
   },
   {
     "start": "0x0007C98E",
-    "end": "0x0007CA2D",
-    "size": 159,
+    "end": "0x0007C9B0",
+    "size": 34,
     "name": "sub_0007C98E",
     "section": ".text",
     "category": "unknown",

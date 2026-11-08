@@ -241,7 +241,7 @@ override the file.
 | `RECOMP_FREECAM=1` | Free camera. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed. |
 | `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
 | `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
-| `RECOMP_CHAPTER_SELECT=2` | Chapter select: picking the tutorial (Roboy in the Garage, or the title menu) starts chapter 2's opening instead; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the next save point saves over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
+| `RECOMP_CHAPTER_SELECT=2` | Chapter select: a new game starts at chapter 2's opening; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the game's save points save over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
 
 **`[compatibility]`**: try these if something goes wrong.
 

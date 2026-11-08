@@ -12975,7 +12975,7 @@
     "name": "sub_0007C9B0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0007CA30",
@@ -13003,7 +13003,7 @@
     "name": "sub_0007CAB0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.95
+    "confidence": 0.88
   },
   {
     "address": "0x0007CB80",
