@@ -491,6 +491,8 @@ static volatile LONG s_qd_open;           /* 0 closed, 1 open, 2 closed, waiting
 static WORD s_qd_prev_btn[QD_IDX];
 static BYTE s_qd_prev_ab[QD_IDX];
 static signed char s_qd_prev_x[QD_IDX];   /* left stick: -1 left, 0, 1 right */
+static BYTE s_qd_held[QD_IDX];            /* v276d: a button down on this device */
+static DWORD s_qd_closed_at;              /* v276d: when the window closed */
 static volatile LONG s_qd_sel = 1;        /* 0 YES, 1 NO */
 static int  s_qd_off = -1;
 
@@ -545,6 +547,7 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
     s_qd_prev_ab[idx] = ab;
     s_qd_prev_x[idx] = (signed char)sx;
     int held = b != 0 || ab != 0 || g->bAnalogButtons[XBOX_BUTTON_X] > 30 || g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
+    if (s_qd_open == 1) s_qd_held[idx] = (BYTE)held;   /* v276d: every device, while open */
 
     if (s_qd_open == 0) {
         if ((b & sticks) == sticks && (pb & sticks) != sticks) {
@@ -563,11 +566,23 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         }
         if ((ab & 1) && !(pab & 1) && s_qd_sel == 0) quit_now();
         if (((ab & 2) && !(pab & 2)) || ((ab & 1) && !(pab & 1))) {
+            s_qd_closed_at = GetTickCount();
             InterlockedExchange(&s_qd_open, 2);
             fprintf(stderr, "[QUIT] back to the game\n");
         }
-    } else if (!held) {
-        InterlockedExchange(&s_qd_open, 0);   /* everything let go: the game's again */
+    } else {
+        /* v276d: the game's again only when every device has let go: the
+         * first device read (often the keyboard, at rest) used to end the
+         * wait while the pad still held the A or B that closed the window,
+         * and the game took it as a jump or a menu pick (Miggas). A device
+         * that is no longer read can't hold it for more than 2 seconds. */
+        int any = 0;
+        s_qd_held[idx] = (BYTE)held;
+        for (int k = 0; k < QD_IDX; k++) any |= s_qd_held[k];
+        if (!any || GetTickCount() - s_qd_closed_at > 2000u) {
+            memset(s_qd_held, 0, sizeof s_qd_held);
+            InterlockedExchange(&s_qd_open, 0);
+        }
     }
     /* a controller at rest for the game; a new packet number so it reads it */
     memset(g, 0, sizeof *g);
