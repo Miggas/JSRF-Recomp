@@ -38,6 +38,7 @@ static void focus_hook(float x, float y, float w, float h, int kind, float frac,
 
 #include "ini.h"
 #include "jobs.h"
+#include "settings_other.h"   /* v2n: Settings -> Other settings */
 #include "util.h"
 #include "version.h"
 
@@ -572,9 +573,9 @@ static int text_lines(struct nk_context *ctx, const char *s, float width)
 }
 
 /* ---- Settings: the common settings as controls, each writing the
- * jsrf.ini lines it stands for; "All settings" is every line ---- */
+ * jsrf.ini lines it stands for; "Other settings" is every other setting (settings_other.h) ---- */
 enum { SET_GAMEPLAY, SET_VIDEO, SET_INPUT, SET_AUDIO, SET_DEBUG, SET_ALL, SET_COUNT };
-static const char *const SET_NAMES[SET_COUNT] = { "Gameplay", "Video", "Input", "Audio", "Debug", "All settings" };
+static const char *const SET_NAMES[SET_COUNT] = { "Gameplay", "Video", "Input", "Audio", "Debug", "Other settings" };
 static int s_set_tab = SET_GAMEPLAY;
 
 static Ini *gi(void) { return &s_game_ini; }
@@ -888,38 +889,63 @@ static void panel_debug(struct nk_context *ctx, float w)
 }
 
 /* every line of jsrf.ini, ticked = on */
-static void panel_all(struct nk_context *ctx, float width)
+/* v2n: Other settings (Miggas): every setting the game reads that the tabs
+ * above don't show (settings_other.h), each with what it does. Ticked =
+ * the line is on in jsrf.ini; the value is edited in place. */
+static int line_of(const char *key, bool on_only)
 {
-    nk_layout_row_dynamic(ctx, s_row, 1);
-    nk_label_colored(ctx, "Every line of jsrf.ini. Ticked = on.", NK_TEXT_LEFT, C_DIM);
+    int first = -1;
     for (int i = 0; i < s_game_ini.n; i++) {
         IniLine *L = &s_game_ini.l[i];
-        switch (L->kind) {
-        case L_SECTION:
+        if (L->kind != L_SETTING || strcmp(L->key, key)) continue;
+        if (L->on) return i;
+        if (first < 0) first = i;
+    }
+    return on_only ? -1 : first;
+}
+
+static void panel_all(struct nk_context *ctx, float width)
+{
+    static char vals[OTHER_SETTINGS_N][256];
+    static bool init[OTHER_SETTINGS_N];
+    nk_layout_row_dynamic(ctx, (s_row - 8) * 2, 1);
+    nk_label_colored_wrap(ctx, "Changes in here could break the game, proceed at your own risk.", C_BAD);
+    desc(ctx, width, "Every other setting the game reads. Ticked = on; the value next to it is what it's set to.", C_DIM);
+    for (int k = 0; k < OTHER_SETTINGS_N; k++) {
+        const OtherSetting *o = &OTHER_SETTINGS[k];
+        if (!o->key) {
             spacer(ctx, 6);
             nk_layout_row_dynamic(ctx, s_row, 1);
-            nk_label_colored(ctx, L->show, NK_TEXT_LEFT, C_HEAD);
-            break;
-        case L_DESC:
-            nk_layout_row_dynamic(ctx, (s_row - 8) * text_lines(ctx, L->show, width), 1);
-            nk_label_colored_wrap(ctx, L->show, C_DIM);
-            break;
-        case L_SETTING: {
-            nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
-            nk_layout_row_push(ctx, 0.45f);
-            nk_bool on = L->on;
-            if (nk_checkbox_label(ctx, L->key, &on)) ini_set_on(&s_game_ini, i, on != 0);
-            nk_layout_row_push(ctx, 0.55f);
-            char before[sizeof L->val];
-            memcpy(before, L->val, sizeof before);
-            nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD, L->val, sizeof L->val, nk_filter_default);
-            if (strcmp(before, L->val) && !L->on) ini_set_on(&s_game_ini, i, true);
-            nk_layout_row_end(ctx);
-            break;
+            nk_label_colored(ctx, o->text, NK_TEXT_LEFT, C_HEAD);
+            continue;
         }
-        default:
-            break;
+        int li = line_of(o->key, false);
+        IniLine *L = li >= 0 ? &s_game_ini.l[li] : NULL;
+        bool on = L && L->on;
+        char *val;
+        size_t cap;
+        if (L) { val = L->val; cap = sizeof L->val; }      /* the line's own value, on or not */
+        else {
+            if (!init[k]) { snprintf(vals[k], sizeof vals[k], "%s", o->val); init[k] = true; }
+            val = vals[k]; cap = sizeof vals[k];
         }
+        nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
+        nk_layout_row_push(ctx, 0.55f);
+        nk_bool t = on;
+        bool toggled = nk_checkbox_label(ctx, o->key, &t);
+        nk_layout_row_push(ctx, 0.45f);
+        char before[256];
+        snprintf(before, sizeof before, "%s", val);
+        nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD, val, (int)cap, nk_filter_default);
+        bool edited = strcmp(before, val) != 0;
+        nk_layout_row_end(ctx);
+        if (toggled) {
+            if (t) { if (L) ini_set_on(&s_game_ini, li, true); else put(o->key, val, "other"); }
+            else off(o->key);
+        } else if (edited && !on) {
+            if (L) ini_set_on(&s_game_ini, li, true); else put(o->key, val, "other");
+        }
+        desc(ctx, width, o->text, C_DIM);
     }
 }
 
@@ -966,7 +992,7 @@ static void tab_settings(struct nk_context *ctx, float h)
     nk_layout_row_end(ctx);
 
     /* the sections */
-    /* v2i: All settings only with the launcher's debug menu on (Miggas) */
+    /* v2i: Other settings (was All settings) only with the launcher's debug menu on (Miggas) */
     int nset = debug_menu_pref() ? SET_COUNT : SET_ALL;
     if (s_set_tab >= nset) s_set_tab = SET_GAMEPLAY;
     nk_layout_row_dynamic(ctx, s_row * 1.1f, nset);
@@ -1103,8 +1129,8 @@ static void tab_launcher(struct nk_context *ctx, float h)
         bool on = debug_menu_pref();
         bool n = check(ctx, "Debug", on);
         if (n != on) launcher_pref_set("DEBUG_MENU", n ? "1" : "0");
-        desc(ctx, w, "Shows the Debug tab (the tools, the checks, the whole log) and Settings > All settings "
-                     "(every line of jsrf.ini).", C_DIM);
+        desc(ctx, w, "Shows the Debug tab (the tools, the checks, the whole log) and Settings > Other settings "
+                     "(every other setting the game reads).", C_DIM);
     }
 }
 

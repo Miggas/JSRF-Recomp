@@ -30,7 +30,7 @@ The launcher closes once the game has started (can be turned off in the
 
 - **Close the launcher when the game starts** (on by default).
 - **Project branch**: `main` (tested releases) or `test` (newest, less tested).
-- **Debug**: shows the Debug tab and **Settings → All settings**.
+- **Debug**: shows the Debug tab and **Settings → Other settings** (every other setting the game reads, with what it does).
 
 Generate code, Build and Update show a progress bar.
 
