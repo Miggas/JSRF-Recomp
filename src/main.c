@@ -735,11 +735,11 @@ static void panel_video(struct nk_context *ctx, float w)
     }
     /* anti-aliasing: RECOMP_GL_AA */
     {
-        static const char *const items[] = { "Disabled", "FXAA", "SMAA Low", "SMAA Medium", "SMAA High", "SMAA Ultra" };
+        static const char *const items[] = { "Off", "FXAA", "SMAA Low", "SMAA Medium", "SMAA High", "SMAA Ultra" };
         static const char *const vals[] = { "", "fxaa", "smaa_low", "smaa_medium", "smaa_high", "smaa_ultra" };
         int cur = find(vals, 6, get_or("RECOMP_GL_AA", ""));
         if (cur < 0) cur = 0;
-        int sel = combo(ctx, "Anti-aliasing", items, 6, cur);
+        int sel = combo(ctx, "FXAA/SMAA", items, 6, cur);   /* v2s: was "Anti-aliasing" (Miggas) */
         if (sel != cur) { if (sel == 0) off("RECOMP_GL_AA"); else put("RECOMP_GL_AA", vals[sel], "display"); }
         desc(ctx, w, "Smooths jagged edges. FXAA is the lightest, SMAA looks better. A higher resolution scale smooths edges too.", C_DIM);
     }

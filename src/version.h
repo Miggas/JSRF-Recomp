@@ -1,3 +1,3 @@
 /* The launcher's own version (the game has its own, in the project). */
 #pragma once
-#define LAUNCHER_VERSION "v2r"
+#define LAUNCHER_VERSION "v2s"
