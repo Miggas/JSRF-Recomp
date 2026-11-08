@@ -837,14 +837,6 @@ static void panel_audio(struct nk_context *ctx, float w)
         put("RECOMP_APU_GAIN", s2, "audio");
     }
     desc(ctx, w, "Master volume. 0.50 is the default; above 1.00 loud sounds may be limited.", C_DIM);
-    /* v2j: the game's v275 DSOUND lift */
-    {
-        /* v2l: on by default (the game's v276g); off writes RECOMP_DSOUND_LIFT=0 */
-        bool on = strcmp(get_or("RECOMP_DSOUND_LIFT", "1"), "0") != 0;
-        bool nv = check(ctx, "PC sound mixing", on);
-        if (nv != on) { if (nv) off("RECOMP_DSOUND_LIFT"); else put("RECOMP_DSOUND_LIFT", "0", "audio"); }
-        desc(ctx, w, "Plays the game's sounds through the PC's audio directly. Off: the emulated Xbox sound chip.", C_DIM);
-    }
 }
 
 /* Logging: RECOMP_LOG=stderr.txt with quiet off; off: no log, quiet on.
