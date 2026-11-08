@@ -424,7 +424,7 @@
     "name": "sub_000127C0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x000127E0",
@@ -4967,7 +4967,7 @@
     "name": "sub_00039BE0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x00039C70",
@@ -5086,7 +5086,7 @@
     "name": "sub_00039F40",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x00039F60",
@@ -5331,14 +5331,14 @@
     "name": "sub_0003AE20",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003AEA0",
     "name": "sub_0003AEA0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003AED0",
@@ -8222,7 +8222,7 @@
     "name": "sub_0004EAF0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0004EB80",
@@ -13003,7 +13003,7 @@
     "name": "sub_0007CAB0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0007CB80",

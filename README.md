@@ -241,6 +241,7 @@ override the file.
 | `RECOMP_FREECAM=1` | Free camera. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed. |
 | `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
 | `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
+| `RECOMP_CHAPTER_SELECT=2` | Chapter select: picking the tutorial (Roboy in the Garage, or the title menu) starts chapter 2's opening instead; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the next save point saves over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
 
 **`[compatibility]`**: try these if something goes wrong.
 
@@ -336,7 +337,8 @@ co-author.
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
 - [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)
-  for the DirectSound lift (PC sound mixing, `RECOMP_DSOUND_LIFT`).
+  for the DirectSound lift (PC sound mixing, `RECOMP_DSOUND_LIFT`) and chapter
+  select (`RECOMP_CHAPTER_SELECT`).
 - [JuMatt's JetSetRadioFuture-Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed)
   (MIT): building the shaders ahead ("Building Shaders") and the modern 3rd
   person camera were inspired by it, and improved upon by Miggas (the camera

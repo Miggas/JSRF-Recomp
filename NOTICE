@@ -64,6 +64,10 @@ andeecollard/jsrf-recomp (MIT)
   its diagnostics/jsrf_first_fault/dsound_lift.c (register names, locking,
   timing, off by default, the wrappers).
 
+  Chapter select (v276, RECOMP_CHAPTER_SELECT):
+  jsrf_recomp/src/jsrf_chapter_select.c is adapted from the chapter-select
+  half of its diagnostics/jsrf_first_fault/chapter_select.c.
+
   Its notice:
 
     MIT License
