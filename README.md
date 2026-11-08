@@ -158,10 +158,10 @@ controller. The keyboard works as controller 1:
 | `Backspace` | BACK |
 | `Shift` / `Ctrl` | Click the left / right stick (L3 / R3) |
 
-- **Quit:** click both sticks, **L3 + R3** (`Shift` + `Ctrl`), pick **YES** and press **A**.
+- **Quit:** click both sticks (`Shift` + `Ctrl`): **Quit Game**, **Quit to Title** (while in a level) or **Return**, then **A**.
   Closing the window or `Alt+F4` works too.
 - **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
-- **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of every mission, then choose **NEW GAME** to start straight in it. Refight a boss or redo a race without touching your save (just don't save afterwards). *Idea by Miggas.*
+- **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of every mission, then choose **NEW GAME** to start straight in it. Refight a boss or redo a race without touching your save (just don't save afterwards); **Quit to Title** in the quit window brings you back. *Idea by Miggas.*
 
 ---
 

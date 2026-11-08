@@ -493,7 +493,9 @@ static BYTE s_qd_prev_ab[QD_IDX];
 static signed char s_qd_prev_x[QD_IDX];   /* left stick: -1 left, 0, 1 right */
 static BYTE s_qd_held[QD_IDX];            /* v276d: a button down on this device */
 static volatile BYTE s_qd_block[QD_IDX];  /* v276f: closed with a button down: the game gets nothing from it yet */
-static volatile LONG s_qd_sel = 1;        /* 0 YES, 1 NO */
+static volatile LONG s_qd_sel = 2;        /* v278b: 0 Quit Game, 1 Quit to Title, 2 Return */
+static volatile LONG s_qd_title_ok;      /* v278b: the game can go back to the title now (jsrf) */
+static volatile LONG s_qd_title_req;     /* v278b: Quit to Title was chosen */
 static int  s_qd_off = -1;
 
 int xbox_QuitDialogOpen(void) { return s_qd_open == 1; }
@@ -527,7 +529,14 @@ int xbox_ListMenuSel(void) { return (int)s_lm_sel; }
 const char *xbox_ListMenuTitle(void) { return s_lm_title ? s_lm_title : ""; }
 const char *xbox_ListMenuItem(int i) { return s_lm_items && i >= 0 && i < s_lm_n ? s_lm_items[i] : ""; }
 int xbox_ListMenuTake(void) { return (int)InterlockedExchange(&s_lm_pick, -1); }
-int xbox_DialogOpen(void) { return s_qd_open == 1 || s_qd_open == 3; }
+/* v278b: the list menu doesn't hold the game (Miggas): only the quit window does */
+int xbox_DialogOpen(void) { return s_qd_open == 1; }
+/* v278b: Quit to Title, offered while the game says it can (jsrf: in a stage) */
+void xbox_QuitTitleAvailable(int ok) { InterlockedExchange(&s_qd_title_ok, ok ? 1 : 0); }
+int xbox_QuitTitleOK(void) { return (int)s_qd_title_ok; }
+int xbox_QuitToTitleTake(void) { return (int)InterlockedExchange(&s_qd_title_req, 0); }
+static DWORD s_lm_last_t;                 /* v278b: the last move, to take one device's only */
+static int s_lm_last_dir;
 
 /* v252: while the window is open the game is held (kernel/nv2a_gl.c holds
  * it at its next frame), its sound too (apu/apu_core.c) */
@@ -597,7 +606,7 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
     }
     if (s_qd_open == 0) {
         if (!s_qd_off && (b & sticks) == sticks && (pb & sticks) != sticks) {
-            InterlockedExchange(&s_qd_sel, 1);
+            InterlockedExchange(&s_qd_sel, 2);           /* v278b: Return first */
             InterlockedExchange(&s_qd_open, 1);
             fprintf(stderr, "[QUIT] quit window open (left / right, A = choose, B = back)\n");
         } else if (s_lm_n > 0 && wb == 3 && pwb != 3) {
@@ -626,6 +635,11 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         }
         if (((b & XBOX_GAMEPAD_DPAD_LEFT) && !(pb & XBOX_GAMEPAD_DPAD_LEFT)) || (sx < 0 && psx >= 0)) dir = -10;
         if (((b & XBOX_GAMEPAD_DPAD_RIGHT) && !(pb & XBOX_GAMEPAD_DPAD_RIGHT)) || (sx > 0 && psx <= 0)) dir = 10;
+        /* v278b: the same press read through two devices (the pad seen as
+         * XInput and SDL, or a port and its source) moved two entries:
+         * one move of a direction per 50 ms */
+        if (dir && dir == s_lm_last_dir && now - s_lm_last_t < 50u) dir = 0;
+        if (dir) { s_lm_last_dir = dir; s_lm_last_t = now; }
         if (dir && n > 0) {
             sel += dir;
             if (dir == -1 && sel < 0) sel = n - 1;          /* one step wraps around */
@@ -651,11 +665,25 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
     } else if (s_qd_open == 1) {
         WORD lr = XBOX_GAMEPAD_DPAD_LEFT | XBOX_GAMEPAD_DPAD_RIGHT;
         if (((b & lr) && (b & lr) != (pb & lr)) || (sx && sx != psx)) {
-            LONG to = (b & XBOX_GAMEPAD_DPAD_LEFT) || sx < 0 ? 0 :
-                      (b & XBOX_GAMEPAD_DPAD_RIGHT) || sx > 0 ? 1 : s_qd_sel;
-            InterlockedExchange(&s_qd_sel, to);
+            /* v278b: three buttons; one step a press (50 ms between two
+             * devices' copies of it); Quit to Title skipped when not offered */
+            int d = (b & XBOX_GAMEPAD_DPAD_LEFT) || sx < 0 ? -1 : (b & XBOX_GAMEPAD_DPAD_RIGHT) || sx > 0 ? 1 : 0;
+            DWORD now = GetTickCount();
+            if (d && !(d == s_lm_last_dir && now - s_lm_last_t < 50u)) {
+                LONG to = s_qd_sel + d;
+                s_lm_last_dir = d; s_lm_last_t = now;
+                if (to == 1 && !s_qd_title_ok) to += d;
+                if (to < 0) to = 0;
+                if (to > 2) to = 2;
+                if (to == 1 && !s_qd_title_ok) to = s_qd_sel;
+                InterlockedExchange(&s_qd_sel, to);
+            }
         }
         if ((ab & 1) && !(pab & 1) && s_qd_sel == 0) quit_now();
+        if ((ab & 1) && !(pab & 1) && s_qd_sel == 1 && s_qd_title_ok) {
+            InterlockedExchange(&s_qd_title_req, 1);
+            fprintf(stderr, "[QUIT] quit to title\n");
+        }
         if (((ab & 2) && !(pab & 2)) || ((ab & 1) && !(pab & 1))) {
             /* v276f: each device that still has a button down gives the
              * game nothing until that device lets go (v276d waited for

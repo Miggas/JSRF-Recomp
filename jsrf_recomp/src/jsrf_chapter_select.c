@@ -44,6 +44,8 @@
 /* v278: mission select (input/xinput_device.c, kernel/nv2a_gl_quit.h) */
 void xbox_ListMenuSet(const char *title, const char *const *items, int n);
 int xbox_ListMenuTake(void);
+void xbox_QuitTitleAvailable(int ok);   /* v278b: the quit window's Quit to Title */
+int xbox_QuitToTitleTake(void);
 extern char g_xbox_note[96];
 
 #if defined(_WIN32)
@@ -322,9 +324,45 @@ static void mm_list(void)
 }
 
 /* every sequence step (recomp_manual.c, sub_0007BDD0), with its state */
+/* v278b: Quit to Title (the quit window), as the game's own game-over
+ * choice does it (0x4AF0C, in sub_0004AE90): the next sequence state after
+ * the stage, VAR[0x199], is 0xA (build the title), and the stage's game
+ * object (the action manager's slot 0xB, made by the stage, 0xA82D0) goes to
+ * its end state 0x63; the stage closes, sequence state 0x1F reads VAR[0x199].
+ * Offered while a stage runs (sequence state 0x1E). */
+#define AM_SLOTS   0x98u          /* the action manager's object slots: AM + 0x98 + 4*id */
+#define SLOT_GAME  0x0Bu
+#define VAR_NEXT   0x199u
+#define SEQ_TITLE  0x0Au
+#define GAME_END   0x63u
+
+static uint32_t game_obj(void)
+{
+    uint32_t a = am(), o;
+    if (!a) return 0;
+    o = MEM32(a + AM_SLOTS + 4u * SLOT_GAME);
+    return o && MEM32(o + 0xFB8u) ? o : 0;  /* +0xFB8: what 0x4AE90 reads first */
+}
+
+static void quit_to_title_tick(uint32_t state)
+{
+    uint32_t o = state == 0x1Eu ? game_obj() : 0;
+    xbox_QuitTitleAvailable(o != 0);
+    if (!xbox_QuitToTitleTake()) return;
+    if (!o) {
+        fprintf(stderr, "[QUIT] quit to title: no stage running (sequence state 0x%X)\n", state);
+        return;
+    }
+    fprintf(stderr, "[QUIT] quit to title: game object 0x%08X state 0x%X -> 0x63, next 0xA\n",
+            o, MEM32(o + 0x5Cu));
+    var_set(VAR_NEXT, SEQ_TITLE);
+    MEM32(o + 0x5Cu) = GAME_END;
+}
+
 void jsrf_mission_select_tick(uint32_t state)
 {
     int pick;
+    quit_to_title_tick(state);
     if (state != 0x0Cu) {
         xbox_ListMenuSet(NULL, NULL, 0);
         if (s_armed && state > 0x1Cu) {             /* a game started without the new game's 1:1 */

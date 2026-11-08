@@ -263,7 +263,8 @@ static void qd_ttf_text(float cx, float cy, float k, const char *s, const float 
     }
 }
 
-extern int xbox_QuitDialogSel(void);   /* 0 YES, 1 NO */
+extern int xbox_QuitDialogSel(void);   /* v278b: 0 Quit Game, 1 Quit to Title, 2 Return */
+extern int xbox_QuitTitleOK(void);
 
 /* the picked button pulses: red, fading to white over a second, then red
  * again (as the game's; Miggas's description); t = 0 red .. 1 white */
@@ -274,7 +275,15 @@ static void qd_mix(float *o, const float *a, const float *b, float t)
     for (int i = 0; i < 4; i++) o[i] = a[i] + (b[i] - a[i]) * t;
 }
 
+static void qd_button_f(float x0, float x1, const char *label, int picked, float t, int off);
 static void qd_button(float x0, float x1, const char *label, int picked, float t)
+{
+    qd_button_f(x0, x1, label, picked, t, 0);
+}
+
+/* v278b: a button the width of its box (long labels shrink to fit); off:
+ * greyed, not pickable */
+static void qd_button_f(float x0, float x1, const char *label, int picked, float t, int off)
 {
     static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 }, black[4] = { 0.04f, 0.04f, 0.04f, 1 },
                        shade[4] = { 0.45f, 0.45f, 0.45f, 1 };
@@ -283,6 +292,13 @@ static void qd_button(float x0, float x1, const char *label, int picked, float t
     const float y0 = 243.3f, y1 = 268.0f, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     float edge[4], fill[4], text[4], sh[4];
     if (!picked) t = 1.0f;
+    if (off) {
+        static const float grey[4] = { 0.40f, 0.40f, 0.40f, 1 }, dark[4] = { 0.03f, 0.03f, 0.03f, 1 };
+        qd_frame(x0, y0, x1, y1, 1.6f, 0.8f, grey, dark);
+        if (s_qd_font) qd_ttf_text(cx, cy, qd_ttf_scale(label, 11.0f, x1 - x0 - 8.0f), label, grey);
+        else qd_text(cx, cy, 1.5f, 1.95f, 0.4f, 0.06f, label, grey);
+        return;
+    }
     qd_mix(edge, red, white, t);
     qd_mix(fill, redfill, black, t);
     qd_mix(text, redtext, white, t);
@@ -290,12 +306,14 @@ static void qd_button(float x0, float x1, const char *label, int picked, float t
     sh[3] = t;                                   /* the shadow comes in with the white */
     qd_frame(x0, y0, x1, y1, 1.6f, 0.8f, edge, fill);
     if (s_qd_font) {
-        float k = qd_ttf_scale(label, 11.0f, 52.0f);
+        float k = qd_ttf_scale(label, 11.0f, x1 - x0 - 8.0f);
         qd_ttf_text(cx + 0.7f, cy + 0.7f, k, label, sh);
         qd_ttf_text(cx, cy, k, label, text);
     } else {
-        qd_text(cx + 0.7f, cy + 0.7f, 2.75f, 1.95f, 0.6f, 0.06f, label, sh);
-        qd_text(cx, cy, 2.75f, 1.95f, 0.6f, 0.06f, label, text);
+        float kx = 2.75f, w = qd_text_w(label, 1.0f);
+        if (w * kx > x1 - x0 - 8.0f) kx = (x1 - x0 - 8.0f) / w;
+        qd_text(cx + 0.7f, cy + 0.7f, kx, 1.95f, 0.6f, 0.06f, label, sh);
+        qd_text(cx, cy, kx, 1.95f, 0.6f, 0.06f, label, text);
     }
 }
 
@@ -412,14 +430,17 @@ static void present_overlay_f(int cw, int ch, int flip)
             }
         }
         if (quit) {
-            qd_frame(195.0f, 205.7f, 446.0f, 275.3f, 1.8f, 1.1f, edge, box);
-            qd_frame(199.0f, 211.7f, 442.0f, 236.0f, 0.0f, 0.8f, bar_edge, teal);
+            /* v278b: Quit Game, Quit to Title (greyed when the game can't go
+             * back now), Return (Miggas) */
+            qd_frame(165.0f, 205.7f, 476.0f, 275.3f, 1.8f, 1.1f, edge, box);
+            qd_frame(169.0f, 211.7f, 472.0f, 236.0f, 0.0f, 0.8f, bar_edge, teal);
             if (s_qd_font)
                 qd_ttf_text(320.0f, 223.9f, qd_ttf_scale("Quit the game?", 12.0f, 228.0f), "Quit the game?", ink);
             else
                 qd_text(320.5f, 223.4f, 2.05f, 2.55f, 0.6f, 0.24f, "Quit the game?", ink);
-            qd_button(240.0f, 300.0f, "YES", sel == 0, t);
-            qd_button(340.7f, 400.7f, "NO", sel == 1, t);
+            qd_button(176.0f, 266.0f, "Quit Game", sel == 0, t);
+            qd_button_f(275.0f, 365.0f, "Quit to Title", sel == 1, t, !xbox_QuitTitleOK());
+            qd_button(374.0f, 464.0f, "Return", sel == 2, t);
         }
     }
 
