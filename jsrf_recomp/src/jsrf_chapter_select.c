@@ -489,32 +489,49 @@ static void mm_walk(FILE *f, int li, int writes, word_fn fn, void *ctx)
         if (wc > 32u) wc = 32u;
         if (!rd(f, wo, wb, 4u * wc)) continue;
         for (k = 0; k < wc; k++) fn(le32(wb + 4u * k), op, c, ctx);
+        fn(0xFFFFFFFEu, op, c, ctx);              /* the command's end */
     }
 }
 
-struct pk { uint32_t need[64]; int nn; uint32_t set[64]; int ns; int spawn; };
+struct pk { uint32_t need[64]; int nn; uint32_t set[64]; int ns; int spawn; uint32_t own[128]; int no;
+            uint32_t cur[64]; int nc; };
 static void pk_need(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
 {
     struct pk *p = (struct pk *)ctx;
+    int i;
     (void)op; (void)cmd;
-    if (w != 0xFFFFFFFFu && (w & 7u) == 1u && (w >> 19 & 1u) && p->nn < 64) p->need[p->nn++] = w;
+    if (w >= 0xFFFFFFFEu || (w & 7u) != 1u || !(w >> 19 & 1u)) return;
+    for (i = 0; i < p->no; i++) if (p->own[i] == (w & ~(1u << 19))) return;   /* its own state */
+    for (i = 0; i < p->nn; i++) if (p->need[i] == w) return;
+    if (p->nn < 64) p->need[p->nn++] = w;
 }
+static void pk_own(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
+{
+    struct pk *p = (struct pk *)ctx;
+    (void)op; (void)cmd;
+    if (w < 0xFFFFFFFEu && (w & 7u) == 1u && p->no < 128) p->own[p->no++] = w & ~(1u << 19);
+}
+/* v282: the parent command that writes the most of the needed flags, as
+ * one entry into the challenge does (0460 sets all four helicopters in one;
+ * 0450 sets one police squad per trigger, so one squad) */
 static void pk_wrote(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
 {
     struct pk *p = (struct pk *)ctx;
-    int i, j;
+    int i;
     (void)op; (void)cmd;
+    if (w == 0xFFFFFFFEu) {
+        if (p->nc > p->ns) { memcpy(p->set, p->cur, sizeof p->cur[0] * (size_t)p->nc); p->ns = p->nc; }
+        p->nc = 0;
+        return;
+    }
     for (i = 0; i < p->nn; i++)
-        if (p->need[i] == w) {
-            for (j = 0; j < p->ns && p->set[j] != w; j++) ;
-            if (j == p->ns && p->ns < 64) p->set[p->ns++] = w;
-        }
+        if (p->need[i] == w && p->nc < 64) { p->cur[p->nc++] = w; break; }
 }
 static void pk_clear(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
 {
     struct pk *p = (struct pk *)ctx;
     (void)w;
-    if (op == 0xE5u && p->spawn < 0) p->spawn = (int)le32(cmd + 0x14 + 4);
+    if (w != 0xFFFFFFFEu && op == 0xE5u && p->spawn < 0) p->spawn = (int)le32(cmd + 0x14 + 4);
 }
 
 static void pick_setup(unsigned c, unsigned m)
@@ -551,17 +568,36 @@ static void pick_setup(unsigned c, unsigned m)
         if (is_parent) par[np++] = p;
     }
     if (!np) return;
-    if (entry >= 0) {
-        var_set(0x4Du, (uint32_t)entry);
-        fprintf(stderr, "[MISSION-SELECT] mssn%04u: starts at spawn %d, the entry from mssn%04u\n", id, entry, par[0]);
-        return;
-    }
     memset(&pk, 0, sizeof pk);
     pk.spawn = -1;
     f = mm_open(id);
     if (!f) return;
-    mm_walk(f, 0, 0, pk_need, &pk);
-    for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clear, &pk);
+    {
+        /* v282: a challenge that only goes back to one place (0481 -> 0480)
+         * also gets the chapter flags its other lists test that the parent
+         * writes (0481's clear waits for chapter[50], from 0480); its own
+         * state flags (ones it writes itself) are left alone */
+        uint8_t h[8], e[8];
+        uint32_t off, cnt, k, outs[8];
+        int no = 0, j;
+        if (rd(f, 0x194u, h, 8)) {
+            off = le32(h); cnt = le32(h + 4);
+            if (cnt > 64u) cnt = 64u;
+            for (k = 0; k < cnt; k++) {
+                uint32_t op, t;
+                if (!rd(f, off + 0x44u * k, e, sizeof e)) break;
+                op = le32(e); t = le32(e + 4);
+                if (!(op == 0xFBu || op == 0xFCu || op == 0xFDu) || t == id || (t < 100u && t == m)) continue;
+                for (j = 0; j < no && outs[j] != t; j++) ;
+                if (j == no && no < 8) outs[no++] = t;
+            }
+        }
+        for (li = 0; li < 4; li++) mm_walk(f, li, 1, pk_own, &pk);
+        if (entry < 0) mm_walk(f, 0, 0, pk_need, &pk);
+        if (no == 1) for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_need, &pk);
+    }
+    if (entry < 0)
+        for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clear, &pk);
     fclose(f);
     for (i = 0; i < np && pk.nn; i++) {
         f = mm_open(par[i]);
@@ -569,10 +605,12 @@ static void pick_setup(unsigned c, unsigned m)
         for (li = 0; li < 4; li++) mm_walk(f, li, 1, pk_wrote, &pk);
         fclose(f);
     }
-    if (pk.spawn >= 0) var_set(0x4Du, (uint32_t)pk.spawn);
+    if (entry >= 0) var_set(0x4Du, (uint32_t)entry);
+    else if (pk.spawn >= 0) var_set(0x4Du, (uint32_t)pk.spawn);
     for (i = 0; i < pk.ns; i++) save_call1(0x00039BE0u, sub_00039BE0, pk.set[i]);
-    fprintf(stderr, "[MISSION-SELECT] mssn%04u (entered in place from mssn%04u): spawn %d%s", id, par[0],
-            pk.spawn, pk.ns ? ", chapter flags set:" : "");
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u (from mssn%04u): spawn %d%s%s", id, par[0],
+            entry >= 0 ? entry : pk.spawn, entry >= 0 ? " (its entry)" : " (entered in place)",
+            pk.ns ? ", chapter flags set:" : "");
     for (i = 0; i < pk.ns; i++) fprintf(stderr, " %u", (pk.set[i] >> 3) & 0xFFFFu);
     fprintf(stderr, "\n");
 }
