@@ -495,7 +495,7 @@ static void mm_walk(FILE *f, int li, int writes, word_fn fn, void *ctx)
 }
 
 struct pk { uint32_t need[64]; int nn; uint32_t set[64]; int ns; int spawn; uint32_t own[128]; int no;
-            uint32_t cur[64]; int nc; };
+            uint32_t cur[64]; int nc; uint32_t clr[16]; int ncl; int has_clear; };
 static void pk_need(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
 {
     struct pk *p = (struct pk *)ctx;
@@ -528,6 +528,22 @@ static void pk_wrote(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
     for (i = 0; i < p->nn; i++)
         if (p->need[i] == w && p->nc < 64) { p->cur[p->nc++] = w; break; }
 }
+/* v285: the chapter flags a mission's clear (opcode 0xE5) waits for, set
+ * whoever writes them in the story (0511 / 0512: chapter[1] / [2], the
+ * order of the chapter 5 races, from the race before; Miggas: they never
+ * finished) */
+static void pk_clearflags(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
+{
+    struct pk *p = (struct pk *)ctx;
+    int i;
+    (void)cmd;
+    if (op != 0xE5u) return;
+    p->has_clear = 1;
+    if (w >= 0xFFFFFFFEu || (w & 7u) != 1u || !(w >> 19 & 1u)) return;
+    for (i = 0; i < p->ncl; i++) if (p->clr[i] == w) return;
+    if (p->ncl < 16) p->clr[p->ncl++] = w;
+}
+
 static void pk_clear(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
 {
     struct pk *p = (struct pk *)ctx;
@@ -544,6 +560,8 @@ static float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 static const struct place s_places[] = {
     { 0u, 0.0f, 0.0f, 0.0f, -1.0f }     /* (none yet) */
 };
+static volatile int s_conv_on;          /* v285: a race with no clear: give it one */
+static unsigned s_conv_id;
 static volatile int s_place_on;
 static unsigned s_place_id;
 static float s_place_p[3], s_place_yaw;
@@ -618,6 +636,62 @@ static void place_tick(uint32_t o)
             s_place_id, s_place_p[0], s_place_p[1], s_place_p[2], s_place_yaw, idx);
 }
 
+/* v285: once the picked race's object has its script, its blocking list's
+ * exits (0xE6, args[0] the exit) become mission_cleared (0xE5: player 0,
+ * the spawn global 0x4D, managed action 0xF and music 0xA as the other
+ * chapter 5 races, the same exit): the cleared screen, then the exit, which
+ * a pick turns into the title. The lists in the loaded script are pointers
+ * (header +0x174 + 8 * list: commands, count), commands 0x54 bytes. */
+static void conv_tick(uint32_t o)
+{
+    uint32_t sc, c, m, cmds, n, i, k = 0, sp;
+    if (!s_conv_on || !o) return;
+    c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
+    if ((m >= 100u ? m : c * 100u + m) != s_conv_id) return;
+    sc = MEM32(o + 0x1040u);
+    if (!sc) return;
+    s_conv_on = 0;
+    cmds = MEM32(sc + 0x174u + 8u * 3u); n = MEM32(sc + 0x178u + 8u * 3u);
+    sp = var_get(0x4Du);
+    if (sp >= MEM32(sc + 0x40u)) sp = 0;
+    for (i = 0; cmds && i < n && i < 256u; i++) {
+        const uint32_t cm = cmds + 0x54u * i;
+        if (MEM32(cm + 0x10u) != 0xE6u) continue;
+        MEM32(cm + 0x28u) = 0xAu;                    /* music */
+        MEM32(cm + 0x20u) = MEM32(cm + 0x14u);       /* the exit */
+        MEM32(cm + 0x1Cu) = 0xFu;                    /* managed action */
+        MEM32(cm + 0x18u) = sp;                      /* spawn */
+        MEM32(cm + 0x14u) = 0u;                      /* player */
+        MEM32(cm + 0x10u) = 0xE5u;
+        k++;
+    }
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u exit(s) now end with the cleared screen\n", s_conv_id, k);
+}
+
+/* v285: how many other missions a mission's exits lead to */
+static int mm_outs(unsigned id)
+{
+    uint8_t h[8], e[8];
+    uint32_t off, cnt, k, outs[8];
+    int no = 0, j;
+    FILE *f = mm_open(id);
+    if (!f) return -1;
+    if (rd(f, 0x194u, h, 8)) {
+        off = le32(h); cnt = le32(h + 4);
+        if (cnt > 64u) cnt = 64u;
+        for (k = 0; k < cnt; k++) {
+            uint32_t op, t;
+            if (!rd(f, off + 0x44u * k, e, sizeof e)) break;
+            op = le32(e); t = le32(e + 4);
+            if (!(op == 0xFBu || op == 0xFCu || op == 0xFDu) || t == id || (t < 100u && t == id % 100u)) continue;
+            for (j = 0; j < no && outs[j] != t; j++) ;
+            if (j == no && no < 8) outs[no++] = t;
+        }
+    }
+    fclose(f);
+    return no;
+}
+
 static void pick_setup(unsigned c, unsigned m)
 {
     const unsigned id = c * 100u + m;
@@ -682,6 +756,18 @@ static void pick_setup(unsigned c, unsigned m)
     }
     if (entry < 0)
         for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clear, &pk);
+    for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clearflags, &pk);
+    {
+        /* v285: a race (checkpoints, header +0xD0) with no clear of its own
+         * (0513: a cutscene, then on to 0514's boss) ends with one instead:
+         * its sequence's exit (0xE6) becomes a mission_cleared */
+        uint8_t h[4];
+        s_conv_on = 0;
+        if (!pk.has_clear && c >= 1u && c <= 9u && rd(f, 0xD0u, h, 4) && le32(h)) {
+            s_conv_id = id;
+            s_conv_on = 1;
+        }
+    }
     fclose(f);
     for (i = 0; i < np && pk.nn; i++) {
         f = mm_open(par[i]);
@@ -705,6 +791,12 @@ static void pick_setup(unsigned c, unsigned m)
         fprintf(stderr, "[MISSION-SELECT] mssn0360: starts after Garam joins (chapter flags 1 and 5)\n");
     }
     for (i = 0; i < pk.ns; i++) save_call1(0x00039BE0u, sub_00039BE0, pk.set[i]);
+    for (i = 0; i < pk.ncl; i++) save_call1(0x00039BE0u, sub_00039BE0, pk.clr[i]);
+    if (pk.ncl) {
+        fprintf(stderr, "[MISSION-SELECT] mssn%04u: its clear's chapter flags set:", id);
+        for (i = 0; i < pk.ncl; i++) fprintf(stderr, " %u", (pk.clr[i] >> 3) & 0xFFFFu);
+        fprintf(stderr, "\n");
+    }
     fprintf(stderr, "[MISSION-SELECT] mssn%04u (from mssn%04u): spawn %d%s%s", id, par[0],
             entry >= 0 ? entry : pk.spawn, entry >= 0 ? " (its entry)" : " (entered in place)",
             pk.ns ? ", chapter flags set:" : "");
@@ -758,8 +850,9 @@ void sub_00051FC0(void)
     const uint32_t o = g_ecx;
     s_game_this = o;
     s_game_seen = s_seq_ticks;
-    if (s_place_on) {
+    if (s_place_on || s_conv_on) {
         place_tick(o);
+        conv_tick(o);
         g_ecx = o;
     }
     if (s_pick_live || s_sel_target) {
@@ -901,7 +994,9 @@ void jsrf_mission_select_tick(uint32_t state)
         s_ac = s_mm_id[pick] / 100u;
         s_am = s_mm_id[pick] % 100u;
         s_armed = 1;
-        s_pick_obj = s_mm_obj[pick][0] != 0;
+        /* back to the title at its end: a mission with an objective, or a
+         * challenge leading back to one place (v285: the chapter 5 races) */
+        s_pick_obj = s_mm_obj[pick][0] != 0 || mm_outs(s_mm_id[pick]) == 1;
         snprintf(g_xbox_note, sizeof g_xbox_note, "%s ready: choose NEW GAME", s_mm_text[pick]);
         fprintf(stderr, "[MISSION-SELECT] mssn%02u%02u armed for the next new game\n", s_ac, s_am);
     }
