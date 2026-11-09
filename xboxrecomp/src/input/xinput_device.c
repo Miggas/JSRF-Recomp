@@ -548,6 +548,27 @@ static LONG lm_step(LONG sel, int dir, LONG n)
     }
     return sel;
 }
+static int lm_heading(LONG i) { return xbox_ListMenuItem((int)i)[0] == '\x01'; }
+/* v288b: left / right with headings: the first pickable row of the previous /
+ * next heading's section (Miggas: the first mission of that chapter),
+ * wrapping round; -1 when the list has no headings */
+static LONG lm_section(LONG sel, int dir, LONG n)
+{
+    LONG h = -1, k, heads = 0, t;
+    for (k = 0; k < n; k++) heads += lm_heading(k);
+    if (!heads) return -1;
+    for (k = sel; k >= 0; k--) if (lm_heading(k)) { h = k; break; }   /* this section's heading */
+    t = h;
+    for (k = 0; k < n; k++) {
+        t += dir;
+        if (t < 0) t = n - 1;
+        if (t >= n) t = 0;
+        if (lm_heading(t)) break;
+    }
+    for (k = t + 1; k < n && !lm_heading(k); k++)
+        if (xbox_ListMenuPickable((int)k)) return k;
+    return sel;
+}
 /* the nearest pickable row at or after i (else before) */
 static LONG lm_snap(LONG i, LONG n)
 {
@@ -673,6 +694,8 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         if (dir && n > 0) {
             if (dir == 1 || dir == -1) {
                 sel = lm_step(sel, dir, n);                 /* one step: the next pickable, wrapping */
+            } else if (lm_section(sel, dir > 0 ? 1 : -1, n) >= 0) {
+                sel = lm_section(sel, dir > 0 ? 1 : -1, n);   /* v288b: a chapter on / back */
             } else {
                 /* a page: ten rows on, then the nearest pickable that way */
                 LONG t = sel + dir;

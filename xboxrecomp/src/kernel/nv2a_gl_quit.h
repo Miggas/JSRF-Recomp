@@ -434,10 +434,13 @@ static void present_overlay_f(int cw, int ch, int flip)
             }
             {
                 char h[96];
-                int at = 0, all = 0, k;
-                for (k = 0; k < n; k++)                     /* v288: counted on the pickable rows */
+                int at = 0, all = 0, heads = 0, k;
+                for (k = 0; k < n; k++) {                   /* v288: counted on the pickable rows */
                     if (xbox_ListMenuPickable(k)) { all++; if (k <= sel) at++; }
-                snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = page", at, all);
+                    else heads += xbox_ListMenuItem(k)[0] == '\x01';
+                }
+                snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = %s", at, all,
+                         heads ? "chapter" : "page");      /* v288b: a heading's section a step */
                 if (s_qd_font) qd_ttf_text(320.0f, top + ROWS * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
                 else qd_text(320.5f, top + ROWS * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
             }
