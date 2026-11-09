@@ -692,6 +692,7 @@ next fix.
 - **v284c:** (reported by Miggas) the window title shows the facing too, next to the position.
 - **v284d:** (Miggas) `RECOMP_MISSION_SPAWN` takes several missions, separated by `;`.
 - **v285:** (reported by Miggas: 0511 and 0512 never finished, 0513 went on to 0514) mission select: the chapter flags a picked mission's clear (0xE5) waits for are set (0511 / 0512: chapter[1] / [2], the order of the chapter 5 races, normally from the race before). A race with no clear of its own (0513: a cutscene, then an exit to the boss) gets one: once its script is loaded, its sequence's exits (0xE6) become mission_cleared (managed action 0xF, music 0xA, as 0511 / 0512), so it ends with the cleared screen. A pick with no objective line also goes back to the title at its end when it leads back to one place only (the chapter 5 races).
+- **v285b:** (reported by Miggas: 0513 still went on to 0514) the win's cutscene (play_event 0xE3, event 0x43) becomes the clear too, as the cutscene loads 0514 itself; and a picked mission followed by another one without an exit seen (state below 0x5D, not a character select) goes back to the title.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

@@ -160,6 +160,7 @@ static unsigned s_ac, s_am;
 static unsigned s_pick;                /* v279: the picked mission, CC * 100 + MM */
 static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to the title */
 static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
+static int s_pick_seen;                /* v285b: the picked mission has run */
 
 static int chs_on(void)
 {
@@ -170,6 +171,7 @@ static int chs_on(void)
         s_c = s_ac; s_m = s_am;
         s_pick = s_ac * 100u + s_am;    /* v279: back to the title when it ends */
         s_pick_live = s_pick_obj;
+        s_pick_seen = 0;
         /* v281: the chapter's character select (mssnCC95, Roboy's menu in
          * the Garage) first, for a pick in chapters 1-9 that isn't an
          * opening or Garage */
@@ -654,6 +656,26 @@ static void conv_tick(uint32_t o)
     cmds = MEM32(sc + 0x174u + 8u * 3u); n = MEM32(sc + 0x178u + 8u * 3u);
     sp = var_get(0x4Du);
     if (sp >= MEM32(sc + 0x40u)) sp = 0;
+    {
+        /* v285b: its win plays a cutscene first (0513: event 0x43, which
+         * goes on to 0514 itself; Miggas: it still did); the cutscene
+         * (play_event 0xE3) becomes the clear instead, with the exit of
+         * its exit command */
+        uint32_t ex = 0;
+        for (i = 0; cmds && i < n && i < 256u; i++)
+            if (MEM32(cmds + 0x54u * i + 0x10u) == 0xE6u) { ex = MEM32(cmds + 0x54u * i + 0x14u); break; }
+        for (i = 0; cmds && i < n && i < 256u; i++) {
+            const uint32_t cm = cmds + 0x54u * i;
+            if (MEM32(cm + 0x10u) != 0xE3u) continue;
+            MEM32(cm + 0x28u) = 0xAu;
+            MEM32(cm + 0x20u) = ex;
+            MEM32(cm + 0x1Cu) = 0xFu;
+            MEM32(cm + 0x18u) = sp;
+            MEM32(cm + 0x14u) = 0u;
+            MEM32(cm + 0x10u) = 0xE5u;
+            k++;
+        }
+    }
     for (i = 0; cmds && i < n && i < 256u; i++) {
         const uint32_t cm = cmds + 0x54u * i;
         if (MEM32(cm + 0x10u) != 0xE6u) continue;
@@ -665,7 +687,7 @@ static void conv_tick(uint32_t o)
         MEM32(cm + 0x10u) = 0xE5u;
         k++;
     }
-    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u exit(s) now end with the cleared screen\n", s_conv_id, k);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u cutscene/exit command(s) now end with the cleared screen\n", s_conv_id, k);
 }
 
 /* v285: how many other missions a mission's exits lead to */
@@ -818,6 +840,20 @@ static void pick_exit_check(uint32_t o)
     uint32_t st, tgt;
     if (!o) return;
     st = MEM32(o + 0x5Cu);
+    if (s_pick_live && !s_sel_target) {
+        /* v285b: another mission running in its place without an exit we
+         * saw (a cutscene that loads the next one, 0513 -> 0514) ends it */
+        const uint32_t c = MEM32(o + 0x4Cu) & 0xFFFFu, m = MEM32(o + 0x50u) & 0xFFFFu;
+        const uint32_t mid = m >= 100u ? m : c * 100u + m;
+        if (mid == s_pick) s_pick_seen = 1;
+        else if (s_pick_seen && st < 0x5Du && m != 95u) {
+            fprintf(stderr, "[MISSION-SELECT] mssn%04u was followed by mssn%04u: back to the title\n", s_pick, mid);
+            s_pick_live = 0; s_pick_seen = 0;
+            var_set(VAR_NEXT, SEQ_TITLE);
+            MEM32(o + 0x5Cu) = GAME_END;
+            return;
+        }
+    }
     /* v281: the character select's exit (to the Garage, CC00) goes to the
      * pick instead, started as v280 does */
     if (s_sel_target && (st == 0x5Du || st == 0x5Fu || st == 0x61u)
