@@ -690,6 +690,7 @@ next fix.
 - **v284:** (Miggas) start spots picked by hand: with `RECOMP_SHOW_MISSION=1` the window title also shows the player's position (the tracker `DAT_00257CE4` +0x7C; 0x257CE4 added to every `addr_map.txt`), and F9 writes it to the log. `RECOMP_MISSION_SPAWN=CCMM:x,y,z` (or an entry in `s_places`) puts a picked mission's player there: once the mission object has its script (+0x1040), the spawn record opcode 0x48 will use (global 0x4D; the table at script +0x3C, 0x2C bytes, the position at +8) gets the spot.
 - **v284b:** (Miggas) the facing too: F9 also logs the direction the player last moved (degrees, 0 along +Z, 90 along +X), and `RECOMP_MISSION_SPAWN=CCMM:x,y,z,facing` sets the spawn record's yaw (+0x18, 0x10000 a turn; a pose-and-target record also gets its target ahead).
 - **v284c:** (reported by Miggas) the window title shows the facing too, next to the position.
+- **v284d:** (Miggas) `RECOMP_MISSION_SPAWN` takes several missions, separated by `;`.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

@@ -553,14 +553,17 @@ static void place_arm(unsigned id)
     const char *e = getenv("RECOMP_MISSION_SPAWN");
     size_t i;
     s_place_on = 0;
-    if (e && *e) {
+    /* v284d: several missions, separated by ';' */
+    while (e && *e) {
         unsigned eid; float x, y, z, yaw = -1.0f;
-        if (sscanf(e, "%u:%f,%f,%f,%f", &eid, &x, &y, &z, &yaw) >= 4 && eid == id) {
+        if (sscanf(e, " %u:%f,%f,%f,%f", &eid, &x, &y, &z, &yaw) >= 4 && eid == id) {
             s_place_id = id; s_place_p[0] = x; s_place_p[1] = y; s_place_p[2] = z;
             s_place_yaw = yaw;
             s_place_on = 1;
             return;
         }
+        e = strchr(e, ';');
+        if (e) e++;
     }
     for (i = 0; i < sizeof s_places / sizeof s_places[0]; i++)
         if (s_places[i].id && s_places[i].id == id) {
