@@ -1013,6 +1013,83 @@ static void quit_to_title_tick(uint32_t state)
     MEM32(o + 0x5Cu) = GAME_END;
 }
 
+/* v288: the missions the menu offers, in this order, under their chapters
+ * (Miggas' list): a heading ("\x01" + text) and a gap ("") between
+ * chapters, which the menu doesn't let the selection land on; a mission
+ * not on the disc is left out. Labels are "Location - Objective". */
+static const struct { uint16_t id; const char *label; } s_menu_def[] = {
+    { 0u, "\x01" "Chapter 1" },
+    { 112u, "Dogenzaka Hill - Race against Beat!" },
+    { 113u, "Dogenzaka Hill - Defeat the Rokkaku police!" },
+    { 122u, "Shibuya Termina - Defeat the Rokkaku police!" },
+    { 0u, "" },
+    { 0u, "\x01" "Chapter 2" },
+    { 231u, "Chuo Street - Defeat the Rokkaku police!" },
+    { 232u, "Chuo Street - Race against Poison Jam!" },
+    { 252u, "99th Street - Capture the flag against Rapid 99!" },
+    { 0u, "" },
+    { 0u, "\x01" "Chapter 3" },
+    { 360u, "Sewers - Find the switches and spray 'em!" },
+    { 371u, "Bottom Point - Spray the backs of Poison Jam!" },
+    { 0u, "" },
+    { 0u, "\x01" "Chapter 4" },
+    { 451u, "Hikage Street - Eliminate the terror drone!" },
+    { 461u, "Kibogaoka Hill - Defeat the Rokkaku police!" },
+    { 481u, "Highway Zero - Spray the backs of the Immortals!" },
+    { 0u, "" },
+    { 0u, "\x01" "Chapter 5" },
+    { 511u, "Future Site - Death Ball against Doom Riders!" },
+    { 512u, "Future Site - Death Ball against The Immortals!" },
+    { 513u, "Future Site - Death Ball against Love Shockers!" },
+    { 514u, "Future Site - Destroy the Rokkaku piece of junk!" },
+    { 0u, "" },
+    { 0u, "\x01" "Chapter 6" },
+    { 661u, "Sky Dinosaurian - Spray the backs of the Noise Tanks!" },
+    { 666u, "Future Site - Race against Jazz!" },
+    { 671u, "Highway Zero - Race against Soda!" },
+    { 0u, "" },
+    { 0u, "\x01" "Chapter 7" },
+    { 721u, "Dogenzaka Hill - Race against Doom Riders!" },
+    { 726u, "Hikage Street - Capture the flag against Love Shockers!" },
+    { 746u, "Bottom Point - Race against Cube!" },
+    { 750u, "Fortified Zone - Spray the devices to stop them!" },
+    { 751u, "Fortified Zone - Defeat all the Golden Rhino's Jets!" },
+    { 756u, "99th Street - Spray the backs of the Immortals!" },
+    { 0u, "" },
+    { 0u, "\x01" "Chapter 8" },
+    { 816u, "Chuo Street - Defeat the Golden Rhinos!" },
+    { 872u, "Highway Zero - Defeat the Golden Rhinos!" },
+    { 880u, "Site of Tokyo Line - Destroy the Golden Rhino's train machine!" },
+    { 812u, "Shibuya Termina - Spray the backs of Zero Beat!" },
+    { 890u, "?" "?" "?" "?" "? - Defeat A. KU. MU.!" },
+};
+#define MENU_MAX (sizeof s_menu_def / sizeof s_menu_def[0])
+static const char *s_menu_ptr[MENU_MAX];
+static uint16_t s_menu_id[MENU_MAX];
+static int s_menu_n = -1;
+
+static void menu_build(void)
+{
+    size_t i;
+    s_menu_n = 0;
+    for (i = 0; i < MENU_MAX; i++) {
+        const unsigned id = s_menu_def[i].id;
+        if (id && mission_file_state(id / 100u, id % 100u) != 1) {
+            fprintf(stderr, "[MISSION-SELECT] mssn%04u is not on the disc: left out\n", id);
+            continue;
+        }
+        s_menu_id[s_menu_n] = (uint16_t)id;
+        s_menu_ptr[s_menu_n] = s_menu_def[i].label;
+        s_menu_n++;
+    }
+    while (s_menu_n > 0 && !s_menu_ptr[s_menu_n - 1][0]) s_menu_n--;   /* no gap at the end */
+    {
+        int k = 0;
+        for (i = 0; i < (size_t)s_menu_n; i++) k += s_menu_id[i] != 0;
+        fprintf(stderr, "[MISSION-SELECT] the menu offers %d missions\n", k);
+    }
+}
+
 void jsrf_mission_select_tick(uint32_t state)
 {
     int pick;
@@ -1029,16 +1106,22 @@ void jsrf_mission_select_tick(uint32_t state)
     }
     if (!s_mm_state) mm_list();
     if (s_mm_state != 1) return;
-    xbox_ListMenuSet("Mission select", s_mm_ptr, s_mm_n);
+    if (s_menu_n < 0) menu_build();
+    if (s_menu_n <= 0) return;
+    xbox_ListMenuSet("Mission select", s_menu_ptr, s_menu_n);
     pick = xbox_ListMenuTake();
-    if (pick >= 0 && pick < s_mm_n) {
-        s_ac = s_mm_id[pick] / 100u;
-        s_am = s_mm_id[pick] % 100u;
+    if (pick >= 0 && pick < s_menu_n && s_menu_id[pick]) {
+        const unsigned id = s_menu_id[pick];
+        int j, obj = 0;
+        for (j = 0; j < s_mm_n; j++)
+            if (s_mm_id[j] == id) { obj = s_mm_obj[j][0] != 0; break; }
+        s_ac = id / 100u;
+        s_am = id % 100u;
         s_armed = 1;
         /* back to the title at its end: a mission with an objective, or a
          * challenge leading back to one place (v285: the chapter 5 races) */
-        s_pick_obj = s_mm_obj[pick][0] != 0 || mm_outs(s_mm_id[pick]) == 1;
-        snprintf(g_xbox_note, sizeof g_xbox_note, "%s ready: choose NEW GAME", s_mm_text[pick]);
+        s_pick_obj = obj || mm_outs(id) == 1;
+        snprintf(g_xbox_note, sizeof g_xbox_note, "%s ready: choose NEW GAME", s_menu_ptr[pick]);
         fprintf(stderr, "[MISSION-SELECT] mssn%02u%02u armed for the next new game\n", s_ac, s_am);
     }
 }

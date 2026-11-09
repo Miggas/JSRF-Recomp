@@ -33,6 +33,7 @@ extern int xbox_QuitDialogOpen(void);   /* input/xinput_device.c */
 /* v278: the list menu (mission select) and the note line, same file */
 extern int xbox_ListMenuOpen(void), xbox_ListMenuCount(void), xbox_ListMenuSel(void);
 extern const char *xbox_ListMenuTitle(void), *xbox_ListMenuItem(int i);
+extern int xbox_ListMenuPickable(int i);
 extern char g_xbox_note[96];
 
 typedef struct { float x, y, u, v, r, g, b, a; } QdVert;   /* u < 0: no texture */
@@ -411,6 +412,15 @@ static void present_overlay_f(int cw, int ch, int flip)
                 const char *it = xbox_ListMenuItem(first + i);
                 float y0 = top + i * rh, cy = y0 + rh / 2 - 1.0f;
                 float e4[4], f4[4], t4[4];
+                if (!it[0]) continue;                       /* v288: a gap */
+                if (it[0] == '\x01') {
+                    /* v288: a heading (Chapter 1, ...): teal, not pickable */
+                    static const float head[4] = { 0.25f, 0.82f, 0.82f, 1 };
+                    it++;
+                    if (s_qd_font) qd_ttf_text(320.0f, cy, qd_ttf_scale(it, 9.5f, x1 - x0 - 16.0f), it, head);
+                    else qd_text(320.5f, cy, 1.6f, 2.0f, 0.45f, 0.18f, it, head);
+                    continue;
+                }
                 if (first + i == sel) {
                     qd_mix(e4, red, white, mt);
                     qd_mix(f4, redfill, black, mt);
@@ -424,7 +434,10 @@ static void present_overlay_f(int cw, int ch, int flip)
             }
             {
                 char h[96];
-                snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = page", sel + 1, n);
+                int at = 0, all = 0, k;
+                for (k = 0; k < n; k++)                     /* v288: counted on the pickable rows */
+                    if (xbox_ListMenuPickable(k)) { all++; if (k <= sel) at++; }
+                snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = page", at, all);
                 if (s_qd_font) qd_ttf_text(320.0f, top + ROWS * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
                 else qd_text(320.5f, top + ROWS * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
             }

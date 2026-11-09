@@ -529,6 +529,35 @@ int xbox_ListMenuSel(void) { return (int)s_lm_sel; }
 const char *xbox_ListMenuTitle(void) { return s_lm_title ? s_lm_title : ""; }
 const char *xbox_ListMenuItem(int i) { return s_lm_items && i >= 0 && i < s_lm_n ? s_lm_items[i] : ""; }
 int xbox_ListMenuTake(void) { return (int)InterlockedExchange(&s_lm_pick, -1); }
+/* v288: rows that can't be picked (Miggas): "" a gap, "\x01Title" a heading;
+ * the selection only lands on the others */
+int xbox_ListMenuPickable(int i)
+{
+    const char *it = xbox_ListMenuItem(i);
+    return it[0] != 0 && it[0] != '\x01';
+}
+/* the next pickable row from sel going dir (+1 / -1), wrapping round; sel if none */
+static LONG lm_step(LONG sel, int dir, LONG n)
+{
+    LONG k, i = sel;
+    for (k = 0; k < n; k++) {
+        i += dir;
+        if (i < 0) i = n - 1;
+        if (i >= n) i = 0;
+        if (xbox_ListMenuPickable((int)i)) return i;
+    }
+    return sel;
+}
+/* the nearest pickable row at or after i (else before) */
+static LONG lm_snap(LONG i, LONG n)
+{
+    LONG k;
+    if (i < 0) i = 0;
+    if (i >= n) i = n - 1;
+    for (k = i; k < n; k++) if (xbox_ListMenuPickable((int)k)) return k;
+    for (k = i; k >= 0; k--) if (xbox_ListMenuPickable((int)k)) return k;
+    return i;
+}
 /* v278b: the list menu doesn't hold the game (Miggas): only the quit window does */
 int xbox_DialogOpen(void) { return s_qd_open == 1; }
 /* v278b: Quit to Title, offered while the game says it can (jsrf: in a stage) */
@@ -611,6 +640,7 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
             fprintf(stderr, "[QUIT] quit window open (left / right, A = choose, B = back)\n");
         } else if (s_lm_n > 0 && wb == 3 && pwb != 3) {
             if (s_lm_sel >= s_lm_n) InterlockedExchange(&s_lm_sel, 0);
+            InterlockedExchange(&s_lm_sel, lm_snap(s_lm_sel, s_lm_n));   /* v288: on a pickable row */
             s_lm_rep_at[idx] = 0;
             InterlockedExchange(&s_qd_open, 3);
             fprintf(stderr, "[MENU] %s open (%ld entries)\n", xbox_ListMenuTitle(), (long)s_lm_n);
@@ -641,16 +671,25 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         if (dir && dir == s_lm_last_dir && now - s_lm_last_t < 50u) dir = 0;
         if (dir) { s_lm_last_dir = dir; s_lm_last_t = now; }
         if (dir && n > 0) {
-            sel += dir;
-            if (dir == -1 && sel < 0) sel = n - 1;          /* one step wraps around */
-            else if (dir == 1 && sel >= n) sel = 0;
-            if (sel < 0) sel = 0;
-            if (sel >= n) sel = n - 1;
+            if (dir == 1 || dir == -1) {
+                sel = lm_step(sel, dir, n);                 /* one step: the next pickable, wrapping */
+            } else {
+                /* a page: ten rows on, then the nearest pickable that way */
+                LONG t = sel + dir;
+                if (t < 0) t = 0;
+                if (t >= n) t = n - 1;
+                if (!xbox_ListMenuPickable((int)t)) {
+                    LONG u = t;
+                    while (u >= 0 && u < n && !xbox_ListMenuPickable((int)u)) u += dir > 0 ? 1 : -1;
+                    t = (u >= 0 && u < n) ? u : lm_snap(t, n);
+                }
+                sel = t;
+            }
             InterlockedExchange(&s_lm_sel, sel);
         }
         if (n <= 0 || ((ab & 2) && !(pab & 2)) || ((ab & 1) && !(pab & 1))) {
             int any = 0;
-            if (n > 0 && (ab & 1) && !(pab & 1)) {
+            if (n > 0 && (ab & 1) && !(pab & 1) && xbox_ListMenuPickable((int)sel)) {
                 InterlockedExchange(&s_lm_pick, sel);
                 fprintf(stderr, "[MENU] picked %ld: %s\n", (long)sel, xbox_ListMenuItem((int)sel));
             } else {
