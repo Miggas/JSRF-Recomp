@@ -607,8 +607,9 @@ static void place_tick(uint32_t o)
     if ((m >= 100u ? m : c * 100u + m) != s_place_id) return;
     sc = MEM32(o + 0x1040u);
     if (!sc) return;
-    s_place_on = 0;
     tab = MEM32(sc + 0x3Cu); n = MEM32(sc + 0x40u);
+    if (!n || n > 512u || tab < sc || tab > sc + 0x400000u) return;   /* v285c: loaded yet */
+    s_place_on = 0;
     idx = var_get(0x4Du);
     if (idx >= n) idx = 0;
     if (!tab || !n) {
@@ -652,8 +653,12 @@ static void conv_tick(uint32_t o)
     if ((m >= 100u ? m : c * 100u + m) != s_conv_id) return;
     sc = MEM32(o + 0x1040u);
     if (!sc) return;
-    s_conv_on = 0;
+    /* v285c: the file is read after the object has its buffer (Miggas'
+     * log: changed 0 commands, before the load job ran), and its offsets
+     * become pointers after: wait for a list that points into it */
     cmds = MEM32(sc + 0x174u + 8u * 3u); n = MEM32(sc + 0x178u + 8u * 3u);
+    if (!n || n > 512u || cmds < sc || cmds > sc + 0x400000u) return;
+    s_conv_on = 0;
     sp = var_get(0x4Du);
     if (sp >= MEM32(sc + 0x40u)) sp = 0;
     {
