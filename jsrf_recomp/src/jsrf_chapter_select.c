@@ -607,6 +607,18 @@ static void pick_setup(unsigned c, unsigned m)
     }
     if (entry >= 0) var_set(0x4Du, (uint32_t)entry);
     else if (pk.spawn >= 0) var_set(0x4Du, (uint32_t)pk.spawn);
+    /* v283: areas whose objective comes after story steps of their own
+     * (Miggas). 0360 (Sewage Facility, "Find the switches and spray 'em!")
+     * starts with the opening and Rapid 99's trap into Garam's half-pipe
+     * (0361); its switches step follows Garam joining: chapter[1] = 1
+     * (opening seen) and chapter[5] = 1 (the state 0361's talk leaves),
+     * which brings the gates (bucket list 1), the switches (actor list 0)
+     * and the trigger for the switches cutscene. */
+    if (id == 360u) {
+        save_call1(0x00039BE0u, sub_00039BE0, FLAGW(8, 0x0009));   /* +1:1 */
+        save_call1(0x00039BE0u, sub_00039BE0, FLAGW(8, 0x0029));   /* +1:5 */
+        fprintf(stderr, "[MISSION-SELECT] mssn0360: starts after Garam joins (chapter flags 1 and 5)\n");
+    }
     for (i = 0; i < pk.ns; i++) save_call1(0x00039BE0u, sub_00039BE0, pk.set[i]);
     fprintf(stderr, "[MISSION-SELECT] mssn%04u (from mssn%04u): spawn %d%s%s", id, par[0],
             entry >= 0 ? entry : pk.spawn, entry >= 0 ? " (its entry)" : " (entered in place)",
