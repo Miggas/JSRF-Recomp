@@ -949,6 +949,44 @@ static void pick_exit_check(uint32_t o)
     MEM32(o + 0x5Cu) = GAME_END;
 }
 
+/* v291: a picked mission starts with 20 spray cans (Miggas). A second
+ * after the picked mission's object first runs (its immediate list, which
+ * resets the player's counters, has run by then), player 0 gets them through
+ * the game's CPlayer::setQuantities (0x7FE70; thiscall: cans, stamina %,
+ * interaction, -1 leaves one alone): up to the most the character carries
+ * (+0xFA4), the HUD's counter too. Again after a retry (a new object).
+ * Player 0: the player state in slot 0xC, its player's slot at +0x8D4. */
+#define PICK_CANS 20u
+extern void sub_0007FE70(void);
+static uint32_t s_cans_obj;
+static int s_cans_wait;
+static void cans_tick(uint32_t o)
+{
+    uint32_t c, m, a, st, pid, pl;
+    if (!s_pick || s_sel_target || !o) return;
+    c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
+    if ((m >= 100u ? m : c * 100u + m) != s_pick) return;
+    if (o != s_cans_obj) { s_cans_obj = o; s_cans_wait = 60; return; }
+    if (s_cans_wait <= 0 || --s_cans_wait) return;
+    a = am();
+    st = a ? MEM32(a + 0x98u + 4u * 0x0Cu) : 0;
+    pid = st ? MEM32(st + 0x8D4u) : 0;
+    pl = st && pid && pid < 0x1DF0u ? MEM32(a + 0x98u + 4u * pid) : 0;
+    if (!pl) {
+        fprintf(stderr, "[MISSION-SELECT] mssn%04u: no player to give cans to\n", s_pick);
+        return;
+    }
+    if (MEM32(pl + 0xFA0u) >= PICK_CANS) return;
+    PUSH32(g_esp, 0xFFFFFFFFu);          /* interaction: as it is */
+    PUSH32(g_esp, 0xFFFFFFFFu);          /* stamina: as it is */
+    PUSH32(g_esp, PICK_CANS);
+    PUSH32(g_esp, RET_MARK);
+    g_ecx = pl;
+    RECOMP_ABI_CALL(0x0007FE70u, sub_0007FE70);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u cans (carries up to %u)\n", s_pick,
+            MEM32(pl + 0xFA0u), MEM32(pl + 0xFA4u));
+}
+
 void sub_00051FC0(void)
 {
     const uint32_t o = g_ecx;
@@ -957,6 +995,10 @@ void sub_00051FC0(void)
     if (s_place_on || s_conv_on) {
         place_tick(o);
         conv_tick(o);
+        g_ecx = o;
+    }
+    if (s_pick) {
+        cans_tick(o);
         g_ecx = o;
     }
     if (s_pick_live || s_sel_target) {
@@ -1158,7 +1200,7 @@ void jsrf_mission_select_tick(uint32_t state)
     int pick;
     quit_to_title_tick(state);
     show_mission_tick();
-    if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0, s_sel_target = 0, s_pick = 0;   /* v279: back at the title */
+    if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0, s_sel_target = 0, s_pick = 0, s_cans_obj = 0;   /* v279: back at the title */
     if (state != 0x0Cu) {
         xbox_ListMenuSet(NULL, NULL, 0);
         if (s_armed && state > 0x1Cu) {             /* a game started without the new game's 1:1 */

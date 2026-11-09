@@ -13458,7 +13458,7 @@
     "name": "sub_00080710",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x000807D0",

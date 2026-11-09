@@ -13864,7 +13864,7 @@
     "name": "sub_0007FE70",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0007FF30",
