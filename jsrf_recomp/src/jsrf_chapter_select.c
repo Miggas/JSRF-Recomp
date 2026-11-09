@@ -161,6 +161,7 @@ static unsigned s_pick;                /* v279: the picked mission, CC * 100 + M
 static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to the title */
 static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
 static int s_pick_seen;                /* v285b: the picked mission has run */
+static int s_pick_cleared;             /* v289: it has been cleared */
 
 static int chs_on(void)
 {
@@ -172,6 +173,7 @@ static int chs_on(void)
         s_pick = s_ac * 100u + s_am;    /* v279: back to the title when it ends */
         s_pick_live = s_pick_obj;
         s_pick_seen = 0;
+        s_pick_cleared = 0;
         /* v281: the chapter's character select (mssnCC95, Roboy's menu in
          * the Garage) first, for a pick in chapters 1-9 that isn't an
          * opening or Garage */
@@ -840,6 +842,44 @@ static void pick_setup(unsigned c, unsigned m)
  * quit window's Quit to Title. Only for a pick with an objective: openings,
  * Garages and free roam play on as usual. Checked before and after the
  * object's update, as the exit is set from inside it. */
+/* v289: whether the picked mission has been cleared (Miggas: 0666, 0671 and
+ * 0746 clear with an exit to themselves, and the mission, started again,
+ * plays the talk where the rival joins, then goes back to its area; a
+ * retry of the same mission had been let through). Cleared: a
+ * mission_cleared (0xE5) of its blocking list has its conditions met; a
+ * retry after a fail doesn't. Flags: SAVE + 0x6A14 (mission), +0x18
+ * (chapter), +0x58 (global), +0x98 (special), a bit array each. */
+static int flag_holds(uint32_t w)
+{
+    static const uint32_t base[4] = { 0x6A14u, 0x18u, 0x58u, 0x98u };
+    const uint32_t l = w & 7u, i = (w >> 3) & 0xFFFFu, v = (w >> 19) & 1u;
+    if (l > 3u || i >= 0x200u) return 0;
+    return ((MEM32(SAVE + base[l] + (i >> 5) * 4u) >> (i & 31u)) & 1u) == v;
+}
+static void cleared_tick(uint32_t o)
+{
+    uint32_t sc, c, m, cmds, n, i, k;
+    if (s_pick_cleared || !o) return;
+    c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
+    if ((m >= 100u ? m : c * 100u + m) != s_pick) return;
+    sc = MEM32(o + 0x1040u);
+    if (!sc) return;
+    cmds = MEM32(sc + 0x174u + 8u * 3u); n = MEM32(sc + 0x178u + 8u * 3u);
+    if (!n || n > 512u || cmds < sc || cmds > sc + 0x400000u) return;   /* not loaded yet */
+    for (i = 0; i < n; i++) {
+        const uint32_t cm = cmds + 0x54u * i;
+        uint32_t co = MEM32(cm), cc = MEM32(cm + 4u), ok = 1;
+        if (MEM32(cm + 0x10u) != 0xE5u) continue;
+        if (cc && co < sc) co += sc;                 /* an offset, if not made a pointer */
+        for (k = 0; k < cc && k < 32u && ok; k++) ok = (uint32_t)flag_holds(MEM32(co + 4u * k));
+        if (ok) {
+            s_pick_cleared = 1;
+            fprintf(stderr, "[MISSION-SELECT] mssn%04u cleared\n", s_pick);
+            return;
+        }
+    }
+}
+
 static void pick_exit_check(uint32_t o)
 {
     uint32_t st, tgt;
@@ -871,11 +911,13 @@ static void pick_exit_check(uint32_t o)
         return;
     }
     if (!s_pick_live) return;
+    if (st < 0x5Du) cleared_tick(o);
     if (st != 0x5Du && st != 0x5Fu && st != 0x61u && st != 0x65u && st != 0x67u) return;
     if (st <= 0x61u) {
         tgt = MEM32(o + 0x54u);
-        if (tgt == s_pick || (tgt < 100u && tgt == s_pick % 100u && (MEM32(o + 0x4Cu) & 0xFFFFu) == s_pick / 100u))
-            return;                                 /* the same mission again */
+        if (!s_pick_cleared
+            && (tgt == s_pick || (tgt < 100u && tgt == s_pick % 100u && (MEM32(o + 0x4Cu) & 0xFFFFu) == s_pick / 100u)))
+            return;                                 /* the same mission again: a retry */
     } else {
         tgt = 0;
     }
