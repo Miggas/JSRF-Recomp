@@ -244,7 +244,8 @@ override the file.
 | `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
 | `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
 | `RECOMP_CHAPTER_SELECT=2` | Chapter select: a new game starts at chapter 2's opening; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the game's save points save over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
-| `RECOMP_SHOW_MISSION=1` | The window title shows the current mission (`mssnCCMM`) and its objective. |
+| `RECOMP_SHOW_MISSION=1` | The window title shows the current mission (`mssnCCMM`), your position and the objective. F9 writes your position to the log. |
+| `RECOMP_MISSION_SPAWN=CCMM:x,y,z` | A mission picked in mission select starts at that spot (a position from F9). |
 
 **`[compatibility]`**: try these if something goes wrong.
 

@@ -534,6 +534,70 @@ static void pk_clear(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
     if (w != 0xFFFFFFFEu && op == 0xE5u && p->spawn < 0) p->spawn = (int)le32(cmd + 0x14 + 4);
 }
 
+/* v284: start spots picked by hand (Miggas: skate there, press F9 with
+ * RECOMP_SHOW_MISSION=1, the log has the position), for challenges whose
+ * file has no spot inside them; RECOMP_MISSION_SPAWN=CCMM:x,y,z tries one */
+struct place { unsigned id; float x, y, z; };
+static uint32_t f2u(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+static float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
+static const struct place s_places[] = {
+    { 0u, 0.0f, 0.0f, 0.0f }            /* (none yet) */
+};
+static volatile int s_place_on;
+static unsigned s_place_id;
+static float s_place_p[3];
+
+static void place_arm(unsigned id)
+{
+    const char *e = getenv("RECOMP_MISSION_SPAWN");
+    size_t i;
+    s_place_on = 0;
+    if (e && *e) {
+        unsigned eid; float x, y, z;
+        if (sscanf(e, "%u:%f,%f,%f", &eid, &x, &y, &z) == 4 && eid == id) {
+            s_place_id = id; s_place_p[0] = x; s_place_p[1] = y; s_place_p[2] = z;
+            s_place_on = 1;
+            return;
+        }
+    }
+    for (i = 0; i < sizeof s_places / sizeof s_places[0]; i++)
+        if (s_places[i].id && s_places[i].id == id) {
+            s_place_id = id;
+            s_place_p[0] = s_places[i].x; s_place_p[1] = s_places[i].y; s_place_p[2] = s_places[i].z;
+            s_place_on = 1;
+        }
+}
+
+/* Once the picked mission's object has its script (+0x1040), before its
+ * immediate list places the player (opcode 0x48: spawn record global 0x4D
+ * + slot, 0x2C bytes, the position at +8): that record's position becomes
+ * the chosen spot. The script's spawn table is at +0x3C (relocated: a
+ * pointer), its count at +0x40. */
+static void place_tick(uint32_t o)
+{
+    uint32_t sc, tab, n, idx, c, m, r;
+    if (!s_place_on || !o) return;
+    c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
+    if ((m >= 100u ? m : c * 100u + m) != s_place_id) return;
+    sc = MEM32(o + 0x1040u);
+    if (!sc) return;
+    s_place_on = 0;
+    tab = MEM32(sc + 0x3Cu); n = MEM32(sc + 0x40u);
+    idx = var_get(0x4Du);
+    if (idx >= n) idx = 0;
+    if (!tab || !n) {
+        fprintf(stderr, "[MISSION-SELECT] mssn%04u: no spawn table to place the player with\n", s_place_id);
+        return;
+    }
+    r = tab + 0x2Cu * idx;
+    MEM32(r + 0x08u) = f2u(s_place_p[0]);
+    MEM32(r + 0x0Cu) = f2u(s_place_p[1]);
+    MEM32(r + 0x10u) = f2u(s_place_p[2]);
+    var_set(0x4Du, idx);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: player placed at %.1f, %.1f, %.1f (spawn %u)\n",
+            s_place_id, s_place_p[0], s_place_p[1], s_place_p[2], idx);
+}
+
 static void pick_setup(unsigned c, unsigned m)
 {
     const unsigned id = c * 100u + m;
@@ -607,6 +671,7 @@ static void pick_setup(unsigned c, unsigned m)
     }
     if (entry >= 0) var_set(0x4Du, (uint32_t)entry);
     else if (pk.spawn >= 0) var_set(0x4Du, (uint32_t)pk.spawn);
+    place_arm(id);
     /* v283: areas whose objective comes after story steps of their own
      * (Miggas). 0360 (Sewage Facility, "Find the switches and spray 'em!")
      * starts with the opening and Rapid 99's trap into Garam's half-pipe
@@ -673,6 +738,10 @@ void sub_00051FC0(void)
     const uint32_t o = g_ecx;
     s_game_this = o;
     s_game_seen = s_seq_ticks;
+    if (s_place_on) {
+        place_tick(o);
+        g_ecx = o;
+    }
     if (s_pick_live || s_sel_target) {
         pick_exit_check(o);
         g_ecx = o;
@@ -689,6 +758,7 @@ void sub_00051FC0(void)
  * mission object: chapter +0x4C, number +0x50, an exit's three-digit target
  * being a whole id) and its objective to the window title */
 extern void xbox_SetTitleMission(const char *t);
+static char s_title_ob[80];               /* the current mission's objective */
 static void show_mission_tick(void)
 {
     static int on = -1;
@@ -704,9 +774,35 @@ static void show_mission_tick(void)
         uint32_t c = MEM32(o + 0x4Cu) & 0xFFFFu, m = MEM32(o + 0x50u) & 0xFFFFu;
         id = m >= 100u ? m : c * 100u + m;
     }
+    {
+        /* v284: the player's position (the tracker DAT_00257CE4, +0x7C) in
+         * the title, refreshed every 15 frames; F9 writes it to the log */
+        static int was9;
+        static uint32_t tk;
+        const int down = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+        const uint32_t tr = MEM32(0x00257CE4u);
+        float p[3] = { 0, 0, 0 };
+        if (tr) {
+            p[0] = u2f(MEM32(tr + 0x7Cu));
+            p[1] = u2f(MEM32(tr + 0x80u));
+            p[2] = u2f(MEM32(tr + 0x84u));
+        }
+        if (down && !was9 && id <= 9999u)
+            fprintf(stderr, "[MISSION] mssn%04u position: %.1f, %.1f, %.1f  (RECOMP_MISSION_SPAWN=%04u:%.1f,%.1f,%.1f)\n",
+                    id, p[0], p[1], p[2], id, p[0], p[1], p[2]);
+        was9 = down;
+        if (id <= 9999u && tr && ++tk >= 15u) {
+            char t[96];
+            tk = 0;
+            snprintf(t, sizeof t, "mission %04u @ %.0f, %.0f, %.0f%s%.60s", id, p[0], p[1], p[2],
+                     s_title_ob[0] ? ": " : "", s_title_ob);
+            xbox_SetTitleMission(t);
+        }
+    }
     if (id == last) return;
     last = id;
     if (id > 9999u) {
+        s_title_ob[0] = 0;
         xbox_SetTitleMission("");
     } else {
         char t[96];
@@ -715,6 +811,7 @@ static void show_mission_tick(void)
         if (!s_mm_state) mm_list();
         for (i = 0; i < s_mm_n; i++)
             if (s_mm_id[i] == id) { ob = s_mm_obj[i]; break; }
+        snprintf(s_title_ob, sizeof s_title_ob, "%s", ob);
         snprintf(t, sizeof t, "mission %04u%s%.80s", id, ob[0] ? ": " : "", ob);
         xbox_SetTitleMission(t);
         fprintf(stderr, "[MISSION] mssn%04u%s%s\n", id, ob[0] ? ": " : "", ob);
