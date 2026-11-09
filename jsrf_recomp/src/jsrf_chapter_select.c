@@ -776,6 +776,7 @@ void sub_00051FC0(void)
  * being a whole id) and its objective to the window title */
 extern void xbox_SetTitleMission(const char *t);
 static char s_title_ob[80];               /* the current mission's objective */
+static float s_face;                      /* v284c: the way the player last moved, degrees */
 static void show_mission_tick(void)
 {
     static int on = -1;
@@ -808,25 +809,25 @@ static void show_mission_tick(void)
             /* the facing, from the way the player last moved (more than half
              * a unit a frame on the ground plane): degrees, 0 along +Z, 90
              * along +X, as the spawn records' yaw */
-            static float lp[3], yaw;
+            static float lp[3];
             static int have;
             const float dx = p[0] - lp[0], dz = p[2] - lp[2];
             if (have && tr && dx * dx + dz * dz > 0.25f && dx * dx + dz * dz < 400.0f) {
-                yaw = atan2f(dx, dz) * 180.0f / 3.14159265f;
-                if (yaw < 0.0f) yaw += 360.0f;
+                s_face = atan2f(dx, dz) * 180.0f / 3.14159265f;
+                if (s_face < 0.0f) s_face += 360.0f;
             }
             lp[0] = p[0]; lp[1] = p[1]; lp[2] = p[2]; have = tr != 0;
             if (down && !was9 && id <= 9999u)
                 fprintf(stderr, "[MISSION] mssn%04u position: %.1f, %.1f, %.1f facing %.0f"
                         "  (RECOMP_MISSION_SPAWN=%04u:%.1f,%.1f,%.1f,%.0f)\n",
-                        id, p[0], p[1], p[2], yaw, id, p[0], p[1], p[2], yaw);
+                        id, p[0], p[1], p[2], s_face, id, p[0], p[1], p[2], s_face);
         }
         was9 = down;
         if (id <= 9999u && tr && ++tk >= 15u) {
             char t[96];
             tk = 0;
-            snprintf(t, sizeof t, "mission %04u @ %.0f, %.0f, %.0f%s%.60s", id, p[0], p[1], p[2],
-                     s_title_ob[0] ? ": " : "", s_title_ob);
+            snprintf(t, sizeof t, "mission %04u @ %.0f, %.0f, %.0f facing %.0f%s%.50s", id, p[0], p[1], p[2],
+                     s_face, s_title_ob[0] ? ": " : "", s_title_ob);
             xbox_SetTitleMission(t);
         }
     }
