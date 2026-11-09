@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #if defined(_WIN32)
 #include <windows.h>            /* before recomp_types.h: it #defines eax, esp, ... */
 #else
@@ -537,15 +538,15 @@ static void pk_clear(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
 /* v284: start spots picked by hand (Miggas: skate there, press F9 with
  * RECOMP_SHOW_MISSION=1, the log has the position), for challenges whose
  * file has no spot inside them; RECOMP_MISSION_SPAWN=CCMM:x,y,z tries one */
-struct place { unsigned id; float x, y, z; };
+struct place { unsigned id; float x, y, z, yaw; };   /* yaw in degrees, < 0: the record's */
 static uint32_t f2u(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 static float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 static const struct place s_places[] = {
-    { 0u, 0.0f, 0.0f, 0.0f }            /* (none yet) */
+    { 0u, 0.0f, 0.0f, 0.0f, -1.0f }     /* (none yet) */
 };
 static volatile int s_place_on;
 static unsigned s_place_id;
-static float s_place_p[3];
+static float s_place_p[3], s_place_yaw;
 
 static void place_arm(unsigned id)
 {
@@ -553,9 +554,10 @@ static void place_arm(unsigned id)
     size_t i;
     s_place_on = 0;
     if (e && *e) {
-        unsigned eid; float x, y, z;
-        if (sscanf(e, "%u:%f,%f,%f", &eid, &x, &y, &z) == 4 && eid == id) {
+        unsigned eid; float x, y, z, yaw = -1.0f;
+        if (sscanf(e, "%u:%f,%f,%f,%f", &eid, &x, &y, &z, &yaw) >= 4 && eid == id) {
             s_place_id = id; s_place_p[0] = x; s_place_p[1] = y; s_place_p[2] = z;
+            s_place_yaw = yaw;
             s_place_on = 1;
             return;
         }
@@ -564,6 +566,7 @@ static void place_arm(unsigned id)
         if (s_places[i].id && s_places[i].id == id) {
             s_place_id = id;
             s_place_p[0] = s_places[i].x; s_place_p[1] = s_places[i].y; s_place_p[2] = s_places[i].z;
+            s_place_yaw = s_places[i].yaw;
             s_place_on = 1;
         }
 }
@@ -593,9 +596,23 @@ static void place_tick(uint32_t o)
     MEM32(r + 0x08u) = f2u(s_place_p[0]);
     MEM32(r + 0x0Cu) = f2u(s_place_p[1]);
     MEM32(r + 0x10u) = f2u(s_place_p[2]);
+    if (s_place_yaw >= 0.0f) {
+        /* the facing: angles at +0x14 (x, y, z; 0x10000 a turn, y the yaw:
+         * 0 looks along +Z, 0x4000 along +X); a pose-and-target record
+         * (kind 2) also gets its target 100 units ahead */
+        const float a = s_place_yaw * 3.14159265f / 180.0f;
+        MEM32(r + 0x14u) = 0u;
+        MEM32(r + 0x18u) = (uint32_t)(int32_t)(s_place_yaw * 65536.0f / 360.0f);
+        MEM32(r + 0x1Cu) = 0u;
+        if (MEM32(r) == 2u) {
+            MEM32(r + 0x20u) = f2u(s_place_p[0] + 100.0f * sinf(a));
+            MEM32(r + 0x24u) = f2u(s_place_p[1]);
+            MEM32(r + 0x28u) = f2u(s_place_p[2] + 100.0f * cosf(a));
+        }
+    }
     var_set(0x4Du, idx);
-    fprintf(stderr, "[MISSION-SELECT] mssn%04u: player placed at %.1f, %.1f, %.1f (spawn %u)\n",
-            s_place_id, s_place_p[0], s_place_p[1], s_place_p[2], idx);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: player placed at %.1f, %.1f, %.1f facing %.0f (spawn %u)\n",
+            s_place_id, s_place_p[0], s_place_p[1], s_place_p[2], s_place_yaw, idx);
 }
 
 static void pick_setup(unsigned c, unsigned m)
@@ -787,9 +804,23 @@ static void show_mission_tick(void)
             p[1] = u2f(MEM32(tr + 0x80u));
             p[2] = u2f(MEM32(tr + 0x84u));
         }
-        if (down && !was9 && id <= 9999u)
-            fprintf(stderr, "[MISSION] mssn%04u position: %.1f, %.1f, %.1f  (RECOMP_MISSION_SPAWN=%04u:%.1f,%.1f,%.1f)\n",
-                    id, p[0], p[1], p[2], id, p[0], p[1], p[2]);
+        {
+            /* the facing, from the way the player last moved (more than half
+             * a unit a frame on the ground plane): degrees, 0 along +Z, 90
+             * along +X, as the spawn records' yaw */
+            static float lp[3], yaw;
+            static int have;
+            const float dx = p[0] - lp[0], dz = p[2] - lp[2];
+            if (have && tr && dx * dx + dz * dz > 0.25f && dx * dx + dz * dz < 400.0f) {
+                yaw = atan2f(dx, dz) * 180.0f / 3.14159265f;
+                if (yaw < 0.0f) yaw += 360.0f;
+            }
+            lp[0] = p[0]; lp[1] = p[1]; lp[2] = p[2]; have = tr != 0;
+            if (down && !was9 && id <= 9999u)
+                fprintf(stderr, "[MISSION] mssn%04u position: %.1f, %.1f, %.1f facing %.0f"
+                        "  (RECOMP_MISSION_SPAWN=%04u:%.1f,%.1f,%.1f,%.0f)\n",
+                        id, p[0], p[1], p[2], yaw, id, p[0], p[1], p[2], yaw);
+        }
         was9 = down;
         if (id <= 9999u && tr && ++tk >= 15u) {
             char t[96];
