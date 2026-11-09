@@ -564,7 +564,7 @@ static float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 static const struct place s_places[] = {
     { 0u, 0.0f, 0.0f, 0.0f, -1.0f }     /* (none yet) */
 };
-static volatile int s_conv_on;          /* v285: a race with no clear: give it one */
+static volatile int s_conv_on;          /* v290: a pick whose ending is changed (s_convs) */
 static unsigned s_conv_id;
 static volatile int s_place_on;
 static unsigned s_place_id;
@@ -641,60 +641,87 @@ static void place_tick(uint32_t o)
             s_place_id, s_place_p[0], s_place_p[1], s_place_p[2], s_place_yaw, idx);
 }
 
-/* v285: once the picked race's object has its script, its blocking list's
- * exits (0xE6, args[0] the exit) become mission_cleared (0xE5: player 0,
- * the spawn global 0x4D, managed action 0xF and music 0xA as the other
- * chapter 5 races, the same exit): the cleared screen, then the exit, which
- * a pick turns into the title. The lists in the loaded script are pointers
- * (header +0x174 + 8 * list: commands, count), commands 0x54 bytes. */
+/* v290: the endings of the menu's missions (Miggas: skip the cutscenes,
+ * and a mission with no cleared animation gets one). Once a pick's object
+ * has its script, these commands of its blocking list become a
+ * mission_cleared (0xE5: player 0, a spawn, the managed action, the exit,
+ * music 0xA, the cleared jingle); each keeps its own conditions and flags.
+ * Read from the mission files:
+ *  - a win cutscene (play_event 0xE3) before the mission's own clear:
+ *    0451 (event 0x33), 0514 (0x45), 0751 (0x56), 0816 (0x58), 0872 (0x5D),
+ *    0880 (0x60) take that clear's spawn, action and exit;
+ *  - a win that ends in a cutscene and an exit, with no clear: 0122 (event
+ *    0x1A, then on to chapter 2), 0513 (0x43, then 0514), 0890 (0x66), and
+ *    the fade_and_exit (0xEE) of 0231 and 0461, get one, at the current
+ *    entry's spawn;
+ *  - 0360's last switch cutscene (0x2D: the gate opens) and 0750's first
+ *    phase's (0x53: the devices sprayed) end them, with the exit they lead
+ *    to (to 0370; 0750 again, its second phase).
+ * The opcode found must be the one listed, else nothing changes. The lists
+ * in the loaded script are pointers (header +0x174 + 8 * list: commands,
+ * count), commands 0x54 bytes, the opcode at +0x10, the arguments after. */
+struct conv { uint16_t id; uint8_t idx, op, exit, managed; int8_t spawn; };
+static const struct conv s_convs[] = {
+    { 122u, 2, 0xE3, 0, 0xB, -1 }, { 122u, 1, 0xE6, 0, 0xB, -1 },
+    { 231u, 2, 0xEE, 0, 0xB, -1 },
+    { 360u, 11, 0xE3, 2, 0xB, -1 },
+    { 451u, 2, 0xE3, 0, 0xB, 3 },
+    { 461u, 1, 0xEE, 0, 0xB, -1 }, { 461u, 2, 0xEE, 0, 0xB, -1 },
+    { 461u, 3, 0xEE, 0, 0xB, -1 }, { 461u, 4, 0xEE, 0, 0xB, -1 },
+    { 513u, 2, 0xE3, 0, 0xF, -1 }, { 513u, 3, 0xE6, 0, 0xF, -1 },
+    { 514u, 1, 0xE3, 0, 0xB, 1 },
+    { 750u, 6, 0xE3, 2, 0xB, 6 },
+    { 751u, 1, 0xE3, 0, 0xB, 6 },
+    { 816u, 1, 0xE3, 0, 0xB, 14 },
+    { 872u, 1, 0xE3, 0, 0xB, 12 },
+    { 880u, 1, 0xE3, 0, 0xB, 1 },
+    { 890u, 1, 0xE3, 0, 0xB, -1 }, { 890u, 2, 0xE6, 0, 0xB, -1 },
+};
+static int conv_has(unsigned id)
+{
+    size_t i;
+    for (i = 0; i < sizeof s_convs / sizeof s_convs[0]; i++)
+        if (s_convs[i].id == id) return 1;
+    return 0;
+}
 static void conv_tick(uint32_t o)
 {
-    uint32_t sc, c, m, cmds, n, i, k = 0, sp;
+    uint32_t sc, c, m, cmds, n, k = 0, cur;
+    size_t i;
     if (!s_conv_on || !o) return;
     c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
     if ((m >= 100u ? m : c * 100u + m) != s_conv_id) return;
     sc = MEM32(o + 0x1040u);
     if (!sc) return;
-    /* v285c: the file is read after the object has its buffer (Miggas'
-     * log: changed 0 commands, before the load job ran), and its offsets
-     * become pointers after: wait for a list that points into it */
+    /* v285c: the file is read after the object has its buffer, and its
+     * offsets become pointers after: wait for a list that points into it */
     cmds = MEM32(sc + 0x174u + 8u * 3u); n = MEM32(sc + 0x178u + 8u * 3u);
     if (!n || n > 512u || cmds < sc || cmds > sc + 0x400000u) return;
     s_conv_on = 0;
-    sp = var_get(0x4Du);
-    if (sp >= MEM32(sc + 0x40u)) sp = 0;
-    {
-        /* v285b: its win plays a cutscene first (0513: event 0x43, which
-         * goes on to 0514 itself; Miggas: it still did); the cutscene
-         * (play_event 0xE3) becomes the clear instead, with the exit of
-         * its exit command */
-        uint32_t ex = 0;
-        for (i = 0; cmds && i < n && i < 256u; i++)
-            if (MEM32(cmds + 0x54u * i + 0x10u) == 0xE6u) { ex = MEM32(cmds + 0x54u * i + 0x14u); break; }
-        for (i = 0; cmds && i < n && i < 256u; i++) {
-            const uint32_t cm = cmds + 0x54u * i;
-            if (MEM32(cm + 0x10u) != 0xE3u) continue;
-            MEM32(cm + 0x24u) = 0xAu;          /* music, args[4] */
-            MEM32(cm + 0x20u) = ex;
-            MEM32(cm + 0x1Cu) = 0xFu;
-            MEM32(cm + 0x18u) = sp;
-            MEM32(cm + 0x14u) = 0u;
-            MEM32(cm + 0x10u) = 0xE5u;
-            k++;
+    cur = var_get(0x4Du);
+    if (cur >= MEM32(sc + 0x40u)) cur = 0;
+    for (i = 0; i < sizeof s_convs / sizeof s_convs[0]; i++) {
+        const struct conv *v = &s_convs[i];
+        uint32_t cm, op;
+        if (v->id != s_conv_id) continue;
+        if (v->idx >= n) continue;
+        cm = cmds + 0x54u * v->idx;
+        op = MEM32(cm + 0x10u);
+        if (op != v->op) {
+            fprintf(stderr, "[MISSION-SELECT] mssn%04u: command %u is 0x%X, not 0x%X: left as it is\n",
+                    s_conv_id, v->idx, op, v->op);
+            continue;
         }
-    }
-    for (i = 0; cmds && i < n && i < 256u; i++) {
-        const uint32_t cm = cmds + 0x54u * i;
-        if (MEM32(cm + 0x10u) != 0xE6u) continue;
-        MEM32(cm + 0x24u) = 0xAu;                    /* music (args[4]; v285d: was +0x28) */
-        MEM32(cm + 0x20u) = MEM32(cm + 0x14u);       /* the exit */
-        MEM32(cm + 0x1Cu) = 0xFu;                    /* managed action */
-        MEM32(cm + 0x18u) = sp;                      /* spawn */
-        MEM32(cm + 0x14u) = 0u;                      /* player */
+        MEM32(cm + 0x28u) = 0u;
+        MEM32(cm + 0x24u) = 0xAu;                                   /* music */
+        MEM32(cm + 0x20u) = v->exit;                                /* the exit */
+        MEM32(cm + 0x1Cu) = v->managed;                             /* managed action */
+        MEM32(cm + 0x18u) = v->spawn >= 0 ? (uint32_t)v->spawn : cur;
+        MEM32(cm + 0x14u) = 0u;                                     /* player */
         MEM32(cm + 0x10u) = 0xE5u;
         k++;
     }
-    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u cutscene/exit command(s) now end with the cleared screen\n", s_conv_id, k);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u ending command(s) now the cleared animation\n", s_conv_id, k);
 }
 
 /* v285: how many other missions a mission's exits lead to */
@@ -729,6 +756,11 @@ static void pick_setup(unsigned c, unsigned m)
     struct pk pk;
     FILE *f;
     if (m == 0u || (m >= 94u && m <= 97u)) return;     /* Garages, openings: as they are */
+    s_conv_on = 0;
+    if (conv_has(id)) {                                  /* v290: its ending changed (s_convs) */
+        s_conv_id = id;
+        s_conv_on = 1;
+    }
     if (!s_mm_state) mm_list();
     for (i = 0; i < s_mm_n && np < 16; i++) {
         uint8_t h[8], e[12];
@@ -786,17 +818,6 @@ static void pick_setup(unsigned c, unsigned m)
     if (entry < 0)
         for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clear, &pk);
     for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clearflags, &pk);
-    {
-        /* v285: a race (checkpoints, header +0xD0) with no clear of its own
-         * (0513: a cutscene, then on to 0514's boss) ends with one instead:
-         * its sequence's exit (0xE6) becomes a mission_cleared */
-        uint8_t h[4];
-        s_conv_on = 0;
-        if (!pk.has_clear && c >= 1u && c <= 9u && rd(f, 0xD0u, h, 4) && le32(h)) {
-            s_conv_id = id;
-            s_conv_on = 1;
-        }
-    }
     fclose(f);
     for (i = 0; i < np && pk.nn; i++) {
         f = mm_open(par[i]);
