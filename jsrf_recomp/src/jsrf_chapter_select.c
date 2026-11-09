@@ -959,24 +959,42 @@ static void pick_exit_check(uint32_t o)
 #define PICK_CANS 20u
 extern void sub_0007FE70(void);
 static uint32_t s_cans_obj;
-static int s_cans_wait;
+static int s_cans_wait, s_cans_look;
+/* player 0's CPlayer, 0 while there is none */
+static uint32_t player0(void)
+{
+    const uint32_t a = am();
+    const uint32_t st = a ? MEM32(a + 0x98u + 4u * 0x0Cu) : 0;
+    const uint32_t pid = st ? MEM32(st + 0x8D4u) : 0;
+    return st && pid && pid < 0x1DF0u ? MEM32(a + 0x98u + 4u * pid) : 0;
+}
 static void cans_tick(uint32_t o)
 {
-    uint32_t c, m, a, st, pid, pl;
+    uint32_t c, m, pl;
     if (!s_pick || s_sel_target || !o) return;
     c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
     if ((m >= 100u ? m : c * 100u + m) != s_pick) return;
-    if (o != s_cans_obj) { s_cans_obj = o; s_cans_wait = 60; return; }
-    if (s_cans_wait <= 0 || --s_cans_wait) return;
-    a = am();
-    st = a ? MEM32(a + 0x98u + 4u * 0x0Cu) : 0;
-    pid = st ? MEM32(st + 0x8D4u) : 0;
-    pl = st && pid && pid < 0x1DF0u ? MEM32(a + 0x98u + 4u * pid) : 0;
-    if (!pl) {
-        fprintf(stderr, "[MISSION-SELECT] mssn%04u: no player to give cans to\n", s_pick);
+    /* v291b: the object runs while the stage still loads, before the
+     * player is made (Miggas' log: "no player" a second in): look for the
+     * player each update (for up to a minute), then wait a second more, so
+     * the immediate list's counter reset has run */
+    if (o != s_cans_obj) { s_cans_obj = o; s_cans_look = 3600; s_cans_wait = 0; return; }
+    if (s_cans_look > 0) {
+        if (!player0()) {
+            if (--s_cans_look == 0) {
+                const uint32_t a = am(), st = a ? MEM32(a + 0x98u + 4u * 0x0Cu) : 0;
+                fprintf(stderr, "[MISSION-SELECT] mssn%04u: no player to give cans to (slot 0xC 0x%08X, +8D4 %08X)\n",
+                        s_pick, st, st ? MEM32(st + 0x8D4u) : 0u);
+            }
+            return;
+        }
+        s_cans_look = 0;
+        s_cans_wait = 60;
         return;
     }
-    if (MEM32(pl + 0xFA0u) >= PICK_CANS) return;
+    if (s_cans_wait <= 0 || --s_cans_wait) return;
+    pl = player0();
+    if (!pl || MEM32(pl + 0xFA0u) >= PICK_CANS) return;
     PUSH32(g_esp, 0xFFFFFFFFu);          /* interaction: as it is */
     PUSH32(g_esp, 0xFFFFFFFFu);          /* stamina: as it is */
     PUSH32(g_esp, PICK_CANS);
