@@ -672,7 +672,7 @@ static void conv_tick(uint32_t o)
         for (i = 0; cmds && i < n && i < 256u; i++) {
             const uint32_t cm = cmds + 0x54u * i;
             if (MEM32(cm + 0x10u) != 0xE3u) continue;
-            MEM32(cm + 0x28u) = 0xAu;
+            MEM32(cm + 0x24u) = 0xAu;          /* music, args[4] */
             MEM32(cm + 0x20u) = ex;
             MEM32(cm + 0x1Cu) = 0xFu;
             MEM32(cm + 0x18u) = sp;
@@ -684,7 +684,7 @@ static void conv_tick(uint32_t o)
     for (i = 0; cmds && i < n && i < 256u; i++) {
         const uint32_t cm = cmds + 0x54u * i;
         if (MEM32(cm + 0x10u) != 0xE6u) continue;
-        MEM32(cm + 0x28u) = 0xAu;                    /* music */
+        MEM32(cm + 0x24u) = 0xAu;                    /* music (args[4]; v285d: was +0x28) */
         MEM32(cm + 0x20u) = MEM32(cm + 0x14u);       /* the exit */
         MEM32(cm + 0x1Cu) = 0xFu;                    /* managed action */
         MEM32(cm + 0x18u) = sp;                      /* spawn */
