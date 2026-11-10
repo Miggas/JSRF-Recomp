@@ -636,7 +636,9 @@ struct place { unsigned id; float x, y, z, yaw; };   /* yaw in degrees, < 0: the
 static uint32_t f2u(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 static float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 static const struct place s_places[] = {
-    { 0u, 0.0f, 0.0f, 0.0f, -1.0f }     /* (none yet) */
+    /* v296: Miggas' spots, from F9 */
+    { 451u, 1488.3f, 60.0f, 1358.6f, 360.0f },   /* Hikage Street: inside the drones' arena */
+    { 751u, -43.5f, 1358.0f, 298.8f, 90.0f },    /* Fortified Zone: the Golden Rhinos' jets */
 };
 static volatile int s_conv_on;          /* v290: a pick whose ending is changed (s_convs) */
 static unsigned s_conv_id;
@@ -654,7 +656,7 @@ static void place_arm(unsigned id)
         unsigned eid; float x, y, z, yaw = -1.0f;
         if (sscanf(e, " %u:%f,%f,%f,%f", &eid, &x, &y, &z, &yaw) >= 4 && eid == id) {
             s_place_id = id; s_place_p[0] = x; s_place_p[1] = y; s_place_p[2] = z;
-            s_place_yaw = yaw;
+            s_place_yaw = yaw >= 360.0f ? yaw - 360.0f : yaw;
             s_place_on = 1;
             return;
         }
@@ -666,6 +668,7 @@ static void place_arm(unsigned id)
             s_place_id = id;
             s_place_p[0] = s_places[i].x; s_place_p[1] = s_places[i].y; s_place_p[2] = s_places[i].z;
             s_place_yaw = s_places[i].yaw;
+            if (s_place_yaw >= 360.0f) s_place_yaw -= 360.0f;   /* 360 is 0, a whole turn */
             s_place_on = 1;
         }
 }
