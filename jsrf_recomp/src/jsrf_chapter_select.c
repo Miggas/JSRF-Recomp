@@ -165,7 +165,6 @@ static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to t
 static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
 static int s_pick_seen;                /* v285b: the picked mission has run */
 static int s_pick_cleared;             /* v289: it has been cleared */
-static uint32_t s_part_obj;            /* v299: a second part's object, its ending changed */
 
 static int chs_on(void)
 {
@@ -178,7 +177,6 @@ static int chs_on(void)
         s_pick_live = s_pick_obj;
         s_pick_seen = 0;
         s_pick_cleared = 0;
-        s_part_obj = 0;
         /* v281: the chapter's character select (mssnCC95, Roboy's menu in
          * the Garage) first, for a pick in chapters 1-9 that isn't an
          * opening or Garage */
@@ -735,15 +733,13 @@ static void place_tick(uint32_t o)
  *    entry's spawn;
  *  - 0360's last switch cutscene (0x2D: the gate opens) ends it, with the
  *    exit it leads to (to 0370);
- *  - v299: 0750 has two parts (Miggas): it runs as in the story, its
- *    first phase's cutscene (0x53, the devices sprayed) included (v299b),
- *    then its second phase, whose clear goes on to 0752; 0752's cutscene
- *    (0x55, then on to 0751) becomes its clear, which ends the pick
- *    (s_parts).
+ *  - v299c: 0750 has two phases (Miggas): the first's cutscene (0x53) is
+ *    left as it is and leads to the second (0750 again), whose own clear
+ *    ends the pick, now right after its device is sprayed (s_wpatches).
  * The opcode found must be the one listed, else nothing changes. The lists
  * in the loaded script are pointers (header +0x174 + 8 * list: commands,
  * count), commands 0x54 bytes, the opcode at +0x10, the arguments after. */
-struct conv { uint16_t id; uint8_t idx, op, exit, managed; int8_t spawn; uint8_t to; };   /* to: 0 a clear, else that opcode (an exit) */
+struct conv { uint16_t id; uint8_t idx, op, exit, managed; int8_t spawn; };
 static const struct conv s_convs[] = {
     { 122u, 2, 0xE3, 0, 0xB, -1 }, { 122u, 1, 0xE6, 0, 0xB, -1 },
     { 231u, 2, 0xEE, 0, 0xB, -1 },
@@ -753,7 +749,6 @@ static const struct conv s_convs[] = {
     { 461u, 3, 0xEE, 0, 0xB, -1 }, { 461u, 4, 0xEE, 0, 0xB, -1 },
     { 513u, 2, 0xE3, 0, 0xF, -1 }, { 513u, 3, 0xE6, 0, 0xF, -1 },
     { 514u, 1, 0xE3, 0, 0xB, 1 },
-    { 752u, 2, 0xE3, 3, 0xB, -1 },
     { 751u, 1, 0xE3, 0, 0xB, 6 },
     { 816u, 1, 0xE3, 0, 0xB, 14 },
     { 872u, 1, 0xE3, 0, 0xB, 12 },
@@ -795,12 +790,6 @@ static void conv_tick(uint32_t o)
                     s_conv_id, v->idx, op, v->op);
             continue;
         }
-        if (v->to) {                                                /* v299: an exit instead */
-            MEM32(cm + 0x14u) = v->exit;
-            MEM32(cm + 0x10u) = v->to;
-            k++;
-            continue;
-        }
         MEM32(cm + 0x28u) = 0u;
         MEM32(cm + 0x24u) = 0xAu;                                   /* music */
         MEM32(cm + 0x20u) = v->exit;                                /* the exit */
@@ -810,7 +799,7 @@ static void conv_tick(uint32_t o)
         MEM32(cm + 0x10u) = 0xE5u;
         k++;
     }
-    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u ending command(s) changed\n", s_conv_id, k);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u ending command(s) now the cleared animation\n", s_conv_id, k);
 }
 
 /* v295: cutscenes at the start of a pick, skipped (Miggas: 0812's three).
@@ -866,6 +855,49 @@ static void skip_tick(uint32_t o)
                 MEM32(cm + 0x14u));
     }
     if (!left) s_skip_on = 0;
+}
+
+/* v299c: a flag a command writes, changed in every script of the pick's
+ * mission as it loads (a mission that reloads itself for its next phase
+ * gets it again). 0750's second phase (Miggas: clear before Professor K
+ * speaks): its device sprayed (listener 4, actor_list_done 0xA) wrote
+ * mission[115], which starts K's three lines, the last setting mission[116]
+ * for the clear (blocking 9); it now writes mission[116], so the clear
+ * comes at once and the lines never start. */
+struct wpatch { uint16_t id; uint8_t list, idx, op; uint32_t from, to; };
+static const struct wpatch s_wpatches[] = {
+    { 750u, 1, 4, 0x0A, FLAGW(8, 0x0398), FLAGW(8, 0x03A0) },   /* mission[115] -> [116] */
+};
+static void wpatch_tick(uint32_t o)
+{
+    uint32_t sc, c, m, id;
+    size_t i;
+    if (!s_pick_live || !o) return;
+    c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
+    id = m >= 100u ? m : c * 100u + m;
+    if (id != s_pick) return;
+    sc = MEM32(o + 0x1040u);
+    if (!sc) return;                        /* checked every update: a reload may reuse the buffer */
+    for (i = 0; i < sizeof s_wpatches / sizeof s_wpatches[0]; i++) {
+        const struct wpatch *w = &s_wpatches[i];
+        uint32_t lp, n, cm, wo, wc, k;
+        if (w->id != id) continue;
+        lp = MEM32(sc + 0x174u + 8u * w->list); n = MEM32(sc + 0x178u + 8u * w->list);
+        if (!n || n > 512u || w->idx >= n) continue;                 /* not in yet */
+        if (lp < sc) lp += sc;                                       /* an offset still */
+        if (lp > sc + 0x400000u) continue;
+        cm = lp + 0x54u * w->idx;
+        if (MEM32(cm + 0x10u) != w->op) continue;
+        wo = MEM32(cm + 8u); wc = MEM32(cm + 0xCu);
+        if (wc > 32u) continue;
+        if (wo < sc) wo += sc;
+        if (wo > sc + 0x400000u) continue;
+        for (k = 0; k < wc; k++)
+            if (MEM32(wo + 4u * k) == w->from) {
+                MEM32(wo + 4u * k) = w->to;
+                fprintf(stderr, "[MISSION-SELECT] mssn%04u: command %u writes %08X now\n", id, w->idx, w->to);
+            }
+    }
 }
 
 /* v285: how many other missions a mission's exits lead to */
@@ -1028,25 +1060,12 @@ static int flag_holds(uint32_t w)
     if (l > 3u || i >= 0x200u) return 0;
     return ((MEM32(SAVE + base[l] + (i >> 5) * 4u) >> (i & 31u)) & 1u) == v;
 }
-/* v299: a pick in two parts (Miggas): 0750 (spray the devices) goes on to
- * 0752, which ends it. The first part's exits to the second are not its
- * end, its clear doesn't count, and the second part's ending is changed
- * (s_convs) each time it starts. */
-static const struct { uint16_t first, last; } s_parts[] = { { 750u, 752u } };
-static unsigned pick_last(void)             /* the mission whose clear ends the pick */
-{
-    size_t i;
-    for (i = 0; i < sizeof s_parts / sizeof s_parts[0]; i++)
-        if (s_parts[i].first == s_pick) return s_parts[i].last;
-    return s_pick;
-}
-
 static void cleared_tick(uint32_t o)
 {
     uint32_t sc, c, m, cmds, n, i, k;
     if (s_pick_cleared || !o) return;
     c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
-    if ((m >= 100u ? m : c * 100u + m) != pick_last()) return;
+    if ((m >= 100u ? m : c * 100u + m) != s_pick) return;
     sc = MEM32(o + 0x1040u);
     if (!sc) return;
     cmds = MEM32(sc + 0x174u + 8u * 3u); n = MEM32(sc + 0x178u + 8u * 3u);
@@ -1076,13 +1095,7 @@ static void pick_exit_check(uint32_t o)
         const uint32_t c = MEM32(o + 0x4Cu) & 0xFFFFu, m = MEM32(o + 0x50u) & 0xFFFFu;
         const uint32_t mid = m >= 100u ? m : c * 100u + m;
         if (mid == s_pick) s_pick_seen = 1;
-        else if (mid == pick_last()) {          /* v299: the second part */
-            if (s_part_obj != o && conv_has(mid)) {
-                s_part_obj = o;
-                s_conv_id = mid;
-                s_conv_on = 1;
-            }
-        } else if (s_pick_seen && st < 0x5Du && m != 95u) {
+        else if (s_pick_seen && st < 0x5Du && m != 95u) {
             fprintf(stderr, "[MISSION-SELECT] mssn%04u was followed by mssn%04u: back to the title\n", s_pick, mid);
             s_pick_live = 0; s_pick_seen = 0;
             var_set(VAR_NEXT, SEQ_TITLE);
@@ -1109,8 +1122,6 @@ static void pick_exit_check(uint32_t o)
         if (!s_pick_cleared
             && (tgt == s_pick || (tgt < 100u && tgt == s_pick % 100u && (MEM32(o + 0x4Cu) & 0xFFFFu) == s_pick / 100u)))
             return;                                 /* the same mission again: a retry */
-        if (!s_pick_cleared && tgt == pick_last())
-            return;                                 /* v299: on to the second part, or its retry */
     } else {
         tgt = 0;
     }
@@ -1192,6 +1203,10 @@ void sub_00051FC0(void)
         place_tick(o);
         conv_tick(o);
         skip_tick(o);
+        g_ecx = o;
+    }
+    if (s_pick_live) {
+        wpatch_tick(o);                     /* v299c */
         g_ecx = o;
     }
     if (s_pick) {

@@ -717,6 +717,7 @@ next fix.
 - **v298d:** v298b's diagnostic `[VOICE]` lines removed (and `RECOMP_VOICE_LOG` with them); the one line when a voice bank is kept stays.
 - **v299:** 0750 (spray the devices) has two parts and no longer ends when the devices are sprayed. Its cutscene there is skipped and it goes on as in the story: its second phase, whose clear leads to 0752. 0752 ends the pick: its cutscene (on to 0751) becomes the cleared animation, then back to the title. A retry in either part stays in the pick (*Idea by Miggas*).
 - **v299b:** 0750's cutscene into its second phase (the devices sprayed) plays again, as in the story (*Idea by Miggas*).
+- **v299c:** 0750 instead: 0752 is not its second part (Miggas). v299's chaining to 0752 is gone. 0750 runs its first phase as in the story, cutscene included, then its second phase (the mission reloads itself), and that phase's own clear ends the pick. The clear now comes as soon as the device is sprayed, before Professor K's lines: the sprayed device's flag write is changed in each load of the script to the one the clear waits for (*Idea by Miggas*).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
