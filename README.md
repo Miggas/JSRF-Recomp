@@ -338,7 +338,7 @@ co-author.
   placement from his widescreen work.
 - mstan's JSRFRecomp for the idea of holding START to skip cutscenes.
 - The quit window and the "Building Shaders" message use the
-  [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
+  [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"; its V, X and K redrawn here),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
 - s-ilent for MSAA (`RECOMP_GL_MSAA`, [pull request #4](https://github.com/Miggas/JSRF-Recomp/pull/4)).
 - [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)

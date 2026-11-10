@@ -705,6 +705,7 @@ next fix.
 - **v292:** (Miggas) picking a mission opens a second menu, "Start with": No cans, 20 cans or Max cans (asks for 999, the game keeps it to what the character carries); B goes back to the mission list on the same mission. The list menu can be opened from the game's code (`xbox_ListMenuShow`, `xbox_ListMenuSelect`).
 - **v292b:** (reported by Miggas) quitting to the title during a race's countdown left the players held (global 0x1B4, set by the countdown until its GO), so the character stayed stuck in the character select and the next missions without a countdown; at the title the hold is now let go.
 - **v292c:** (Miggas) a short list menu (Start with) gets a box of its own rows, 300 wide, in the middle of the screen, and no "left / right" hint when there's nothing to page through (the mission list keeps its size).
+- **v293:** (Miggas: V looked like U, X and K like H) the overlay font's V, X and K, capitals and lowercase, redrawn in its own strokes (Miggas' pick of three: diagonal arms, the X and K keeping the font's middle bar, the V a straight left stroke and a diagonal). Renamed "NiseJSRF Recomp edit", the author's credit and copyright line kept; the edit is `xboxrecomp/src/third_party/fonts/nisejsrf_edit.py`.
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
