@@ -551,6 +551,77 @@ static void pk_clearflags(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx
     if (p->ncl < 16) p->clr[p->ncl++] = w;
 }
 
+/* v294: and the chapter flags of what leads to the clear (Miggas: 0812
+ * never cleared after both Zero Beats: its clear waits for mission[150],
+ * which a listener writes only with chapter[60] on, set in the story by
+ * what comes before). From the clear's conditions back through the
+ * commands that write them (three steps): their chapter conditions for 1. */
+struct mcmd { uint32_t op; uint8_t nc, nw; uint32_t c[16], w[16]; };
+static struct mcmd s_mcmds[1536];
+static int mm_load_cmds(FILE *f)
+{
+    int n = 0, li;
+    for (li = 0; li < 4; li++) {
+        uint8_t h[8], c[0x54], wb[64];
+        uint32_t off, cnt, i, k;
+        if (!rd(f, 0x174u + 8u * (uint32_t)li, h, 8)) continue;
+        off = le32(h); cnt = le32(h + 4);
+        if (cnt > 512u) cnt = 512u;
+        for (i = 0; i < cnt && n < 1536; i++) {
+            struct mcmd *m = &s_mcmds[n];
+            uint32_t co, cc, wo, wc;
+            if (!rd(f, off + 0x54u * i, c, sizeof c)) break;
+            co = le32(c); cc = le32(c + 4); wo = le32(c + 8); wc = le32(c + 12);
+            m->op = le32(c + 0x10);
+            m->nc = (uint8_t)(cc > 16u ? 16u : cc);
+            m->nw = (uint8_t)(wc > 16u ? 16u : wc);
+            if (m->nc && rd(f, co, wb, 4u * m->nc)) for (k = 0; k < m->nc; k++) m->c[k] = le32(wb + 4u * k);
+            else m->nc = 0;
+            if (m->nw && rd(f, wo, wb, 4u * m->nw)) for (k = 0; k < m->nw; k++) m->w[k] = le32(wb + 4u * k);
+            else m->nw = 0;
+            n++;
+        }
+    }
+    return n;
+}
+static int wset_has(const uint32_t *s, int n, uint32_t w)
+{
+    int i;
+    for (i = 0; i < n; i++) if (s[i] == w) return 1;
+    return 0;
+}
+static void pk_clear_chain(FILE *f, struct pk *p)
+{
+    uint32_t need[64];
+    int nn = 0, n = mm_load_cmds(f), i, k, step;
+    for (i = 0; i < n; i++)                                       /* the clear's own conditions */
+        if (s_mcmds[i].op == 0xE5u)
+            for (k = 0; k < s_mcmds[i].nc; k++) {
+                const uint32_t w = s_mcmds[i].c[k];
+                if (!(w >> 19 & 1u)) continue;
+                if ((w & 7u) == 0u && nn < 64 && !wset_has(need, nn, w)) need[nn++] = w;
+            }
+    for (step = 0; step < 3; step++) {
+        const int had = nn;
+        for (i = 0; i < n; i++) {
+            const struct mcmd *m = &s_mcmds[i];
+            int writes = 0;
+            for (k = 0; k < m->nw && !writes; k++) writes = wset_has(need, had, m->w[k]);
+            if (!writes) continue;
+            for (k = 0; k < m->nc; k++) {
+                const uint32_t w = m->c[k];
+                if (!(w >> 19 & 1u)) continue;
+                if ((w & 7u) == 1u) {
+                    if (p->ncl < 16 && !wset_has(p->clr, p->ncl, w)) p->clr[p->ncl++] = w;
+                } else if ((w & 7u) == 0u && nn < 64 && !wset_has(need, nn, w)) {
+                    need[nn++] = w;
+                }
+            }
+        }
+        if (nn == had) break;
+    }
+}
+
 static void pk_clear(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
 {
     struct pk *p = (struct pk *)ctx;
@@ -821,6 +892,7 @@ static void pick_setup(unsigned c, unsigned m)
     if (entry < 0)
         for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clear, &pk);
     for (li = 0; li < 4; li++) mm_walk(f, li, 0, pk_clearflags, &pk);
+    pk_clear_chain(f, &pk);
     fclose(f);
     for (i = 0; i < np && pk.nn; i++) {
         f = mm_open(par[i]);
@@ -1153,7 +1225,7 @@ static const struct { uint16_t id; const char *label; } s_menu_def[] = {
     { 0u, "\x01" "Chapter 1" },
     { 112u, "Dogenzaka Hill - Race against Beat!" },
     { 113u, "Dogenzaka Hill - Defeat the Rokkaku police!" },
-    { 122u, "Shibuya Termina - Defeat the Rokkaku police!" },
+    { 122u, "Shibuya Terminal - Defeat the Rokkaku police!" },
     { 0u, "" },
     { 0u, "\x01" "Chapter 2" },
     { 231u, "Chuo Street - Defeat the Rokkaku police!" },
@@ -1192,7 +1264,7 @@ static const struct { uint16_t id; const char *label; } s_menu_def[] = {
     { 816u, "Chuo Street - Defeat the Golden Rhinos!" },
     { 872u, "Highway Zero - Defeat the Golden Rhinos!" },
     { 880u, "Site of Tokyo Line - Destroy the Golden Rhino's train machine!" },
-    { 812u, "Shibuya Termina - Spray the backs of Zero Beat!" },
+    { 812u, "Shibuya Terminal - Spray the backs of Zero Beat!" },
     { 890u, "?" "?" "?" "?" "? - Defeat A. KU. MU.!" },
 };
 #define MENU_MAX (sizeof s_menu_def / sizeof s_menu_def[0])
