@@ -837,10 +837,15 @@ extern void sub_0003D5D0_gen(void);
  * A menu screen not made wide keeps it where it was. */
 extern int xbox_MenuScreenNow(void);
 #define WSM_SIGN_DY 28.0f
+/* v297: only the signs (ids 0xF-0x25, the labels of the arrow that points
+ * where a path leads). The same draw shows the capture-the-flag marker's
+ * "FLAG" (id 0x27, `this`+0x54), which belongs under its arrow in the middle
+ * (Reported by Miggas). */
 void sub_000FD190(void)             /* the garage menus' header */
 {
     int on = wsm_map_active();
-    int sign = !on && ws_hud_on() && !xbox_MenuScreenNow();
+    uint32_t id = g_ecx ? MEM32(g_ecx + 0x54u) : 0;
+    int sign = !on && ws_hud_on() && !xbox_MenuScreenNow() && id >= 0xFu && id <= 0x25u;
     if (on || sign) wsm_in_header++;
     if (sign) wsm_dy = WSM_SIGN_DY;
     sub_000FD190_gen();
