@@ -3888,6 +3888,51 @@ void sub_001192E0(void)
     }
 }
 
+/* v298: a voice bank two characters share. Yoyo and YoyoB both speak from
+ * pv_yoyo (bank 19), but the player loader counts each character's hold on
+ * its voice bank by character (loader+0x1FC + ch*4), not by bank. When the
+ * last of one of them is freed, the bank goes even though the other still
+ * uses it: after a scene with both loaded (the chapter 7 garage), Yoyo had
+ * no voice for the rest of the stage (Reported by Miggas). The game's own
+ * bug, the same code in every release. The free (sub_00032790, `this` the
+ * loader, the record at +0x1EC: character at +8, holds a voice at +0x18,
+ * bank at +0x1C) now keeps the bank while another character that speaks
+ * from it is still held. */
+static const uint8_t s_voice_banks[24] = {
+    11, 13, 12, 14, 17, 20, 19, 19, 16, 15, 18, 27, 23, 26, 25, 28, 24, 31, 32, 30, 21, 22, 33, 29 };
+static RECOMP_TLS int s_keep_bank = -1;
+extern void sub_00032790_gen(void);
+extern void sub_00118BA0_gen(void);
+void sub_00032790(void)
+{
+    uint32_t ld = g_ecx, rec = ld ? MEM32(ld + 0x1ECu) : 0;
+    s_keep_bank = -1;
+    if (rec && MEM32(rec + 0x18u)) {
+        uint32_t ch = MEM32(rec + 8u), bank = MEM32(rec + 0x1Cu), c;
+        if (ch < 24u && MEM32(ld + 0x1FCu + ch * 4u) == 1u)
+            for (c = 0; c < 24u; c++)
+                if (c != ch && s_voice_banks[c] == bank && (int32_t)MEM32(ld + 0x1FCu + c * 4u) > 0) {
+                    s_keep_bank = (int)bank;
+                    fprintf(stderr, "[VOICE] character %u freed: voice bank %u kept, character %u"
+                            " still speaks from it\n", ch, bank, c);
+                    break;
+                }
+    }
+    sub_00032790_gen();
+    s_keep_bank = -1;
+}
+
+void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
+{
+    if (s_keep_bank >= 0 && MEM32(g_esp + 4) == (uint32_t)s_keep_bank) {
+        s_keep_bank = -1;
+        g_eax = 1;
+        g_esp += 4;                         /* ret */
+        return;
+    }
+    sub_00118BA0_gen();
+}
+
 void sub_00118A60(void)
 {
     uint32_t mgr = g_ecx, h = MEM32(g_esp + 4), pos = MEM32(g_esp + 8);

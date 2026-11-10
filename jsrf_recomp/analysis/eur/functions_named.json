@@ -13593,9 +13593,9 @@
   "size": 1248,
   "name": "sub_00032E20",
   "section": ".text",
-  "confidence": 0.88,
-  "detection_method": "tail_jump_alias",
-  "num_instructions": 393,
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
+  "num_instructions": 388,
   "has_prologue": false,
   "calls_to": [
    "0x0004B090",
@@ -89085,8 +89085,8 @@
   "size": 43,
   "name": "sub_00119570",
   "section": ".text",
-  "confidence": 0.9,
-  "detection_method": "call_target",
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
   "num_instructions": 15,
   "has_prologue": false,
   "calls_to": [

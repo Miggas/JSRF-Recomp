@@ -4218,7 +4218,7 @@
     "name": "sub_00032790",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00032C70",
@@ -32099,7 +32099,7 @@
     "name": "sub_00118BA0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x00118BD0",

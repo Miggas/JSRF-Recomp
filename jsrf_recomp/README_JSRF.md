@@ -711,6 +711,7 @@ next fix.
 - **v296:** (Miggas' spots, from F9) built-in start spots: 0451 at 1488.3, 60.0, 1358.6 facing 0 (inside the drones' arena) and 0751 at -43.5, 1358.0, 298.8 facing 90; `RECOMP_MISSION_SPAWN` still overrides them. A facing of 360 is taken as 0.
 - **v297:** in widescreen, the capture-the-flag "FLAG" label stays under its arrow in the middle. v232's move to the left (for the street signs such as "Garage") now applies only to the signs, not to the marker's label, which the same draw shows (*Reported by Miggas*).
 - **v297b:** the "FLAG" label is drawn 14 guest pixels higher, closer to its arrow, in 4:3 too. `RECOMP_FLAG_DY` sets the move in guest pixels (negative is up, 0 leaves it where the game puts it) (*Idea by Miggas*).
+- **v298:** Yoyo kept his voice. Yoyo and YoyoB share one voice bank (pv_yoyo), but the game counts each character's hold on its voice bank separately, so freeing YoyoB (after the chapter 7 garage, where both are loaded) also unloaded the bank Yoyo was still using, and he went silent for the rest of the stage. This is the game's own bug and the same code is in every release. Now the bank is kept while another character still speaks from it; `[VOICE]` in the log says when (*Reported by Miggas*).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.
