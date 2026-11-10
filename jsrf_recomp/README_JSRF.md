@@ -704,6 +704,7 @@ next fix.
 - **v291b:** (Miggas' log: "no player to give cans to") the mission object runs while the stage still loads, before the player is made: the player is now looked for each update (up to a minute), then the cans come a second after it appears.
 - **v292:** (Miggas) picking a mission opens a second menu, "Start with": No cans, 20 cans or Max cans (asks for 999, the game keeps it to what the character carries); B goes back to the mission list on the same mission. The list menu can be opened from the game's code (`xbox_ListMenuShow`, `xbox_ListMenuSelect`).
 - **v292b:** (reported by Miggas) quitting to the title during a race's countdown left the players held (global 0x1B4, set by the countdown until its GO), so the character stayed stuck in the character select and the next missions without a countdown; at the title the hold is now let go.
+- **v292c:** (Miggas) a short list menu (Start with) gets a box of its own rows, 300 wide, in the middle of the screen, and no "left / right" hint when there's nothing to page through (the mission list keeps its size).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

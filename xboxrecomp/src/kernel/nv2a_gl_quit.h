@@ -394,8 +394,14 @@ static void present_overlay_f(int cw, int ch, int flip)
             static const float red[4] = { 0.85f, 0.29f, 0.28f, 1 }, redfill[4] = { 0.13f, 0.04f, 0.04f, 1 },
                                redtext[4] = { 1.0f, 0.33f, 0.33f, 1 }, black[4] = { 0.04f, 0.04f, 0.04f, 1 };
             enum { ROWS = 11 };
-            const float x0 = 90.0f, x1 = 550.0f, top = 128.0f, rh = 22.0f;   /* v279: wider, for the objectives */
             int n = xbox_ListMenuCount(), sel = xbox_ListMenuSel(), first, i;
+            /* v292c: a short list (the "Start with" menu, Miggas) gets a box
+             * of its rows only, narrower, in the middle of the screen */
+            const int rows = n < ROWS ? (n > 0 ? n : 1) : ROWS;
+            const float rh = 22.0f, wide = n <= 6 ? 300.0f : 460.0f;   /* v279: wide, for the objectives */
+            const float x0 = 320.0f - wide / 2, x1 = 320.0f + wide / 2;
+            const float bt = 240.0f - (52.0f + rows * rh + 34.0f) / 2;  /* the box's top (76 when full) */
+            const float top = bt + 52.0f;
             const char *ttl = xbox_ListMenuTitle();
             static int last_sel = -1;
             static unsigned long long m0;
@@ -404,11 +410,11 @@ static void present_overlay_f(int cw, int ch, int flip)
             first = sel - ROWS / 2;
             if (first > n - ROWS) first = n - ROWS;
             if (first < 0) first = 0;
-            qd_frame(x0 - 6.0f, 76.0f, x1 + 6.0f, top + ROWS * rh + 34.0f, 1.8f, 1.1f, edge, box);
-            qd_frame(x0 - 2.0f, 82.0f, x1 + 2.0f, 106.0f, 0.0f, 0.8f, bar_edge, teal);
-            if (s_qd_font) qd_ttf_text(320.0f, 94.0f, qd_ttf_scale(ttl, 12.0f, x1 - x0 - 20.0f), ttl, ink);
-            else qd_text(320.5f, 93.5f, 2.05f, 2.55f, 0.6f, 0.24f, ttl, ink);
-            for (i = 0; i < ROWS && first + i < n; i++) {
+            qd_frame(x0 - 6.0f, bt, x1 + 6.0f, top + rows * rh + 34.0f, 1.8f, 1.1f, edge, box);
+            qd_frame(x0 - 2.0f, bt + 6.0f, x1 + 2.0f, bt + 30.0f, 0.0f, 0.8f, bar_edge, teal);
+            if (s_qd_font) qd_ttf_text(320.0f, bt + 18.0f, qd_ttf_scale(ttl, 12.0f, x1 - x0 - 20.0f), ttl, ink);
+            else qd_text(320.5f, bt + 17.5f, 2.05f, 2.55f, 0.6f, 0.24f, ttl, ink);
+            for (i = 0; i < rows && first + i < n; i++) {
                 const char *it = xbox_ListMenuItem(first + i);
                 float y0 = top + i * rh, cy = y0 + rh / 2 - 1.0f;
                 float e4[4], f4[4], t4[4];
@@ -439,10 +445,13 @@ static void present_overlay_f(int cw, int ch, int flip)
                     if (xbox_ListMenuPickable(k)) { all++; if (k <= sel) at++; }
                     else heads += xbox_ListMenuItem(k)[0] == '\x01';
                 }
-                snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = %s", at, all,
-                         heads ? "chapter" : "page");      /* v288b: a heading's section a step */
-                if (s_qd_font) qd_ttf_text(320.0f, top + ROWS * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
-                else qd_text(320.5f, top + ROWS * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
+                if (heads || n > ROWS)                      /* v288b: a heading's section a step */
+                    snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = %s", at, all,
+                             heads ? "chapter" : "page");
+                else                                        /* v292c: nothing to page through */
+                    snprintf(h, sizeof h, "%d / %d    A = choose    B = back", at, all);
+                if (s_qd_font) qd_ttf_text(320.0f, top + rows * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
+                else qd_text(320.5f, top + rows * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
             }
         }
         if (quit) {
