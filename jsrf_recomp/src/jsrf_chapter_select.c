@@ -45,6 +45,9 @@
 /* v278: mission select (input/xinput_device.c, kernel/nv2a_gl_quit.h) */
 void xbox_ListMenuSet(const char *title, const char *const *items, int n);
 int xbox_ListMenuTake(void);
+int xbox_ListMenuOpen(void);
+void xbox_ListMenuShow(int sel);
+void xbox_ListMenuSelect(int sel);
 void xbox_QuitTitleAvailable(int ok);   /* v278b: the quit window's Quit to Title */
 int xbox_QuitToTitleTake(void);
 extern char g_xbox_note[96];
@@ -957,6 +960,7 @@ static void pick_exit_check(uint32_t o)
  * (+0xFA4), the HUD's counter too. Again after a retry (a new object).
  * Player 0: the player state in slot 0xC, its player's slot at +0x8D4. */
 #define PICK_CANS 20u
+static int s_pick_cans;                 /* v292: 0 no cans, 1 twenty, 2 as many as the character carries */
 extern void sub_0007FE70(void);
 static uint32_t s_cans_obj;
 static int s_cans_wait, s_cans_look;
@@ -971,7 +975,7 @@ static uint32_t player0(void)
 static void cans_tick(uint32_t o)
 {
     uint32_t c, m, pl;
-    if (!s_pick || s_sel_target || !o) return;
+    if (!s_pick || !s_pick_cans || s_sel_target || !o) return;
     c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
     if ((m >= 100u ? m : c * 100u + m) != s_pick) return;
     /* v291b: the object runs while the stage still loads, before the
@@ -994,10 +998,15 @@ static void cans_tick(uint32_t o)
     }
     if (s_cans_wait <= 0 || --s_cans_wait) return;
     pl = player0();
-    if (!pl || MEM32(pl + 0xFA0u) >= PICK_CANS) return;
-    PUSH32(g_esp, 0xFFFFFFFFu);          /* interaction: as it is */
-    PUSH32(g_esp, 0xFFFFFFFFu);          /* stamina: as it is */
-    PUSH32(g_esp, PICK_CANS);
+    {
+        /* v292: "Max cans" asks for more than anyone carries: the game
+         * keeps it to the character's most (+0xFA4) */
+        const uint32_t want = s_pick_cans == 2 ? 999u : PICK_CANS;
+        if (!pl || MEM32(pl + 0xFA0u) >= (s_pick_cans == 2 ? MEM32(pl + 0xFA4u) : want)) return;
+        PUSH32(g_esp, 0xFFFFFFFFu);          /* interaction: as it is */
+        PUSH32(g_esp, 0xFFFFFFFFu);          /* stamina: as it is */
+        PUSH32(g_esp, want);
+    }
     PUSH32(g_esp, RET_MARK);
     g_ecx = pl;
     RECOMP_ABI_CALL(0x0007FE70u, sub_0007FE70);
@@ -1213,6 +1222,9 @@ static void menu_build(void)
     }
 }
 
+static int s_ms_step, s_ms_row;          /* v292: which menu; the mission's row */
+static const char *const s_cans_items[3] = { "No cans", "20 cans", "Max cans" };
+
 void jsrf_mission_select_tick(uint32_t state)
 {
     int pick;
@@ -1221,6 +1233,7 @@ void jsrf_mission_select_tick(uint32_t state)
     if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0, s_sel_target = 0, s_pick = 0, s_cans_obj = 0;   /* v279: back at the title */
     if (state != 0x0Cu) {
         xbox_ListMenuSet(NULL, NULL, 0);
+        s_ms_step = 0;
         if (s_armed && state > 0x1Cu) {             /* a game started without the new game's 1:1 */
             s_armed = 0;
             g_xbox_note[0] = 0;
@@ -1231,20 +1244,47 @@ void jsrf_mission_select_tick(uint32_t state)
     if (s_mm_state != 1) return;
     if (s_menu_n < 0) menu_build();
     if (s_menu_n <= 0) return;
-    xbox_ListMenuSet("Mission select", s_menu_ptr, s_menu_n);
+    /* v292: two menus (Miggas): the mission, then "Start with" the cans;
+     * B on the second goes back to the first, on the same mission */
+    if (s_ms_step == 0) {
+        xbox_ListMenuSet("Mission select", s_menu_ptr, s_menu_n);
+        pick = xbox_ListMenuTake();
+        if (pick >= 0 && pick < s_menu_n && s_menu_id[pick]) {
+            s_ms_row = pick;
+            s_ms_step = 1;
+            xbox_ListMenuSet("Start with", s_cans_items, 3);
+            xbox_ListMenuShow(0);
+        }
+        return;
+    }
+    xbox_ListMenuSet("Start with", s_cans_items, 3);
     pick = xbox_ListMenuTake();
-    if (pick >= 0 && pick < s_menu_n && s_menu_id[pick]) {
-        const unsigned id = s_menu_id[pick];
+    if (pick < 0 || pick > 2) {
+        if (!xbox_ListMenuOpen()) {                 /* B: back to the missions */
+            s_ms_step = 0;
+            xbox_ListMenuSet("Mission select", s_menu_ptr, s_menu_n);
+            xbox_ListMenuShow(s_ms_row);
+        }
+        return;
+    }
+    s_ms_step = 0;
+    xbox_ListMenuSet("Mission select", s_menu_ptr, s_menu_n);
+    xbox_ListMenuSelect(s_ms_row);                  /* it opens on this mission next time */
+    {
+        const unsigned id = s_menu_id[s_ms_row];
         int j, obj = 0;
         for (j = 0; j < s_mm_n; j++)
             if (s_mm_id[j] == id) { obj = s_mm_obj[j][0] != 0; break; }
         s_ac = id / 100u;
         s_am = id % 100u;
         s_armed = 1;
+        s_pick_cans = pick;
         /* back to the title at its end: a mission with an objective, or a
          * challenge leading back to one place (v285: the chapter 5 races) */
         s_pick_obj = obj || mm_outs(id) == 1;
-        snprintf(g_xbox_note, sizeof g_xbox_note, "%s ready: choose NEW GAME", s_menu_ptr[pick]);
-        fprintf(stderr, "[MISSION-SELECT] mssn%02u%02u armed for the next new game\n", s_ac, s_am);
+        snprintf(g_xbox_note, sizeof g_xbox_note, "%s (%s) ready: choose NEW GAME",
+                 s_menu_ptr[s_ms_row], s_cans_items[pick]);
+        fprintf(stderr, "[MISSION-SELECT] mssn%02u%02u armed for the next new game, %s\n", s_ac, s_am,
+                s_cans_items[pick]);
     }
 }

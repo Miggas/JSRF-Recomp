@@ -161,7 +161,7 @@ controller. The keyboard works as controller 1:
 - **Quit:** click both sticks (`Shift` + `Ctrl`): **Quit Game**, **Quit to Title** (while in a level) or **Return**, then **A**.
   Closing the window or `Alt+F4` works too.
 - **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
-- **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of the story's races, boss fights and challenges by chapter, then choose **NEW GAME**: pick your character (all are unlocked) and the mission starts, with 20 spray cans. Refight a boss or redo a race without touching your save (just don't save afterwards): when the mission ends, the game goes back to the title. *Idea by Miggas.*
+- **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of the story's races, boss fights and challenges by chapter. Pick one and how many spray cans to start with (none, 20 or as many as your character carries), then choose **NEW GAME**: pick your character (all are unlocked) and the mission starts. Refight a boss or redo a race without touching your save (just don't save afterwards): when the mission ends, the game goes back to the title. *Idea by Miggas.*
 
 ---
 

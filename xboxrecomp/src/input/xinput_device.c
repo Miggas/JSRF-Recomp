@@ -579,6 +579,23 @@ static LONG lm_snap(LONG i, LONG n)
     for (k = i; k >= 0; k--) if (xbox_ListMenuPickable((int)k)) return k;
     return i;
 }
+/* v292: opens the offered list from the game's code (a second menu after a
+ * pick, Miggas: "Start with"), on row sel (or the nearest pickable one);
+ * the quit window, when open, comes first */
+void xbox_ListMenuShow(int sel)
+{
+    int k;
+    if (s_lm_n <= 0 || s_qd_open == 1) return;
+    InterlockedExchange(&s_lm_sel, lm_snap(sel, s_lm_n));
+    for (k = 0; k < QD_IDX; k++) s_lm_rep_at[k] = 0;
+    InterlockedExchange(&s_qd_open, 3);
+    fprintf(stderr, "[MENU] %s open (%ld entries)\n", xbox_ListMenuTitle(), (long)s_lm_n);
+}
+/* v292: the row the list will open on next (from the game's code) */
+void xbox_ListMenuSelect(int sel)
+{
+    if (s_lm_n > 0) InterlockedExchange(&s_lm_sel, lm_snap(sel, s_lm_n));
+}
 /* v278b: the list menu doesn't hold the game (Miggas): only the quit window does */
 int xbox_DialogOpen(void) { return s_qd_open == 1; }
 /* v278b: Quit to Title, offered while the game says it can (jsrf: in a stage) */
