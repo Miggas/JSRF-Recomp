@@ -165,6 +165,7 @@ static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to t
 static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
 static int s_pick_seen;                /* v285b: the picked mission has run */
 static int s_pick_cleared;             /* v289: it has been cleared */
+static uint32_t s_part_obj;            /* v299: a second part's object, its ending changed */
 
 static int chs_on(void)
 {
@@ -177,6 +178,7 @@ static int chs_on(void)
         s_pick_live = s_pick_obj;
         s_pick_seen = 0;
         s_pick_cleared = 0;
+        s_part_obj = 0;
         /* v281: the chapter's character select (mssnCC95, Roboy's menu in
          * the Garage) first, for a pick in chapters 1-9 that isn't an
          * opening or Garage */
@@ -731,13 +733,17 @@ static void place_tick(uint32_t o)
  *    0x1A, then on to chapter 2), 0513 (0x43, then 0514), 0890 (0x66), and
  *    the fade_and_exit (0xEE) of 0231 and 0461, get one, at the current
  *    entry's spawn;
- *  - 0360's last switch cutscene (0x2D: the gate opens) and 0750's first
- *    phase's (0x53: the devices sprayed) end them, with the exit they lead
- *    to (to 0370; 0750 again, its second phase).
+ *  - 0360's last switch cutscene (0x2D: the gate opens) ends it, with the
+ *    exit it leads to (to 0370);
+ *  - v299: 0750 has two parts (Miggas): its first phase's cutscene (0x53,
+ *    the devices sprayed) becomes the exit it leads to (0xE6, exit 2: 0750
+ *    again, its second phase), whose clear goes on to 0752 as in the story;
+ *    0752's cutscene (0x55, then on to 0751) becomes its clear, which ends
+ *    the pick (s_parts).
  * The opcode found must be the one listed, else nothing changes. The lists
  * in the loaded script are pointers (header +0x174 + 8 * list: commands,
  * count), commands 0x54 bytes, the opcode at +0x10, the arguments after. */
-struct conv { uint16_t id; uint8_t idx, op, exit, managed; int8_t spawn; };
+struct conv { uint16_t id; uint8_t idx, op, exit, managed; int8_t spawn; uint8_t to; };   /* to: 0 a clear, else that opcode (an exit) */
 static const struct conv s_convs[] = {
     { 122u, 2, 0xE3, 0, 0xB, -1 }, { 122u, 1, 0xE6, 0, 0xB, -1 },
     { 231u, 2, 0xEE, 0, 0xB, -1 },
@@ -747,7 +753,8 @@ static const struct conv s_convs[] = {
     { 461u, 3, 0xEE, 0, 0xB, -1 }, { 461u, 4, 0xEE, 0, 0xB, -1 },
     { 513u, 2, 0xE3, 0, 0xF, -1 }, { 513u, 3, 0xE6, 0, 0xF, -1 },
     { 514u, 1, 0xE3, 0, 0xB, 1 },
-    { 750u, 6, 0xE3, 2, 0xB, 6 },
+    { 750u, 6, 0xE3, 2, 0xB, -1, 0xE6 },
+    { 752u, 2, 0xE3, 3, 0xB, -1 },
     { 751u, 1, 0xE3, 0, 0xB, 6 },
     { 816u, 1, 0xE3, 0, 0xB, 14 },
     { 872u, 1, 0xE3, 0, 0xB, 12 },
@@ -789,6 +796,12 @@ static void conv_tick(uint32_t o)
                     s_conv_id, v->idx, op, v->op);
             continue;
         }
+        if (v->to) {                                                /* v299: an exit instead */
+            MEM32(cm + 0x14u) = v->exit;
+            MEM32(cm + 0x10u) = v->to;
+            k++;
+            continue;
+        }
         MEM32(cm + 0x28u) = 0u;
         MEM32(cm + 0x24u) = 0xAu;                                   /* music */
         MEM32(cm + 0x20u) = v->exit;                                /* the exit */
@@ -798,7 +811,7 @@ static void conv_tick(uint32_t o)
         MEM32(cm + 0x10u) = 0xE5u;
         k++;
     }
-    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u ending command(s) now the cleared animation\n", s_conv_id, k);
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u ending command(s) changed\n", s_conv_id, k);
 }
 
 /* v295: cutscenes at the start of a pick, skipped (Miggas: 0812's three).
@@ -1016,12 +1029,25 @@ static int flag_holds(uint32_t w)
     if (l > 3u || i >= 0x200u) return 0;
     return ((MEM32(SAVE + base[l] + (i >> 5) * 4u) >> (i & 31u)) & 1u) == v;
 }
+/* v299: a pick in two parts (Miggas): 0750 (spray the devices) goes on to
+ * 0752, which ends it. The first part's exits to the second are not its
+ * end, its clear doesn't count, and the second part's ending is changed
+ * (s_convs) each time it starts. */
+static const struct { uint16_t first, last; } s_parts[] = { { 750u, 752u } };
+static unsigned pick_last(void)             /* the mission whose clear ends the pick */
+{
+    size_t i;
+    for (i = 0; i < sizeof s_parts / sizeof s_parts[0]; i++)
+        if (s_parts[i].first == s_pick) return s_parts[i].last;
+    return s_pick;
+}
+
 static void cleared_tick(uint32_t o)
 {
     uint32_t sc, c, m, cmds, n, i, k;
     if (s_pick_cleared || !o) return;
     c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
-    if ((m >= 100u ? m : c * 100u + m) != s_pick) return;
+    if ((m >= 100u ? m : c * 100u + m) != pick_last()) return;
     sc = MEM32(o + 0x1040u);
     if (!sc) return;
     cmds = MEM32(sc + 0x174u + 8u * 3u); n = MEM32(sc + 0x178u + 8u * 3u);
@@ -1051,7 +1077,13 @@ static void pick_exit_check(uint32_t o)
         const uint32_t c = MEM32(o + 0x4Cu) & 0xFFFFu, m = MEM32(o + 0x50u) & 0xFFFFu;
         const uint32_t mid = m >= 100u ? m : c * 100u + m;
         if (mid == s_pick) s_pick_seen = 1;
-        else if (s_pick_seen && st < 0x5Du && m != 95u) {
+        else if (mid == pick_last()) {          /* v299: the second part */
+            if (s_part_obj != o && conv_has(mid)) {
+                s_part_obj = o;
+                s_conv_id = mid;
+                s_conv_on = 1;
+            }
+        } else if (s_pick_seen && st < 0x5Du && m != 95u) {
             fprintf(stderr, "[MISSION-SELECT] mssn%04u was followed by mssn%04u: back to the title\n", s_pick, mid);
             s_pick_live = 0; s_pick_seen = 0;
             var_set(VAR_NEXT, SEQ_TITLE);
@@ -1078,6 +1110,8 @@ static void pick_exit_check(uint32_t o)
         if (!s_pick_cleared
             && (tgt == s_pick || (tgt < 100u && tgt == s_pick % 100u && (MEM32(o + 0x4Cu) & 0xFFFFu) == s_pick / 100u)))
             return;                                 /* the same mission again: a retry */
+        if (!s_pick_cleared && tgt == pick_last())
+            return;                                 /* v299: on to the second part, or its retry */
     } else {
         tgt = 0;
     }
