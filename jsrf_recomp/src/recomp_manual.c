@@ -3892,16 +3892,21 @@ void sub_001192E0(void)
     }
 }
 
-/* v298: a voice bank two characters share. Yoyo and YoyoB both speak from
- * pv_yoyo (bank 19), but the player loader counts each character's hold on
- * its voice bank by character (loader+0x1FC + ch*4), not by bank. When the
- * last of one of them is freed, the bank goes even though the other still
- * uses it: after a scene with both loaded (the chapter 7 garage), Yoyo had
- * no voice for the rest of the stage (Reported by Miggas). The game's own
- * bug, the same code in every release. The free (sub_00032790, `this` the
- * loader, the record at +0x1EC: character at +8, holds a voice at +0x18,
- * bank at +0x1C) now keeps the bank while another character that speaks
- * from it is still held. */
+/* v298/v298c: a voice bank two characters share. In the NTSC releases
+ * (US, Japan) Yoyo and YoyoB (NT 3000) both speak from bank 19, pv_yoyo
+ * (the character -> voice bank table, 0x1EE6B8); the PAL release gave YoyoB
+ * its own, bank 38, pv_yoyob.dat. The player loader counts each character's
+ * hold on its voice bank by character (loader+0x1FC + ch*4), not by bank,
+ * so when the last of one of them was freed the bank went with it while
+ * the other still used it: after the chapter 7 garage, where both are
+ * loaded, Yoyo had no voice for the rest of the stage, every play of bank
+ * 19 failing (Miggas's NTSC-U and PAL logs; Reported by Miggas). A voice
+ * bank released by the player frees is now kept while another character
+ * still held by the loader speaks from it (the game's own table, so the
+ * PAL release, where nobody shares, is unchanged). The two frees: the
+ * player's (0x329F7, loader in ebp) and the other characters' (0x337A4,
+ * loader in ebx); v298 only covered the first, and the garage's
+ * characters go through the second. */
 /* v298b (diagnostic): [VOICE] lines -- every player free (character, its
  * voice bank, the per-character counts), every bank release and its
  * caller, and the plays from the voice banks (11-33) with their result.
@@ -3916,15 +3921,11 @@ static int voice_log_left(void)
     if (left > 0) { left--; return 1; }
     return 0;
 }
-static const uint8_t s_voice_banks[24] = {
-    11, 13, 12, 14, 17, 20, 19, 19, 16, 15, 18, 27, 23, 26, 25, 28, 24, 31, 32, 30, 21, 22, 33, 29 };
-static RECOMP_TLS int s_keep_bank = -1;
 extern void sub_00032790_gen(void);
 extern void sub_00118BA0_gen(void);
-void sub_00032790(void)
+void sub_00032790(void)             /* the player loader's free (v298b: logged) */
 {
     uint32_t ld = g_ecx, rec = ld ? MEM32(ld + 0x1ECu) : 0;
-    s_keep_bank = -1;
     if (rec && voice_log_left()) {
         uint32_t c;
         fprintf(stderr, "[VOICE] free: loader %08X character %u, holds voice %u, bank %u; counts:",
@@ -3933,34 +3934,28 @@ void sub_00032790(void)
             if (MEM32(ld + 0x1FCu + c * 4u))
                 fprintf(stderr, " ch%u=%d", c, (int32_t)MEM32(ld + 0x1FCu + c * 4u));
         fputc('\n', stderr);
-    } else if (!rec && voice_log_left())
-        fprintf(stderr, "[VOICE] free: loader %08X, no record\n", ld);
-    if (rec && MEM32(rec + 0x18u)) {
-        uint32_t ch = MEM32(rec + 8u), bank = MEM32(rec + 0x1Cu), c;
-        if (ch < 24u && MEM32(ld + 0x1FCu + ch * 4u) == 1u)
-            for (c = 0; c < 24u; c++)
-                if (c != ch && s_voice_banks[c] == bank && (int32_t)MEM32(ld + 0x1FCu + c * 4u) > 0) {
-                    s_keep_bank = (int)bank;
-                    fprintf(stderr, "[VOICE] character %u freed: voice bank %u kept, character %u"
-                            " still speaks from it\n", ch, bank, c);
-                    break;
-                }
     }
     sub_00032790_gen();
-    s_keep_bank = -1;
 }
 
 void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
 {
+    uint32_t bank = MEM32(g_esp + 4), from = MEM32(g_esp), ld = 0, c;
+    if (from == 0x000329FCu)
+        ld = g_ebp;                         /* the player's free */
+    else if (from == 0x000337A9u)
+        ld = g_ebx;                         /* the other characters' free */
+    if (ld && bank >= 11u && bank <= 33u)
+        for (c = 0; c < 24u; c++)
+            if (MEM32(0x001EE6B8u + c * 4u) == bank && (int32_t)MEM32(ld + 0x1FCu + c * 4u) > 0) {
+                fprintf(stderr, "[VOICE] voice bank %u kept: character %u still speaks from it\n",
+                        bank, c);
+                g_eax = 1;
+                g_esp += 4;                 /* ret */
+                return;
+            }
     if (voice_log_left())
-        fprintf(stderr, "[VOICE] release bank %u (from %08X)%s\n", MEM32(g_esp + 4), MEM32(g_esp),
-                s_keep_bank >= 0 && MEM32(g_esp + 4) == (uint32_t)s_keep_bank ? ": kept" : "");
-    if (s_keep_bank >= 0 && MEM32(g_esp + 4) == (uint32_t)s_keep_bank) {
-        s_keep_bank = -1;
-        g_eax = 1;
-        g_esp += 4;                         /* ret */
-        return;
-    }
+        fprintf(stderr, "[VOICE] release bank %u (from %08X)\n", bank, from);
     sub_00118BA0_gen();
 }
 
