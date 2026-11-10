@@ -4120,7 +4120,7 @@
     "name": "sub_00032E20",
     "type": "function",
     "section": ".text",
-    "confidence": 0.95
+    "confidence": 0.88
   },
   {
     "address": "0x00033300",

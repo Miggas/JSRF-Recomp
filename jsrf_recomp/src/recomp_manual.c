@@ -3860,7 +3860,6 @@ static int snd_muted(uint32_t bank, uint32_t ch)
     return 0;
 }
 
-static int voice_log_left(void);   /* v298b */
 void sub_001192E0(void)
 {
     uint32_t mgr = g_ecx, bank = MEM32(g_esp + 4), ch = MEM32(g_esp + 8), pos = MEM32(g_esp + 12);
@@ -3873,9 +3872,6 @@ void sub_001192E0(void)
         return;
     }
     sub_001192E0_gen();
-    if (bank >= 11u && bank <= 33u && voice_log_left())
-        fprintf(stderr, "[VOICE] play bank %u cue %u -> %08X (from %08X)\n", bank, ch, g_eax,
-                MEM32(g_esp - 16));
     if (snd_dist_on()) {
         if ((int32_t)g_eax > 0) {          /* v203b: every start, not only the first */
             static unsigned n;
@@ -3907,37 +3903,7 @@ void sub_001192E0(void)
  * player's (0x329F7, loader in ebp) and the other characters' (0x337A4,
  * loader in ebx); v298 only covered the first, and the garage's
  * characters go through the second. */
-/* v298b (diagnostic): [VOICE] lines -- every player free (character, its
- * voice bank, the per-character counts), every bank release and its
- * caller, and the plays from the voice banks (11-33) with their result.
- * RECOMP_VOICE_LOG=0 turns them off; at most 600 lines. */
-static int voice_log_left(void)
-{
-    static int left = -1;
-    if (left < 0) {
-        const char *e = getenv("RECOMP_VOICE_LOG");
-        left = (e && e[0] == '0') ? 0 : 600;
-    }
-    if (left > 0) { left--; return 1; }
-    return 0;
-}
-extern void sub_00032790_gen(void);
 extern void sub_00118BA0_gen(void);
-void sub_00032790(void)             /* the player loader's free (v298b: logged) */
-{
-    uint32_t ld = g_ecx, rec = ld ? MEM32(ld + 0x1ECu) : 0;
-    if (rec && voice_log_left()) {
-        uint32_t c;
-        fprintf(stderr, "[VOICE] free: loader %08X character %u, holds voice %u, bank %u; counts:",
-                ld, MEM32(rec + 8u), MEM32(rec + 0x18u), MEM32(rec + 0x1Cu));
-        for (c = 0; c < 24u; c++)
-            if (MEM32(ld + 0x1FCu + c * 4u))
-                fprintf(stderr, " ch%u=%d", c, (int32_t)MEM32(ld + 0x1FCu + c * 4u));
-        fputc('\n', stderr);
-    }
-    sub_00032790_gen();
-}
-
 void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
 {
     uint32_t bank = MEM32(g_esp + 4), from = MEM32(g_esp), ld = 0, c;
@@ -3954,8 +3920,6 @@ void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
                 g_esp += 4;                 /* ret */
                 return;
             }
-    if (voice_log_left())
-        fprintf(stderr, "[VOICE] release bank %u (from %08X)\n", bank, from);
     sub_00118BA0_gen();
 }
 
