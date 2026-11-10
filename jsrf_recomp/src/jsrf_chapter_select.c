@@ -735,11 +735,11 @@ static void place_tick(uint32_t o)
  *    entry's spawn;
  *  - 0360's last switch cutscene (0x2D: the gate opens) ends it, with the
  *    exit it leads to (to 0370);
- *  - v299: 0750 has two parts (Miggas): its first phase's cutscene (0x53,
- *    the devices sprayed) becomes the exit it leads to (0xE6, exit 2: 0750
- *    again, its second phase), whose clear goes on to 0752 as in the story;
- *    0752's cutscene (0x55, then on to 0751) becomes its clear, which ends
- *    the pick (s_parts).
+ *  - v299: 0750 has two parts (Miggas): it runs as in the story, its
+ *    first phase's cutscene (0x53, the devices sprayed) included (v299b),
+ *    then its second phase, whose clear goes on to 0752; 0752's cutscene
+ *    (0x55, then on to 0751) becomes its clear, which ends the pick
+ *    (s_parts).
  * The opcode found must be the one listed, else nothing changes. The lists
  * in the loaded script are pointers (header +0x174 + 8 * list: commands,
  * count), commands 0x54 bytes, the opcode at +0x10, the arguments after. */
@@ -753,7 +753,6 @@ static const struct conv s_convs[] = {
     { 461u, 3, 0xEE, 0, 0xB, -1 }, { 461u, 4, 0xEE, 0, 0xB, -1 },
     { 513u, 2, 0xE3, 0, 0xF, -1 }, { 513u, 3, 0xE6, 0, 0xF, -1 },
     { 514u, 1, 0xE3, 0, 0xB, 1 },
-    { 750u, 6, 0xE3, 2, 0xB, -1, 0xE6 },
     { 752u, 2, 0xE3, 3, 0xB, -1 },
     { 751u, 1, 0xE3, 0, 0xB, 6 },
     { 816u, 1, 0xE3, 0, 0xB, 14 },
