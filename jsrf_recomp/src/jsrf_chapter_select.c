@@ -798,6 +798,61 @@ static void conv_tick(uint32_t o)
     fprintf(stderr, "[MISSION-SELECT] mssn%04u: %u ending command(s) now the cleared animation\n", s_conv_id, k);
 }
 
+/* v295: cutscenes at the start of a pick, skipped (Miggas: 0812's three).
+ * Its immediate list plays them (play_event 0xE3) as the mission starts,
+ * right after its file is in, maybe in the same update as its offsets
+ * become pointers; so each one's condition (an array of its own) is
+ * pointed at a mission flag nothing sets (mission[511] = 1) as soon as the
+ * file's bytes for it are in, whether its offsets are pointers yet or not:
+ * the command and the condition word must be the ones listed. */
+struct skip { uint16_t id; uint8_t list, idx, op; uint32_t cond; };
+static const struct skip s_skips[] = {
+    { 812u, 0, 5, 0xE3, FLAGW(0, 0x02D1) },   /* event 0x61, IF chapter[90] = 0 */
+    { 812u, 0, 6, 0xE3, FLAGW(0, 0x02D1) },   /* event 0x77 */
+    { 812u, 0, 7, 0xE3, FLAGW(0, 0x02D1) },   /* event 0x78 */
+};
+static volatile int s_skip_on;
+static unsigned s_skip_id;
+static uint32_t s_skip_done;              /* a bit per s_skips entry */
+static int skip_has(unsigned id)
+{
+    size_t i;
+    for (i = 0; i < sizeof s_skips / sizeof s_skips[0]; i++)
+        if (s_skips[i].id == id) return 1;
+    return 0;
+}
+static void skip_tick(uint32_t o)
+{
+    uint32_t sc, c, m;
+    size_t i;
+    int left = 0;
+    if (!s_skip_on || !o) return;
+    c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
+    if ((m >= 100u ? m : c * 100u + m) != s_skip_id) return;
+    sc = MEM32(o + 0x1040u);
+    if (!sc) return;
+    for (i = 0; i < sizeof s_skips / sizeof s_skips[0]; i++) {
+        const struct skip *k = &s_skips[i];
+        uint32_t lp, n, cm, co;
+        if (k->id != s_skip_id || (s_skip_done >> i & 1u)) continue;
+        left++;
+        lp = MEM32(sc + 0x174u + 8u * k->list); n = MEM32(sc + 0x178u + 8u * k->list);
+        if (!n || n > 512u || k->idx >= n) continue;                 /* not in yet */
+        if (lp < sc) lp += sc;                                       /* an offset still */
+        cm = lp + 0x54u * k->idx;
+        if (MEM32(cm + 0x10u) != k->op || MEM32(cm + 4u) != 1u) continue;
+        co = MEM32(cm);
+        if (co < sc) co += sc;
+        if (MEM32(co) != k->cond) continue;                          /* not in yet */
+        MEM32(co) = FLAGW(8, 0x0FF8);                                /* mission[511] = 1 */
+        s_skip_done |= 1u << i;
+        left--;
+        fprintf(stderr, "[MISSION-SELECT] mssn%04u: start cutscene (event 0x%X) skipped\n", s_skip_id,
+                MEM32(cm + 0x14u));
+    }
+    if (!left) s_skip_on = 0;
+}
+
 /* v285: how many other missions a mission's exits lead to */
 static int mm_outs(unsigned id)
 {
@@ -834,6 +889,12 @@ static void pick_setup(unsigned c, unsigned m)
     if (conv_has(id)) {                                  /* v290: its ending changed (s_convs) */
         s_conv_id = id;
         s_conv_on = 1;
+    }
+    s_skip_on = 0;
+    if (skip_has(id)) {                                  /* v295: start cutscenes skipped (s_skips) */
+        s_skip_id = id;
+        s_skip_done = 0;
+        s_skip_on = 1;
     }
     if (!s_mm_state) mm_list();
     for (i = 0; i < s_mm_n && np < 16; i++) {
@@ -1091,9 +1152,10 @@ void sub_00051FC0(void)
     const uint32_t o = g_ecx;
     s_game_this = o;
     s_game_seen = s_seq_ticks;
-    if (s_place_on || s_conv_on) {
+    if (s_place_on || s_conv_on || s_skip_on) {
         place_tick(o);
         conv_tick(o);
+        skip_tick(o);
         g_ecx = o;
     }
     if (s_pick) {
