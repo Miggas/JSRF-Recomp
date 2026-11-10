@@ -1231,6 +1231,16 @@ void jsrf_mission_select_tick(uint32_t state)
     quit_to_title_tick(state);
     show_mission_tick();
     if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0, s_sel_target = 0, s_pick = 0, s_cans_obj = 0;   /* v279: back at the title */
+    /* v292b: a countdown holds the players with global 0x1B4 from its start
+     * until its GO lets them go (the HUD's announcement, mode 0); quitting to
+     * the title during one (Miggas) left it set, and the character stayed
+     * stuck in the character select and the next missions, until another
+     * countdown reached GO. At the title nothing can be counting down. */
+    if ((state == 0x0Au || state == 0x0Cu) && var_get(0x1B4u)) {
+        fprintf(stderr, "[QUIT] the countdown's hold on the players (global 0x1B4 = %u) let go at the title\n",
+                var_get(0x1B4u));
+        var_set(0x1B4u, 0);
+    }
     if (state != 0x0Cu) {
         xbox_ListMenuSet(NULL, NULL, 0);
         s_ms_step = 0;
