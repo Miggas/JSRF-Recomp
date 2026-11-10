@@ -3860,6 +3860,7 @@ static int snd_muted(uint32_t bank, uint32_t ch)
     return 0;
 }
 
+static int voice_log_left(void);   /* v298b */
 void sub_001192E0(void)
 {
     uint32_t mgr = g_ecx, bank = MEM32(g_esp + 4), ch = MEM32(g_esp + 8), pos = MEM32(g_esp + 12);
@@ -3872,6 +3873,9 @@ void sub_001192E0(void)
         return;
     }
     sub_001192E0_gen();
+    if (bank >= 11u && bank <= 33u && voice_log_left())
+        fprintf(stderr, "[VOICE] play bank %u cue %u -> %08X (from %08X)\n", bank, ch, g_eax,
+                MEM32(g_esp - 16));
     if (snd_dist_on()) {
         if ((int32_t)g_eax > 0) {          /* v203b: every start, not only the first */
             static unsigned n;
@@ -3898,6 +3902,20 @@ void sub_001192E0(void)
  * loader, the record at +0x1EC: character at +8, holds a voice at +0x18,
  * bank at +0x1C) now keeps the bank while another character that speaks
  * from it is still held. */
+/* v298b (diagnostic): [VOICE] lines -- every player free (character, its
+ * voice bank, the per-character counts), every bank release and its
+ * caller, and the plays from the voice banks (11-33) with their result.
+ * RECOMP_VOICE_LOG=0 turns them off; at most 600 lines. */
+static int voice_log_left(void)
+{
+    static int left = -1;
+    if (left < 0) {
+        const char *e = getenv("RECOMP_VOICE_LOG");
+        left = (e && e[0] == '0') ? 0 : 600;
+    }
+    if (left > 0) { left--; return 1; }
+    return 0;
+}
 static const uint8_t s_voice_banks[24] = {
     11, 13, 12, 14, 17, 20, 19, 19, 16, 15, 18, 27, 23, 26, 25, 28, 24, 31, 32, 30, 21, 22, 33, 29 };
 static RECOMP_TLS int s_keep_bank = -1;
@@ -3907,6 +3925,16 @@ void sub_00032790(void)
 {
     uint32_t ld = g_ecx, rec = ld ? MEM32(ld + 0x1ECu) : 0;
     s_keep_bank = -1;
+    if (rec && voice_log_left()) {
+        uint32_t c;
+        fprintf(stderr, "[VOICE] free: loader %08X character %u, holds voice %u, bank %u; counts:",
+                ld, MEM32(rec + 8u), MEM32(rec + 0x18u), MEM32(rec + 0x1Cu));
+        for (c = 0; c < 24u; c++)
+            if (MEM32(ld + 0x1FCu + c * 4u))
+                fprintf(stderr, " ch%u=%d", c, (int32_t)MEM32(ld + 0x1FCu + c * 4u));
+        fputc('\n', stderr);
+    } else if (!rec && voice_log_left())
+        fprintf(stderr, "[VOICE] free: loader %08X, no record\n", ld);
     if (rec && MEM32(rec + 0x18u)) {
         uint32_t ch = MEM32(rec + 8u), bank = MEM32(rec + 0x1Cu), c;
         if (ch < 24u && MEM32(ld + 0x1FCu + ch * 4u) == 1u)
@@ -3924,6 +3952,9 @@ void sub_00032790(void)
 
 void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
 {
+    if (voice_log_left())
+        fprintf(stderr, "[VOICE] release bank %u (from %08X)%s\n", MEM32(g_esp + 4), MEM32(g_esp),
+                s_keep_bank >= 0 && MEM32(g_esp + 4) == (uint32_t)s_keep_bank ? ": kept" : "");
     if (s_keep_bank >= 0 && MEM32(g_esp + 4) == (uint32_t)s_keep_bank) {
         s_keep_bank = -1;
         g_eax = 1;
