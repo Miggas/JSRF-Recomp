@@ -846,9 +846,28 @@ void sub_000FD190(void)             /* the garage menus' header */
     int on = wsm_map_active();
     uint32_t id = g_ecx ? MEM32(g_ecx + 0x54u) : 0;
     int sign = !on && ws_hud_on() && !xbox_MenuScreenNow() && id >= 0xFu && id <= 0x25u;
+    float flag_dy = 0.0f, fx = 0.0f, fy = 0.0f;
+    uint32_t device = MEM32(0x19DCE0u);
+    if (id == 0x27u && !on && device) {
+        /* v297b: and moved up, closer to its arrow (Idea by Miggas).
+         * RECOMP_FLAG_DY: guest pixels down (negative: up), default -14 */
+        static float dy = 1e9f;
+        if (dy == 1e9f) {
+            const char *e = getenv("RECOMP_FLAG_DY");
+            dy = e && *e ? (float)atof(e) : -14.0f;
+        }
+        flag_dy = dy;
+    }
+    if (flag_dy != 0.0f) {
+        fx = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
+        fy = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
+        ws_set_screen_offset(fx, fy + flag_dy);
+    }
     if (on || sign) wsm_in_header++;
     if (sign) wsm_dy = WSM_SIGN_DY;
     sub_000FD190_gen();
+    if (flag_dy != 0.0f)
+        ws_set_screen_offset(fx, fy);
     if (sign) wsm_dy = 0.0f;
     if (on || sign) wsm_in_header--;
 }
