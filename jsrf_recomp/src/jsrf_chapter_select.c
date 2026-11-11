@@ -817,12 +817,16 @@ static void conv_tick(uint32_t o)
  * become pointers; so each one's condition (an array of its own) is
  * pointed at a mission flag nothing sets (mission[511] = 1) as soon as the
  * file's bytes for it are in, whether its offsets are pointers yet or not:
- * the command and the condition word must be the ones listed. */
-struct skip { uint16_t id; uint8_t list, idx, op; uint32_t cond; };
+ * the command and the condition word must be the ones listed.
+ * v301f: one with no condition at all (0122's first, Miggas) can't be
+ * pointed elsewhere: its opcode becomes 0xFFFFFFFF, which the lists hold
+ * as a no-op, its event (+0x14) checked first (cond 0, ev the event). */
+struct skip { uint16_t id; uint8_t list, idx, op; uint32_t cond; uint8_t ev; };
 static const struct skip s_skips[] = {
     { 812u, 0, 5, 0xE3, FLAGW(0, 0x02D1) },   /* event 0x61, IF chapter[90] = 0 */
     { 812u, 0, 6, 0xE3, FLAGW(0, 0x02D1) },   /* event 0x77 */
     { 812u, 0, 7, 0xE3, FLAGW(0, 0x02D1) },   /* event 0x78 */
+    { 122u, 0, 3, 0xE3, 0, 0x18 },            /* v301f: event 0x18 (0x19 after it stays) */
 };
 static volatile int s_skip_on;
 static unsigned s_skip_id;
@@ -853,6 +857,14 @@ static void skip_tick(uint32_t o)
         if (!n || n > 512u || k->idx >= n) continue;                 /* not in yet */
         if (lp < sc) lp += sc;                                       /* an offset still */
         cm = lp + 0x54u * k->idx;
+        if (!k->cond) {                                              /* v301f: no condition */
+            if (MEM32(cm + 0x10u) != k->op || MEM32(cm + 4u) != 0u || MEM32(cm + 0x14u) != k->ev) continue;
+            MEM32(cm + 0x10u) = 0xFFFFFFFFu;
+            s_skip_done |= 1u << i;
+            left--;
+            fprintf(stderr, "[MISSION-SELECT] mssn%04u: start cutscene (event 0x%X) skipped\n", s_skip_id, k->ev);
+            continue;
+        }
         if (MEM32(cm + 0x10u) != k->op || MEM32(cm + 4u) != 1u) continue;
         co = MEM32(cm);
         if (co < sc) co += sc;
