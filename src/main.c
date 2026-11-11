@@ -46,7 +46,7 @@
 #include "jtex.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m3b"
+#define MODTOOL_VERSION "m3c"
 
 /* ---- the files ---- */
 
@@ -142,7 +142,11 @@ static void classify(Entry *e)
     }
 }
 
-static int s_tab = CAT_ALL;
+/* m3c: the tabs shown (Miggas: no All, Missions or Other; their files
+ * aren't listed) */
+static const int TABS[] = { CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_EVENT, CAT_UI };
+#define NTABS ((int)(sizeof TABS / sizeof TABS[0]))
+static int s_tab = CAT_CHAR;
 
 static char s_game[LPATH];              /* the game folder (it has Media/) */
 static Entry *s_files;
@@ -659,13 +663,12 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             SDL_LockMutex(s_mx);
             for (i = 0; i < s_nfiles; i++) cnt[s_files[i].cat]++;
             SDL_UnlockMutex(s_mx);
-            cnt[CAT_ALL] = s_nfiles;
-            nk_layout_row_dynamic(ctx, row, CAT_N);
-            for (c = 0; c < CAT_N; c++) {
+            nk_layout_row_dynamic(ctx, row, NTABS);
+            for (c = 0; c < NTABS; c++) {
                 char t[48];
-                int on = c == s_tab;
-                snprintf(t, sizeof t, "%s (%d)", CAT_NAMES[c], cnt[c]);
-                if (nk_selectable_label(ctx, t, NK_TEXT_CENTERED, &on) && on) s_tab = c;
+                int on = TABS[c] == s_tab;
+                snprintf(t, sizeof t, "%s (%d)", CAT_NAMES[TABS[c]], cnt[TABS[c]]);
+                if (nk_selectable_label(ctx, t, NK_TEXT_CENTERED, &on) && on) s_tab = TABS[c];
             }
         }
         nk_layout_row_dynamic(ctx, row - 4, 1);
@@ -688,7 +691,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         }
         for (i = 0; i < s_nfiles; i++) {
             const Entry *e = &s_files[i];
-            if (s_tab != CAT_ALL && e->cat != s_tab) continue;
+            if (e->cat != s_tab) continue;
             if (s_filter[0] && !SDL_strcasestr(e->rel, s_filter) && !SDL_strcasestr(e->label, s_filter)) continue;
             view[nview++] = i;
         }
@@ -700,16 +703,13 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             for (k = i; k < nview && s_files[view[k]].cat == e0->cat && s_files[view[k]].sec == e0->sec
                         && !strcmp(s_files[view[k]].secname, e0->secname); k++) n++;
             if (e0->cat == CAT_GRAF && e0->sec <= 4)
-                snprintf(head, sizeof head, "%s%s%s, %d x %d (%d)", s_tab == CAT_ALL ? CAT_NAMES[e0->cat] : "",
-                         s_tab == CAT_ALL ? ": " : "", e0->secname, e0->w, e0->h, n);
+                snprintf(head, sizeof head, "%s, %d x %d (%d)", e0->secname, e0->w, e0->h, n);
             else
-                snprintf(head, sizeof head, "%s%s%s (%d)", s_tab == CAT_ALL && strcmp(CAT_NAMES[e0->cat], e0->secname)
-                         ? CAT_NAMES[e0->cat] : "", s_tab == CAT_ALL && strcmp(CAT_NAMES[e0->cat], e0->secname) ? ": " : "",
-                         e0->secname, n);
+                snprintf(head, sizeof head, "%s (%d)", e0->secname, n);
             snprintf(hash, sizeof hash, "%d/%d/%s", s_tab, e0->cat, e0->secname);
             /* open at first, but graffiti and All's (many files) closed */
             if (nk_tree_push_hashed(ctx, NK_TREE_TAB, head,
-                                    s_tab == CAT_ALL || s_tab == CAT_GRAF ? NK_MINIMIZED : NK_MAXIMIZED,
+                                    s_tab == CAT_GRAF ? NK_MINIMIZED : NK_MAXIMIZED,
                                     hash, (int)strlen(hash), 0)) {
                 int q;
                 for (q = i; q < k; q++) {
