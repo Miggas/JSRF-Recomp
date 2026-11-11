@@ -1214,7 +1214,7 @@ static int s_tm_frozen, s_tm_retry;
 static void timer_show(void)
 {
     uint32_t cs = s_tm_frames * 100u / 60u;
-    snprintf(g_xbox_timer, sizeof g_xbox_timer, "%u:%02u.%02u", cs / 6000u, cs / 100u % 60u, cs % 100u);
+    snprintf(g_xbox_timer, sizeof g_xbox_timer, "%02u:%02u.%02u", cs / 6000u, cs / 100u % 60u, cs % 100u);
 }
 static void timer_tick(uint32_t o)
 {
@@ -1236,7 +1236,7 @@ static void timer_tick(uint32_t o)
     if (!s_tm_frozen) {
         if ((st >= 0x18u && st <= 0x1Du) || (st >= 0x32u && st <= 0x37u) || s_pick_cleared) {
             s_tm_frozen = 1;
-            fprintf(stderr, "[MISSION-SELECT] mssn%04u: time %u:%02u.%02u\n", id,
+            fprintf(stderr, "[MISSION-SELECT] mssn%04u: time %02u:%02u.%02u\n", id,
                     s_tm_frames * 100u / 60u / 6000u, s_tm_frames * 100u / 60u / 100u % 60u,
                     s_tm_frames * 100u / 60u % 100u);
         } else if (st == 0x0Fu && !var_get(0x1B4u))
