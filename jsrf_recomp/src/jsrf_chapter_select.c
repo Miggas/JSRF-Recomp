@@ -1385,6 +1385,7 @@ static void pb_panel(unsigned id)          /* the panel beside the menu, for mis
  * phase (0750) keeps counting. */
 static uint32_t s_tm_frames;
 static int s_tm_frozen, s_tm_retry, s_tm_saved;
+static uint32_t s_tm_since;              /* v301e: updates since it stopped */
 static void timer_show(void)
 {
     uint32_t cs = s_tm_frames * 100u / 60u;
@@ -1405,6 +1406,7 @@ static void timer_tick(uint32_t o)
             s_tm_frozen = 0;
             s_tm_retry = 0;
             s_tm_saved = 0;
+            s_tm_since = 0;
         }
         s_tm_obj = o;
     }
@@ -1418,11 +1420,13 @@ static void timer_tick(uint32_t o)
             s_tm_frames++;
     }
     g_xbox_timer_big = s_tm_frozen;         /* v301d: the clear screen (or a race's results) */
+    if (s_tm_frozen && s_tm_since < 30u) s_tm_since++;  /* v301e: shown there after half a second */
     if (s_tm_frozen && s_pick_cleared && !s_tm_saved) {    /* v301: cleared: a personal best? */
         s_tm_saved = 1;
         pb_add(id, s_tm_frames, var_get(0x0Du));
     }
     timer_show();
+    if (s_tm_frozen && s_tm_since < 30u) g_xbox_timer[0] = 0;
 }
 
 /* v300b: the game's own race timer hidden in picked races (Miggas: 0112,
