@@ -47,7 +47,7 @@
 #include "paint.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m4b"
+#define MODTOOL_VERSION "m4c"
 
 /* ---- the files ---- */
 
@@ -548,7 +548,32 @@ static void start_paint(SDL_Renderer *ren)
     uint8_t *px = (uint8_t *)malloc((size_t)t->w * t->h * 4);
     if (!px || jt_decode(&s_cur, t, px) || paint_start(ren, px, t->w, t->h))
         snprintf(s_msg, sizeof s_msg, "Couldn't open the texture for painting.");
+    else
+        paint_allow_resize(t->box && t->w == t->h ? 4096 : 0);   /* m4c: a .dat's (square) textures can grow */
     free(px);
+}
+
+/* m4: the painting into the texture (m4c: made its size first when resized) */
+static void save_paint(SDL_Renderer *ren)
+{
+    int pw, ph, grown = 0;
+    char note[64] = " (painted)";
+    paint_size(&pw, &ph);
+    if (pw != s_cur.tex[s_sel_tex].w) {     /* m4c: resized: the texture made that size first */
+        int ow = s_cur.tex[s_sel_tex].w;
+        if (jt_grow(&s_cur, s_sel_tex, pw)) {
+            snprintf(s_msg, sizeof s_msg, "Couldn't make room for a %dx%d texture: nothing saved.", pw, ph);
+            open_file(s_sel_file);
+            pw = -1;
+        } else {
+            grown = 1;
+            snprintf(note, sizeof note, " (painted, now %dx%d, was %dx%d)", pw, ph, ow, ow);
+        }
+    }
+    if (pw > 0 && !store_texture(s_sel_tex, paint_image(), note)) {
+        paint_saved();
+        show_texture(ren, s_sel_tex);
+    } else if (pw > 0 && grown) open_file(s_sel_file);
 }
 
 /* m4: may the picked file or texture change? not with unsaved painting */
@@ -794,10 +819,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                       paint_dirty() ? " (not saved)" : "");
             r = paint_panel(ctx, row, (float)wh - top - 5 * row - 40);
             if (r == PAINT_SAVE && paint_dirty()) {
-                if (!store_texture(s_sel_tex, paint_image(), " (painted)")) {
-                    paint_saved();
-                    show_texture(ren, s_sel_tex);
-                }
+                save_paint(ren);
             } else if (r == PAINT_CLOSE) {
                 if (paint_dirty() && !close_asked) {
                     close_asked = 1;
@@ -929,7 +951,7 @@ int main(int argc, char **argv)
             SDL_Event ev;
             memset(&ev, 0, sizeof ev);
             f++;
-            if (f == 1) start_paint(ren);
+            if (f == 1) { start_paint(ren); if (getenv("MT_RESIZE")) paint_resize(atoi(getenv("MT_RESIZE"))); }
             else if (f == 3) {
                 ev.type = SDL_MOUSEMOTION; ev.motion.x = 700; ev.motion.y = 420; SDL_PushEvent(&ev);
             } else if (f == 4) {
@@ -942,10 +964,29 @@ int main(int argc, char **argv)
                 ev.type = SDL_MOUSEBUTTONUP; ev.button.button = SDL_BUTTON_LEFT; ev.button.state = SDL_RELEASED;
                 ev.button.x = 1100; ev.button.y = 620; SDL_PushEvent(&ev);
             } else if (f == 34) {
-                if (paint_dirty() && !store_texture(s_sel_tex, paint_image(), " (painted)")) paint_saved();
+                if (paint_dirty()) save_paint(ren);
                 printf("%s\n", s_msg);
-            } else if (f >= 36 && f < 40) {             /* zoomed in, to see it stays in its box */
+            } else if (f >= 36 && f < 40 && !getenv("MT_CLICK")) {   /* zoomed in, to see it stays in its box */
                 ev.type = SDL_MOUSEWHEEL; ev.wheel.y = 1; ev.wheel.preciseY = 1.0f; SDL_PushEvent(&ev);
+            } else if (f >= 36 && f <= 38 && getenv("MT_CLICK")) {   /* the mouse there ("x,y"), a click */
+                int cx = 0, cy = 0;
+                sscanf(getenv("MT_CLICK"), "%d,%d", &cx, &cy);
+                if (f == 36) {
+                    ev.type = SDL_MOUSEMOTION; ev.motion.x = cx; ev.motion.y = cy; SDL_PushEvent(&ev);
+                    goto present;
+                }
+                ev.type = f == 37 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+                ev.button.button = SDL_BUTTON_LEFT;
+                ev.button.state = f == 37 ? SDL_PRESSED : SDL_RELEASED;
+                ev.button.x = cx; ev.button.y = cy;
+                SDL_PushEvent(&ev);
+            }
+            if (getenv("MT_SHOTF") && f == atoi(getenv("MT_SHOTF"))) {
+                SDL_Surface *sf = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ABGR8888);
+                SDL_RenderReadPixels(ren, NULL, SDL_PIXELFORMAT_ABGR8888, sf->pixels, sf->pitch);   /* this frame, drawn */
+                stbi_write_png(shot, ww, wh, 4, sf->pixels, sf->pitch);
+                SDL_FreeSurface(sf);
+                break;
             }
             if (f < 42) goto present;
         }

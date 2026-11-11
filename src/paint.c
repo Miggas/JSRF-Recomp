@@ -37,6 +37,7 @@ static struct {
     Patch undo[UNDO_MAX], redo[UNDO_MAX];
     int nundo, nredo;
     char status[160];
+    int resize_max;                         /* m4c */
 } P;
 
 static void touch(int x0, int y0, int x1, int y1)   /* [x0, x1) x [y0, y1) changed */
@@ -165,6 +166,7 @@ int paint_start(SDL_Renderer *ren, const uint8_t *rgba, int w, int h)
     P.on = 1;
     P.dirty = 0;
     P.status[0] = 0;
+    P.resize_max = 4096;
     return 0;
 }
 
@@ -183,6 +185,54 @@ int paint_on(void) { return P.on; }
 int paint_dirty(void) { return P.on && P.dirty; }
 void paint_saved(void) { P.dirty = 0; }
 const uint8_t *paint_image(void) { return P.img; }
+void paint_size(int *w, int *h) { *w = P.w; *h = P.h; }
+void paint_allow_resize(int max) { P.resize_max = max; }
+
+/* m4c: the picture k times bigger, each pixel a k x k block (integer
+ * scaling, nothing blurred); the original's copy too, for the eraser. The
+ * history goes: a resize is not undone (Close throws it away). */
+static uint8_t *scale_up(const uint8_t *src, int w, int h, int k)
+{
+    uint8_t *d = (uint8_t *)malloc((size_t)w * k * h * k * 4);
+    int x, y, W = w * k;
+    if (!d) return NULL;
+    for (y = 0; y < h * k; y++)
+        for (x = 0; x < W; x++)
+            memcpy(d + ((size_t)y * W + x) * 4, src + ((size_t)(y / k) * w + x / k) * 4, 4);
+    return d;
+}
+
+int paint_resize(int k)
+{
+    int w = P.w * k, h = P.h * k;
+    uint8_t *img, *orig, *before, *mask;
+    SDL_Texture *tex;
+    if (w > P.resize_max || h > P.resize_max) return -1;
+    img = scale_up(P.img, P.w, P.h, k);
+    orig = scale_up(P.orig, P.w, P.h, k);
+    before = (uint8_t *)malloc((size_t)w * h * 4);
+    mask = (uint8_t *)malloc((size_t)w * h);
+    tex = SDL_CreateTexture(P.ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
+    if (!img || !orig || !before || !mask || !tex) {
+        free(img); free(orig); free(before); free(mask);
+        if (tex) SDL_DestroyTexture(tex);
+        return -1;
+    }
+    free(P.img); free(P.orig); free(P.before); free(P.mask);
+    SDL_DestroyTexture(P.tex);
+    P.img = img; P.orig = orig; P.before = before; P.mask = mask; P.tex = tex;
+    SDL_SetTextureScaleMode(P.tex, SDL_ScaleModeNearest);
+    P.w = w;
+    P.h = h;
+    clear_stack(P.undo, &P.nundo);
+    clear_stack(P.redo, &P.nredo);
+    P.ux0 = P.uy0 = P.ux1 = P.uy1 = 0;
+    touch(0, 0, w, h);
+    upload();
+    P.fit = 1;
+    P.dirty = 1;
+    return 0;
+}
 
 /* ---- the tools ---- */
 
@@ -457,10 +507,34 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
     /* undo, the view, save */
     nk_layout_row_template_begin(ctx, row);
     nk_layout_row_template_push_dynamic(ctx);
+    nk_layout_row_template_push_static(ctx, 110);
     nk_layout_row_template_push_static(ctx, 150);
     nk_layout_row_template_push_static(ctx, 80);
     nk_layout_row_template_end(ctx);
     nk_label_colored(ctx, P.status, NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+    {   /* m4c: integer scaling, x2 x4 x8, greyed past 4096 (or always, for graffiti) */
+        struct nk_rect r = nk_widget_bounds(ctx);
+        if (!P.resize_max) nk_widget_disable_begin(ctx);
+        if (nk_combo_begin_label(ctx, "Resize", nk_vec2(200, 4 * row + 10))) {
+            static const int ks[3] = { 2, 4, 8 };
+            nk_layout_row_dynamic(ctx, row - 4, 1);
+            for (i = 0; i < 3; i++) {
+                char t[48];
+                int w = P.w * ks[i], h = P.h * ks[i], ok = w <= P.resize_max && h <= P.resize_max;
+                snprintf(t, sizeof t, "x%d   %d x %d", ks[i], w, h);
+                if (!ok) nk_widget_disable_begin(ctx);
+                if (nk_combo_item_label(ctx, t, NK_TEXT_LEFT) && ok) {
+                    if (paint_resize(ks[i])) snprintf(P.status, sizeof P.status, "Not enough memory to resize.");
+                }
+                if (!ok) nk_widget_disable_end(ctx);
+            }
+            nk_combo_end(ctx);
+        }
+        if (!P.resize_max) {
+            nk_widget_disable_end(ctx);
+            if (nk_input_is_mouse_hovering_rect(in, r)) nk_tooltip(ctx, "Graffiti keep their size");
+        }
+    }
     if (nk_button_label(ctx, P.dirty ? "Save to the game" : "Saved")) ret = PAINT_SAVE;
     if (nk_button_label(ctx, "Close")) ret = PAINT_CLOSE;
     if (nk_input_is_key_pressed(in, NK_KEY_TEXT_UNDO)) undo_redo(0);
