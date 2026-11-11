@@ -1426,8 +1426,8 @@ static void timer_tick(uint32_t o)
  * 0232, 0666, 0671, 0721, 0746), where the mission timer (v300) counts.
  * The HUD's time (TimerDisplay, vtable 0x1D23F0) in mode 3 (+0x160) shows
  * the mission's command timer counting up; its draw (DrawListDefault,
- * thiscall, ret 4) is skipped for it. The result screen's time (mode 6)
- * is left as it is. */
+ * thiscall, ret 4) is skipped for it, and (v301c, Miggas) for the time the
+ * clear screen shows in the middle (mode 6). */
 static int race_timer_hidden(void)
 {
     static const uint16_t ids[] = { 112u, 232u, 666u, 671u, 721u, 746u };
@@ -1440,7 +1440,7 @@ static int race_timer_hidden(void)
 extern void sub_0010EC10_gen(void);
 void sub_0010EC10(void)
 {
-    if (g_ecx && MEM32(g_ecx + 0x160u) == 3u && race_timer_hidden()) {
+    if (g_ecx && (MEM32(g_ecx + 0x160u) == 3u || MEM32(g_ecx + 0x160u) == 6u) && race_timer_hidden()) {
         g_esp += 8;                         /* ret 4 */
         return;
     }
