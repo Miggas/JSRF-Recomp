@@ -46,7 +46,7 @@
 #include "jtex.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m1b"
+#define MODTOOL_VERSION "m1c"
 
 /* ---- the files ---- */
 
@@ -103,6 +103,27 @@ static void cache_path(char *out, const char *rel)
     snprintf(r, sizeof r, "savegame/Cache/%s", rel);
     for (p = r; *p; p++) if (*p == '/') *p = SEP[0];
     pjoin(out, s_game, r);
+}
+
+/* m1c: the cached copies are padded to whole 512-byte sectors (Rapid99.bin
+ * 358608 bytes in the game folder, 358912 in the cache), and the game
+ * reads them by their padded size; written unpadded the read failed and the
+ * character select waited forever (Miggas). The copy keeps its size, at
+ * least the data's rounded up to 512, the rest zero. */
+static int write_cache(const char *cp, const uint8_t *data, size_t n)
+{
+    size_t old = 0, sz = (n + 511) & ~(size_t)511;
+    char *b = read_file(cp, &old);
+    uint8_t *o;
+    int ok;
+    free(b);
+    if (old > sz) sz = old;
+    o = (uint8_t *)calloc(1, sz);
+    if (!o) return 0;
+    memcpy(o, data, n);
+    ok = write_file(cp, o, sz);
+    free(o);
+    return ok;
 }
 
 static void edit_path(char *out, const char *rel, int n)  /* where a texture is exported */
@@ -382,7 +403,7 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
             char cp[LPATH];
             cache_path(cp, s_files[s_sel_file].rel);
             s_cur_modded = 1;
-            if (is_file(cp) && !write_file(cp, s_cur.buf, s_cur.size))
+            if (is_file(cp) && !write_cache(cp, s_cur.buf, s_cur.size))
                 snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s, but the game's cached copy %s couldn't be: "
                          "delete it by hand", k, note, cp);
             else
@@ -402,7 +423,12 @@ static void revert_file(SDL_Renderer *ren)
     if (is_file(bak) && copy_file(bak, p)) {
         char cp[LPATH];
         cache_path(cp, s_files[s_sel_file].rel);
-        if (is_file(cp)) copy_file(bak, cp);            /* the game's cached copy too */
+        if (is_file(cp)) {                              /* the game's cached copy too, padded */
+            size_t n = 0;
+            char *b = read_file(bak, &n);
+            if (b) write_cache(cp, (const uint8_t *)b, n);
+            free(b);
+        }
         remove_file(bak);
         snprintf(s_msg, sizeof s_msg, "Back to the original: %s", p);
     } else snprintf(s_msg, sizeof s_msg, "Couldn't put the original back from %s", bak);
