@@ -36,6 +36,7 @@ extern const char *xbox_ListMenuTitle(void), *xbox_ListMenuItem(int i);
 extern int xbox_ListMenuPickable(int i);
 extern char g_xbox_note[96];
 extern char g_xbox_timer[24];   /* v300 */
+extern int g_xbox_timer_big;    /* v301d: the clear screen's place */
 extern char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: a panel beside the list menu */
 
 typedef struct { float x, y, u, v, r, g, b, a; } QdVert;   /* u < 0: no texture */
@@ -374,7 +375,23 @@ static void present_overlay_f(int cw, int ch, int flip)
                 qd_text(320.5f, 440.0f, 1.45f, 1.9f, 0.45f, 0.22f, m, white);
             }
         }
-        if (g_xbox_timer[0] && !menu && !quit) {
+        if (g_xbox_timer[0] && g_xbox_timer_big && !menu && !quit) {
+            /* v301d: at the clear screen (Miggas): big, bottom middle, as far
+             * from the bottom as the game's "YOU WIN" is from the top, the
+             * size of the game's own time */
+            static const float white[4] = { 0.97f, 0.97f, 0.97f, 1 }, sh[4] = { 0.0f, 0.0f, 0.0f, 0.75f };
+            char m[24];
+            memcpy(m, g_xbox_timer, sizeof m);
+            m[23] = 0;
+            if (s_qd_font) {
+                float k = qd_ttf_scale(m, 19.0f, 0.0f);
+                qd_ttf_text(321.5f, 418.5f, k, m, sh);
+                qd_ttf_text(320.0f, 417.0f, k, m, white);
+            } else {
+                qd_text(321.5f, 418.5f, 3.4f, 4.2f, 1.0f, 0.0f, m, sh);
+                qd_text(320.0f, 417.0f, 3.4f, 4.2f, 1.0f, 0.0f, m, white);
+            }
+        } else if (g_xbox_timer[0] && !menu && !quit) {
             /* v300: the mission timer (mission select), the window's top-left */
             static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 };
             char m[24];

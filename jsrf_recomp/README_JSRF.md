@@ -724,6 +724,7 @@ next fix.
 - **v301:** personal bests. A "Personal Best" panel beside the mission select shows the five best times of the mission picked in it ("01:30.13 - Beat"), dashes until there are five. Every clear of a picked mission is checked against them, with the character it was run with. They are kept in `pbtimes.dat` beside the exe, one file for every release, not as plain text; a file that doesn't check out is set aside as `pbtimes.bad` (*Idea by Miggas*).
 - **v301b:** the personal bests' last two character names: Roboy (TypeA) and A. KU. MU (TypeB) (*Miggas*).
 - **v301c:** in the picked races, the time the clear screen shows in the middle is hidden too; the mission timer in the corner has it (*Idea by Miggas*).
+- **v301d:** at the clear screen the mission timer leaves the top-left corner and shows big at the bottom middle, about the size of the game's own time, as far from the bottom as "YOU WIN" is from the top (*Idea by Miggas*).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
   Each one logs on first hit. Real ones get added as seeds and re-lifted.

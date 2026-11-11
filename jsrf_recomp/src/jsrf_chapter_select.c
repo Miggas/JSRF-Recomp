@@ -54,6 +54,7 @@ void xbox_QuitTitleAvailable(int ok);   /* v278b: the quit window's Quit to Titl
 int xbox_QuitToTitleTake(void);
 extern char g_xbox_note[96];
 extern char g_xbox_timer[24];             /* v300: the mission timer, top-left */
+extern int g_xbox_timer_big;              /* v301d: ... or big, bottom middle, at the clear screen */
 extern char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: the personal bests beside the menu */
 
 #if defined(_WIN32)
@@ -184,6 +185,7 @@ static int chs_on(void)
         s_pick_cleared = 0;
         s_tm_obj = 0;                   /* v300: the timer from 0 */
         g_xbox_timer[0] = 0;
+        g_xbox_timer_big = 0;
         /* v281: the chapter's character select (mssnCC95, Roboy's menu in
          * the Garage) first, for a pick in chapters 1-9 that isn't an
          * opening or Garage */
@@ -1415,6 +1417,7 @@ static void timer_tick(uint32_t o)
         } else if (st == 0x0Fu && !var_get(0x1B4u))
             s_tm_frames++;
     }
+    g_xbox_timer_big = s_tm_frozen;         /* v301d: the clear screen (or a race's results) */
     if (s_tm_frozen && s_pick_cleared && !s_tm_saved) {    /* v301: cleared: a personal best? */
         s_tm_saved = 1;
         pb_add(id, s_tm_frames, var_get(0x0Du));
@@ -1670,7 +1673,7 @@ void jsrf_mission_select_tick(uint32_t state)
     quit_to_title_tick(state);
     show_mission_tick();
     if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0, s_sel_target = 0, s_pick = 0, s_cans_obj = 0;   /* v279: back at the title */
-    if (!s_pick_live && g_xbox_timer[0]) g_xbox_timer[0] = 0, s_tm_obj = 0;   /* v300 */
+    if (!s_pick_live && g_xbox_timer[0]) g_xbox_timer[0] = 0, g_xbox_timer_big = 0, s_tm_obj = 0;   /* v300 */
     /* v292b: a countdown holds the players with global 0x1B4 from its start
      * until its GO lets them go (the HUD's announcement, mode 0); quitting to
      * the title during one (Miggas) left it set, and the character stayed
