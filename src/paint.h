@@ -18,6 +18,7 @@ int paint_dirty(void);          /* changed since the start or the last save */
 void paint_saved(void);
 const uint8_t *paint_image(void);
 void paint_size(int *w, int *h);
+unsigned paint_serial(void);   /* m5: changes whenever the pixels do */
 /* m4c: the largest size Resize may make (0: none, as for graffiti) */
 void paint_allow_resize(int max);
 /* m4c: k times bigger (2, 4, 8), integer scaling; 0 done */

@@ -31,7 +31,7 @@ echo Building...
 set "ZIG_GLOBAL_CACHE_DIR=%~dp0deps\zig-cache"
 "%ZIG%" cc -target x86_64-windows-gnu -O2 -std=gnu11 ^
   -Ithird_party\nuklear -Ithird_party\stb -I"%SDL%\include\SDL2" ^
-  src\main.c src\jtex.c src\paint.c src\util.c "%SDL%\lib\libSDL2.a" ^
+  src\main.c src\jtex.c src\paint.c src\model.c src\view3d.c src\util.c "%SDL%\lib\libSDL2.a" ^
   -lsetupapi -lwinmm -limm32 -lversion -lole32 -luuid -loleaut32 -lgdi32 -luser32 -lshell32 -ladvapi32 ^
   -Wl,--subsystem,windows -o jsrf_modtool.exe
 if errorlevel 1 goto fail

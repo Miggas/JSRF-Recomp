@@ -45,9 +45,10 @@
 
 #include "jtex.h"
 #include "paint.h"
+#include "view3d.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m4c"
+#define MODTOOL_VERSION "m5"
 
 /* ---- the files ---- */
 
@@ -160,6 +161,8 @@ static JFile s_cur;                     /* the selected file, its mod if there i
 static int s_cur_modded;
 static SDL_Texture *s_preview;
 static int s_pw, s_ph;
+static uint8_t *s_tex_rgba;             /* m5: the picked texture's pixels, for the 3D view */
+static unsigned s_tex_ver;
 static char s_msg[LPATH + 600];
 static char s_filter[64];
 
@@ -383,6 +386,7 @@ static int open_file(int i)
     b = read_file(p, &n);
     if (!b) { snprintf(s_msg, sizeof s_msg, "Can't read %s", p); return -1; }
     jf_parse(&s_cur, p, (uint8_t *)b, n);
+    v3d_load(s_cur.buf, s_cur.size);            /* m5: its models */
     return 0;
 }
 
@@ -398,6 +402,10 @@ static void show_texture(SDL_Renderer *ren, int k)
     t = &s_cur.tex[k];
     px = (uint8_t *)malloc((size_t)t->w * t->h * 4);
     if (jt_decode(&s_cur, t, px)) { free(px); return; }
+    free(s_tex_rgba);                           /* m5: kept as it is, for the 3D view */
+    s_tex_rgba = (uint8_t *)malloc((size_t)t->w * t->h * 4);
+    if (s_tex_rgba) memcpy(s_tex_rgba, px, (size_t)t->w * t->h * 4);
+    s_tex_ver++;
     for (y = 0; y < t->h; y++)                 /* over a checkerboard, for the transparent parts */
         for (x = 0; x < t->w; x++) {
             uint8_t *p = px + ((size_t)y * t->w + x) * 4;
@@ -684,9 +692,14 @@ static int cmp_view(const void *a, const void *b)
 
 static char *s_dropped;                  /* a PNG dropped on the window */
 
+/* m5: narrower lists, the texture, the 3D view on the right (Miggas) */
+#define LW_FILES 240.0f
+#define LW_TEX 180.0f
+
 static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
 {
     const float row = 30, top = 128;
+    const float tex_w = ((float)ww - LW_FILES - LW_TEX) * 0.55f;
     int busy = SDL_AtomicGet(&s_scan_busy), i;
     if (SDL_AtomicGet(&s_scan_done)) {
         SDL_AtomicSet(&s_scan_done, 0);
@@ -737,7 +750,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     nk_end(ctx);
 
     /* the files: the tab's, in collapsible sections */
-    if (nk_begin(ctx, "Files", nk_rect(0, top, 330, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
+    if (nk_begin(ctx, "Files", nk_rect(0, top, LW_FILES, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         static int *view;
         static int capview;
         int nview = 0, k;
@@ -779,7 +792,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                     snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex);
                     if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy && may_leave_paint()) {
                         open_file(view[q]);
-                        if (s_cur.ntex) show_texture(ren, 0);
+                        if (s_cur.ntex) show_texture(ren, getenv("MT_TEX") && atoi(getenv("MT_TEX")) < s_cur.ntex ? atoi(getenv("MT_TEX")) : 0);
                     }
                 }
                 nk_tree_pop(ctx);
@@ -794,13 +807,13 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     nk_end(ctx);
 
     /* its textures */
-    if (nk_begin(ctx, "Textures", nk_rect(330, top, 250, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
+    if (nk_begin(ctx, "Textures", nk_rect(LW_FILES, top, LW_TEX, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         nk_layout_row_dynamic(ctx, row - 6, 1);
         for (i = 0; i < s_cur.ntex; i++) {
             const JTex *t = &s_cur.tex[i];
             int sel = i == s_sel_tex;
             char lb[64];
-            snprintf(lb, sizeof lb, "%2d   %dx%d  %s", i, t->w, t->h, jt_fmt_name(t->fmt));
+            snprintf(lb, sizeof lb, "%d: %dx%d %s", i, t->w, t->h, jt_fmt_name(t->fmt));
             if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint())
                 show_texture(ren, i);
         }
@@ -808,7 +821,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     nk_end(ctx);
 
     /* the texture */
-    if (nk_begin(ctx, "Texture", nk_rect(580, top, (float)ww - 580, (float)wh - top),
+    if (nk_begin(ctx, "Texture", nk_rect(LW_FILES + LW_TEX, top, tex_w, (float)wh - top),
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | (paint_on() ? NK_WINDOW_NO_SCROLLBAR : 0))) {
         if (paint_on() && s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
             /* m4: painting */
@@ -817,7 +830,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             nk_layout_row_dynamic(ctx, row - 6, 1);
             nk_labelf(ctx, NK_TEXT_LEFT, "Painting %s, texture %d%s", s_files[s_sel_file].rel, s_sel_tex,
                       paint_dirty() ? " (not saved)" : "");
-            r = paint_panel(ctx, row, (float)wh - top - 5 * row - 40);
+            r = paint_panel(ctx, row, (float)wh - top - 7 * row - 40);
             if (r == PAINT_SAVE && paint_dirty()) {
                 save_paint(ren);
             } else if (r == PAINT_CLOSE) {
@@ -832,25 +845,21 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             } else if (r == PAINT_SAVE) close_asked = 0;
         } else if (s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
             const JTex *t = &s_cur.tex[s_sel_tex];
-            float avail = (float)ww - 580 - 56, side = (float)wh - top - 6 * row - 40;
+            float avail = tex_w - 56, side = (float)wh - top - 9 * row - 40;
             float sz = avail < side ? avail : side;
             nk_layout_row_dynamic(ctx, row - 6, 1);
-            nk_labelf(ctx, NK_TEXT_LEFT, "%s, texture %d: %dx%d %s, %d level%s%s%s",
-                      s_files[s_sel_file].rel, s_sel_tex, t->w, t->h, jt_fmt_name(t->fmt), t->levels,
+            nk_labelf(ctx, NK_TEXT_LEFT, "%s, texture %d", s_files[s_sel_file].rel, s_sel_tex);
+            nk_labelf(ctx, NK_TEXT_LEFT, "%dx%d %s, %d level%s%s%s", t->w, t->h, jt_fmt_name(t->fmt), t->levels,
                       t->levels == 1 ? "" : "s", t->alpha ? ", transparency" : "", t->swizzled ? ", swizzled" : "");
-            nk_label_colored(ctx, s_cur_modded ? "Modded (the original is kept in mod_backups)" : "Original",
+            nk_label_colored(ctx, s_cur_modded ? "Modded (original in mod_backups)" : "Original",
                              NK_TEXT_LEFT, s_cur_modded ? nk_rgb(240, 175, 30) : nk_rgb(150, 150, 160));
-            nk_layout_row_template_begin(ctx, row);
-            nk_layout_row_template_push_static(ctx, 80);
-            nk_layout_row_template_push_static(ctx, 115);
-            nk_layout_row_template_push_static(ctx, 115);
-            nk_layout_row_template_push_static(ctx, 160);
-            nk_layout_row_template_push_static(ctx, 140);
-            nk_layout_row_template_end(ctx);
+            /* m5: two rows that share the narrower panel */
+            nk_layout_row_dynamic(ctx, row, 3);
             if (nk_button_label(ctx, "Paint")) start_paint(ren);
             if (nk_button_label(ctx, "Export PNG")) export_texture(s_sel_tex);
             if (nk_button_label(ctx, "Import PNG")) import_texture(ren, s_sel_tex, NULL);
-            if (nk_button_label(ctx, "Open edits folder")) {
+            nk_layout_row_dynamic(ctx, row, 2);
+            if (nk_button_label(ctx, "Edits folder")) {
                 char d[LPATH];
                 pjoin(d, s_game, "texture_edits");
                 make_dirs(d);
@@ -860,7 +869,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 if (nk_button_label(ctx, "Undo all (file)")) revert_file(ren);
             } else nk_spacing(ctx, 1);
             nk_layout_row_dynamic(ctx, row - 8, 1);
-            nk_label_colored(ctx, "Import reads the exported PNG back, or drop any PNG on the window.", NK_TEXT_LEFT,
+            nk_label_colored(ctx, "Import: the exported PNG, or drop one here.", NK_TEXT_LEFT,
                              nk_rgb(150, 150, 160));
             if (s_preview && sz > 32) {
                 /* m1d: its own shape (graffiti aren't all square, Miggas), at most 2x */
@@ -874,6 +883,26 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         } else {
             nk_layout_row_dynamic(ctx, row, 1);
             nk_label(ctx, s_nfiles ? "Pick a file, then a texture." : "Choose the game folder.", NK_TEXT_LEFT);
+        }
+    }
+    nk_end(ctx);
+
+    /* m5: the 3D view, wearing the picked texture (the painting while painting) */
+    if (nk_begin(ctx, "3D view", nk_rect(LW_FILES + LW_TEX + tex_w, top, (float)ww - LW_FILES - LW_TEX - tex_w, (float)wh - top),
+                 NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR)) {
+        if (s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
+            int pw = s_cur.tex[s_sel_tex].w, ph = s_cur.tex[s_sel_tex].h;
+            const uint8_t *px = s_tex_rgba;
+            unsigned ver = s_tex_ver;
+            if (paint_on()) {
+                px = paint_image();
+                paint_size(&pw, &ph);
+                ver = paint_serial();
+            }
+            v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row, (float)wh - top - 50);
+        } else {
+            nk_layout_row_dynamic(ctx, row, 1);
+            nk_label(ctx, "Pick a texture.", NK_TEXT_LEFT);
         }
     }
     nk_end(ctx);
@@ -941,7 +970,7 @@ int main(int argc, char **argv)
             int k = 0;
             if (shot_pick) for (k = 0; k < s_nfiles - 1 && strcmp(s_files[k].rel, shot_pick); k++) ;
             open_file(k);
-            if (s_cur.ntex) show_texture(ren, 0);
+            if (s_cur.ntex) show_texture(ren, getenv("MT_TEX") && atoi(getenv("MT_TEX")) < s_cur.ntex ? atoi(getenv("MT_TEX")) : 0);
         }
         SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);
         SDL_RenderClear(ren);

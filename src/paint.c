@@ -38,6 +38,7 @@ static struct {
     int nundo, nredo;
     char status[160];
     int resize_max;                         /* m4c */
+    unsigned serial;                        /* m5: changes with the pixels */
 } P;
 
 static void touch(int x0, int y0, int x1, int y1)   /* [x0, x1) x [y0, y1) changed */
@@ -69,6 +70,7 @@ static void upload(void)                    /* the changed part, over a checkerb
             for (c = 0; c < 3; c++) o[c] = (uint8_t)((p[c] * a + bg * (255 - a)) / 255);
             o[3] = 255;
         }
+    P.serial++;
     r.x = P.ux0; r.y = P.uy0; r.w = w; r.h = h;
     SDL_UpdateTexture(P.tex, &r, buf, w * 4);
     free(buf);
@@ -187,6 +189,7 @@ void paint_saved(void) { P.dirty = 0; }
 const uint8_t *paint_image(void) { return P.img; }
 void paint_size(int *w, int *h) { *w = P.w; *h = P.h; }
 void paint_allow_resize(int max) { P.resize_max = max; }
+unsigned paint_serial(void) { return P.serial; }
 
 /* m4c: the picture k times bigger, each pixel a k x k block (integer
  * scaling, nothing blurred); the original's copy too, for the eraser. The
@@ -439,7 +442,7 @@ static void canvas_draw(struct nk_command_buffer *cv, struct nk_rect b, int hove
     if (hover && ix >= 0 && iy >= 0 && ix < P.w && iy < P.h)
         snprintf(P.status, sizeof P.status, "x %d, y %d", (int)ix, (int)iy);
     else
-        snprintf(P.status, sizeof P.status, "Wheel: zoom. Right drag: move.");
+        snprintf(P.status, sizeof P.status, "Wheel: zoom. Right drag: move");
 }
 
 /* ---- the panel ---- */
@@ -455,11 +458,10 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
     nk_layout_row_template_begin(ctx, row + 6);
     for (i = 0; i < T_N; i++) nk_layout_row_template_push_static(ctx, row + 10);
     nk_layout_row_template_push_static(ctx, 70);
-    nk_layout_row_template_push_static(ctx, 10);
-    nk_layout_row_template_push_static(ctx, row + 10);
-    nk_layout_row_template_push_static(ctx, row + 10);
-    nk_layout_row_template_push_static(ctx, row + 10);
     nk_layout_row_template_push_dynamic(ctx);
+    nk_layout_row_template_push_static(ctx, row + 10);
+    nk_layout_row_template_push_static(ctx, row + 10);
+    nk_layout_row_template_push_static(ctx, row + 10);
     nk_layout_row_template_end(ctx);
     for (i = 0; i < T_N; i++) {
         static const int icons[T_N] = { I_BRUSH, I_ERASER, I_PICKER, I_FILL };
@@ -481,7 +483,6 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
     if (icon_button(ctx, I_UNDO, -1, P.nundo > 0, "Undo (Ctrl+Z)")) undo_redo(0);
     if (icon_button(ctx, I_REDO, -1, P.nredo > 0, "Redo (Ctrl+Y)")) undo_redo(1);
     if (icon_button(ctx, I_FIT, -1, 1, "Fit the whole texture")) P.fit = 1;
-    nk_labelf(ctx, NK_TEXT_CENTERED, "%d x %d, %d%%", P.w, P.h, (int)(P.zoom * 100 + 0.5f));
 
     /* their settings */
     nk_layout_row_template_begin(ctx, row - 4);
@@ -505,13 +506,14 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
     slider_i(ctx, "Fill range", &P.tol, 0, 255, "%d");
 
     /* undo, the view, save */
-    nk_layout_row_template_begin(ctx, row);
+    /* m5: in two rows, for the narrower panel beside the 3D view */
+    nk_layout_row_template_begin(ctx, row - 8);
     nk_layout_row_template_push_dynamic(ctx);
-    nk_layout_row_template_push_static(ctx, 110);
-    nk_layout_row_template_push_static(ctx, 150);
-    nk_layout_row_template_push_static(ctx, 80);
+    nk_layout_row_template_push_static(ctx, 140);
     nk_layout_row_template_end(ctx);
     nk_label_colored(ctx, P.status, NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+    nk_labelf(ctx, NK_TEXT_RIGHT, "%d x %d, %d%%", P.w, P.h, (int)(P.zoom * 100 + 0.5f));
+    nk_layout_row_dynamic(ctx, row, 3);
     {   /* m4c: integer scaling, x2 x4 x8, greyed past 4096 (or always, for graffiti) */
         struct nk_rect r = nk_widget_bounds(ctx);
         if (!P.resize_max) nk_widget_disable_begin(ctx);
@@ -535,7 +537,7 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
             if (nk_input_is_mouse_hovering_rect(in, r)) nk_tooltip(ctx, "Graffiti keep their size");
         }
     }
-    if (nk_button_label(ctx, P.dirty ? "Save to the game" : "Saved")) ret = PAINT_SAVE;
+    if (nk_button_label(ctx, P.dirty ? "Save" : "Saved")) ret = PAINT_SAVE;
     if (nk_button_label(ctx, "Close")) ret = PAINT_CLOSE;
     if (nk_input_is_key_pressed(in, NK_KEY_TEXT_UNDO)) undo_redo(0);
     if (nk_input_is_key_pressed(in, NK_KEY_TEXT_REDO)) undo_redo(1);
