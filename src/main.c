@@ -47,7 +47,7 @@
 #include "paint.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m4"
+#define MODTOOL_VERSION "m4b"
 
 /* ---- the files ---- */
 
@@ -944,8 +944,10 @@ int main(int argc, char **argv)
             } else if (f == 34) {
                 if (paint_dirty() && !store_texture(s_sel_tex, paint_image(), " (painted)")) paint_saved();
                 printf("%s\n", s_msg);
+            } else if (f >= 36 && f < 40) {             /* zoomed in, to see it stays in its box */
+                ev.type = SDL_MOUSEWHEEL; ev.wheel.y = 1; ev.wheel.preciseY = 1.0f; SDL_PushEvent(&ev);
             }
-            if (f < 36) goto present;
+            if (f < 42) goto present;
         }
         if (shot && s_preview) {
             static int frames;

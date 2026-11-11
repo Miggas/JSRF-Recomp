@@ -16,7 +16,6 @@
 #include "paint.h"
 
 enum { T_BRUSH, T_ERASER, T_PICKER, T_FILL, T_N };
-static const char *const TOOL_NAMES[T_N] = { "Brush", "Eraser", "Picker", "Fill" };
 
 typedef struct { int x, y, w, h; uint8_t *before, *after; } Patch;
 enum { UNDO_MAX = 64 };
@@ -281,6 +280,118 @@ static void fill_at(int sx, int sy)
     touch(bx0, by0, bx1, by1);
 }
 
+/* ---- m4b: icons, as paint programs have them, drawn as shapes ---- */
+
+enum { I_BRUSH, I_ERASER, I_PICKER, I_FILL, I_UNDO, I_REDO, I_FIT };
+
+static void draw_icon(struct nk_command_buffer *cv, struct nk_rect r, int icon, struct nk_color c)
+{
+    const float PI = 3.14159265f;
+    float s = (r.w < r.h ? r.w : r.h) * 0.62f, cx = r.x + r.w / 2, cy = r.y + r.h / 2, t = s * 0.1f;
+    if (t < 1.5f) t = 1.5f;
+    switch (icon) {
+    case I_BRUSH:                                           /* handle, ferrule, the bristles' tip */
+        nk_stroke_line(cv, cx + 0.48f * s, cy - 0.48f * s, cx + 0.02f * s, cy - 0.02f * s, t, c);
+        nk_fill_circle(cv, nk_rect(cx - 0.30f * s, cy - 0.06f * s, 0.36f * s, 0.36f * s), c);
+        nk_fill_triangle(cv, cx - 0.28f * s, cy + 0.06f * s, cx - 0.06f * s, cy + 0.28f * s, cx - 0.50f * s, cy + 0.50f * s, c);
+        break;
+    case I_ERASER: {                                        /* a block on its side, its rubber end filled */
+        float ux = 0.7071f, uy = -0.7071f, vx = 0.7071f, vy = 0.7071f, L = 0.48f * s, W = 0.22f * s;
+        float p[8], q[8];
+        p[0] = cx - ux * L - vx * W; p[1] = cy - uy * L - vy * W;
+        p[2] = cx + ux * L - vx * W; p[3] = cy + uy * L - vy * W;
+        p[4] = cx + ux * L + vx * W; p[5] = cy + uy * L + vy * W;
+        p[6] = cx - ux * L + vx * W; p[7] = cy - uy * L + vy * W;
+        q[0] = p[0]; q[1] = p[1];
+        q[2] = cx - ux * L * 0.1f - vx * W; q[3] = cy - uy * L * 0.1f - vy * W;
+        q[4] = cx - ux * L * 0.1f + vx * W; q[5] = cy - uy * L * 0.1f + vy * W;
+        q[6] = p[6]; q[7] = p[7];
+        nk_fill_polygon(cv, q, 4, c);
+        nk_stroke_polygon(cv, p, 4, t * 0.8f, c);
+        break;
+    }
+    case I_PICKER:                                          /* the dropper's tube and bulb */
+        nk_stroke_line(cv, cx - 0.46f * s, cy + 0.46f * s, cx + 0.12f * s, cy - 0.12f * s, t, c);
+        nk_stroke_line(cv, cx - 0.02f * s, cy - 0.30f * s, cx + 0.30f * s, cy + 0.02f * s, t, c);
+        nk_fill_circle(cv, nk_rect(cx + 0.08f * s, cy - 0.46f * s, 0.38f * s, 0.38f * s), c);
+        break;
+    case I_FILL: {                                          /* a tipped bucket and a drop */
+        float p[8];
+        p[0] = cx - 0.42f * s; p[1] = cy - 0.05f * s;
+        p[2] = cx - 0.05f * s; p[3] = cy - 0.42f * s;
+        p[4] = cx + 0.30f * s; p[5] = cy - 0.07f * s;
+        p[6] = cx - 0.07f * s; p[7] = cy + 0.30f * s;
+        nk_stroke_polygon(cv, p, 4, t * 0.9f, c);
+        nk_fill_triangle(cv, cx + 0.30f * s, cy - 0.07f * s, cx + 0.12f * s, cy - 0.25f * s, cx + 0.42f * s, cy + 0.12f * s, c);
+        nk_fill_circle(cv, nk_rect(cx + 0.30f * s, cy + 0.20f * s, 0.24f * s, 0.24f * s), c);
+        break;
+    }
+    case I_UNDO:
+    case I_REDO: {                                          /* a curved arrow */
+        float ex = icon == I_UNDO ? cx - 0.34f * s : cx + 0.34f * s, ey = cy + 0.12f * s;
+        nk_stroke_arc(cv, cx, cy + 0.12f * s, 0.34f * s, PI, 2 * PI, t, c);
+        nk_fill_triangle(cv, ex - 0.20f * s, ey - 0.02f * s, ex + 0.20f * s, ey - 0.02f * s, ex, ey + 0.30f * s, c);
+        break;
+    }
+    case I_FIT: {                                           /* four corners */
+        float a = 0.42f * s, b = 0.18f * s;
+        nk_stroke_line(cv, cx - a, cy - a, cx - a + b, cy - a, t, c); nk_stroke_line(cv, cx - a, cy - a, cx - a, cy - a + b, t, c);
+        nk_stroke_line(cv, cx + a, cy - a, cx + a - b, cy - a, t, c); nk_stroke_line(cv, cx + a, cy - a, cx + a, cy - a + b, t, c);
+        nk_stroke_line(cv, cx - a, cy + a, cx - a + b, cy + a, t, c); nk_stroke_line(cv, cx - a, cy + a, cx - a, cy + a - b, t, c);
+        nk_stroke_line(cv, cx + a, cy + a, cx + a - b, cy + a, t, c); nk_stroke_line(cv, cx + a, cy + a, cx + a, cy + a - b, t, c);
+        break;
+    }
+    }
+}
+
+/* a button with an icon (selected: a tool's, -1 a plain button); its name
+ * as a tooltip */
+static int icon_button(struct nk_context *ctx, int icon, int selected, int enabled, const char *tip)
+{
+    struct nk_rect r = nk_widget_bounds(ctx);
+    int hit, on = selected > 0;
+    if (selected >= 0) hit = nk_selectable_label(ctx, " ", NK_TEXT_CENTERED, &on) && on;   /* Nuklear wants a label */
+    else hit = nk_button_label(ctx, " ");
+    draw_icon(nk_window_get_canvas(ctx), r, icon, enabled ? nk_rgb(235, 235, 240) : nk_rgb(95, 95, 105));
+    if (nk_input_is_mouse_hovering_rect(&ctx->input, r)) nk_tooltip(ctx, tip);
+    return hit && enabled;
+}
+
+/* m4b: a setting as the launcher shows them: its name, a slider, its value */
+static void slider_i(struct nk_context *ctx, const char *name, int *v, int lo, int hi, const char *fmt)
+{
+    char t[24];
+    nk_label(ctx, name, NK_TEXT_LEFT);
+    nk_slider_int(ctx, lo, v, hi, 1);
+    snprintf(t, sizeof t, fmt, *v);
+    nk_label(ctx, t, NK_TEXT_RIGHT);
+}
+
+static void slider_pct(struct nk_context *ctx, const char *name, float *v, float lo)
+{
+    char t[24];
+    nk_label(ctx, name, NK_TEXT_LEFT);
+    nk_slider_float(ctx, lo, v, 1.0f, 0.01f);
+    snprintf(t, sizeof t, "%d%%", (int)(*v * 100 + 0.5f));
+    nk_label(ctx, t, NK_TEXT_RIGHT);
+}
+
+static void canvas_draw(struct nk_command_buffer *cv, struct nk_rect b, int hover, float mx, float my, float ix, float iy)
+{
+    struct nk_image im = nk_image_ptr(P.tex);
+    nk_fill_rect(cv, b, 0, nk_rgb(16, 16, 20));
+    nk_draw_image(cv, nk_rect(b.x + P.ox, b.y + P.oy, P.w * P.zoom, P.h * P.zoom), &im, nk_rgb(255, 255, 255));
+    if (hover && (P.tool == T_BRUSH || P.tool == T_ERASER)) {   /* the brush's outline */
+        float r = P.size * 0.5f * P.zoom;
+        if (r < 2) r = 2;
+        nk_stroke_circle(cv, nk_rect(mx - r, my - r, 2 * r, 2 * r), 1.0f, nk_rgb(255, 255, 255));
+    }
+    if (hover && ix >= 0 && iy >= 0 && ix < P.w && iy < P.h)
+        snprintf(P.status, sizeof P.status, "x %d, y %d", (int)ix, (int)iy);
+    else
+        snprintf(P.status, sizeof P.status, "Wheel: zoom. Right drag: move.");
+}
+
 /* ---- the panel ---- */
 
 int paint_panel(struct nk_context *ctx, float row, float canvas_h)
@@ -291,14 +402,20 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
     if (!P.on) return PAINT_CLOSE;
 
     /* the tools, the colour */
-    nk_layout_row_template_begin(ctx, row);
-    for (i = 0; i < T_N; i++) nk_layout_row_template_push_static(ctx, 80);
+    nk_layout_row_template_begin(ctx, row + 6);
+    for (i = 0; i < T_N; i++) nk_layout_row_template_push_static(ctx, row + 10);
     nk_layout_row_template_push_static(ctx, 70);
+    nk_layout_row_template_push_static(ctx, 10);
+    nk_layout_row_template_push_static(ctx, row + 10);
+    nk_layout_row_template_push_static(ctx, row + 10);
+    nk_layout_row_template_push_static(ctx, row + 10);
     nk_layout_row_template_push_dynamic(ctx);
     nk_layout_row_template_end(ctx);
     for (i = 0; i < T_N; i++) {
-        int on = P.tool == i;
-        if (nk_selectable_label(ctx, TOOL_NAMES[i], NK_TEXT_CENTERED, &on) && on) P.tool = i;
+        static const int icons[T_N] = { I_BRUSH, I_ERASER, I_PICKER, I_FILL };
+        static const char *const tips[T_N] = { "Brush", "Eraser: back to the original", "Picker: a colour from the texture",
+                                                 "Fill" };
+        if (icon_button(ctx, icons[i], P.tool == i ? 1 : 0, 1, tips[i])) P.tool = i;
     }
     if (nk_combo_begin_color(ctx, nk_rgb_cf(P.col), nk_vec2(260, 330))) {
         nk_layout_row_dynamic(ctx, 180, 1);
@@ -310,28 +427,40 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
         P.col.a = nk_propertyf(ctx, "#A:", 0, P.col.a, 1, 0.01f, 0.005f);
         nk_combo_end(ctx);
     }
-    nk_label_colored(ctx, P.status, NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+    nk_spacing(ctx, 1);
+    if (icon_button(ctx, I_UNDO, -1, P.nundo > 0, "Undo (Ctrl+Z)")) undo_redo(0);
+    if (icon_button(ctx, I_REDO, -1, P.nredo > 0, "Redo (Ctrl+Y)")) undo_redo(1);
+    if (icon_button(ctx, I_FIT, -1, 1, "Fit the whole texture")) P.fit = 1;
+    nk_labelf(ctx, NK_TEXT_CENTERED, "%d x %d, %d%%", P.w, P.h, (int)(P.zoom * 100 + 0.5f));
 
     /* their settings */
-    nk_layout_row_dynamic(ctx, row - 4, 4);
-    P.size = (float)nk_propertyi(ctx, "#Size:", 1, (int)P.size, 256, 1, 0.5f);
-    P.hard = nk_propertyf(ctx, "#Hard:", 0, P.hard, 1, 0.05f, 0.01f);
-    P.opac = nk_propertyf(ctx, "#Opacity:", 0.01f, P.opac, 1, 0.05f, 0.01f);
-    P.tol = nk_propertyi(ctx, "#Fill tol:", 0, P.tol, 255, 4, 1);
+    nk_layout_row_template_begin(ctx, row - 4);
+    nk_layout_row_template_push_static(ctx, 78);
+    nk_layout_row_template_push_dynamic(ctx);
+    nk_layout_row_template_push_static(ctx, 50);
+    nk_layout_row_template_push_static(ctx, 12);
+    nk_layout_row_template_push_static(ctx, 78);
+    nk_layout_row_template_push_dynamic(ctx);
+    nk_layout_row_template_push_static(ctx, 50);
+    nk_layout_row_template_end(ctx);
+    {
+        int sz = (int)P.size;
+        slider_i(ctx, "Size", &sz, 1, 256, "%d px");
+        P.size = (float)sz;
+    }
+    nk_spacing(ctx, 1);
+    slider_pct(ctx, "Hardness", &P.hard, 0.0f);
+    slider_pct(ctx, "Opacity", &P.opac, 0.01f);
+    nk_spacing(ctx, 1);
+    slider_i(ctx, "Fill range", &P.tol, 0, 255, "%d");
 
     /* undo, the view, save */
     nk_layout_row_template_begin(ctx, row);
-    nk_layout_row_template_push_static(ctx, 70);
-    nk_layout_row_template_push_static(ctx, 70);
-    nk_layout_row_template_push_static(ctx, 60);
     nk_layout_row_template_push_dynamic(ctx);
     nk_layout_row_template_push_static(ctx, 150);
     nk_layout_row_template_push_static(ctx, 80);
     nk_layout_row_template_end(ctx);
-    if (nk_button_label(ctx, P.nundo ? "Undo" : "-")) undo_redo(0);
-    if (nk_button_label(ctx, P.nredo ? "Redo" : "-")) undo_redo(1);
-    if (nk_button_label(ctx, "Fit")) P.fit = 1;
-    nk_labelf(ctx, NK_TEXT_CENTERED, "%d x %d, %d%%", P.w, P.h, (int)(P.zoom * 100 + 0.5f));
+    nk_label_colored(ctx, P.status, NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     if (nk_button_label(ctx, P.dirty ? "Save to the game" : "Saved")) ret = PAINT_SAVE;
     if (nk_button_label(ctx, "Close")) ret = PAINT_CLOSE;
     if (nk_input_is_key_pressed(in, NK_KEY_TEXT_UNDO)) undo_redo(0);
@@ -392,20 +521,17 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
             record(P.bx0, P.by0, P.bx1, P.by1);
         }
         upload();
-        nk_fill_rect(cv, b, 0, nk_rgb(16, 16, 20));
-        {
-            struct nk_image im = nk_image_ptr(P.tex);
-            nk_draw_image(cv, nk_rect(b.x + P.ox, b.y + P.oy, P.w * P.zoom, P.h * P.zoom), &im, nk_rgb(255, 255, 255));
+        {   /* m4b: drawn inside the canvas only, the zoomed image not over the tools */
+            struct nk_rect wc = cv->clip, c;
+            float x1 = b.x + b.w < wc.x + wc.w ? b.x + b.w : wc.x + wc.w, y1 = b.y + b.h < wc.y + wc.h ? b.y + b.h : wc.y + wc.h;
+            c.x = b.x > wc.x ? b.x : wc.x;
+            c.y = b.y > wc.y ? b.y : wc.y;
+            c.w = x1 - c.x > 0 ? x1 - c.x : 0;
+            c.h = y1 - c.y > 0 ? y1 - c.y : 0;
+            nk_push_scissor(cv, c);
+            canvas_draw(cv, b, hover, mx, my, ix, iy);
+            nk_push_scissor(cv, wc);
         }
-        if (hover && (P.tool == T_BRUSH || P.tool == T_ERASER)) {   /* the brush's outline */
-            float r = P.size * 0.5f * P.zoom;
-            if (r < 2) r = 2;
-            nk_stroke_circle(cv, nk_rect(mx - r, my - r, 2 * r, 2 * r), 1.0f, nk_rgb(255, 255, 255));
-        }
-        if (hover && ix >= 0 && iy >= 0 && ix < P.w && iy < P.h)
-            snprintf(P.status, sizeof P.status, "x %d, y %d", (int)ix, (int)iy);
-        else
-            snprintf(P.status, sizeof P.status, "Wheel: zoom. Right drag: move.");
     }
     return ret;
 }
