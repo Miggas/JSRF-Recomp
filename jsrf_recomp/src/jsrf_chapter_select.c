@@ -51,6 +51,7 @@ void xbox_ListMenuSelect(int sel);
 void xbox_QuitTitleAvailable(int ok);   /* v278b: the quit window's Quit to Title */
 int xbox_QuitToTitleTake(void);
 extern char g_xbox_note[96];
+extern char g_xbox_timer[24];             /* v300: the mission timer, top-left */
 
 #if defined(_WIN32)
 BOOL xbox_translate_path(const char *xbox_path, WCHAR *host_path_buf, DWORD buf_size);
@@ -165,6 +166,7 @@ static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to t
 static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
 static int s_pick_seen;                /* v285b: the picked mission has run */
 static int s_pick_cleared;             /* v289: it has been cleared */
+static uint32_t s_tm_obj;              /* v300: the timer's mission object */
 
 static int chs_on(void)
 {
@@ -177,6 +179,8 @@ static int chs_on(void)
         s_pick_live = s_pick_obj;
         s_pick_seen = 0;
         s_pick_cleared = 0;
+        s_tm_obj = 0;                   /* v300: the timer from 0 */
+        g_xbox_timer[0] = 0;
         /* v281: the chapter's character select (mssnCC95, Roboy's menu in
          * the Garage) first, for a pick in chapters 1-9 that isn't an
          * opening or Garage */
@@ -1194,6 +1198,53 @@ static void cans_tick(uint32_t o)
             MEM32(pl + 0xFA0u), MEM32(pl + 0xFA4u));
 }
 
+/* v300: a timer for a picked mission (Idea by Miggas), drawn top-left. It
+ * counts the mission's updates (60 a second, the game's own time: nothing
+ * while paused) while its script runs freely: the mission object's step
+ * (+0x5C) is RunCmds (0x0F) and no countdown holds the players (global
+ * 0x1B4). A cutscene (steps 0x12-0x13, from the start or in the middle) or
+ * a talk (0x1E-0x1F) stops it until it ends. It stops for good at the
+ * cleared screen (steps 0x18-0x1D) or a race's results (0x32-0x37) and
+ * shows that time until the pick ends. A failed run (steps 0x14-0x17) or a
+ * quit from the pause menu (global 0x19B) starts it again from 0 with the
+ * retry's new mission object; a mission that reloads itself for its next
+ * phase (0750) keeps counting. */
+static uint32_t s_tm_frames;
+static int s_tm_frozen, s_tm_retry;
+static void timer_show(void)
+{
+    uint32_t cs = s_tm_frames * 100u / 60u;
+    snprintf(g_xbox_timer, sizeof g_xbox_timer, "%u:%02u.%02u", cs / 6000u, cs / 100u % 60u, cs % 100u);
+}
+static void timer_tick(uint32_t o)
+{
+    uint32_t c, m, id, st;
+    if (!o) return;
+    c = MEM32(o + 0x4Cu) & 0xFFFFu; m = MEM32(o + 0x50u) & 0xFFFFu;
+    id = m >= 100u ? m : c * 100u + m;
+    if (id != s_pick) return;
+    st = MEM32(o + 0x5Cu);
+    if ((st >= 0x14u && st <= 0x17u) || var_get(0x19Bu)) s_tm_retry = 1;
+    if (o != s_tm_obj) {
+        if (!s_tm_obj || s_tm_retry) {
+            s_tm_frames = 0;
+            s_tm_frozen = 0;
+            s_tm_retry = 0;
+        }
+        s_tm_obj = o;
+    }
+    if (!s_tm_frozen) {
+        if ((st >= 0x18u && st <= 0x1Du) || (st >= 0x32u && st <= 0x37u) || s_pick_cleared) {
+            s_tm_frozen = 1;
+            fprintf(stderr, "[MISSION-SELECT] mssn%04u: time %u:%02u.%02u\n", id,
+                    s_tm_frames * 100u / 60u / 6000u, s_tm_frames * 100u / 60u / 100u % 60u,
+                    s_tm_frames * 100u / 60u % 100u);
+        } else if (st == 0x0Fu && !var_get(0x1B4u))
+            s_tm_frames++;
+    }
+    timer_show();
+}
+
 void sub_00051FC0(void)
 {
     const uint32_t o = g_ecx;
@@ -1213,6 +1264,7 @@ void sub_00051FC0(void)
         cans_tick(o);
         g_ecx = o;
     }
+    if (s_pick_live) timer_tick(o);         /* v300 */
     if (s_pick_live || s_sel_target) {
         pick_exit_check(o);
         g_ecx = o;
@@ -1416,6 +1468,7 @@ void jsrf_mission_select_tick(uint32_t state)
     quit_to_title_tick(state);
     show_mission_tick();
     if (state == 0x0Au || state == 0x0Cu) s_pick_live = 0, s_sel_target = 0, s_pick = 0, s_cans_obj = 0;   /* v279: back at the title */
+    if (!s_pick_live && g_xbox_timer[0]) g_xbox_timer[0] = 0, s_tm_obj = 0;   /* v300 */
     /* v292b: a countdown holds the players with global 0x1B4 from its start
      * until its GO lets them go (the HUD's announcement, mode 0); quitting to
      * the title during one (Miggas) left it set, and the character stayed

@@ -35,6 +35,7 @@ extern int xbox_ListMenuOpen(void), xbox_ListMenuCount(void), xbox_ListMenuSel(v
 extern const char *xbox_ListMenuTitle(void), *xbox_ListMenuItem(int i);
 extern int xbox_ListMenuPickable(int i);
 extern char g_xbox_note[96];
+extern char g_xbox_timer[24];   /* v300 */
 
 typedef struct { float x, y, u, v, r, g, b, a; } QdVert;   /* u < 0: no texture */
 #define QD_MAX (6 * 6000)
@@ -326,7 +327,7 @@ static void present_overlay_f(int cw, int ch, int flip)
 {
     int quit = xbox_QuitDialogOpen(), menu = xbox_ListMenuOpen();
     if (!quit) s_qd_last_sel = -1;
-    if ((!quit && !menu && !g_gl_build_msg[0] && !g_xbox_note[0]) || cw <= 0 || ch <= 0) return;
+    if ((!quit && !menu && !g_gl_build_msg[0] && !g_xbox_note[0] && !g_xbox_timer[0]) || cw <= 0 || ch <= 0) return;
     if (!s_qd_state) {
         GLint p0 = 0, va0 = 0, ab0 = 0;
         glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
@@ -370,6 +371,23 @@ static void present_overlay_f(int cw, int ch, int flip)
                 float w = qd_text_w(m, 1.45f) + 22.0f;
                 qd_frame(320.0f - w / 2, 428.0f, 320.0f + w / 2, 452.0f, 1.6f, 0.9f, edge, box);
                 qd_text(320.5f, 440.0f, 1.45f, 1.9f, 0.45f, 0.22f, m, white);
+            }
+        }
+        if (g_xbox_timer[0] && !menu && !quit) {
+            /* v300: the mission timer (mission select), the window's top-left */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 };
+            char m[24];
+            const float x0 = 10.0f - s_qx / s_qs, y0 = 10.0f - s_qy / s_qs;
+            memcpy(m, g_xbox_timer, sizeof m);
+            m[23] = 0;
+            if (s_qd_font) {
+                float k = qd_ttf_scale(m, 10.0f, 0.0f), w = qd_ttf_w("00:00.00") * k + 18.0f;
+                qd_frame(x0, y0, x0 + w, y0 + 24.0f, 1.6f, 0.9f, edge, box);
+                qd_ttf_text(x0 + 9.0f + qd_ttf_w(m) * k / 2, y0 + 12.0f, k, m, white);   /* from the left */
+            } else {
+                float w = qd_text_w("00:00.00", 1.6f) + 18.0f;
+                qd_frame(x0, y0, x0 + w, y0 + 24.0f, 1.6f, 0.9f, edge, box);
+                qd_text(x0 + w / 2 + 0.5f, y0 + 12.0f, 1.6f, 1.9f, 0.45f, 0.22f, m, white);
             }
         }
         if (g_xbox_note[0] && !g_gl_build_msg[0] && !menu) {
