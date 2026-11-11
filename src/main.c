@@ -46,14 +46,35 @@
 #include "jtex.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m2"
+#define MODTOOL_VERSION "m3"
 
 /* ---- the files ---- */
 
 typedef struct {
     char rel[512];      /* from the game folder, '/' between: Media/Player/Beat.dat */
     int ntex;
+    int cat, w, h;      /* m3: its tab; its first texture's size (graffiti are grouped by it) */
 } Entry;
+
+/* m3: the files in tabs (Miggas), by the game's folders */
+enum { CAT_ALL, CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_UI, CAT_OTHER, CAT_N };
+static const char *const CAT_NAMES[CAT_N] = { "All", "Characters", "Graffiti", "Stages", "Objects", "Interface", "Other" };
+
+static int cat_of(const char *rel)
+{
+    static const struct { const char *dir; int cat; } m[] = {
+        { "Player/", CAT_CHAR }, { "Mark/", CAT_GRAF }, { "Stage/", CAT_STAGE },
+        { "StgObj/", CAT_OBJ }, { "People/", CAT_OBJ }, { "Enemy/", CAT_OBJ }, { "Misc/", CAT_OBJ },
+        { "Effect/", CAT_OBJ }, { "Event/", CAT_OBJ }, { "Disp/", CAT_UI }, { "Font/", CAT_UI },
+        { "Title/", CAT_UI }, { "Progress/", CAT_UI }, { "Garage/", CAT_UI } };
+    size_t i;
+    if (!SDL_strncasecmp(rel, "Media/", 6)) rel += 6;
+    for (i = 0; i < sizeof m / sizeof m[0]; i++)
+        if (!SDL_strncasecmp(rel, m[i].dir, strlen(m[i].dir))) return m[i].cat;
+    return CAT_OTHER;
+}
+
+static int s_tab = CAT_ALL;
 
 static char s_game[LPATH];              /* the game folder (it has Media/) */
 static Entry *s_files;
@@ -162,6 +183,9 @@ static void walk_cb(const char *name, bool isdir, void *u)
             }
             snprintf(s_files[s_nfiles].rel, sizeof s_files[s_nfiles].rel, "%s", r);
             s_files[s_nfiles].ntex = f.ntex;
+            s_files[s_nfiles].cat = cat_of(r);
+            s_files[s_nfiles].w = f.tex[0].w;
+            s_files[s_nfiles].h = f.tex[0].h;
             s_nfiles++;
             SDL_UnlockMutex(s_mx);
         }
@@ -517,11 +541,23 @@ static void style(struct nk_context *ctx)
     ctx->style.button.rounding = 6;
 }
 
+/* graffiti: by size, smallest first, the sheets last, then by name */
+static int cmp_graf(const void *a, const void *b)
+{
+    const Entry *x = &s_files[*(const int *)a], *y = &s_files[*(const int *)b];
+    int jx = SDL_strcasestr(x->rel, ".jtx") != NULL, jy = SDL_strcasestr(y->rel, ".jtx") != NULL;
+    long ax = (long)x->w * x->h, ay = (long)y->w * y->h;
+    if (jx != jy) return jx - jy;
+    if (ax != ay) return ax < ay ? -1 : 1;
+    if (x->w != y->w) return x->w - y->w;
+    return SDL_strcasecmp(x->rel, y->rel);
+}
+
 static char *s_dropped;                  /* a PNG dropped on the window */
 
 static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
 {
-    const float row = 30, top = 92;
+    const float row = 30, top = 128;
     int busy = SDL_AtomicGet(&s_scan_busy), i;
     if (SDL_AtomicGet(&s_scan_done)) {
         SDL_AtomicSet(&s_scan_done, 0);
@@ -551,28 +587,78 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             if (pick_folder(s_game, d)) set_game(d);
         }
         if (nk_button_label(ctx, busy ? "..." : "Rescan")) start_scan();
+        {                                           /* m3: the tabs, with their counts */
+            int cnt[CAT_N] = { 0 }, c;
+            SDL_LockMutex(s_mx);
+            for (i = 0; i < s_nfiles; i++) cnt[s_files[i].cat]++;
+            SDL_UnlockMutex(s_mx);
+            cnt[CAT_ALL] = s_nfiles;
+            nk_layout_row_dynamic(ctx, row, CAT_N);
+            for (c = 0; c < CAT_N; c++) {
+                char t[48];
+                int on = c == s_tab;
+                snprintf(t, sizeof t, "%s (%d)", CAT_NAMES[c], cnt[c]);
+                if (nk_selectable_label(ctx, t, NK_TEXT_CENTERED, &on) && on) s_tab = c;
+            }
+        }
         nk_layout_row_dynamic(ctx, row - 4, 1);
         if (busy) nk_labelf(ctx, NK_TEXT_LEFT, "Looking through the game files... %d", SDL_AtomicGet(&s_scan_seen));
         else nk_label_wrap(ctx, s_msg);
     }
     nk_end(ctx);
 
-    /* the files */
+    /* the files: the tab's, under headings (the folder; graffiti by size) */
     if (nk_begin(ctx, "Files", nk_rect(0, top, 330, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
+        static int *view;
+        static int nview, capview;
+        char last[128] = "";
         nk_layout_row_dynamic(ctx, row, 1);
         nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD, s_filter, sizeof s_filter, nk_filter_default);
         SDL_LockMutex(s_mx);
-        nk_layout_row_dynamic(ctx, row - 6, 1);
+        if (capview < s_nfiles) {
+            capview = s_nfiles + 64;
+            view = (int *)realloc(view, sizeof(int) * (size_t)capview);
+        }
+        nview = 0;
         for (i = 0; i < s_nfiles; i++) {
             const char *shown = s_files[i].rel + (strncmp(s_files[i].rel, "Media/", 6) ? 0 : 6);
-            int sel = i == s_sel_file;
+            if (s_tab != CAT_ALL && s_files[i].cat != s_tab) continue;
             if (s_filter[0] && !SDL_strcasestr(shown, s_filter)) continue;
-            char lb[600];
-            snprintf(lb, sizeof lb, "%s  (%d)", shown, s_files[i].ntex);
+            view[nview++] = i;
+        }
+        if (s_tab == CAT_GRAF) qsort(view, (size_t)nview, sizeof(int), cmp_graf);
+        for (i = 0; i < nview; i++) {
+            const Entry *e = &s_files[view[i]];
+            const char *shown = e->rel + (strncmp(e->rel, "Media/", 6) ? 0 : 6);
+            char head[128], lb[600];
+            int sel = view[i] == s_sel_file;
+            if (s_tab == CAT_GRAF) {
+                if (SDL_strcasestr(shown, ".jtx")) snprintf(head, sizeof head, "Sheets, %d x %d", e->w, e->h);
+                else snprintf(head, sizeof head, "%d x %d", e->w, e->h);
+            } else {
+                const char *sl = strrchr(shown, '/');
+                size_t n = sl ? (size_t)(sl - shown) : 0;
+                if (n >= sizeof head) n = sizeof head - 1;
+                memcpy(head, shown, n);
+                head[n] = 0;
+            }
+            if (strcmp(head, last)) {
+                snprintf(last, sizeof last, "%s", head);
+                nk_layout_row_dynamic(ctx, row - 8, 1);
+                nk_label_colored(ctx, head[0] ? head : "(top)", NK_TEXT_LEFT, nk_rgb(240, 175, 30));
+            }
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            /* graffiti: their folder too (TEX, DEFAULT, PRESS share the size groups) */
+            snprintf(lb, sizeof lb, "  %s  (%d)", s_tab == CAT_GRAF && !SDL_strncasecmp(shown, "Mark/", 5) ? shown + 5
+                     : strrchr(shown, '/') ? strrchr(shown, '/') + 1 : shown, e->ntex);
             if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy) {
-                open_file(i);
+                open_file(view[i]);
                 if (s_cur.ntex) show_texture(ren, 0);
             }
+        }
+        if (!nview && s_nfiles) {
+            nk_layout_row_dynamic(ctx, row, 1);
+            nk_label(ctx, "Nothing here.", NK_TEXT_LEFT);
         }
         SDL_UnlockMutex(s_mx);
     }
@@ -654,6 +740,7 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "--game") && i + 1 < argc) snprintf(s_game, sizeof s_game, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];   /* a screenshot, then quit (tests) */
         else if (!strcmp(argv[i], "--pick") && i + 1 < argc) shot_pick = argv[++i];   /* ... of this file */
+        else if (!strcmp(argv[i], "--tab") && i + 1 < argc) s_tab = atoi(argv[++i]);     /* ... on this tab */
         else if (!strcmp(argv[i], "--test") && i + 3 < argc) {   /* tests: import PNG into REL's texture N, or undo (N -1) */
             test_rel = argv[++i];
             test_n = atoi(argv[++i]);
