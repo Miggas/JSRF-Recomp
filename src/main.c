@@ -46,7 +46,7 @@
 #include "jtex.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m1c"
+#define MODTOOL_VERSION "m1d"
 
 /* ---- the files ---- */
 
@@ -577,7 +577,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     if (nk_begin(ctx, "Texture", nk_rect(580, top, (float)ww - 580, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         if (s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
             const JTex *t = &s_cur.tex[s_sel_tex];
-            float avail = (float)ww - 580 - 30, side = (float)wh - top - 6 * row - 40;
+            float avail = (float)ww - 580 - 56, side = (float)wh - top - 6 * row - 40;
             float sz = avail < side ? avail : side;
             nk_layout_row_dynamic(ctx, row - 6, 1);
             nk_labelf(ctx, NK_TEXT_LEFT, "%s, texture %d: %dx%d %s, %d level%s%s%s",
@@ -606,9 +606,12 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             nk_label_colored(ctx, "Import reads the exported PNG back, or drop any PNG on the window.", NK_TEXT_LEFT,
                              nk_rgb(150, 150, 160));
             if (s_preview && sz > 32) {
+                /* m1d: its own shape (graffiti aren't all square, Miggas), at most 2x */
                 struct nk_image im = nk_image_ptr(s_preview);
-                if (sz > 2.0f * (float)s_pw) sz = 2.0f * (float)s_pw;
-                nk_layout_row_static(ctx, sz, (int)sz, 1);
+                float k = avail / (float)s_pw, kh = side / (float)s_ph;
+                if (kh < k) k = kh;
+                if (k > 2.0f) k = 2.0f;
+                nk_layout_row_static(ctx, (float)s_ph * k, (int)((float)s_pw * k), 1);
                 nk_image(ctx, im);
             }
         } else {
@@ -625,12 +628,13 @@ int main(int argc, char **argv)
     SDL_Renderer *ren;
     struct nk_context *ctx;
     int running = 1;
-    const char *shot = NULL, *test_rel = NULL, *test_png = NULL;
+    const char *shot = NULL, *shot_pick = NULL, *test_rel = NULL, *test_png = NULL;
     int i, test_n = 0;
     SDL_SetMainReady();
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game") && i + 1 < argc) snprintf(s_game, sizeof s_game, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];   /* a screenshot, then quit (tests) */
+        else if (!strcmp(argv[i], "--pick") && i + 1 < argc) shot_pick = argv[++i];   /* ... of this file */
         else if (!strcmp(argv[i], "--test") && i + 3 < argc) {   /* tests: import PNG into REL's texture N, or undo (N -1) */
             test_rel = argv[++i];
             test_n = atoi(argv[++i]);
@@ -674,8 +678,10 @@ int main(int argc, char **argv)
             printf("%s\n", s_msg);
             break;
         }
-        if (shot && !SDL_AtomicGet(&s_scan_busy) && s_nfiles && s_sel_file < 0) {
-            open_file(0);
+        if (shot && !SDL_AtomicGet(&s_scan_busy) && !SDL_AtomicGet(&s_scan_done) && s_nfiles && s_sel_file < 0) {
+            int k = 0;
+            if (shot_pick) for (k = 0; k < s_nfiles - 1 && strcmp(s_files[k].rel, shot_pick); k++) ;
+            open_file(k);
             if (s_cur.ntex) show_texture(ren, 0);
         }
         SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);

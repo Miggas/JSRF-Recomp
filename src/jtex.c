@@ -193,9 +193,28 @@ int jf_parse(JFile *f, const char *path, uint8_t *buf, size_t size)
     } else if (ends_with(path, ".grf") && f->buf[2] == 2 && f->buf[16] == 32) {
         f->kind = "graffiti (TGA)";
         add_raw(f, JT_TGA, f->buf[12] | f->buf[13] << 8, f->buf[14] | f->buf[15] << 8, 18u + f->buf[0], &cap);
-    } else if (ends_with(path, ".prs") && f->size == 16384) {
+    } else if (ends_with(path, ".prs") && f->size >= 1024 && !(f->size & 1023)) {
+        /* m1d: graffiti come in 128x128 and bigger, not all square
+         * (Miggas): the .prs is DXT3 (a byte a pixel) of its .grf's size,
+         * the .grf (a TGA) saying it */
+        int w = 0, h = 0;
+        char g[1024];
+        FILE *fp;
+        snprintf(g, sizeof g, "%s", path);
+        memcpy(g + strlen(g) - 3, path[strlen(path) - 1] == 'S' ? "GRF" : "grf", 3);
+        if ((fp = fopen(g, "rb"))) {
+            uint8_t th[18];
+            if (fread(th, 1, 18, fp) == 18) { w = th[12] | th[13] << 8; h = th[14] | th[15] << 8; }
+            fclose(fp);
+        }
+        if (w <= 0 || h <= 0 || (size_t)w * h != f->size) {          /* no .grf: square, or 512 wide */
+            w = 4;
+            while ((size_t)w * w < f->size) w *= 2;
+            if ((size_t)w * w != f->size) { w = 512; }
+            h = (int)(f->size / (size_t)w);
+        }
         f->kind = "graffiti (DXT3)";
-        add_raw(f, JT_DXT3, 128, 128, 0, &cap);
+        add_raw(f, JT_DXT3, w, h, 0, &cap);
     } else if (ends_with(path, ".jtx") && f->size == 1048576) {
         f->kind = "graffiti sheet (DXT3)";
         add_raw(f, JT_DXT3, 1024, 1024, 0, &cap);
