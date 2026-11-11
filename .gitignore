@@ -1,0 +1,5 @@
+deps/
+jsrf_modtool
+jsrf_modtool.exe
+jsrf_modtool.ini
+*.pdb
