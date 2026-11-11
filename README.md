@@ -2,7 +2,7 @@
 
 Shows the textures in Jet Set Radio Future's game files, exports them to PNG and puts edited PNGs back, for the [JSRF recomp](https://github.com/Miggas/JSRF-Recomp). Windows and Linux (Steam Deck included).
 
-The game's files are never changed. An edited file is saved in `mods/` in the game folder, at the game's own path (`mods/Media/Player/Beat.dat`), and the recomp (v302 and later) opens it instead of the original. To undo a mod, delete its file, or use **Undo all (file)** in the tool.
+An edited file is changed in place in the game folder. Before its first change, the original is kept in `mod_backups/` at the game's own path (`mod_backups/Media/Player/Beat.dat`), and **Undo all (file)** puts it back. The game keeps copies of most of its files in its cache (`savegame/Cache` in the game folder) and reads those after the first time: the tool changes that copy too when there is one. Nothing is needed from the recomp.
 
 ## Use
 

@@ -1,9 +1,11 @@
 /* JSRF Mod Tool: the textures in Jet Set Radio Future's game files, shown,
  * exported to PNG and replaced from PNG, on Windows and Linux.
  *
- * The game files are never changed: an edited file goes to mods/ in the
- * game folder, at the game's own path (mods/Media/Player/Beat.dat), which
- * the recomp opens instead of the original. Deleting it undoes the mod.
+ * An edited file is changed in place, in the game folder, after its
+ * original is kept in mod_backups/ at the game's own path
+ * (mod_backups/Media/Player/Beat.dat); Undo puts it back. (m1b: m1 saved
+ * edited files to mods/ for the recomp to open instead: not seen by the
+ * game, Miggas; in place needs nothing from the recomp.)
  *
  * The window is drawn with Nuklear (third_party/nuklear) on SDL2, as the
  * launcher's. File formats: see jtex.h. */
@@ -44,7 +46,7 @@
 #include "jtex.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m1"
+#define MODTOOL_VERSION "m1b"
 
 /* ---- the files ---- */
 
@@ -83,10 +85,22 @@ static void game_path(char *out, const char *rel)        /* the original */
     pjoin(out, s_game, r);
 }
 
-static void mod_path(char *out, const char *rel)         /* its replacement */
+static void backup_path(char *out, const char *rel)      /* its original, kept */
 {
     char r[LPATH], *p;
-    snprintf(r, sizeof r, "mods/%s", rel);
+    snprintf(r, sizeof r, "mod_backups/%s", rel);
+    for (p = r; *p; p++) if (*p == '/') *p = SEP[0];
+    pjoin(out, s_game, r);
+}
+
+/* m1b: the game copies most of its files (characters, stages, objects,
+ * HUD...) to its cache (Z:, the save folder's Cache: savegame/Cache in
+ * the game folder) the first time and reads them from there after: an
+ * edit goes to that copy too, when there is one */
+static void cache_path(char *out, const char *rel)
+{
+    char r[LPATH], *p;
+    snprintf(r, sizeof r, "savegame/Cache/%s", rel);
     for (p = r; *p; p++) if (*p == '/') *p = SEP[0];
     pjoin(out, s_game, r);
 }
@@ -248,9 +262,9 @@ static int open_file(int i)
     close_file();
     s_sel_file = i;
     if (i < 0) return -1;
-    mod_path(p, s_files[i].rel);
+    backup_path(p, s_files[i].rel);
     s_cur_modded = is_file(p);
-    if (!s_cur_modded) game_path(p, s_files[i].rel);
+    game_path(p, s_files[i].rel);
     b = read_file(p, &n);
     if (!b) { snprintf(s_msg, sizeof s_msg, "Can't read %s", p); return -1; }
     jf_parse(&s_cur, p, (uint8_t *)b, n);
@@ -355,27 +369,45 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
     if (jt_encode(&s_cur, t, px)) {
         snprintf(s_msg, sizeof s_msg, "Couldn't encode the texture.");
     } else {
-        mod_path(out, s_files[s_sel_file].rel);
-        snprintf(dir, sizeof dir, "%s", out);
+        char bak[LPATH];
+        game_path(out, s_files[s_sel_file].rel);
+        backup_path(bak, s_files[s_sel_file].rel);
+        snprintf(dir, sizeof dir, "%s", bak);
         if ((s = strrchr(dir, SEP[0]))) { *s = 0; make_dirs(dir); }
-        if (!write_file(out, s_cur.buf, s_cur.size)) snprintf(s_msg, sizeof s_msg, "Couldn't write %s", out);
+        if (!is_file(bak) && !copy_file(out, bak))          /* the original kept first, once */
+            snprintf(s_msg, sizeof s_msg, "Couldn't keep the original in %s: nothing changed", bak);
+        else if (!write_file(out, s_cur.buf, s_cur.size))
+            snprintf(s_msg, sizeof s_msg, "Couldn't write %s", out);
         else {
+            char cp[LPATH];
+            cache_path(cp, s_files[s_sel_file].rel);
             s_cur_modded = 1;
-            snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s: %s", k, note, out);
+            if (is_file(cp) && !write_file(cp, s_cur.buf, s_cur.size))
+                snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s, but the game's cached copy %s couldn't be: "
+                         "delete it by hand", k, note, cp);
+            else
+                snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s in %s (the original is in mod_backups)", k, note, out);
         }
     }
     free(px);
     show_texture(ren, k);
 }
 
-static void revert_file(void)
+static void revert_file(SDL_Renderer *ren)
 {
-    char p[LPATH];
+    char bak[LPATH], p[LPATH];
     int k = s_sel_tex;
-    mod_path(p, s_files[s_sel_file].rel);
-    if (is_file(p) && remove_file(p)) snprintf(s_msg, sizeof s_msg, "Back to the original: %s removed", p);
+    backup_path(bak, s_files[s_sel_file].rel);
+    game_path(p, s_files[s_sel_file].rel);
+    if (is_file(bak) && copy_file(bak, p)) {
+        char cp[LPATH];
+        cache_path(cp, s_files[s_sel_file].rel);
+        if (is_file(cp)) copy_file(bak, cp);            /* the game's cached copy too */
+        remove_file(bak);
+        snprintf(s_msg, sizeof s_msg, "Back to the original: %s", p);
+    } else snprintf(s_msg, sizeof s_msg, "Couldn't put the original back from %s", bak);
     open_file(s_sel_file);
-    s_sel_tex = k;
+    show_texture(ren, k < s_cur.ntex ? k : 0);
 }
 
 /* ---- the window ---- */
@@ -525,7 +557,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             nk_labelf(ctx, NK_TEXT_LEFT, "%s, texture %d: %dx%d %s, %d level%s%s%s",
                       s_files[s_sel_file].rel, s_sel_tex, t->w, t->h, jt_fmt_name(t->fmt), t->levels,
                       t->levels == 1 ? "" : "s", t->alpha ? ", transparency" : "", t->swizzled ? ", swizzled" : "");
-            nk_label_colored(ctx, s_cur_modded ? "Modded: the game uses the copy in mods/" : "Original",
+            nk_label_colored(ctx, s_cur_modded ? "Modded (the original is kept in mod_backups)" : "Original",
                              NK_TEXT_LEFT, s_cur_modded ? nk_rgb(240, 175, 30) : nk_rgb(150, 150, 160));
             nk_layout_row_template_begin(ctx, row);
             nk_layout_row_template_push_static(ctx, 130);
@@ -542,7 +574,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 open_folder(d);
             }
             if (s_cur_modded) {
-                if (nk_button_label(ctx, "Undo all (file)")) revert_file();
+                if (nk_button_label(ctx, "Undo all (file)")) revert_file(ren);
             } else nk_spacing(ctx, 1);
             nk_layout_row_dynamic(ctx, row - 8, 1);
             nk_label_colored(ctx, "Import reads the exported PNG back, or drop any PNG on the window.", NK_TEXT_LEFT,
@@ -567,12 +599,17 @@ int main(int argc, char **argv)
     SDL_Renderer *ren;
     struct nk_context *ctx;
     int running = 1;
-    const char *shot = NULL;
-    int i;
+    const char *shot = NULL, *test_rel = NULL, *test_png = NULL;
+    int i, test_n = 0;
     SDL_SetMainReady();
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game") && i + 1 < argc) snprintf(s_game, sizeof s_game, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];   /* a screenshot, then quit (tests) */
+        else if (!strcmp(argv[i], "--test") && i + 3 < argc) {   /* tests: import PNG into REL's texture N, or undo (N -1) */
+            test_rel = argv[++i];
+            test_n = atoi(argv[++i]);
+            test_png = argv[++i];
+        }
     }
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     s_mx = SDL_CreateMutex();
@@ -602,6 +639,15 @@ int main(int argc, char **argv)
         nk_input_end(ctx);
         SDL_GetRendererOutputSize(ren, &ww, &wh);
         draw(ctx, ren, ww, wh);
+        if (test_rel && !SDL_AtomicGet(&s_scan_busy) && !SDL_AtomicGet(&s_scan_done) && SDL_AtomicGet(&s_scan_seen)) {
+            for (i = 0; i < s_nfiles && strcmp(s_files[i].rel, test_rel); i++) ;
+            if (i < s_nfiles && !open_file(i)) {
+                if (test_n >= 0) { show_texture(ren, test_n); import_texture(ren, test_n, test_png); }
+                else revert_file(ren);
+            } else snprintf(s_msg, sizeof s_msg, "no %s", test_rel);
+            printf("%s\n", s_msg);
+            break;
+        }
         if (shot && !SDL_AtomicGet(&s_scan_busy) && s_nfiles && s_sel_file < 0) {
             open_file(0);
             if (s_cur.ntex) show_texture(ren, 0);
