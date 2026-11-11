@@ -35,6 +35,7 @@
 #include <windows.h>            /* before recomp_types.h: it #defines eax, esp, ... */
 #else
 #include <sys/stat.h>
+#include <unistd.h>             /* v301: readlink, the exe's folder */
 #include "win32_compat.h"
 #endif
 #include "gen/recomp_types.h"
@@ -46,12 +47,14 @@
 void xbox_ListMenuSet(const char *title, const char *const *items, int n);
 int xbox_ListMenuTake(void);
 int xbox_ListMenuOpen(void);
+int xbox_ListMenuSel(void);              /* v301 */
 void xbox_ListMenuShow(int sel);
 void xbox_ListMenuSelect(int sel);
 void xbox_QuitTitleAvailable(int ok);   /* v278b: the quit window's Quit to Title */
 int xbox_QuitToTitleTake(void);
 extern char g_xbox_note[96];
 extern char g_xbox_timer[24];             /* v300: the mission timer, top-left */
+extern char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: the personal bests beside the menu */
 
 #if defined(_WIN32)
 BOOL xbox_translate_path(const char *xbox_path, WCHAR *host_path_buf, DWORD buf_size);
@@ -1198,6 +1201,175 @@ static void cans_tick(uint32_t o)
             MEM32(pl + 0xFA0u), MEM32(pl + 0xFA4u));
 }
 
+/* v301: personal bests (Idea by Miggas): a picked mission's five best
+ * times from the mission timer (v300), each with the character it was run
+ * with (global 0x0D, player 0's character), shown beside the mission
+ * select on the mission picked there. Kept in pbtimes.dat beside the exe,
+ * one file for every release. Not plain text, so it can't just be typed
+ * over: "JSRFPB" 1, the missions (u16 id, u8 count, count x (u32 frames,
+ * u8 character)), a checksum of all that (FNV-1a), the whole scrambled by
+ * a keystream (xorshift32). A file that doesn't check out is set aside as
+ * pbtimes.bad, never written over. */
+enum { PB_MAX = 64, PB_TOP = 5 };
+static struct { uint16_t id; uint8_t n, ch[PB_TOP]; uint32_t fr[PB_TOP]; } s_pb[PB_MAX];
+static int s_pb_n = -1;                   /* -1: not read yet */
+static const char *const s_pb_names[24] = {
+    "Beat", "Corn", "Gum", "Combo", "Rhyth", "Soda", "Yoyo", "NT 3000", "Garam", "Boogie", "Cube",
+    "Love Shocker", "Poison Jam", "Noise Tank", "Immortal", "Golden Rhino", "Rapid 99", "Pots",
+    "Gouji", "Type A", "Clutch", "Jazz", "Type B", "Zero Beat" };
+
+static int pb_path(char *out, size_t n, const char *name)
+{
+#if defined(_WIN32)
+    char d[MAX_PATH];
+    DWORD k = GetModuleFileNameA(NULL, d, MAX_PATH);
+    char *sl;
+    if (!k || k >= MAX_PATH) return 0;
+    d[k] = 0;
+    sl = strrchr(d, '\\');
+    if (!sl) return 0;
+    sl[1] = 0;
+#else
+    char d[1024];
+    ssize_t k = readlink("/proc/self/exe", d, sizeof d - 1);
+    char *sl;
+    if (k <= 0) return 0;
+    d[k] = 0;
+    sl = strrchr(d, '/');
+    if (!sl) return 0;
+    sl[1] = 0;
+#endif
+    snprintf(out, n, "%s%s", d, name);
+    return 1;
+}
+
+static void pb_scramble(uint8_t *b, size_t n)
+{
+    uint32_t x = 0x4A535246u;             /* "JSRF" */
+    size_t i;
+    for (i = 0; i < n; i++) {
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        b[i] ^= (uint8_t)(x >> 11);
+    }
+}
+static uint32_t pb_sum(const uint8_t *b, size_t n)
+{
+    uint32_t h = 2166136261u;
+    size_t i;
+    for (i = 0; i < n; i++) h = (h ^ b[i]) * 16777619u;
+    return h;
+}
+
+static void pb_load(void)
+{
+    char p[1100], q[1100];
+    uint8_t b[PB_MAX * (3 + PB_TOP * 5) + 16];
+    size_t n = 0, at;
+    FILE *f;
+    s_pb_n = 0;
+    if (!pb_path(p, sizeof p, "pbtimes.dat")) return;
+    f = fopen(p, "rb");
+    if (!f) return;                       /* none yet */
+    n = fread(b, 1, sizeof b, f);
+    fclose(f);
+    pb_scramble(b, n);
+    if (n < 12 || memcmp(b, "JSRFPB\x01", 7) || pb_sum(b, n - 4) != (uint32_t)(b[n - 4] | b[n - 3] << 8 | b[n - 2] << 16 | (uint32_t)b[n - 1] << 24)) {
+        fprintf(stderr, "[MISSION-SELECT] pbtimes.dat doesn't check out: set aside as pbtimes.bad\n");
+        if (pb_path(q, sizeof q, "pbtimes.bad")) { remove(q); rename(p, q); }
+        return;
+    }
+    at = 8;                               /* "JSRFPB" 1, the count */
+    while (at + 3 <= n - 4 && s_pb_n < (int)b[7] && s_pb_n < PB_MAX) {
+        unsigned k, c = b[at + 2];
+        if (c > PB_TOP || at + 3 + c * 5u > n - 4) break;
+        s_pb[s_pb_n].id = (uint16_t)(b[at] | b[at + 1] << 8);
+        s_pb[s_pb_n].n = (uint8_t)c;
+        at += 3;
+        for (k = 0; k < c; k++, at += 5) {
+            s_pb[s_pb_n].fr[k] = b[at] | b[at + 1] << 8 | b[at + 2] << 16 | (uint32_t)b[at + 3] << 24;
+            s_pb[s_pb_n].ch[k] = b[at + 4];
+        }
+        s_pb_n++;
+    }
+    fprintf(stderr, "[MISSION-SELECT] pbtimes.dat: personal bests of %d missions\n", s_pb_n);
+}
+
+static void pb_save(void)
+{
+    char p[1100];
+    uint8_t b[PB_MAX * (3 + PB_TOP * 5) + 16];
+    size_t n = 0;
+    uint32_t h;
+    int i, k;
+    FILE *f;
+    if (!pb_path(p, sizeof p, "pbtimes.dat")) return;
+    memcpy(b, "JSRFPB\x01", 7);
+    b[7] = (uint8_t)s_pb_n;
+    n = 8;
+    for (i = 0; i < s_pb_n; i++) {
+        b[n++] = (uint8_t)s_pb[i].id; b[n++] = (uint8_t)(s_pb[i].id >> 8); b[n++] = s_pb[i].n;
+        for (k = 0; k < s_pb[i].n; k++) {
+            uint32_t v = s_pb[i].fr[k];
+            b[n++] = (uint8_t)v; b[n++] = (uint8_t)(v >> 8); b[n++] = (uint8_t)(v >> 16); b[n++] = (uint8_t)(v >> 24);
+            b[n++] = s_pb[i].ch[k];
+        }
+    }
+    h = pb_sum(b, n);
+    b[n++] = (uint8_t)h; b[n++] = (uint8_t)(h >> 8); b[n++] = (uint8_t)(h >> 16); b[n++] = (uint8_t)(h >> 24);
+    pb_scramble(b, n);
+    f = fopen(p, "wb");
+    if (!f) { fprintf(stderr, "[MISSION-SELECT] pbtimes.dat can't be written\n"); return; }
+    fwrite(b, 1, n, f);
+    fclose(f);
+}
+
+static void pb_add(unsigned id, uint32_t frames, uint32_t ch)
+{
+    int i, k, at;
+    if (s_pb_n < 0) pb_load();
+    for (i = 0; i < s_pb_n && s_pb[i].id != id; i++) ;
+    if (i == s_pb_n) {
+        if (s_pb_n >= PB_MAX) return;
+        memset(&s_pb[i], 0, sizeof s_pb[i]);
+        s_pb[i].id = (uint16_t)id;
+        s_pb_n++;
+    }
+    for (at = 0; at < s_pb[i].n && s_pb[i].fr[at] <= frames; at++) ;
+    if (at >= PB_TOP) return;             /* not in the five best */
+    for (k = (s_pb[i].n < PB_TOP ? s_pb[i].n : PB_TOP - 1); k > at; k--) {
+        s_pb[i].fr[k] = s_pb[i].fr[k - 1];
+        s_pb[i].ch[k] = s_pb[i].ch[k - 1];
+    }
+    s_pb[i].fr[at] = frames;
+    s_pb[i].ch[at] = (uint8_t)(ch < 24u ? ch : 0xFFu);
+    if (s_pb[i].n < PB_TOP) s_pb[i].n++;
+    fprintf(stderr, "[MISSION-SELECT] mssn%04u: personal best #%d\n", id, at + 1);
+    pb_save();
+}
+
+static void pb_fmt(char *out, size_t n, uint32_t frames)
+{
+    uint32_t cs = frames * 100u / 60u;
+    snprintf(out, n, "%02u:%02u.%02u", cs / 6000u, cs / 100u % 60u, cs % 100u);
+}
+
+static void pb_panel(unsigned id)          /* the panel beside the menu, for mission id */
+{
+    int i, k;
+    if (s_pb_n < 0) pb_load();
+    snprintf(g_xbox_side_title, sizeof g_xbox_side_title, "Personal Best");
+    for (i = 0; i < s_pb_n && s_pb[i].id != id; i++) ;
+    for (k = 0; k < PB_TOP; k++) {
+        if (id && i < s_pb_n && k < s_pb[i].n) {
+            char t[16];
+            pb_fmt(t, sizeof t, s_pb[i].fr[k]);
+            snprintf(g_xbox_side_rows[k], sizeof g_xbox_side_rows[k], "%s - %s", t,
+                     s_pb[i].ch[k] < 24u ? s_pb_names[s_pb[i].ch[k]] : "?");
+        } else
+            snprintf(g_xbox_side_rows[k], sizeof g_xbox_side_rows[k], "------------------------");
+    }
+}
+
 /* v300: a timer for a picked mission (Idea by Miggas), drawn top-left. It
  * counts the mission's updates (60 a second, the game's own time: nothing
  * while paused) while its script runs freely: the mission object's step
@@ -1210,7 +1382,7 @@ static void cans_tick(uint32_t o)
  * retry's new mission object; a mission that reloads itself for its next
  * phase (0750) keeps counting. */
 static uint32_t s_tm_frames;
-static int s_tm_frozen, s_tm_retry;
+static int s_tm_frozen, s_tm_retry, s_tm_saved;
 static void timer_show(void)
 {
     uint32_t cs = s_tm_frames * 100u / 60u;
@@ -1230,6 +1402,7 @@ static void timer_tick(uint32_t o)
             s_tm_frames = 0;
             s_tm_frozen = 0;
             s_tm_retry = 0;
+            s_tm_saved = 0;
         }
         s_tm_obj = o;
     }
@@ -1241,6 +1414,10 @@ static void timer_tick(uint32_t o)
                     s_tm_frames * 100u / 60u % 100u);
         } else if (st == 0x0Fu && !var_get(0x1B4u))
             s_tm_frames++;
+    }
+    if (s_tm_frozen && s_pick_cleared && !s_tm_saved) {    /* v301: cleared: a personal best? */
+        s_tm_saved = 1;
+        pb_add(id, s_tm_frames, var_get(0x0Du));
     }
     timer_show();
 }
@@ -1505,6 +1682,7 @@ void jsrf_mission_select_tick(uint32_t state)
         var_set(0x1B4u, 0);
     }
     if (state != 0x0Cu) {
+        g_xbox_side_title[0] = 0;                   /* v301 */
         xbox_ListMenuSet(NULL, NULL, 0);
         s_ms_step = 0;
         if (s_armed && state > 0x1Cu) {             /* a game started without the new game's 1:1 */
@@ -1521,6 +1699,10 @@ void jsrf_mission_select_tick(uint32_t state)
      * B on the second goes back to the first, on the same mission */
     if (s_ms_step == 0) {
         xbox_ListMenuSet("Mission select", s_menu_ptr, s_menu_n);
+        {                                           /* v301: the picked row's personal bests */
+            int sel = xbox_ListMenuSel();
+            pb_panel(sel >= 0 && sel < s_menu_n ? s_menu_id[sel] : 0u);
+        }
         pick = xbox_ListMenuTake();
         if (pick >= 0 && pick < s_menu_n && s_menu_id[pick]) {
             s_ms_row = pick;

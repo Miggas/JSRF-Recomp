@@ -36,6 +36,7 @@ extern const char *xbox_ListMenuTitle(void), *xbox_ListMenuItem(int i);
 extern int xbox_ListMenuPickable(int i);
 extern char g_xbox_note[96];
 extern char g_xbox_timer[24];   /* v300 */
+extern char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: a panel beside the list menu */
 
 typedef struct { float x, y, u, v, r, g, b, a; } QdVert;   /* u < 0: no texture */
 #define QD_MAX (6 * 6000)
@@ -416,8 +417,20 @@ static void present_overlay_f(int cw, int ch, int flip)
             /* v292c: a short list (the "Start with" menu, Miggas) gets a box
              * of its rows only, narrower, in the middle of the screen */
             const int rows = n < ROWS ? (n > 0 ? n : 1) : ROWS;
-            const float rh = 22.0f, wide = n <= 6 ? 300.0f : 460.0f;   /* v279: wide, for the objectives */
-            const float x0 = 320.0f - wide / 2, x1 = 320.0f + wide / 2;
+            const float rh = 22.0f;
+            float wide = n <= 6 ? 300.0f : 460.0f;   /* v279: wide, for the objectives */
+            /* v301: a side panel (the personal bests, Miggas) right of the
+             * menu: the two side by side in the middle of the window, the
+             * menu narrower when the window is too (4:3) */
+            const int side = g_xbox_side_title[0] && n > 6;
+            const float sw = 214.0f, gap = 10.0f;
+            float mx = 320.0f;
+            if (side) {
+                const float ww = cw / s_qs, wl = -s_qx / s_qs;
+                if (wide + 12.0f + gap + sw + 20.0f > ww) wide = ww - 12.0f - gap - sw - 20.0f;
+                mx = wl + ww / 2 - (gap + sw) / 2;
+            }
+            const float x0 = mx - wide / 2, x1 = mx + wide / 2;
             const float bt = 240.0f - (52.0f + rows * rh + 34.0f) / 2;  /* the box's top (76 when full) */
             const float top = bt + 52.0f;
             const char *ttl = xbox_ListMenuTitle();
@@ -430,8 +443,8 @@ static void present_overlay_f(int cw, int ch, int flip)
             if (first < 0) first = 0;
             qd_frame(x0 - 6.0f, bt, x1 + 6.0f, top + rows * rh + 34.0f, 1.8f, 1.1f, edge, box);
             qd_frame(x0 - 2.0f, bt + 6.0f, x1 + 2.0f, bt + 30.0f, 0.0f, 0.8f, bar_edge, teal);
-            if (s_qd_font) qd_ttf_text(320.0f, bt + 18.0f, qd_ttf_scale(ttl, 12.0f, x1 - x0 - 20.0f), ttl, ink);
-            else qd_text(320.5f, bt + 17.5f, 2.05f, 2.55f, 0.6f, 0.24f, ttl, ink);
+            if (s_qd_font) qd_ttf_text(mx, bt + 18.0f, qd_ttf_scale(ttl, 12.0f, x1 - x0 - 20.0f), ttl, ink);
+            else qd_text(mx + 0.5f, bt + 17.5f, 2.05f, 2.55f, 0.6f, 0.24f, ttl, ink);
             for (i = 0; i < rows && first + i < n; i++) {
                 const char *it = xbox_ListMenuItem(first + i);
                 float y0 = top + i * rh, cy = y0 + rh / 2 - 1.0f;
@@ -441,8 +454,8 @@ static void present_overlay_f(int cw, int ch, int flip)
                     /* v288: a heading (Chapter 1, ...): teal, not pickable */
                     static const float head[4] = { 0.25f, 0.82f, 0.82f, 1 };
                     it++;
-                    if (s_qd_font) qd_ttf_text(320.0f, cy, qd_ttf_scale(it, 9.5f, x1 - x0 - 16.0f), it, head);
-                    else qd_text(320.5f, cy, 1.6f, 2.0f, 0.45f, 0.18f, it, head);
+                    if (s_qd_font) qd_ttf_text(mx, cy, qd_ttf_scale(it, 9.5f, x1 - x0 - 16.0f), it, head);
+                    else qd_text(mx + 0.5f, cy, 1.6f, 2.0f, 0.45f, 0.18f, it, head);
                     continue;
                 }
                 if (first + i == sel) {
@@ -453,8 +466,8 @@ static void present_overlay_f(int cw, int ch, int flip)
                 } else {
                     memcpy(t4, dim, sizeof t4);
                 }
-                if (s_qd_font) qd_ttf_text(320.0f, cy, qd_ttf_scale(it, 8.5f, x1 - x0 - 16.0f), it, t4);
-                else qd_text(320.5f, cy, 1.4f, 1.8f, 0.4f, 0.15f, it, t4);
+                if (s_qd_font) qd_ttf_text(mx, cy, qd_ttf_scale(it, 8.5f, x1 - x0 - 16.0f), it, t4);
+                else qd_text(mx + 0.5f, cy, 1.4f, 1.8f, 0.4f, 0.15f, it, t4);
             }
             {
                 char h[96];
@@ -468,8 +481,35 @@ static void present_overlay_f(int cw, int ch, int flip)
                              heads ? "chapter" : "page");
                 else                                        /* v292c: nothing to page through */
                     snprintf(h, sizeof h, "%d / %d    A = choose    B = back", at, all);
-                if (s_qd_font) qd_ttf_text(320.0f, top + rows * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
-                else qd_text(320.5f, top + rows * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
+                if (s_qd_font) qd_ttf_text(mx, top + rows * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
+                else qd_text(mx + 0.5f, top + rows * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
+            }
+            if (side) {
+                /* v301: the panel: its title bar, then a row each, from the left */
+                const float px0 = x1 + 6.0f + gap, px1 = px0 + sw, pr = 26.0f;
+                int k;
+                char pt[32];
+                memcpy(pt, g_xbox_side_title, sizeof pt);
+                pt[31] = 0;
+                qd_frame(px0, bt, px1, bt + 40.0f + 5 * pr + 8.0f, 1.8f, 1.1f, edge, box);
+                qd_frame(px0 + 4.0f, bt + 6.0f, px1 - 4.0f, bt + 30.0f, 0.0f, 0.8f, bar_edge, teal);
+                if (s_qd_font) qd_ttf_text((px0 + px1) / 2, bt + 18.0f, qd_ttf_scale(pt, 12.0f, sw - 24.0f), pt, ink);
+                else qd_text((px0 + px1) / 2 + 0.5f, bt + 17.5f, 2.05f, 2.55f, 0.6f, 0.24f, pt, ink);
+                for (k = 0; k < 5; k++) {
+                    char r[48];
+                    float cy = bt + 40.0f + k * pr + pr / 2;
+                    memcpy(r, g_xbox_side_rows[k], sizeof r);
+                    r[47] = 0;
+                    if (!r[0]) continue;
+                    if (s_qd_font) {
+                        float kk = qd_ttf_scale(r, 9.0f, sw - 24.0f);
+                        qd_ttf_text(px0 + 12.0f + qd_ttf_w(r) * kk / 2, cy, kk, r, white);
+                    } else {
+                        float kx = 1.5f, w = qd_text_w(r, kx);
+                        if (w > sw - 24.0f) kx *= (sw - 24.0f) / w, w = sw - 24.0f;
+                        qd_text(px0 + 12.0f + w / 2, cy, kx, 1.9f, 0.45f, 0.18f, r, white);
+                    }
+                }
             }
         }
         if (quit) {

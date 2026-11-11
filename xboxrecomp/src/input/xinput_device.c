@@ -517,6 +517,7 @@ static signed char s_qd_prev_y[QD_IDX];   /* left stick: -1 down, 0, 1 up */
 static DWORD s_lm_rep_at[QD_IDX];         /* when a held up / down repeats next */
 char g_xbox_note[96];                     /* a line drawn at the bottom of the picture while not empty */
 char g_xbox_timer[24];                    /* v300: a time drawn at the top-left while not empty */
+char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: a panel right of the list menu while its title is set */
 
 void xbox_ListMenuSet(const char *title, const char *const *items, int n)
 {
