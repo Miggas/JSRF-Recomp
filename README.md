@@ -12,6 +12,8 @@ An edited file is changed in place in the game folder. Before its first change, 
 4. Edit the PNG in any image editor and save it under the same name. Transparency is kept.
 5. **Import PNG** puts it back. You can also drop any PNG or TGA on the window to import it into the picked texture.
 
+**Paint** opens the picked texture in the painter: Brush, Eraser (back to the original), Picker (a colour from the texture) and Fill, with size, hardness, opacity and fill tolerance, and the colour chooser. The mouse wheel zooms, a right drag moves the view, Undo / Redo (Ctrl+Z / Ctrl+Y) go back and forth. You paint on a full-quality copy: **Save to the game** compresses it into the game file once, the same way an import does.
+
 Sizes: an image the texture's own size goes in as it is. A texture in a `.dat` can be made bigger: import a square image of 512, 1024, 2048 or 4096 pixels (larger than the texture) and the file makes room for it; the game reads the new size from the texture itself. Any other size is resized to the texture's. Graffiti (`.grf`, `.prs`, `.JTX`) always keep their size.
 
 What it reads: characters, objects, stages, HUD sprites, fonts and logos (`.dat`), and graffiti (`.grf`, `.prs`, `.JTX`). Textures in DXT1, DXT3 and DXT5 are written back in the same format, with their smaller mip levels made again from the new image.

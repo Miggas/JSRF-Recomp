@@ -44,9 +44,10 @@
 #endif
 
 #include "jtex.h"
+#include "paint.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m3c"
+#define MODTOOL_VERSION "m4"
 
 /* ---- the files ---- */
 
@@ -459,9 +460,43 @@ static uint8_t *resize(const uint8_t *src, int w, int h, int tw, int th)
     return d;
 }
 
+/* rgba (the texture's size) into texture k, the file written in place
+ * after its original is kept, the game's cached copy too; -1 failed */
+static int store_texture(int k, const uint8_t *px, const char *note)
+{
+    char out[LPATH], dir[LPATH], bak[LPATH], *s;
+    if (jt_encode(&s_cur, &s_cur.tex[k], px)) {
+        snprintf(s_msg, sizeof s_msg, "Couldn't encode the texture.");
+        return -1;
+    }
+    game_path(out, s_files[s_sel_file].rel);
+    backup_path(bak, s_files[s_sel_file].rel);
+    snprintf(dir, sizeof dir, "%s", bak);
+    if ((s = strrchr(dir, SEP[0]))) { *s = 0; make_dirs(dir); }
+    if (!is_file(bak) && !copy_file(out, bak)) {        /* the original kept first, once */
+        snprintf(s_msg, sizeof s_msg, "Couldn't keep the original in %s: nothing changed", bak);
+        return -1;
+    }
+    if (!write_file(out, s_cur.buf, s_cur.size)) {
+        snprintf(s_msg, sizeof s_msg, "Couldn't write %s", out);
+        return -1;
+    }
+    {
+        char cp[LPATH];
+        cache_path(cp, s_files[s_sel_file].rel);
+        s_cur_modded = 1;
+        if (is_file(cp) && !write_cache(cp, s_cur.buf, s_cur.size))
+            snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s, but the game's cached copy %s couldn't be: "
+                     "delete it by hand", k, note, cp);
+        else
+            snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s in %s (the original is in mod_backups)", k, note, out);
+    }
+    return 0;
+}
+
 static void import_texture(SDL_Renderer *ren, int k, const char *png)
 {
-    char in[LPATH], out[LPATH], dir[LPATH], *s, note[200] = "";
+    char in[LPATH], note[200] = "";
     const JTex *t = &s_cur.tex[k];
     int w, h, c, grown = 0;
     uint8_t *px;
@@ -501,32 +536,30 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
         else
             snprintf(note, sizeof note, " (resized from %dx%d)", w, h);
     }
-    if (jt_encode(&s_cur, t, px)) {
-        snprintf(s_msg, sizeof s_msg, "Couldn't encode the texture.");
-        if (grown) open_file(s_sel_file);
-    } else {
-        char bak[LPATH];
-        game_path(out, s_files[s_sel_file].rel);
-        backup_path(bak, s_files[s_sel_file].rel);
-        snprintf(dir, sizeof dir, "%s", bak);
-        if ((s = strrchr(dir, SEP[0]))) { *s = 0; make_dirs(dir); }
-        if (!is_file(bak) && !copy_file(out, bak))          /* the original kept first, once */
-            snprintf(s_msg, sizeof s_msg, "Couldn't keep the original in %s: nothing changed", bak);
-        else if (!write_file(out, s_cur.buf, s_cur.size))
-            snprintf(s_msg, sizeof s_msg, "Couldn't write %s", out);
-        else {
-            char cp[LPATH];
-            cache_path(cp, s_files[s_sel_file].rel);
-            s_cur_modded = 1;
-            if (is_file(cp) && !write_cache(cp, s_cur.buf, s_cur.size))
-                snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s, but the game's cached copy %s couldn't be: "
-                         "delete it by hand", k, note, cp);
-            else
-                snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s in %s (the original is in mod_backups)", k, note, out);
-        }
-    }
+    if (store_texture(k, px, note) && grown) open_file(s_sel_file);
     free(px);
     show_texture(ren, k);
+}
+
+/* m4: the painter, on the picked texture */
+static void start_paint(SDL_Renderer *ren)
+{
+    const JTex *t = &s_cur.tex[s_sel_tex];
+    uint8_t *px = (uint8_t *)malloc((size_t)t->w * t->h * 4);
+    if (!px || jt_decode(&s_cur, t, px) || paint_start(ren, px, t->w, t->h))
+        snprintf(s_msg, sizeof s_msg, "Couldn't open the texture for painting.");
+    free(px);
+}
+
+/* m4: may the picked file or texture change? not with unsaved painting */
+static int may_leave_paint(void)
+{
+    if (paint_dirty()) {
+        snprintf(s_msg, sizeof s_msg, "Unsaved painting: Save it to the game, or Close it (twice) to throw it away.");
+        return 0;
+    }
+    paint_stop();
+    return 1;
 }
 
 static void revert_file(SDL_Renderer *ren)
@@ -638,7 +671,8 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         snprintf(s_msg, sizeof s_msg, "%d files with textures (of %d looked at).", s_nfiles, SDL_AtomicGet(&s_scan_seen));
     }
     if (s_dropped) {
-        if (s_sel_file >= 0 && s_sel_tex >= 0) import_texture(ren, s_sel_tex, s_dropped);
+        if (paint_on()) snprintf(s_msg, sizeof s_msg, "Close the painter first, then drop the image.");
+        else if (s_sel_file >= 0 && s_sel_tex >= 0) import_texture(ren, s_sel_tex, s_dropped);
         else snprintf(s_msg, sizeof s_msg, "Pick a texture first, then drop the image on it.");
         SDL_free(s_dropped);
         s_dropped = NULL;
@@ -718,7 +752,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                     int sel = view[q] == s_sel_file;
                     nk_layout_row_dynamic(ctx, row - 6, 1);
                     snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex);
-                    if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy) {
+                    if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy && may_leave_paint()) {
                         open_file(view[q]);
                         if (s_cur.ntex) show_texture(ren, 0);
                     }
@@ -742,15 +776,39 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             int sel = i == s_sel_tex;
             char lb[64];
             snprintf(lb, sizeof lb, "%2d   %dx%d  %s", i, t->w, t->h, jt_fmt_name(t->fmt));
-            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel)
+            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint())
                 show_texture(ren, i);
         }
     }
     nk_end(ctx);
 
     /* the texture */
-    if (nk_begin(ctx, "Texture", nk_rect(580, top, (float)ww - 580, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
-        if (s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
+    if (nk_begin(ctx, "Texture", nk_rect(580, top, (float)ww - 580, (float)wh - top),
+                 NK_WINDOW_BORDER | NK_WINDOW_TITLE | (paint_on() ? NK_WINDOW_NO_SCROLLBAR : 0))) {
+        if (paint_on() && s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
+            /* m4: painting */
+            static int close_asked;
+            int r;
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            nk_labelf(ctx, NK_TEXT_LEFT, "Painting %s, texture %d%s", s_files[s_sel_file].rel, s_sel_tex,
+                      paint_dirty() ? " (not saved)" : "");
+            r = paint_panel(ctx, row, (float)wh - top - 5 * row - 40);
+            if (r == PAINT_SAVE && paint_dirty()) {
+                if (!store_texture(s_sel_tex, paint_image(), " (painted)")) {
+                    paint_saved();
+                    show_texture(ren, s_sel_tex);
+                }
+            } else if (r == PAINT_CLOSE) {
+                if (paint_dirty() && !close_asked) {
+                    close_asked = 1;
+                    snprintf(s_msg, sizeof s_msg, "Not saved: Close again to throw the painting away.");
+                } else {
+                    close_asked = 0;
+                    paint_stop();
+                    s_msg[0] = 0;
+                }
+            } else if (r == PAINT_SAVE) close_asked = 0;
+        } else if (s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
             const JTex *t = &s_cur.tex[s_sel_tex];
             float avail = (float)ww - 580 - 56, side = (float)wh - top - 6 * row - 40;
             float sz = avail < side ? avail : side;
@@ -761,11 +819,13 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             nk_label_colored(ctx, s_cur_modded ? "Modded (the original is kept in mod_backups)" : "Original",
                              NK_TEXT_LEFT, s_cur_modded ? nk_rgb(240, 175, 30) : nk_rgb(150, 150, 160));
             nk_layout_row_template_begin(ctx, row);
-            nk_layout_row_template_push_static(ctx, 130);
-            nk_layout_row_template_push_static(ctx, 130);
-            nk_layout_row_template_push_static(ctx, 170);
-            nk_layout_row_template_push_static(ctx, 150);
+            nk_layout_row_template_push_static(ctx, 80);
+            nk_layout_row_template_push_static(ctx, 115);
+            nk_layout_row_template_push_static(ctx, 115);
+            nk_layout_row_template_push_static(ctx, 160);
+            nk_layout_row_template_push_static(ctx, 140);
             nk_layout_row_template_end(ctx);
+            if (nk_button_label(ctx, "Paint")) start_paint(ren);
             if (nk_button_label(ctx, "Export PNG")) export_texture(s_sel_tex);
             if (nk_button_label(ctx, "Import PNG")) import_texture(ren, s_sel_tex, NULL);
             if (nk_button_label(ctx, "Open edits folder")) {
@@ -804,13 +864,14 @@ int main(int argc, char **argv)
     struct nk_context *ctx;
     int running = 1;
     const char *shot = NULL, *shot_pick = NULL, *test_rel = NULL, *test_png = NULL;
-    int i, test_n = 0;
+    int i, test_n = 0, paint_test = 0;
     SDL_SetMainReady();
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game") && i + 1 < argc) snprintf(s_game, sizeof s_game, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];   /* a screenshot, then quit (tests) */
         else if (!strcmp(argv[i], "--pick") && i + 1 < argc) shot_pick = argv[++i];   /* ... of this file */
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) s_tab = atoi(argv[++i]);     /* ... on this tab */
+        else if (!strcmp(argv[i], "--paint-test")) paint_test = 1;   /* ... after a stroke painted (tests) */
         else if (!strcmp(argv[i], "--test") && i + 3 < argc) {   /* tests: import PNG into REL's texture N, or undo (N -1) */
             test_rel = argv[++i];
             test_n = atoi(argv[++i]);
@@ -863,6 +924,29 @@ int main(int argc, char **argv)
         SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);
         SDL_RenderClear(ren);
         nk_sdl_render(NK_ANTI_ALIASING_ON);
+        if (paint_test && shot && s_preview) {             /* a stroke by the mouse, then saved */
+            static int f;
+            SDL_Event ev;
+            memset(&ev, 0, sizeof ev);
+            f++;
+            if (f == 1) start_paint(ren);
+            else if (f == 3) {
+                ev.type = SDL_MOUSEMOTION; ev.motion.x = 700; ev.motion.y = 420; SDL_PushEvent(&ev);
+            } else if (f == 4) {
+                ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT; ev.button.state = SDL_PRESSED;
+                ev.button.x = 700; ev.button.y = 420; SDL_PushEvent(&ev);
+            } else if (f > 4 && f < 30) {
+                ev.type = SDL_MOUSEMOTION; ev.motion.x = 700 + (f - 4) * 16; ev.motion.y = 420 + (f - 4) * 8;
+                ev.motion.state = SDL_BUTTON_LMASK; SDL_PushEvent(&ev);
+            } else if (f == 30) {
+                ev.type = SDL_MOUSEBUTTONUP; ev.button.button = SDL_BUTTON_LEFT; ev.button.state = SDL_RELEASED;
+                ev.button.x = 1100; ev.button.y = 620; SDL_PushEvent(&ev);
+            } else if (f == 34) {
+                if (paint_dirty() && !store_texture(s_sel_tex, paint_image(), " (painted)")) paint_saved();
+                printf("%s\n", s_msg);
+            }
+            if (f < 36) goto present;
+        }
         if (shot && s_preview) {
             static int frames;
             if (++frames == 5) {
@@ -873,6 +957,7 @@ int main(int argc, char **argv)
                 running = 0;
             }
         }
+    present:
         SDL_RenderPresent(ren);
         if (!running) break;
         SDL_Delay(SDL_AtomicGet(&s_scan_busy) ? 30 : 10);
