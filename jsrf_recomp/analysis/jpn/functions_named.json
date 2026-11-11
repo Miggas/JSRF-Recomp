@@ -87340,8 +87340,8 @@
   "size": 1987,
   "name": "sub_0010EC10",
   "section": ".text",
-  "confidence": 0.85,
-  "detection_method": "gap_prologue",
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
   "num_instructions": 474,
   "has_prologue": false,
   "calls_to": [

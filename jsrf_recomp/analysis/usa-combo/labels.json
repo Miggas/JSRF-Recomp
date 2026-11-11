@@ -30454,7 +30454,7 @@
     "name": "sub_0010EBE0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.85
+    "confidence": 0.95
   },
   {
     "address": "0x0010F3C0",
