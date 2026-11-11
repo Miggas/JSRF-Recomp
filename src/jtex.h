@@ -28,6 +28,10 @@ typedef struct {
     uint32_t id;
     size_t hdr;         /* the item's header in the file (no header: (size_t)-1) */
     size_t data, len;   /* its pixels, the room they have */
+    /* m2: where it sits, for making it bigger: box 1 a NORM's child (the
+     * NORM at norm..norm_end), 2 an indexed block (its size at blk) */
+    int box;
+    size_t norm, norm_end, blk;
 } JTex;
 
 typedef struct {
@@ -52,6 +56,13 @@ int jt_decode(const JFile *f, const JTex *t, uint8_t *rgba);
 /* the texture replaced by rgba (the same size), its smaller levels made
  * again from it; 0 done */
 int jt_encode(JFile *f, const JTex *t, const uint8_t *rgba);
+/* m2: a texture inside a .dat made size x size (bigger, square, a power of
+ * two up to 4096), everything after it moved along and the container's
+ * offsets and sizes with it, its levels as many as before plus the new
+ * ones; the pixels left blank for jt_encode. The file is parsed again
+ * (f->tex changes). 0 done */
+int jt_grow(JFile *f, int k, int size);
+
 /* bytes of one level of w x h in fmt */
 size_t jt_level_size(int fmt, int w, int h);
 

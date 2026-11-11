@@ -46,7 +46,7 @@
 #include "jtex.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m1d"
+#define MODTOOL_VERSION "m2"
 
 /* ---- the files ---- */
 
@@ -110,14 +110,11 @@ static void cache_path(char *out, const char *rel)
  * reads them by their padded size; written unpadded the read failed and the
  * character select waited forever (Miggas). The copy keeps its size, at
  * least the data's rounded up to 512, the rest zero. */
-static int write_cache(const char *cp, const uint8_t *data, size_t n)
+static int write_cache(const char *cp, const uint8_t *data, size_t n)   /* the copy: n rounded up to 512 */
 {
-    size_t old = 0, sz = (n + 511) & ~(size_t)511;
-    char *b = read_file(cp, &old);
+    size_t sz = (n + 511) & ~(size_t)511;   /* m2: the data's own, so a texture made bigger fits */
     uint8_t *o;
     int ok;
-    free(b);
-    if (old > sz) sz = old;
     o = (uint8_t *)calloc(1, sz);
     if (!o) return 0;
     memcpy(o, data, n);
@@ -368,9 +365,9 @@ static uint8_t *resize(const uint8_t *src, int w, int h, int tw, int th)
 
 static void import_texture(SDL_Renderer *ren, int k, const char *png)
 {
-    char in[LPATH], out[LPATH], dir[LPATH], *s, note[96] = "";
+    char in[LPATH], out[LPATH], dir[LPATH], *s, note[200] = "";
     const JTex *t = &s_cur.tex[k];
-    int w, h, c;
+    int w, h, c, grown = 0;
     uint8_t *px;
     size_t n;
     char *b;
@@ -381,14 +378,36 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
     px = stbi_load_from_memory((const stbi_uc *)b, (int)n, &w, &h, &c, 4);
     free(b);
     if (!px) { snprintf(s_msg, sizeof s_msg, "%s isn't a PNG or TGA image.", in); return; }
-    if (w != t->w || h != t->h) {
+    /* m2: a bigger texture (Miggas): square, 512, 1024, 2048 or 4096, in a
+     * .dat (graffiti keep their size: the game knows them by it) */
+    if ((w != t->w || h != t->h) && w == h && t->box && w > t->w
+        && (w == 512 || w == 1024 || w == 2048 || w == 4096)) {
+        int ow = t->w;
+        if (jt_grow(&s_cur, k, w)) {
+            stbi_image_free(px);
+            snprintf(s_msg, sizeof s_msg, "Couldn't make room for a %dx%d texture: nothing changed.", w, h);
+            open_file(s_sel_file);
+            show_texture(ren, k);
+            return;
+        }
+        t = &s_cur.tex[k];
+        grown = 1;
+        snprintf(note, sizeof note, " (now %dx%d, was %dx%d)", w, h, ow, ow);
+    } else if (w != t->w || h != t->h) {
         uint8_t *r = resize(px, w, h, t->w, t->h);
         stbi_image_free(px);
         px = r;
-        snprintf(note, sizeof note, " (resized from %dx%d)", w, h);
+        if (!t->box)
+            snprintf(note, sizeof note, " (resized from %dx%d: graffiti keep their size)", w, h);
+        else if (w != h || w > 4096 || (w != 512 && w != 1024 && w != 2048 && w != 4096) || w < t->w)
+            snprintf(note, sizeof note, " (resized from %dx%d: a bigger texture must be square, "
+                     "512, 1024, 2048 or 4096)", w, h);
+        else
+            snprintf(note, sizeof note, " (resized from %dx%d)", w, h);
     }
     if (jt_encode(&s_cur, t, px)) {
         snprintf(s_msg, sizeof s_msg, "Couldn't encode the texture.");
+        if (grown) open_file(s_sel_file);
     } else {
         char bak[LPATH];
         game_path(out, s_files[s_sel_file].rel);

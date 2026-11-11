@@ -47,6 +47,10 @@ static size_t levels_size(int fmt, int w, int h, int levels)
 
 static int is_pow2_size(int v) { return v >= 4 && v <= 4096 && !(v & (v - 1)); }
 
+/* where the items being added sit (m2) */
+static int s_box;
+static size_t s_norm, s_norm_end, s_blk;
+
 /* an item at buf[s, e) that is a texture: added */
 static void add_item(JFile *f, size_t s, size_t e, int *cap)
 {
@@ -80,6 +84,10 @@ static void add_item(JFile *f, size_t s, size_t e, int *cap)
     t.hdr = s;
     t.data = s + 32;
     t.len = e - s - 32;
+    t.box = s_box;
+    t.norm = s_norm;
+    t.norm_end = s_norm_end;
+    t.blk = s_blk;
     if (f->ntex == *cap) {
         *cap = *cap ? *cap * 2 : 16;
         f->tex = (JTex *)realloc(f->tex, sizeof(JTex) * (size_t)*cap);
@@ -91,6 +99,9 @@ static void norm_items(JFile *f, size_t start, size_t end, int *cap)
 {
     size_t off = start + 16;
     int guard = 0;
+    s_box = 1;
+    s_norm = start;
+    s_norm_end = end;
     while (off + 8 <= end && off + 8 <= f->size && guard++ < 100000) {
         size_t s = u32(f->buf + off), e = u32(f->buf + off + 4);
         if (!e || start + e <= off) break;
@@ -111,9 +122,13 @@ static void indexed_items(JFile *f, int *cap)
             end = off + u32(f->buf + off + 8) + 20 + n * 4;
         } else if (t == 0) {
             end = off + u32(f->buf + off + 4) + 8;
+            s_box = 2;
+            s_blk = off + 4;
             add_item(f, off + 8, end, cap);
         } else {
             end = off + t + 4;
+            s_box = 2;
+            s_blk = off;
             add_item(f, off + 4, end, cap);
         }
         if (end <= off) break;
@@ -172,6 +187,7 @@ int jf_load(JFile *f, const char *path)
 int jf_parse(JFile *f, const char *path, uint8_t *buf, size_t size)
 {
     int cap = 0;
+    s_box = 0;
     memset(f, 0, sizeof *f);
     snprintf(f->path, sizeof f->path, "%s", path);
     f->buf = buf;
@@ -455,4 +471,82 @@ int jt_encode(JFile *f, const JTex *t, const uint8_t *rgba)
     }
     free(cur);
     return 0;
+}
+
+/* ---- m2: a texture made bigger ---- */
+
+static void put32(uint8_t *b, uint32_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); b[2] = (uint8_t)(v >> 16); b[3] = (uint8_t)(v >> 24); }
+
+int jt_grow(JFile *f, int k, int size)
+{
+    JTex t;
+    int old_byte, levels;
+    size_t old_need, new_need, d, item, item_end, nsize;
+    uint8_t *nb, *ob = f->buf;
+    char path[1024];
+    if (k < 0 || k >= f->ntex) return -1;
+    t = f->tex[k];
+    if (!t.box || t.hdr == (size_t)-1 || !is_pow2_size(size) || size <= t.w || size > 4096) return -1;
+    old_byte = ob[t.hdr + 28];
+    levels = old_byte ? old_byte : 1;
+    old_need = levels_size(t.fmt, t.w, t.h, t.levels);
+    if (old_byte > 1) {                         /* as many small levels as before, the new big ones on top */
+        int s = t.w;
+        while (s < size) { s *= 2; levels++; }
+    }
+    new_need = levels_size(t.fmt, size, size, levels);
+    if (new_need <= old_need) return -1;
+    d = (new_need - old_need + 15) & ~(size_t)15;   /* items sit on 16 bytes */
+    item = t.hdr;
+    item_end = t.data + t.len;
+    nsize = f->size + d;
+    nb = (uint8_t *)calloc(1, nsize);
+    if (!nb) return -1;
+    memcpy(nb, ob, t.data);                     /* up to its pixels */
+    memcpy(nb + t.data + t.len + d, ob + item_end, f->size - item_end);   /* after it, moved along */
+#define NEWPOS(p) ((p) < item_end ? (p) : (p) + d)
+    if (t.box == 1) {
+        /* the NORM's children: the texture's end and size, the later ones moved */
+        size_t off = t.norm + 16;
+        int guard = 0;
+        while (off + 16 <= t.norm_end && guard++ < 100000) {
+            size_t s = u32(ob + off), e = u32(ob + off + 4);
+            uint8_t *n = nb + NEWPOS(off);
+            if (!e || t.norm + e <= off) break;
+            if (t.norm + s == item) {
+                put32(n + 4, (uint32_t)(e + d));
+                put32(n + 8, u32(ob + off + 8) + (uint32_t)d);
+            } else if (t.norm + s > item) {
+                put32(n, (uint32_t)(s + d));
+                put32(n + 4, (uint32_t)(e + d));
+            }
+            off = t.norm + e;
+        }
+        if (!memcmp(ob, "MULT", 4)) {
+            /* the MULT's entries: the NORM's end and size, the later NORMs moved */
+            size_t moff = 16;
+            guard = 0;
+            while (moff + 16 <= f->size && guard++ < 100000) {
+                size_t s = u32(ob + moff), e = u32(ob + moff + 4);
+                uint8_t *n = nb + NEWPOS(moff);
+                if (e <= moff) break;
+                if (s == t.norm) {
+                    put32(n + 4, (uint32_t)(e + d));
+                    put32(n + 8, u32(ob + moff + 8) + (uint32_t)d);
+                } else if (s > t.norm) {
+                    put32(n, (uint32_t)(s + d));
+                    put32(n + 4, (uint32_t)(e + d));
+                }
+                moff = e;
+            }
+        }
+    } else {
+        put32(nb + t.blk, u32(ob + t.blk) + (uint32_t)d);   /* the block's size */
+    }
+#undef NEWPOS
+    put32(nb + t.hdr + 20, (uint32_t)size);
+    if (old_byte) nb[t.hdr + 28] = (uint8_t)levels;
+    snprintf(path, sizeof path, "%s", f->path);
+    jf_free(f);
+    return jf_parse(f, path, nb, nsize);
 }

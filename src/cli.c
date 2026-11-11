@@ -74,6 +74,16 @@ int main(int argc, char **argv)
         jf_free(&f);
         return 0;
     }
+    if (!strcmp(argv[1], "grow") && argc == 7) {      /* grow FILE N SIZE PNG OUT */
+        int n = atoi(argv[3]), sz = atoi(argv[4]), w, h, c;
+        uint8_t *px;
+        if (jf_load(&f, argv[2]) || jt_grow(&f, n, sz)) { fprintf(stderr, "can't grow\n"); return 1; }
+        px = stbi_load(argv[5], &w, &h, &c, 4);
+        if (!px || w != sz || h != sz) { fprintf(stderr, "need a %dx%d image\n", sz, sz); return 1; }
+        if (jt_encode(&f, &f.tex[n], px) || jf_save(&f, argv[6])) { fprintf(stderr, "failed\n"); return 1; }
+        printf("%s: texture %d now %dx%d\n", argv[6], n, sz, sz);
+        return 0;
+    }
     fprintf(stderr, "bad arguments\n");
     return 2;
 }
