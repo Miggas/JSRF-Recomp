@@ -6,7 +6,7 @@ An edited file is changed in place in the game folder. Before its first change, 
 
 ## Use
 
-1. **Choose...** the game folder: the one with `default.xbe` and `Media`. The tool looks through `Media` and lists every file with textures.
+1. **Choose...** the game folder: the one with `default.xbe` and `Media`. The tool looks through `Media` and lists every file with textures, in tabs: Characters (by their names in the game), Graffiti (in sections SS, S, M, L and XL: `grf_0_` to `grf_4_`), Stages, Objects, Cutscenes, Menus & HUD, Missions and Other, each in collapsible sections.
 2. Pick a file, then one of its textures.
 3. **Export PNG** saves it to `texture_edits/` in the game folder (**Open edits folder** opens it).
 4. Edit the PNG in any image editor and save it under the same name. Transparency is kept.

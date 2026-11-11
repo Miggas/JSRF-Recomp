@@ -46,32 +46,100 @@
 #include "jtex.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m3"
+#define MODTOOL_VERSION "m3b"
 
 /* ---- the files ---- */
 
 typedef struct {
     char rel[512];      /* from the game folder, '/' between: Media/Player/Beat.dat */
     int ntex;
-    int cat, w, h;      /* m3: its tab; its first texture's size (graffiti are grouped by it) */
+    int w, h;           /* its first texture's size */
+    /* m3b: where it's listed: its tab, its section (in the tab's order, a
+     * name), the name it's shown by */
+    int cat, sec;
+    char secname[48], label[96];
 } Entry;
 
-/* m3: the files in tabs (Miggas), by the game's folders */
-enum { CAT_ALL, CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_UI, CAT_OTHER, CAT_N };
-static const char *const CAT_NAMES[CAT_N] = { "All", "Characters", "Graffiti", "Stages", "Objects", "Interface", "Other" };
+/* m3b: tabs by what the files hold (Miggas), each in collapsible sections */
+enum { CAT_ALL, CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_EVENT, CAT_UI, CAT_MISSION, CAT_OTHER, CAT_N };
+static const char *const CAT_NAMES[CAT_N] = {
+    "All", "Characters", "Graffiti", "Stages", "Objects", "Cutscenes", "Menus & HUD", "Missions", "Other" };
 
-static int cat_of(const char *rel)
+/* the characters by the names they have in the game (the files keep the
+ * old Jet Set Radio ones, and TypeA / TypeB) */
+static const char *char_name(const char *file)
 {
-    static const struct { const char *dir; int cat; } m[] = {
-        { "Player/", CAT_CHAR }, { "Mark/", CAT_GRAF }, { "Stage/", CAT_STAGE },
-        { "StgObj/", CAT_OBJ }, { "People/", CAT_OBJ }, { "Enemy/", CAT_OBJ }, { "Misc/", CAT_OBJ },
-        { "Effect/", CAT_OBJ }, { "Event/", CAT_OBJ }, { "Disp/", CAT_UI }, { "Font/", CAT_UI },
-        { "Title/", CAT_UI }, { "Progress/", CAT_UI }, { "Garage/", CAT_UI } };
+    static const char *const m[][2] = {
+        { "Beat", "Beat" }, { "Bis", "Rhyth" }, { "Clutch", "Clutch" }, { "Combo", "Combo" },
+        { "Corn", "Corn" }, { "Cube", "Cube" }, { "djk", "Professor K" }, { "Galam", "Garam" },
+        { "Gouji", "Gouji" }, { "Gum", "Gum" }, { "HellMets", "Golden Rhino" }, { "Immortal", "Immortal" },
+        { "Jazz", "Jazz" }, { "LShocker", "Love Shocker" }, { "NTank", "Noise Tank" },
+        { "PJam", "Poison Jam" }, { "Pots", "Pots" }, { "Rapid99", "Rapid 99" }, { "Soda", "Soda" },
+        { "Sugar", "Boogie" }, { "TypeA", "Roboy" }, { "TypeB", "A. KU. MU" }, { "Yoyo", "Yoyo" },
+        { "YoyoB", "NT 3000" }, { "ZeroBeat", "Zero Beat" } };
+    char b[64], *d;
     size_t i;
-    if (!SDL_strncasecmp(rel, "Media/", 6)) rel += 6;
+    snprintf(b, sizeof b, "%s", file);
+    if ((d = strrchr(b, '.'))) *d = 0;
     for (i = 0; i < sizeof m / sizeof m[0]; i++)
-        if (!SDL_strncasecmp(rel, m[i].dir, strlen(m[i].dir))) return m[i].cat;
-    return CAT_OTHER;
+        if (!SDL_strcasecmp(b, m[i][0])) return m[i][1];
+    return NULL;
+}
+
+static void classify(Entry *e)
+{
+    static const struct { const char *dir; int cat, sec; const char *name; } m[] = {
+        { "Player", CAT_CHAR, 0, "Characters" },
+        { "Mark/PRESS", CAT_GRAF, 10, "Graffiti sheets" },
+        { "Mark/DEFAULT", CAT_GRAF, 11, "Default graffiti" },
+        { "Mark", CAT_GRAF, 12, "Graffiti editor" },
+        { "Stage/Custom", CAT_STAGE, 1, "Custom" },
+        { "Stage", CAT_STAGE, 0, "Areas" },
+        { "StgObj", CAT_OBJ, 0, "Street objects" }, { "People", CAT_OBJ, 1, "Pedestrians" },
+        { "Enemy", CAT_OBJ, 2, "Enemies" }, { "Effect", CAT_OBJ, 3, "Effects" }, { "Misc", CAT_OBJ, 4, "Misc" },
+        { "Event/TalkEvent", CAT_EVENT, 1, "Talk scenes" }, { "Event/Event", CAT_EVENT, 0, "Cutscenes" },
+        { "Event", CAT_EVENT, 2, "Events" },
+        { "Disp/charicon", CAT_UI, 1, "Character icons" }, { "Disp/map", CAT_UI, 2, "Maps" },
+        { "Disp", CAT_UI, 0, "HUD" }, { "Font", CAT_UI, 3, "Fonts" }, { "Title", CAT_UI, 4, "Title screen" },
+        { "Garage", CAT_UI, 5, "Garage" }, { "Progress", CAT_UI, 6, "Progress" }, { "Ending", CAT_UI, 7, "Ending" },
+        { "Mission", CAT_MISSION, 0, "Missions" }, { "Sounds/SE", CAT_OTHER, 0, "Sound banks" }, { "Sounds", CAT_OTHER, 1, "Sounds" } };
+    static const char *const graf[5] = { "SS", "S", "M", "L", "XL" };
+    const char *r = e->rel + (SDL_strncasecmp(e->rel, "Media/", 6) ? 0 : 6);
+    const char *base = strrchr(r, '/') ? strrchr(r, '/') + 1 : r;
+    size_t dl = (size_t)(base - r), i;
+    e->cat = CAT_OTHER;
+    e->sec = 99;
+    snprintf(e->secname, sizeof e->secname, "%.*s", dl ? (int)dl - 1 : 0, r);
+    snprintf(e->label, sizeof e->label, "%s", base);
+    if (!e->secname[0]) snprintf(e->secname, sizeof e->secname, "Media");
+    for (i = 0; i < sizeof m / sizeof m[0]; i++) {
+        size_t n = strlen(m[i].dir);
+        if (dl > n && !SDL_strncasecmp(r, m[i].dir, n) && (r[n] == '/')) {
+            /* the deepest listed folder wins: Mark/PRESS before Mark (listed first) */
+            e->cat = m[i].cat;
+            e->sec = m[i].sec;
+            snprintf(e->secname, sizeof e->secname, "%s", m[i].name);
+            if (dl - 1 != n) {                  /* a folder below it: its own section */
+                e->sec = m[i].sec * 10 + 5;
+                snprintf(e->secname, sizeof e->secname, "%s: %.*s", m[i].name, (int)(dl - 2 - n), r + n + 1);
+            }
+            break;
+        }
+    }
+    if (e->cat == CAT_CHAR) {
+        const char *nm = char_name(base);
+        if (nm) snprintf(e->label, sizeof e->label, "%s", nm);
+    } else if (!SDL_strncasecmp(r, "Mark/TEX/", 9)) {
+        /* graffiti by size: grf_0_ SS ... grf_4_ XL (Miggas), the rest after */
+        e->cat = CAT_GRAF;
+        if (!SDL_strncasecmp(base, "grf_", 4) && base[4] >= '0' && base[4] <= '4' && base[5] == '_') {
+            e->sec = base[4] - '0';
+            snprintf(e->secname, sizeof e->secname, "%s", graf[e->sec]);
+        } else {
+            e->sec = 9;
+            snprintf(e->secname, sizeof e->secname, "Other graffiti");
+        }
+    }
 }
 
 static int s_tab = CAT_ALL;
@@ -183,9 +251,9 @@ static void walk_cb(const char *name, bool isdir, void *u)
             }
             snprintf(s_files[s_nfiles].rel, sizeof s_files[s_nfiles].rel, "%s", r);
             s_files[s_nfiles].ntex = f.ntex;
-            s_files[s_nfiles].cat = cat_of(r);
             s_files[s_nfiles].w = f.tex[0].w;
             s_files[s_nfiles].h = f.tex[0].h;
+            classify(&s_files[s_nfiles]);
             s_nfiles++;
             SDL_UnlockMutex(s_mx);
         }
@@ -541,16 +609,15 @@ static void style(struct nk_context *ctx)
     ctx->style.button.rounding = 6;
 }
 
-/* graffiti: by size, smallest first, the sheets last, then by name */
-static int cmp_graf(const void *a, const void *b)
+/* the list's order: tab, section, the name shown */
+static int cmp_view(const void *a, const void *b)
 {
     const Entry *x = &s_files[*(const int *)a], *y = &s_files[*(const int *)b];
-    int jx = SDL_strcasestr(x->rel, ".jtx") != NULL, jy = SDL_strcasestr(y->rel, ".jtx") != NULL;
-    long ax = (long)x->w * x->h, ay = (long)y->w * y->h;
-    if (jx != jy) return jx - jy;
-    if (ax != ay) return ax < ay ? -1 : 1;
-    if (x->w != y->w) return x->w - y->w;
-    return SDL_strcasecmp(x->rel, y->rel);
+    int c;
+    if (x->cat != y->cat) return x->cat - y->cat;
+    if (x->sec != y->sec) return x->sec - y->sec;
+    if ((c = SDL_strcasecmp(x->secname, y->secname))) return c;
+    return SDL_strcasecmp(x->label, y->label);
 }
 
 static char *s_dropped;                  /* a PNG dropped on the window */
@@ -607,11 +674,11 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     }
     nk_end(ctx);
 
-    /* the files: the tab's, under headings (the folder; graffiti by size) */
+    /* the files: the tab's, in collapsible sections */
     if (nk_begin(ctx, "Files", nk_rect(0, top, 330, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         static int *view;
-        static int nview, capview;
-        char last[128] = "";
+        static int capview;
+        int nview = 0, k;
         nk_layout_row_dynamic(ctx, row, 1);
         nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD, s_filter, sizeof s_filter, nk_filter_default);
         SDL_LockMutex(s_mx);
@@ -619,41 +686,44 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             capview = s_nfiles + 64;
             view = (int *)realloc(view, sizeof(int) * (size_t)capview);
         }
-        nview = 0;
         for (i = 0; i < s_nfiles; i++) {
-            const char *shown = s_files[i].rel + (strncmp(s_files[i].rel, "Media/", 6) ? 0 : 6);
-            if (s_tab != CAT_ALL && s_files[i].cat != s_tab) continue;
-            if (s_filter[0] && !SDL_strcasestr(shown, s_filter)) continue;
+            const Entry *e = &s_files[i];
+            if (s_tab != CAT_ALL && e->cat != s_tab) continue;
+            if (s_filter[0] && !SDL_strcasestr(e->rel, s_filter) && !SDL_strcasestr(e->label, s_filter)) continue;
             view[nview++] = i;
         }
-        if (s_tab == CAT_GRAF) qsort(view, (size_t)nview, sizeof(int), cmp_graf);
-        for (i = 0; i < nview; i++) {
-            const Entry *e = &s_files[view[i]];
-            const char *shown = e->rel + (strncmp(e->rel, "Media/", 6) ? 0 : 6);
-            char head[128], lb[600];
-            int sel = view[i] == s_sel_file;
-            if (s_tab == CAT_GRAF) {
-                if (SDL_strcasestr(shown, ".jtx")) snprintf(head, sizeof head, "Sheets, %d x %d", e->w, e->h);
-                else snprintf(head, sizeof head, "%d x %d", e->w, e->h);
-            } else {
-                const char *sl = strrchr(shown, '/');
-                size_t n = sl ? (size_t)(sl - shown) : 0;
-                if (n >= sizeof head) n = sizeof head - 1;
-                memcpy(head, shown, n);
-                head[n] = 0;
-            }
-            if (strcmp(head, last)) {
-                snprintf(last, sizeof last, "%s", head);
-                nk_layout_row_dynamic(ctx, row - 8, 1);
-                nk_label_colored(ctx, head[0] ? head : "(top)", NK_TEXT_LEFT, nk_rgb(240, 175, 30));
-            }
-            nk_layout_row_dynamic(ctx, row - 6, 1);
-            /* graffiti: their folder too (TEX, DEFAULT, PRESS share the size groups) */
-            snprintf(lb, sizeof lb, "  %s  (%d)", s_tab == CAT_GRAF && !SDL_strncasecmp(shown, "Mark/", 5) ? shown + 5
-                     : strrchr(shown, '/') ? strrchr(shown, '/') + 1 : shown, e->ntex);
-            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy) {
-                open_file(view[i]);
-                if (s_cur.ntex) show_texture(ren, 0);
+        qsort(view, (size_t)nview, sizeof(int), cmp_view);
+        for (i = 0; i < nview; i = k) {
+            const Entry *e0 = &s_files[view[i]];
+            char head[128], hash[160];
+            int n = 0;
+            for (k = i; k < nview && s_files[view[k]].cat == e0->cat && s_files[view[k]].sec == e0->sec
+                        && !strcmp(s_files[view[k]].secname, e0->secname); k++) n++;
+            if (e0->cat == CAT_GRAF && e0->sec <= 4)
+                snprintf(head, sizeof head, "%s%s%s, %d x %d (%d)", s_tab == CAT_ALL ? CAT_NAMES[e0->cat] : "",
+                         s_tab == CAT_ALL ? ": " : "", e0->secname, e0->w, e0->h, n);
+            else
+                snprintf(head, sizeof head, "%s%s%s (%d)", s_tab == CAT_ALL && strcmp(CAT_NAMES[e0->cat], e0->secname)
+                         ? CAT_NAMES[e0->cat] : "", s_tab == CAT_ALL && strcmp(CAT_NAMES[e0->cat], e0->secname) ? ": " : "",
+                         e0->secname, n);
+            snprintf(hash, sizeof hash, "%d/%d/%s", s_tab, e0->cat, e0->secname);
+            /* open at first, but graffiti and All's (many files) closed */
+            if (nk_tree_push_hashed(ctx, NK_TREE_TAB, head,
+                                    s_tab == CAT_ALL || s_tab == CAT_GRAF ? NK_MINIMIZED : NK_MAXIMIZED,
+                                    hash, (int)strlen(hash), 0)) {
+                int q;
+                for (q = i; q < k; q++) {
+                    const Entry *e = &s_files[view[q]];
+                    char lb[160];
+                    int sel = view[q] == s_sel_file;
+                    nk_layout_row_dynamic(ctx, row - 6, 1);
+                    snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex);
+                    if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy) {
+                        open_file(view[q]);
+                        if (s_cur.ntex) show_texture(ren, 0);
+                    }
+                }
+                nk_tree_pop(ctx);
             }
         }
         if (!nview && s_nfiles) {
