@@ -39,6 +39,7 @@ static struct {
     char status[160];
     int resize_max;                         /* m4c */
     unsigned serial;                        /* m5: changes with the pixels */
+    void (*overlay)(struct nk_command_buffer *, float, float, float, float);   /* m5b */
 } P;
 
 static void touch(int x0, int y0, int x1, int y1)   /* [x0, x1) x [y0, y1) changed */
@@ -429,11 +430,14 @@ static void slider_pct(struct nk_context *ctx, const char *name, float *v, float
     nk_label(ctx, t, NK_TEXT_RIGHT);
 }
 
+void paint_set_overlay(void (*fn)(struct nk_command_buffer *, float, float, float, float)) { P.overlay = fn; }
+
 static void canvas_draw(struct nk_command_buffer *cv, struct nk_rect b, int hover, float mx, float my, float ix, float iy)
 {
     struct nk_image im = nk_image_ptr(P.tex);
     nk_fill_rect(cv, b, 0, nk_rgb(16, 16, 20));
     nk_draw_image(cv, nk_rect(b.x + P.ox, b.y + P.oy, P.w * P.zoom, P.h * P.zoom), &im, nk_rgb(255, 255, 255));
+    if (P.overlay) P.overlay(cv, b.x + P.ox, b.y + P.oy, P.w * P.zoom, P.h * P.zoom);
     if (hover && (P.tool == T_BRUSH || P.tool == T_ERASER)) {   /* the brush's outline */
         float r = P.size * 0.5f * P.zoom;
         if (r < 2) r = 2;

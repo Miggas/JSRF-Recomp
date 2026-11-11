@@ -30,6 +30,7 @@ static struct {
     const uint8_t *last_px;
     unsigned last_ver;
     int last_cur;
+    int wire, own;                      /* m5b: the edges shown; the model shown wears the texture */
 } V;
 
 void v3d_free(void)
@@ -105,6 +106,28 @@ static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, in
         }
 }
 
+/* m5b: an edge, 1 pixel, over what is in front of it only (a little
+ * slack so the triangle's own surface doesn't hide it) */
+static void edge(const SV *a, const SV *b)
+{
+    float dx = b->sx - a->sx, dy = b->sy - a->sy;
+    int n = (int)ceilf(fmaxf(fabsf(dx), fabsf(dy))), k;
+    if (n > 4096) return;
+    for (k = 0; k <= n; k++) {
+        float s = n ? (float)k / n : 0, iz = a->iz + (b->iz - a->iz) * s;
+        int x = (int)(a->sx + dx * s), y = (int)(a->sy + dy * s);
+        size_t i;
+        uint8_t *o;
+        if (x < 0 || y < 0 || x >= V.rw || y >= V.rh) continue;
+        i = (size_t)y * V.rw + x;
+        if (iz < V.zb[i] * 0.995f) continue;
+        o = V.fb + i * 4;
+        o[0] = (uint8_t)((o[0] + 3 * 80) / 4);
+        o[1] = (uint8_t)((o[1] + 3 * 230) / 4);
+        o[2] = (uint8_t)((o[2] + 3 * 255) / 4);
+    }
+}
+
 static void render(const JMesh *m, const uint8_t *tex, int tw, int th)
 {
     float eye[3], f[3], r[3], u[3], tgt[3], len, focal;
@@ -155,6 +178,13 @@ static void render(const JMesh *m, const uint8_t *tex, int tw, int th)
         if (!sv[t[0]].ok || !sv[t[1]].ok || !sv[t[2]].ok) continue;
         raster(&sv[t[0]], &sv[t[1]], &sv[t[2]], tex, tw, th);
     }
+    if (V.wire)                                 /* m5b: the edges, where they're seen */
+        for (i = 0; i < m->nt; i++) {
+            const uint32_t *t = m->ix + i * 3;
+            int e;
+            if (!sv[t[0]].ok || !sv[t[1]].ok || !sv[t[2]].ok) continue;
+            for (e = 0; e < 3; e++) edge(&sv[t[e]], &sv[t[(e + 1) % 3]]);
+        }
     free(sv);
 }
 
@@ -168,6 +198,7 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
     int i, n = 0;
     struct nk_rect b;
     const JMesh *m;
+    V.own = 0;
     if (!V.loaded || !V.ms.n) {
         nk_layout_row_dynamic(ctx, row, 1);
         nk_label(ctx, V.loaded ? "No 3D models in this file." : "Pick a file.", NK_TEXT_LEFT);
@@ -196,8 +227,9 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
     /* which model */
     nk_layout_row_template_begin(ctx, row);
     nk_layout_row_template_push_dynamic(ctx);
+    nk_layout_row_template_push_static(ctx, 52);
+    nk_layout_row_template_push_static(ctx, 72);
     nk_layout_row_template_push_static(ctx, 64);
-    nk_layout_row_template_push_static(ctx, 70);
     nk_layout_row_template_end(ctx);
     snprintf(name, sizeof name, "Model %d%s", m->index, wears(m, texid) ? "" : " (other)");
     if (nk_combo_begin_label(ctx, name, nk_vec2(nk_widget_width(ctx), 300))) {
@@ -215,13 +247,17 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
         nk_bool all = (nk_bool)V.all;
         nk_checkbox_label(ctx, "All", &all);
         V.all = all;
+        all = (nk_bool)V.wire;
+        nk_checkbox_label(ctx, "Wires", &all);       /* m5b, Miggas's idea */
+        if ((int)all != V.wire) { V.wire = all; V.need = 1; }
     }
     if (nk_button_label(ctx, "Reset")) V.cam_set = 0;
     nk_layout_row_dynamic(ctx, row - 8, 1);
     nk_label_colored(ctx, n ? "Drag: turn. Right drag: move. Wheel: zoom."
                             : "No model known to wear it. All: look anyway.",
                      NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-    if (!n && !V.all) return;
+    V.own = wears(m, texid);
+    if (!n && !V.all) { V.own = 0; return; }
 
     /* the view */
     nk_layout_row_dynamic(ctx, h - 2 * row, 1);
@@ -281,3 +317,25 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
         }
     }
 }
+
+void v3d_draw_uv(struct nk_command_buffer *cv, float x, float y, float w, float h)
+{
+    const JMesh *m;
+    int i, e;
+    if (!V.wire || !V.own || V.cur < 0 || V.cur >= V.ms.n) return;
+    m = &V.ms.m[V.cur];
+    for (i = 0; i < m->nt; i++) {
+        const uint32_t *t = m->ix + i * 3;
+        float u[3], v[3], ou, ov;
+        for (e = 0; e < 3; e++) { u[e] = m->t[t[e] * 2]; v[e] = m->t[t[e] * 2 + 1]; }
+        ou = floorf(fminf(u[0], fminf(u[1], u[2])));   /* a repeating texture: its first copy */
+        ov = floorf(fminf(v[0], fminf(v[1], v[2])));
+        for (e = 0; e < 3; e++) {
+            int f = (e + 1) % 3;
+            nk_stroke_line(cv, x + (u[e] - ou) * w, y + (v[e] - ov) * h, x + (u[f] - ou) * w, y + (v[f] - ov) * h, 1.0f,
+                           nk_rgba(80, 230, 255, 170));
+        }
+    }
+}
+
+void v3d_set_wire(int on) { V.wire = on; V.need = 1; }

@@ -48,7 +48,7 @@
 #include "view3d.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m5"
+#define MODTOOL_VERSION "m5b"
 
 /* ---- the files ---- */
 
@@ -878,7 +878,11 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 if (kh < k) k = kh;
                 if (k > 2.0f) k = 2.0f;
                 nk_layout_row_static(ctx, (float)s_ph * k, (int)((float)s_pw * k), 1);
-                nk_image(ctx, im);
+                {
+                    struct nk_rect ib = nk_widget_bounds(ctx);
+                    nk_image(ctx, im);
+                    v3d_draw_uv(nk_window_get_canvas(ctx), ib.x, ib.y, ib.w, ib.h);   /* m5b: Wires */
+                }
             }
         } else {
             nk_layout_row_dynamic(ctx, row, 1);
@@ -937,6 +941,8 @@ int main(int argc, char **argv)
     if (!win) { fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!ren) ren = SDL_CreateRenderer(win, -1, 0);
+    paint_set_overlay(v3d_draw_uv);                 /* m5b: Wires over the painting */
+    if (getenv("MT_WIRE")) v3d_set_wire(1);         /* (tests) */
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     ctx = nk_sdl_init(win, ren);
     load_font(ctx, 18);

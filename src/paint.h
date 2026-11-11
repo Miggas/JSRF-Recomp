@@ -7,6 +7,10 @@
 #include <SDL.h>
 
 struct nk_context;
+struct nk_command_buffer;
+
+/* m5b: drawn over the texture on the canvas (x, y, w, h: where it is) */
+void paint_set_overlay(void (*fn)(struct nk_command_buffer *, float, float, float, float));
 
 enum { PAINT_NONE, PAINT_SAVE, PAINT_CLOSE };
 
