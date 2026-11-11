@@ -1216,7 +1216,7 @@ static int s_pb_n = -1;                   /* -1: not read yet */
 static const char *const s_pb_names[24] = {
     "Beat", "Corn", "Gum", "Combo", "Rhyth", "Soda", "Yoyo", "NT 3000", "Garam", "Boogie", "Cube",
     "Love Shocker", "Poison Jam", "Noise Tank", "Immortal", "Golden Rhino", "Rapid 99", "Pots",
-    "Gouji", "Type A", "Clutch", "Jazz", "Type B", "Zero Beat" };
+    "Gouji", "Roboy", "Clutch", "Jazz", "A. KU. MU", "Zero Beat" };
 
 static int pb_path(char *out, size_t n, const char *name)
 {
