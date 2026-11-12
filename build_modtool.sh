@@ -45,6 +45,6 @@ echo "Building..."
 export ZIG_GLOBAL_CACHE_DIR="$PWD/deps/zig-cache"
 "$ZIG" cc -target x86_64-linux-gnu.2.35 -O2 -std=gnu11 \
     -Ithird_party/nuklear -Ithird_party/stb -Ithird_party/sdl2_linux -I"$SDL_INC" \
-    src/main.c src/jtex.c src/paint.c src/model.c src/view3d.c src/util.c "$SDL_SO" -lm \
+    src/main.c src/jtex.c src/paint.c src/model.c src/view3d.c src/jsnd.c src/util.c "$SDL_SO" -lm \
     -o jsrf_modtool
 echo "Built: jsrf_modtool"

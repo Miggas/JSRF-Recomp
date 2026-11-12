@@ -46,15 +46,17 @@
 #include "jtex.h"
 #include "paint.h"
 #include "view3d.h"
+#include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m6"
+#define MODTOOL_VERSION "m7"
 
 /* ---- the files ---- */
 
 typedef struct {
     char rel[512];      /* from the game folder, '/' between: Media/Player/Beat.dat */
     int ntex;
+    int nsnd;           /* m7: its sounds */
     int w, h;           /* its first texture's size */
     /* m3b: where it's listed: its tab, its section (in the tab's order, a
      * name), the name it's shown by */
@@ -63,9 +65,9 @@ typedef struct {
 } Entry;
 
 /* m3b: tabs by what the files hold (Miggas), each in collapsible sections */
-enum { CAT_ALL, CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_EVENT, CAT_UI, CAT_MISSION, CAT_OTHER, CAT_N };
+enum { CAT_ALL, CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_EVENT, CAT_UI, CAT_MISSION, CAT_OTHER, CAT_SOUND, CAT_N };
 static const char *const CAT_NAMES[CAT_N] = {
-    "All", "Characters", "Graffiti", "Stages", "Objects", "Cutscenes", "Menus & HUD", "Missions", "Other" };
+    "All", "Characters", "Graffiti", "Stages", "Objects", "Cutscenes", "Menus & HUD", "Missions", "Other", "Sounds" };
 
 /* the characters by the names they have in the game (the files keep the
  * old Jet Set Radio ones, and TypeA / TypeB) */
@@ -104,7 +106,7 @@ static void classify(Entry *e)
         { "Disp/charicon", CAT_UI, 1, "Character icons" }, { "Disp/map", CAT_UI, 2, "Maps" },
         { "Disp", CAT_UI, 0, "HUD" }, { "Font", CAT_UI, 3, "Fonts" }, { "Title", CAT_UI, 4, "Title screen" },
         { "Garage", CAT_UI, 5, "Garage" }, { "Progress", CAT_UI, 6, "Progress" }, { "Ending", CAT_UI, 7, "Ending" },
-        { "Mission", CAT_MISSION, 0, "Missions" }, { "Sounds/SE", CAT_OTHER, 0, "Sound banks" }, { "Sounds", CAT_OTHER, 1, "Sounds" } };
+        { "Mission", CAT_MISSION, 0, "Missions" }, { "Sounds/SE", CAT_SOUND, 0, "Sound effects" }, { "Sounds", CAT_SOUND, 1, "Sounds" } };
     static const char *const graf[5] = { "SS", "S", "M", "L", "XL" };
     const char *r = e->rel + (SDL_strncasecmp(e->rel, "Media/", 6) ? 0 : 6);
     const char *base = strrchr(r, '/') ? strrchr(r, '/') + 1 : r;
@@ -128,6 +130,7 @@ static void classify(Entry *e)
             break;
         }
     }
+    if (!e->ntex && e->nsnd) e->cat = CAT_SOUND;   /* m7: sounds only: the Sounds tab, by its folder */
     if (e->cat == CAT_CHAR) {
         const char *nm = char_name(base);
         if (nm) snprintf(e->label, sizeof e->label, "%s", nm);
@@ -146,7 +149,7 @@ static void classify(Entry *e)
 
 /* m3c: the tabs shown (Miggas: no All, Missions or Other; their files
  * aren't listed) */
-static const int TABS[] = { CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_EVENT, CAT_UI };
+static const int TABS[] = { CAT_CHAR, CAT_GRAF, CAT_STAGE, CAT_OBJ, CAT_EVENT, CAT_UI, CAT_SOUND };
 #define NTABS ((int)(sizeof TABS / sizeof TABS[0]))
 static int s_tab = CAT_CHAR;
 
@@ -164,6 +167,12 @@ static int s_pw, s_ph;
 static uint8_t *s_tex_rgba;             /* m5: the picked texture's pixels, for the 3D view */
 static unsigned s_tex_ver;
 static char s_msg[LPATH + 600];
+/* m7: the file's sounds, the picked one decoded, playing */
+static JSounds s_snd;
+static int s_sel_snd = -1;
+static int16_t *s_snd_pcm;
+static int s_snd_frames;
+static SDL_AudioDeviceID s_audio;
 static char s_filter[64];
 
 static int want_ext(const char *n)
@@ -249,9 +258,14 @@ static void walk_cb(const char *name, bool isdir, void *u)
         size_t len = 0;
         char *b = read_file(p, &len);
         JFile f;
+        JSounds ss;
+        int nsnd;
         if (!b) return;
+        js_scan((const uint8_t *)b, len, &ss);     /* m7: its sounds */
+        nsnd = ss.n;
+        js_free(&ss);
         jf_parse(&f, p, (uint8_t *)b, len);
-        if (f.ntex > 0) {
+        if (f.ntex > 0 || nsnd > 0) {
             SDL_LockMutex(s_mx);
             if (s_nfiles == s_capfiles) {
                 s_capfiles = s_capfiles ? s_capfiles * 2 : 256;
@@ -259,8 +273,9 @@ static void walk_cb(const char *name, bool isdir, void *u)
             }
             snprintf(s_files[s_nfiles].rel, sizeof s_files[s_nfiles].rel, "%s", r);
             s_files[s_nfiles].ntex = f.ntex;
-            s_files[s_nfiles].w = f.tex[0].w;
-            s_files[s_nfiles].h = f.tex[0].h;
+            s_files[s_nfiles].nsnd = nsnd;
+            s_files[s_nfiles].w = f.ntex ? f.tex[0].w : 0;
+            s_files[s_nfiles].h = f.ntex ? f.tex[0].h : 0;
             classify(&s_files[s_nfiles]);
             s_nfiles++;
             SDL_UnlockMutex(s_mx);
@@ -288,8 +303,19 @@ static int scan_thread(void *u)
     return 0;
 }
 
+static void stop_sound(void)
+{
+    if (s_audio) SDL_CloseAudioDevice(s_audio);
+    s_audio = 0;
+}
+
 static void close_file(void)
 {
+    stop_sound();
+    js_free(&s_snd);
+    free(s_snd_pcm);
+    s_snd_pcm = NULL;
+    s_sel_snd = -1;
     jf_free(&s_cur);
     if (s_preview) SDL_DestroyTexture(s_preview);
     s_preview = NULL;
@@ -386,6 +412,7 @@ static int open_file(int i)
     b = read_file(p, &n);
     if (!b) { snprintf(s_msg, sizeof s_msg, "Can't read %s", p); return -1; }
     jf_parse(&s_cur, p, (uint8_t *)b, n);
+    js_scan(s_cur.buf, s_cur.size, &s_snd);     /* m7: its sounds */
     v3d_load(s_cur.buf, s_cur.size);            /* m5: its models */
     return 0;
 }
@@ -398,6 +425,7 @@ static void show_texture(SDL_Renderer *ren, int k)
     if (s_preview) SDL_DestroyTexture(s_preview);
     s_preview = NULL;
     s_sel_tex = k;
+    if (k >= 0) { stop_sound(); s_sel_snd = -1; }   /* m7 */
     if (k < 0 || k >= s_cur.ntex) return;
     t = &s_cur.tex[k];
     px = (uint8_t *)malloc((size_t)t->w * t->h * 4);
@@ -470,13 +498,11 @@ static uint8_t *resize(const uint8_t *src, int w, int h, int tw, int th)
 
 /* rgba (the texture's size) into texture k, the file written in place
  * after its original is kept, the game's cached copy too; -1 failed */
-static int store_texture(int k, const uint8_t *px, const char *note)
+/* the file as it now is in s_cur written over the game's (the original
+ * kept first, once) and its cached copy; done: what was done, for the message */
+static int store_file(const char *done)
 {
     char out[LPATH], dir[LPATH], bak[LPATH], *s;
-    if (jt_encode(&s_cur, &s_cur.tex[k], px)) {
-        snprintf(s_msg, sizeof s_msg, "Couldn't encode the texture.");
-        return -1;
-    }
     game_path(out, s_files[s_sel_file].rel);
     backup_path(bak, s_files[s_sel_file].rel);
     snprintf(dir, sizeof dir, "%s", bak);
@@ -494,12 +520,140 @@ static int store_texture(int k, const uint8_t *px, const char *note)
         cache_path(cp, s_files[s_sel_file].rel);
         s_cur_modded = 1;
         if (is_file(cp) && !write_cache(cp, s_cur.buf, s_cur.size))
-            snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s, but the game's cached copy %s couldn't be: "
-                     "delete it by hand", k, note, cp);
+            snprintf(s_msg, sizeof s_msg, "%s, but the game's cached copy %s couldn't be: delete it by hand", done, cp);
         else
-            snprintf(s_msg, sizeof s_msg, "Texture %d replaced%s in %s (the original is in mod_backups)", k, note, out);
+            snprintf(s_msg, sizeof s_msg, "%s in %s (the original is in mod_backups)", done, out);
     }
     return 0;
+}
+
+static int store_texture(int k, const uint8_t *px, const char *note)
+{
+    char done[300];
+    if (jt_encode(&s_cur, &s_cur.tex[k], px)) {
+        snprintf(s_msg, sizeof s_msg, "Couldn't encode the texture.");
+        return -1;
+    }
+    snprintf(done, sizeof done, "Texture %d replaced%s", k, note);
+    return store_file(done);
+}
+
+/* ---- m7: sounds ---- */
+
+static void snd_path(char *out, const char *rel, int n)   /* where a sound is exported */
+{
+    char nm[600], *p;
+    snprintf(nm, sizeof nm, "sound_edits" SEP "%s", rel + (strncmp(rel, "Media/", 6) ? 0 : 6));
+    for (p = nm + 12; *p; p++) if (*p == '/' || *p == '.') *p = '_';
+    snprintf(nm + strlen(nm), sizeof nm - strlen(nm), "_%d.wav", n);
+    pjoin(out, s_game, nm);
+}
+
+static void show_sound(int k)
+{
+    stop_sound();
+    free(s_snd_pcm);
+    s_snd_pcm = NULL;
+    s_snd_frames = 0;
+    s_sel_snd = k;
+    if (k < 0 || k >= s_snd.n) return;
+    if (s_preview) SDL_DestroyTexture(s_preview);
+    s_preview = NULL;
+    s_sel_tex = -1;
+    if (js_decode(s_cur.buf, &s_snd.s[k], &s_snd_pcm, &s_snd_frames)) {
+        s_snd_pcm = NULL;
+        s_snd_frames = 0;
+    }
+}
+
+static void play_sound(void)
+{
+    SDL_AudioSpec want, have;
+    const JSnd *s;
+    stop_sound();
+    if (s_sel_snd < 0 || !s_snd_pcm) return;
+    s = &s_snd.s[s_sel_snd];
+    if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+        snprintf(s_msg, sizeof s_msg, "No sound output: %s", SDL_GetError());
+        return;
+    }
+    SDL_zero(want);
+    want.freq = s->rate;
+    want.format = AUDIO_S16SYS;
+    want.channels = (Uint8)s->ch;
+    want.samples = 1024;
+    s_audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);   /* SDL converts to what the device takes */
+    if (!s_audio) { snprintf(s_msg, sizeof s_msg, "No sound output: %s", SDL_GetError()); return; }
+    SDL_QueueAudio(s_audio, s_snd_pcm, (Uint32)s_snd_frames * (Uint32)s->ch * 2);
+    SDL_PauseAudioDevice(s_audio, 0);
+}
+
+static int sound_playing(void) { return s_audio && SDL_GetQueuedAudioSize(s_audio) > 0; }
+
+static int export_sound(int k, int quiet)
+{
+    char out[LPATH], dir[LPATH], *p;
+    int16_t *pcm;
+    int fr;
+    const JSnd *s = &s_snd.s[k];
+    snd_path(out, s_files[s_sel_file].rel, k);
+    snprintf(dir, sizeof dir, "%s", out);
+    if ((p = strrchr(dir, SEP[0]))) { *p = 0; make_dirs(dir); }
+    if (js_decode(s_cur.buf, s, &pcm, &fr)) {
+        if (!quiet) snprintf(s_msg, sizeof s_msg, "Sound %d is %s: it can't be read (only PCM and Xbox ADPCM).", k, js_fmt_name(s->fmt));
+        return -1;
+    }
+    if (js_write_wav(out, pcm, fr, s->ch, s->rate)) {
+        free(pcm);
+        snprintf(s_msg, sizeof s_msg, "Couldn't write %s", out);
+        return -1;
+    }
+    free(pcm);
+    if (!quiet) snprintf(s_msg, sizeof s_msg, "Sound %d saved as %s", k, out);
+    return 0;
+}
+
+static void export_all_sounds(void)
+{
+    int k, ok = 0;
+    char out[LPATH];
+    for (k = 0; k < s_snd.n; k++) ok += !export_sound(k, 1);
+    snd_path(out, s_files[s_sel_file].rel, 0);
+    snprintf(s_msg, sizeof s_msg, "%d of %d sounds saved as WAV files, like %s", ok, s_snd.n, out);
+}
+
+static void import_sound(int k, const char *wav)
+{
+    char in[LPATH], err[300], done[300];
+    int16_t *pcm;
+    int fr, ch, rate;
+    uint8_t *nb;
+    size_t ns;
+    const JSnd *s = &s_snd.s[k];
+    if (wav) snprintf(in, sizeof in, "%s", wav);
+    else snd_path(in, s_files[s_sel_file].rel, k);
+    if (!is_file(in)) { snprintf(s_msg, sizeof s_msg, "No %s: Export it first, or drop a WAV file on the window.", in); return; }
+    if (js_read_wav(in, &pcm, &fr, &ch, &rate, err, sizeof err)) { snprintf(s_msg, sizeof s_msg, "%s", err); return; }
+    if (js_replace(s_cur.buf, s_cur.size, s, pcm, fr, ch, rate, &nb, &ns)) {
+        free(pcm);
+        snprintf(s_msg, sizeof s_msg, "Sound %d is %s %d-bit: it can't be replaced.", k, js_fmt_name(s->fmt), s->bits);
+        return;
+    }
+    snprintf(done, sizeof done, "Sound %d replaced (%.2f s, made %d Hz %s %s)", k, (double)fr / rate, s->rate,
+             s->ch == 1 ? "mono" : "stereo", js_fmt_name(s->fmt));
+    free(pcm);
+    {   /* the file is the new one now */
+        char path[1024];
+        snprintf(path, sizeof path, "%s", s_cur.path);
+        stop_sound();
+        jf_free(&s_cur);
+        jf_parse(&s_cur, path, nb, ns);
+        js_free(&s_snd);
+        js_scan(s_cur.buf, s_cur.size, &s_snd);
+        v3d_load(s_cur.buf, s_cur.size);
+    }
+    store_file(done);
+    show_sound(k < s_snd.n ? k : 0);
 }
 
 static void import_texture(SDL_Renderer *ren, int k, const char *png)
@@ -613,8 +767,12 @@ static void revert_file(SDL_Renderer *ren)
         remove_file(bak);
         snprintf(s_msg, sizeof s_msg, "Back to the original: %s", p);
     } else snprintf(s_msg, sizeof s_msg, "Couldn't put the original back from %s", bak);
-    open_file(s_sel_file);
-    show_texture(ren, k < s_cur.ntex ? k : 0);
+    {
+        int sk = s_sel_snd;
+        open_file(s_sel_file);
+        if (sk >= 0) show_sound(sk < s_snd.n ? sk : 0);   /* m7 */
+        else show_texture(ren, k < s_cur.ntex ? k : 0);
+    }
 }
 
 /* ---- the window ---- */
@@ -706,10 +864,14 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         SDL_LockMutex(s_mx);
         qsort(s_files, (size_t)s_nfiles, sizeof(Entry), cmp_entry);
         SDL_UnlockMutex(s_mx);
-        snprintf(s_msg, sizeof s_msg, "%d files with textures (of %d looked at).", s_nfiles, SDL_AtomicGet(&s_scan_seen));
+        snprintf(s_msg, sizeof s_msg, "%d files with textures or sounds (of %d looked at).", s_nfiles, SDL_AtomicGet(&s_scan_seen));
     }
     if (s_dropped) {
-        if (paint_on()) snprintf(s_msg, sizeof s_msg, "Close the painter first, then drop the image.");
+        size_t dl = strlen(s_dropped);
+        if (dl > 4 && !SDL_strcasecmp(s_dropped + dl - 4, ".wav")) {   /* m7: a sound */
+            if (s_sel_file >= 0 && s_sel_snd >= 0) import_sound(s_sel_snd, s_dropped);
+            else snprintf(s_msg, sizeof s_msg, "Pick a sound first, then drop the WAV file on it.");
+        } else if (paint_on()) snprintf(s_msg, sizeof s_msg, "Close the painter first, then drop the image.");
         else if (s_sel_file >= 0 && s_sel_tex >= 0) import_texture(ren, s_sel_tex, s_dropped);
         else snprintf(s_msg, sizeof s_msg, "Pick a texture first, then drop the image on it.");
         SDL_free(s_dropped);
@@ -789,10 +951,11 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                     char lb[160];
                     int sel = view[q] == s_sel_file;
                     nk_layout_row_dynamic(ctx, row - 6, 1);
-                    snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex);
+                    snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex ? e->ntex : e->nsnd);
                     if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy && may_leave_paint()) {
                         open_file(view[q]);
                         if (s_cur.ntex) show_texture(ren, getenv("MT_TEX") && atoi(getenv("MT_TEX")) < s_cur.ntex ? atoi(getenv("MT_TEX")) : 0);
+                        else if (s_snd.n) show_sound(getenv("MT_SND") && atoi(getenv("MT_SND")) < s_snd.n ? atoi(getenv("MT_SND")) : 0);   /* m7 */
                     }
                 }
                 nk_tree_pop(ctx);
@@ -807,7 +970,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     nk_end(ctx);
 
     /* its textures */
-    if (nk_begin(ctx, "Textures", nk_rect(LW_FILES, top, LW_TEX, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
+    if (nk_begin(ctx, s_cur.ntex || !s_snd.n ? "Textures" : "Sounds", nk_rect(LW_FILES, top, LW_TEX, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         nk_layout_row_dynamic(ctx, row - 6, 1);
         for (i = 0; i < s_cur.ntex; i++) {
             const JTex *t = &s_cur.tex[i];
@@ -817,9 +980,84 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint())
                 show_texture(ren, i);
         }
+        if (s_snd.n && s_cur.ntex) nk_label_colored(ctx, "Sounds", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+        for (i = 0; i < s_snd.n; i++) {             /* m7: its sounds */
+            const JSnd *sn = &s_snd.s[i];
+            int sel = i == s_sel_snd;
+            char lb[64];
+            if (sn->frames) snprintf(lb, sizeof lb, "%d: %.2f s, %d kHz", i, (double)sn->frames / sn->rate, (sn->rate + 500) / 1000);
+            else snprintf(lb, sizeof lb, "%d: %s", i, js_fmt_name(sn->fmt));
+            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint())
+                show_sound(i);
+        }
     }
     nk_end(ctx);
 
+    /* m7: the sound */
+    if (s_sel_file >= 0 && s_sel_snd >= 0 && s_sel_snd < s_snd.n) {
+        if (nk_begin(ctx, "Sound", nk_rect(LW_FILES + LW_TEX, top, tex_w, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
+            const JSnd *sn = &s_snd.s[s_sel_snd];
+            int playing = sound_playing();
+            struct nk_rect wb;
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            nk_labelf(ctx, NK_TEXT_LEFT, "%s, sound %d", s_files[s_sel_file].rel, s_sel_snd);
+            if (sn->frames)
+                nk_labelf(ctx, NK_TEXT_LEFT, "%.2f s, %d Hz, %s, %s", (double)sn->frames / sn->rate, sn->rate,
+                          sn->ch == 1 ? "mono" : sn->ch == 2 ? "stereo" : "multichannel", js_fmt_name(sn->fmt));
+            else
+                nk_labelf(ctx, NK_TEXT_LEFT, "%s (format 0x%X): can't be played or replaced", js_fmt_name(sn->fmt), sn->fmt);
+            nk_label_colored(ctx, s_cur_modded ? "Modded (original in mod_backups)" : "Original",
+                             NK_TEXT_LEFT, s_cur_modded ? nk_rgb(240, 175, 30) : nk_rgb(150, 150, 160));
+            nk_layout_row_dynamic(ctx, row, 3);
+            if (nk_button_label(ctx, playing ? "Stop" : "Play")) { if (playing) stop_sound(); else play_sound(); }
+            if (nk_button_label(ctx, "Export WAV")) export_sound(s_sel_snd, 0);
+            if (nk_button_label(ctx, "Import WAV")) import_sound(s_sel_snd, NULL);
+            nk_layout_row_dynamic(ctx, row, 3);
+            if (nk_button_label(ctx, "Export all")) export_all_sounds();
+            if (nk_button_label(ctx, "Edits folder")) {
+                char d[LPATH];
+                pjoin(d, s_game, "sound_edits");
+                make_dirs(d);
+                open_folder(d);
+            }
+            if (s_cur_modded) {
+                if (nk_button_label(ctx, "Undo all (file)")) revert_file(ren);
+            } else nk_spacing(ctx, 1);
+            nk_layout_row_dynamic(ctx, row - 8, 1);
+            nk_label_colored(ctx, "Import: the exported WAV, or drop one here.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+            nk_label_colored(ctx, "Any WAV: made the game's rate and channels.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+            /* the waveform: each column's lowest and highest sample, where it's playing */
+            nk_layout_row_dynamic(ctx, 220, 1);
+            if (nk_widget(&wb, ctx) != NK_WIDGET_INVALID) {
+                struct nk_command_buffer *cv = nk_window_get_canvas(ctx);
+                int cols = (int)wb.w, x, c, ch = sn->ch;
+                float mid = wb.y + wb.h / 2;
+                nk_fill_rect(cv, wb, 4, nk_rgb(24, 24, 30));
+                nk_stroke_line(cv, wb.x, mid, wb.x + wb.w, mid, 1, nk_rgb(60, 60, 70));
+                if (s_snd_pcm && s_snd_frames > 0 && cols > 0)
+                    for (x = 0; x < cols; x++) {
+                        int f0 = (int)((long long)s_snd_frames * x / cols), f1 = (int)((long long)s_snd_frames * (x + 1) / cols), f;
+                        int lo = 0, hi = 0;
+                        if (f1 <= f0) f1 = f0 + 1;
+                        if (f1 > s_snd_frames) f1 = s_snd_frames;
+                        for (f = f0; f < f1; f++)
+                            for (c = 0; c < ch; c++) {
+                                int v = s_snd_pcm[(size_t)f * ch + c];
+                                if (v < lo) lo = v;
+                                if (v > hi) hi = v;
+                            }
+                        nk_stroke_line(cv, wb.x + x + 0.5f, mid - hi * (wb.h / 2 - 4) / 32768.0f,
+                                       wb.x + x + 0.5f, mid - lo * (wb.h / 2 - 4) / 32768.0f, 1, nk_rgb(240, 175, 30));
+                    }
+                if (playing && s_snd_frames > 0) {
+                    Uint32 left = SDL_GetQueuedAudioSize(s_audio) / (2u * (Uint32)ch);
+                    float px = wb.x + wb.w * (float)(s_snd_frames - (int)left) / (float)s_snd_frames;
+                    nk_stroke_line(cv, px, wb.y, px, wb.y + wb.h, 2, nk_rgb(255, 255, 255));
+                }
+            }
+        }
+        nk_end(ctx);
+    } else {
     /* the texture */
     if (nk_begin(ctx, "Texture", nk_rect(LW_FILES + LW_TEX, top, tex_w, (float)wh - top),
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | (paint_on() ? NK_WINDOW_NO_SCROLLBAR : 0))) {
@@ -890,6 +1128,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         }
     }
     nk_end(ctx);
+    }
 
     /* m5: the 3D view, wearing the picked texture (the painting while painting) */
     if (nk_begin(ctx, "3D view", nk_rect(LW_FILES + LW_TEX + tex_w, top, (float)ww - LW_FILES - LW_TEX - tex_w, (float)wh - top),
@@ -907,7 +1146,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             if (v3d_take_paint_request() && !paint_on()) start_paint(ren);   /* m6: Paint ticked on the model */
         } else {
             nk_layout_row_dynamic(ctx, row, 1);
-            nk_label(ctx, "Pick a texture.", NK_TEXT_LEFT);
+            nk_label(ctx, s_sel_snd >= 0 ? "Sounds have no 3D view." : "Pick a texture.", NK_TEXT_LEFT);
         }
     }
     nk_end(ctx);
@@ -983,6 +1222,7 @@ int main(int argc, char **argv)
             if (shot_pick) for (k = 0; k < s_nfiles - 1 && strcmp(s_files[k].rel, shot_pick); k++) ;
             open_file(k);
             if (s_cur.ntex) show_texture(ren, getenv("MT_TEX") && atoi(getenv("MT_TEX")) < s_cur.ntex ? atoi(getenv("MT_TEX")) : 0);
+            else if (s_snd.n) show_sound(getenv("MT_SND") && atoi(getenv("MT_SND")) < s_snd.n ? atoi(getenv("MT_SND")) : 0);   /* m7 */
         }
         SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);
         SDL_RenderClear(ren);
@@ -1036,7 +1276,7 @@ int main(int argc, char **argv)
             }
             if (f < 42) goto present;
         }
-        if (shot && s_preview) {
+        if (shot && (s_preview || s_sel_snd >= 0)) {   /* m7: or a sound */
             static int frames;
             if (++frames == 5) {
                 SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ABGR8888);
