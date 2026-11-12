@@ -19,9 +19,26 @@ static int is_texture(const uint8_t *b, size_t len)
     return (b[24] == 5 || b[24] == 6 || b[24] == 7) && r >= 4 && r <= 4096 && !(r & (r - 1));
 }
 
-/* a vertex's normal and texture coordinates, by its size (MDLB.cs's table) */
-static void layout(int vs, int *nrm, int *uv)
+/* a vertex's normal and texture coordinates. m10d: from the vertex block's
+ * flags when they are a Direct3D vertex format (FVF) that adds up to the
+ * vertex's size: position (0x2 xyz, 0x6-0xE xyz plus 1-5 blend weights),
+ * 0x10 normal, 0x20 point size, 0x40 diffuse, 0x80 specular, then the
+ * texture coordinates (count at 0xF00). Stage files' 28-byte vertices are
+ * 0x1C2: position, two colours, coordinates at 20, which the sizes alone
+ * (MDLB.cs's table, kept for anything else) put at 12. */
+static void layout(int vs, uint32_t fvf, int *nrm, int *uv)
 {
+    static const int pos[8] = { 0, 12, 16, 16, 20, 24, 28, 32 };   /* by (fvf >> 1) & 7 */
+    int o = pos[(fvf >> 1) & 7], n = -1, t = -1, tex = (int)((fvf >> 8) & 0xF);
+    if (o && fvf < 0x10000 && tex <= 8) {        /* no coordinates (tex 0): uv stays -1 */
+        if (fvf & 0x10) { n = o; o += 12; }
+        if (fvf & 0x20) o += 4;
+        if (fvf & 0x40) o += 4;
+        if (fvf & 0x80) o += 4;
+        t = tex ? o : -1;
+        o += 8 * tex;
+        if (o == vs) { *nrm = n; *uv = t; return; }
+    }
     *nrm = -1;
     *uv = -1;
     switch (vs) {
@@ -106,7 +123,7 @@ static int parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
             strip = u32(m + vb + 24) == 1;
             if (pass) { vis_n++; vis_p = (int)p; }
             if (vs < 12 || vs > 128 || vc > 65536 || vo + vc * vs > len || to + tc * 2 > len) continue;
-            layout((int)vs, &no, &uo);
+            layout((int)vs, u32(m + vb + 8), &no, &uo);
             if (no < 0 && pass) out->has_n = 0;
             if (pass) {
                 for (i = 0; i < vc; i++) {
@@ -157,16 +174,21 @@ static int parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
     {   /* its centre and size, for the camera */
         float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f }, r = 0;
         int i, k;
-        for (i = 0; i < out->nv; i++)
+        for (i = 0; i < out->nv; i++) {         /* m10d: not counting vertices that aren't numbers */
+            const float *q = out->p + i * 3;
+            if (!isfinite(q[0] + q[1] + q[2]) || fabsf(q[0]) > 1e6f || fabsf(q[1]) > 1e6f || fabsf(q[2]) > 1e6f) continue;
             for (k = 0; k < 3; k++) {
-                if (out->p[i * 3 + k] < lo[k]) lo[k] = out->p[i * 3 + k];
-                if (out->p[i * 3 + k] > hi[k]) hi[k] = out->p[i * 3 + k];
+                if (q[k] < lo[k]) lo[k] = q[k];
+                if (q[k] > hi[k]) hi[k] = q[k];
             }
+        }
+        if (lo[0] > hi[0]) for (k = 0; k < 3; k++) lo[k] = hi[k] = 0;
         for (k = 0; k < 3; k++) out->c[k] = (lo[k] + hi[k]) / 2;
         for (i = 0; i < out->nv; i++) {
-            float dx = out->p[i * 3] - out->c[0], dy = out->p[i * 3 + 1] - out->c[1], dz = out->p[i * 3 + 2] - out->c[2];
+            const float *q = out->p + i * 3;
+            float dx = q[0] - out->c[0], dy = q[1] - out->c[1], dz = q[2] - out->c[2];
             float d = sqrtf(dx * dx + dy * dy + dz * dz);
-            if (d > r) r = d;
+            if (isfinite(d) && d < 1e6f && d > r) r = d;
         }
         out->r = r > 0 ? r : 1;
     }
@@ -386,7 +408,7 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
     vo = (size_t)u32(m0 + vb) + 16;
     ovc = u32(m0 + vb + 4);
     vs = u32(m0 + vb + 12);
-    layout((int)vs, &nrm_off, &uv_off);
+    layout((int)vs, u32(m0 + vb + 8), &nrm_off, &uv_off);
     if (uv_off < 0) { snprintf(err, errn, "Model %d's vertices (%u bytes) aren't a kind this tool can write.", m->index, (unsigned)vs); return -1; }
     ov = m0 + vo;
     go = u32(h + 112) ? (size_t)u32(h + 112) + 16 : 0;

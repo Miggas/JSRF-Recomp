@@ -340,6 +340,7 @@ static void fill_at(int sx, int sy)
 
 static void to_px(float u, float v, float *x, float *y)
 {
+    if (!isfinite(u) || !isfinite(v) || fabsf(u) > 1e6f || fabsf(v) > 1e6f) u = v = 0;   /* m10d */
     *x = (u - floorf(u)) * (float)P.w;
     *y = (v - floorf(v)) * (float)P.h;
     if (*x > (float)P.w - 0.01f) *x = (float)P.w - 0.01f;   /* rounding at the right or bottom edge */

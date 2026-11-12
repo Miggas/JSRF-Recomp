@@ -113,6 +113,9 @@ static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, in
 {
     float minx = a->sx, maxx = a->sx, miny = a->sy, maxy = a->sy, area;
     int x0, x1, y0, y1, x, y;
+    if (!isfinite(a->sx + a->sy + b->sx + b->sy + c->sx + c->sy + a->iz + b->iz + c->iz)) return;   /* m10d */
+    if (fabsf(a->sx) > 1e5f || fabsf(a->sy) > 1e5f || fabsf(b->sx) > 1e5f || fabsf(b->sy) > 1e5f
+        || fabsf(c->sx) > 1e5f || fabsf(c->sy) > 1e5f) return;
     minx = fminf(minx, fminf(b->sx, c->sx));
     maxx = fmaxf(maxx, fmaxf(b->sx, c->sx));
     miny = fminf(miny, fminf(b->sy, c->sy));
@@ -140,10 +143,16 @@ static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, in
             l = w0 * a->l + w1 * b->l + w2 * c->l;
             o = V.fb + i * 4;
             if (tex) {
-                int tx = (int)floorf((u - floorf(u)) * tw), ty = (int)floorf((v - floorf(v)) * th);
+                int tx = 0, ty = 0;
                 const uint8_t *t;
+                if (isfinite(u) && isfinite(v) && fabsf(u) < 1e6f && fabsf(v) < 1e6f) {   /* m10d: not numbers in some stage files */
+                    tx = (int)floorf((u - floorf(u)) * tw);
+                    ty = (int)floorf((v - floorf(v)) * th);
+                }
                 if (tx >= tw) tx = tw - 1;
                 if (ty >= th) ty = th - 1;
+                if (tx < 0) tx = 0;
+                if (ty < 0) ty = 0;
                 t = tex + ((size_t)ty * tw + tx) * 4;
                 if (t[3] < 128) continue;       /* see-through parts */
                 o[0] = (uint8_t)(t[0] * l * tint[0] > 255 ? 255 : t[0] * l * tint[0]);
@@ -165,7 +174,9 @@ static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, in
 static void edge(const SV *a, const SV *b)
 {
     float dx = b->sx - a->sx, dy = b->sy - a->sy;
-    int n = (int)ceilf(fmaxf(fabsf(dx), fabsf(dy))), k;
+    int n, k;
+    if (!isfinite(dx + dy + a->sx + a->sy + a->iz + b->iz)) return;   /* m10d */
+    n = (int)ceilf(fmaxf(fabsf(dx), fabsf(dy)));
     if (n > 4096) return;
     for (k = 0; k <= n; k++) {
         float s = n ? (float)k / n : 0, iz = a->iz + (b->iz - a->iz) * s;

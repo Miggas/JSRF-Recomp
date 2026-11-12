@@ -49,7 +49,7 @@
 #include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m10c"
+#define MODTOOL_VERSION "m10d"
 
 /* ---- the files ---- */
 
@@ -1227,7 +1227,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             if (s_filter[0] && !SDL_strcasestr(e->rel, s_filter) && !SDL_strcasestr(e->label, s_filter)) continue;
             view[nview++] = i;
         }
-        qsort(view, (size_t)nview, sizeof(int), cmp_view);
+        if (nview) qsort(view, (size_t)nview, sizeof(int), cmp_view);
         for (i = 0; i < nview; i = k) {
             const Entry *e0 = &s_files[view[i]];
             char head[128], hash[160];
