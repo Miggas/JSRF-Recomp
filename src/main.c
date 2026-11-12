@@ -49,7 +49,7 @@
 #include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m10b"
+#define MODTOOL_VERSION "m10c"
 
 /* ---- the files ---- */
 
@@ -1441,7 +1441,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 ver = paint_serial();
             }
             v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row,
-                      (float)wh - top - 66 - row - (s_mat_open ? MAT_H : 0));   /* m10b: room for the Materials button */
+                      (float)wh - top - 76 - row - (s_mat_open ? MAT_H : 0));   /* m10b: room for the Materials button (m10c: a little more) */
             material_panel(ctx, ren, row);              /* m10 */
             if (v3d_take_paint_request() && !paint_on()) start_paint(ren);   /* m6: Paint ticked on the model */
             {
