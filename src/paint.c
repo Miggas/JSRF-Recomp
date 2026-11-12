@@ -40,6 +40,7 @@ static struct {
     int resize_max;                         /* m4c */
     unsigned serial;                        /* m5: changes with the pixels */
     void (*overlay)(struct nk_command_buffer *, float, float, float, float);   /* m5b */
+    int ext;                                /* m6: the stroke comes from the 3D view */
 } P;
 
 static void touch(int x0, int y0, int x1, int y1)   /* [x0, x1) x [y0, y1) changed */
@@ -181,7 +182,7 @@ void paint_stop(void)
     P.img = P.orig = P.before = P.mask = NULL;
     if (P.tex) SDL_DestroyTexture(P.tex);
     P.tex = NULL;
-    P.on = P.dirty = P.stroking = 0;
+    P.on = P.dirty = P.stroking = P.ext = 0;
 }
 
 int paint_on(void) { return P.on; }
@@ -332,6 +333,76 @@ static void fill_at(int sx, int sy)
     free(stack);
     record(bx0, by0, bx1, by1);
     touch(bx0, by0, bx1, by1);
+}
+
+/* ---- m6: painting from the 3D view, at texture coordinates (0..1 across;
+ * a repeating texture's coordinates wrap) ---- */
+
+static void to_px(float u, float v, float *x, float *y)
+{
+    *x = (u - floorf(u)) * (float)P.w;
+    *y = (v - floorf(v)) * (float)P.h;
+    if (*x > (float)P.w - 0.01f) *x = (float)P.w - 0.01f;   /* rounding at the right or bottom edge */
+    if (*y > (float)P.h - 0.01f) *y = (float)P.h - 0.01f;
+    if (*x < 0) *x = 0;
+    if (*y < 0) *y = 0;
+}
+
+int paint_tool(void) { return P.on ? P.tool : -1; }
+float paint_brush_size(void) { return P.size; }
+
+void paint_ext_begin(float u, float v)
+{
+    float x, y;
+    if (!P.on || (P.tool != T_BRUSH && P.tool != T_ERASER)) return;
+    to_px(u, v, &x, &y);
+    memcpy(P.before, P.img, (size_t)P.w * P.h * 4);
+    memset(P.mask, 0, (size_t)P.w * P.h);
+    P.bx0 = P.by0 = 1 << 30;
+    P.bx1 = P.by1 = -1;
+    P.stroking = 1;
+    P.ext = 1;
+    P.lx = x;
+    P.ly = y;
+    stamp(x, y);
+}
+
+void paint_ext_to(float u, float v, int jump)
+{
+    float x, y;
+    if (!P.on || !P.stroking || !P.ext) return;
+    to_px(u, v, &x, &y);
+    if (jump) {                             /* across a seam: a new line, not one through the texture */
+        P.lx = x;
+        P.ly = y;
+        stamp(x, y);
+    } else if (x != P.lx || y != P.ly) stroke_to(x, y);
+}
+
+void paint_ext_end(void)
+{
+    if (!P.stroking || !P.ext) return;
+    P.stroking = 0;
+    P.ext = 0;
+    record(P.bx0, P.by0, P.bx1, P.by1);
+}
+
+void paint_ext_pick(float u, float v)
+{
+    float x, y;
+    const uint8_t *p;
+    if (!P.on) return;
+    to_px(u, v, &x, &y);
+    p = P.img + ((size_t)(int)y * P.w + (int)x) * 4;
+    P.col.r = p[0] / 255.0f; P.col.g = p[1] / 255.0f; P.col.b = p[2] / 255.0f; P.col.a = p[3] / 255.0f;
+}
+
+void paint_ext_fill(float u, float v)
+{
+    float x, y;
+    if (!P.on) return;
+    to_px(u, v, &x, &y);
+    fill_at((int)x, (int)y);
 }
 
 /* ---- m4b: icons, as paint programs have them, drawn as shapes ---- */
@@ -594,6 +665,8 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
                 P.ly = iy;
                 stamp(ix, iy);
             }
+        } else if (P.stroking && P.ext) {
+            /* m6: the 3D view's stroke: it moves and ends it */
         } else if (P.stroking && in->mouse.buttons[NK_BUTTON_LEFT].down) {
             if (ix != P.lx || iy != P.ly) stroke_to(ix, iy);
         } else if (P.stroking) {

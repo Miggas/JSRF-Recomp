@@ -15,6 +15,7 @@
 
 #include "model.h"
 #include "view3d.h"
+#include "paint.h"
 
 static struct {
     JModels ms;
@@ -33,6 +34,10 @@ static struct {
     int wire, own;                      /* m5b: the edges shown; the model shown wears the texture */
     uint32_t *edges;                    /* m5c: the shown model's edges, each once (pairs) */
     int nedges, edges_for;
+    float *uvb;                         /* m6: each pixel's texture coordinates (where zb > 0) */
+    int paint, want_paint;              /* m6: painting on the model; asked to start the painter */
+    int stroking, had;                  /* m6: a stroke; its last sample hit the model */
+    float lsx, lsy, lu, lv;             /* m6: the last sample: on the screen, on the texture */
 } V;
 
 static int cmp_edge(const void *a, const void *b)
@@ -143,6 +148,7 @@ static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, in
             }
             o[3] = 255;
             V.zb[i] = iz;
+            if (V.uvb) { V.uvb[i * 2] = u; V.uvb[i * 2 + 1] = v; }   /* m6 */
         }
 }
 
@@ -226,6 +232,52 @@ static void render(const JMesh *m, const uint8_t *tex, int tw, int th)
     free(sv);
 }
 
+/* ---- m6: painting on the model ---- */
+
+/* the texture coordinates under screen pixel (x, y) of the view; 0 none */
+static int sample(int x, int y, float *u, float *v)
+{
+    size_t i;
+    if (!V.uvb || x < 0 || y < 0 || x >= V.rw || y >= V.rh) return 0;
+    i = (size_t)y * V.rw + x;
+    if (V.zb[i] <= 0) return 0;
+    *u = V.uvb[i * 2];
+    *v = V.uvb[i * 2 + 1];
+    return 1;
+}
+
+/* the stroke along the screen from the last sample to (x, y), a sample
+ * every 2 pixels: each joins the last on the texture, unless they are far
+ * apart there (a seam: the surface continues somewhere else on the
+ * texture) or the cursor left the model in between */
+static void stroke_screen(float x, float y, int tw, int th)
+{
+    float dx = x - V.lsx, dy = y - V.lsy, d = sqrtf(dx * dx + dy * dy);
+    int n = (int)(d / 2.0f) + 1, k;
+    float far = fmaxf(0.04f, 3.0f * paint_brush_size() / (float)(tw > th ? tw : th));   /* of the texture's width */
+    for (k = 1; k <= n; k++) {
+        float sx = V.lsx + dx * (float)k / (float)n, sy = V.lsy + dy * (float)k / (float)n, u, v;
+        if (!sample((int)sx, (int)sy, &u, &v)) { V.had = 0; continue; }
+        {
+            float du = (u - floorf(u)) - (V.lu - floorf(V.lu)), dv = (v - floorf(v)) - (V.lv - floorf(V.lv));
+            int jump = !V.had || sqrtf(du * du + dv * dv) > far;
+            paint_ext_to(u, v, jump);
+        }
+        V.lu = u;
+        V.lv = v;
+        V.had = 1;
+    }
+    V.lsx = x;
+    V.lsy = y;
+}
+
+int v3d_take_paint_request(void)
+{
+    int r = V.want_paint;
+    V.want_paint = 0;
+    return r;
+}
+
 /* ---- the panel ---- */
 
 void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const uint8_t *rgba, int tw, int th,
@@ -290,11 +342,28 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
         if ((int)all != V.wire) { V.wire = all; V.need = 1; }
     }
     if (nk_button_label(ctx, "Reset")) V.cam_set = 0;
-    nk_layout_row_dynamic(ctx, row - 8, 1);
-    nk_label_colored(ctx, n ? "Drag: turn. Right drag: move. Wheel: zoom."
-                            : "No model known to wear it. All: look anyway.",
-                     NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     V.own = wears(m, texid);
+    /* m6: Paint on the model (starts the painter when it isn't open) */
+    nk_layout_row_template_begin(ctx, row);
+    nk_layout_row_template_push_static(ctx, 64);
+    nk_layout_row_template_push_dynamic(ctx);
+    nk_layout_row_template_end(ctx);
+    {
+        nk_bool pm = (nk_bool)V.paint;
+        int can = V.own;
+        if (!can) { pm = 0; nk_widget_disable_begin(ctx); }
+        nk_checkbox_label(ctx, "Paint", &pm);
+        if (!can) nk_widget_disable_end(ctx);
+        if (can && (int)pm != V.paint) {
+            V.paint = pm;
+            if (V.paint && !paint_on()) V.want_paint = 1;
+        }
+        if (!can) V.paint = 0;
+    }
+    nk_label_colored(ctx, !n ? "No model known to wear it. All: look anyway."
+                     : V.paint ? "Paint: left. Turn: middle. Move: right."
+                               : "Drag: turn. Right drag: move. Wheel: zoom.",
+                     NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     if (!n && !V.all) { V.own = 0; return; }
 
     /* the view */
@@ -311,13 +380,41 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
             V.rt = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, w, hh);
             free(V.fb);
             free(V.zb);
+            free(V.uvb);
             V.fb = (uint8_t *)malloc((size_t)w * hh * 4);
             V.zb = (float *)malloc(sizeof(float) * (size_t)w * hh);
+            V.uvb = (float *)malloc(sizeof(float) * 2 * (size_t)w * hh);
             V.rw = w;
             V.rh = hh;
             V.need = 1;
         }
-        if (nk_input_has_mouse_click_down_in_rect(in, NK_BUTTON_LEFT, b, nk_true) && (in->mouse.delta.x || in->mouse.delta.y)) {
+        int painting = V.paint && V.own && paint_on();
+        if (V.paint && !paint_on() && !V.want_paint) V.paint = 0;   /* the painter was closed */
+        if (painting) {                       /* m6: the left button paints */
+            float mx = in->mouse.pos.x - b.x, my = in->mouse.pos.y - b.y, u, v;
+            int tool = paint_tool();
+            if (hover && nk_input_is_mouse_pressed(in, NK_BUTTON_LEFT) && sample((int)mx, (int)my, &u, &v)) {
+                if (tool == PAINT_T_PICKER) paint_ext_pick(u, v);
+                else if (tool == PAINT_T_FILL) paint_ext_fill(u, v);
+                else {
+                    paint_ext_begin(u, v);
+                    V.stroking = 1;
+                    V.had = 1;
+                    V.lu = u; V.lv = v;
+                    V.lsx = mx; V.lsy = my;
+                }
+            } else if (V.stroking && in->mouse.buttons[NK_BUTTON_LEFT].down) {
+                if (mx != V.lsx || my != V.lsy) stroke_screen(mx, my, tw, th);
+            } else if (V.stroking) {
+                V.stroking = 0;
+                paint_ext_end();
+            }
+        } else if (V.stroking) {
+            V.stroking = 0;
+            paint_ext_end();
+        }
+        if (nk_input_has_mouse_click_down_in_rect(in, painting ? NK_BUTTON_MIDDLE : NK_BUTTON_LEFT, b, nk_true)
+            && (in->mouse.delta.x || in->mouse.delta.y)) {
             V.yaw -= in->mouse.delta.x * 0.01f;
             V.pitch += in->mouse.delta.y * 0.01f;
             if (V.pitch > 1.5f) V.pitch = 1.5f;
@@ -354,6 +451,21 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
             struct nk_image im = nk_image_ptr(V.rt);
             nk_draw_image(nk_window_get_canvas(ctx), nk_rect(b.x, b.y, (float)V.rw, (float)V.rh), &im, nk_rgb(255, 255, 255));
         }
+        if (painting && hover && (paint_tool() == PAINT_T_BRUSH || paint_tool() == PAINT_T_ERASER)) {
+            /* m6: the brush's size on the model where the cursor is: the
+             * texture's pixels per screen pixel there, from the neighbours */
+            int x = (int)(in->mouse.pos.x - b.x), y = (int)(in->mouse.pos.y - b.y);
+            float u0, v0, u1, v1, u2, v2;
+            if (sample(x, y, &u0, &v0) && sample(x + 1, y, &u1, &v1) && sample(x, y + 1, &u2, &v2)) {
+                float a = sqrtf((u1 - u0) * (u1 - u0) * tw * tw + (v1 - v0) * (v1 - v0) * th * th);
+                float c = sqrtf((u2 - u0) * (u2 - u0) * tw * tw + (v2 - v0) * (v2 - v0) * th * th);
+                float per = (a + c) * 0.5f, r = per > 1e-4f ? paint_brush_size() * 0.5f / per : 4;
+                if (r < 2) r = 2;
+                if (r > 300) r = 300;
+                nk_stroke_circle(nk_window_get_canvas(ctx), nk_rect(in->mouse.pos.x - r, in->mouse.pos.y - r, 2 * r, 2 * r),
+                                 1.5f, nk_rgba(255, 255, 255, 200));
+            }
+        }
     }
 }
 
@@ -374,3 +486,4 @@ void v3d_draw_uv(struct nk_command_buffer *cv, float x, float y, float w, float 
 }
 
 void v3d_set_wire(int on) { V.wire = on; V.need = 1; }
+void v3d_set_paint(int on) { V.paint = on; }

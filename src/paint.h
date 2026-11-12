@@ -31,4 +31,15 @@ int paint_resize(int k);
  * canvas_h high; PAINT_SAVE or PAINT_CLOSE when asked */
 int paint_panel(struct nk_context *ctx, float row, float canvas_h);
 
+/* m6: painting from the 3D view. u, v: texture coordinates (0..1, wrapping),
+ * whatever size the painting is. paint_tool(): PAINT_T_* (-1 not painting) */
+enum { PAINT_T_BRUSH, PAINT_T_ERASER, PAINT_T_PICKER, PAINT_T_FILL };
+int paint_tool(void);
+float paint_brush_size(void);           /* in the painting's pixels */
+void paint_ext_begin(float u, float v);
+void paint_ext_to(float u, float v, int jump);   /* jump: a new line from there (a seam) */
+void paint_ext_end(void);
+void paint_ext_pick(float u, float v);
+void paint_ext_fill(float u, float v);
+
 #endif

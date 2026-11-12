@@ -22,5 +22,8 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
  * at x, y (w x h on the screen) */
 void v3d_draw_uv(struct nk_command_buffer *cv, float x, float y, float w, float h);
 void v3d_set_wire(int on);
+/* m6: Paint was ticked with the painter closed: open it (once) */
+int v3d_take_paint_request(void);
+void v3d_set_paint(int on);   /* (tests) */
 
 #endif

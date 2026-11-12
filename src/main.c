@@ -48,7 +48,7 @@
 #include "view3d.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m5c"
+#define MODTOOL_VERSION "m6"
 
 /* ---- the files ---- */
 
@@ -904,6 +904,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 ver = paint_serial();
             }
             v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row, (float)wh - top - 50);
+            if (v3d_take_paint_request() && !paint_on()) start_paint(ren);   /* m6: Paint ticked on the model */
         } else {
             nk_layout_row_dynamic(ctx, row, 1);
             nk_label(ctx, "Pick a texture.", NK_TEXT_LEFT);
@@ -990,19 +991,24 @@ int main(int argc, char **argv)
             static int f;
             SDL_Event ev;
             memset(&ev, 0, sizeof ev);
+            static int sx0 = 700, sy0 = 420, sx1 = 1100, sy1 = 620;   /* MT_STROKE=x0,y0,x1,y1 */
+            if (f == 0 && getenv("MT_STROKE")) sscanf(getenv("MT_STROKE"), "%d,%d,%d,%d", &sx0, &sy0, &sx1, &sy1);
             f++;
-            if (f == 1) { start_paint(ren); if (getenv("MT_RESIZE")) paint_resize(atoi(getenv("MT_RESIZE"))); }
-            else if (f == 3) {
-                ev.type = SDL_MOUSEMOTION; ev.motion.x = 700; ev.motion.y = 420; SDL_PushEvent(&ev);
+            if (f == 1) {
+                start_paint(ren);
+                if (getenv("MT_RESIZE")) paint_resize(atoi(getenv("MT_RESIZE")));
+                if (getenv("MT_PAINT3D")) v3d_set_paint(1);   /* m6: the stroke on the model */
+            } else if (f == 3) {
+                ev.type = SDL_MOUSEMOTION; ev.motion.x = sx0; ev.motion.y = sy0; SDL_PushEvent(&ev);
             } else if (f == 4) {
                 ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT; ev.button.state = SDL_PRESSED;
-                ev.button.x = 700; ev.button.y = 420; SDL_PushEvent(&ev);
+                ev.button.x = sx0; ev.button.y = sy0; SDL_PushEvent(&ev);
             } else if (f > 4 && f < 30) {
-                ev.type = SDL_MOUSEMOTION; ev.motion.x = 700 + (f - 4) * 16; ev.motion.y = 420 + (f - 4) * 8;
+                ev.type = SDL_MOUSEMOTION; ev.motion.x = sx0 + (sx1 - sx0) * (f - 4) / 25; ev.motion.y = sy0 + (sy1 - sy0) * (f - 4) / 25;
                 ev.motion.state = SDL_BUTTON_LMASK; SDL_PushEvent(&ev);
             } else if (f == 30) {
                 ev.type = SDL_MOUSEBUTTONUP; ev.button.button = SDL_BUTTON_LEFT; ev.button.state = SDL_RELEASED;
-                ev.button.x = 1100; ev.button.y = 620; SDL_PushEvent(&ev);
+                ev.button.x = sx1; ev.button.y = sy1; SDL_PushEvent(&ev);
             } else if (f == 34) {
                 if (paint_dirty()) save_paint(ren);
                 printf("%s\n", s_msg);
