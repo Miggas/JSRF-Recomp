@@ -31,11 +31,51 @@ static struct {
     unsigned last_ver;
     int last_cur;
     int wire, own;                      /* m5b: the edges shown; the model shown wears the texture */
+    uint32_t *edges;                    /* m5c: the shown model's edges, each once (pairs) */
+    int nedges, edges_for;
 } V;
+
+static int cmp_edge(const void *a, const void *b)
+{
+    const uint32_t *x = (const uint32_t *)a, *y = (const uint32_t *)b;
+    if (x[0] != y[0]) return x[0] < y[0] ? -1 : 1;
+    return x[1] < y[1] ? -1 : x[1] > y[1];
+}
+
+/* m5c: an edge two triangles share drawn once, not twice */
+static void build_edges(int cur)
+{
+    const JMesh *m = &V.ms.m[cur];
+    int i, e, n = 0, k;
+    free(V.edges);
+    V.edges = (uint32_t *)malloc(sizeof(uint32_t) * 6 * (size_t)m->nt + 1);
+    V.nedges = 0;
+    V.edges_for = cur;
+    if (!V.edges) return;
+    for (i = 0; i < m->nt; i++)
+        for (e = 0; e < 3; e++) {
+            uint32_t a = m->ix[i * 3 + e], b = m->ix[i * 3 + (e + 1) % 3];
+            V.edges[n * 2] = a < b ? a : b;
+            V.edges[n * 2 + 1] = a < b ? b : a;
+            n++;
+        }
+    qsort(V.edges, (size_t)n, sizeof(uint32_t) * 2, cmp_edge);
+    for (i = 0, k = 0; i < n; i++)
+        if (!k || V.edges[i * 2] != V.edges[(k - 1) * 2] || V.edges[i * 2 + 1] != V.edges[(k - 1) * 2 + 1]) {
+            V.edges[k * 2] = V.edges[i * 2];
+            V.edges[k * 2 + 1] = V.edges[i * 2 + 1];
+            k++;
+        }
+    V.nedges = k;
+}
 
 void v3d_free(void)
 {
     jm_free(&V.ms);
+    free(V.edges);
+    V.edges = NULL;
+    V.nedges = 0;
+    V.edges_for = -1;
     V.loaded = 0;
     V.cur = -1;
 }
@@ -178,12 +218,10 @@ static void render(const JMesh *m, const uint8_t *tex, int tw, int th)
         if (!sv[t[0]].ok || !sv[t[1]].ok || !sv[t[2]].ok) continue;
         raster(&sv[t[0]], &sv[t[1]], &sv[t[2]], tex, tw, th);
     }
-    if (V.wire)                                 /* m5b: the edges, where they're seen */
-        for (i = 0; i < m->nt; i++) {
-            const uint32_t *t = m->ix + i * 3;
-            int e;
-            if (!sv[t[0]].ok || !sv[t[1]].ok || !sv[t[2]].ok) continue;
-            for (e = 0; e < 3; e++) edge(&sv[t[e]], &sv[t[(e + 1) % 3]]);
+    if (V.wire && V.edges && V.edges_for >= 0 && &V.ms.m[V.edges_for] == m)   /* m5b: the edges, where they're seen */
+        for (i = 0; i < V.nedges; i++) {
+            const SV *a = &sv[V.edges[i * 2]], *b = &sv[V.edges[i * 2 + 1]];
+            if (a->ok && b->ok) edge(a, b);
         }
     free(sv);
 }
@@ -302,6 +340,7 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
             V.need = 1;
         }
         if (rgba != V.last_px || ver != V.last_ver || V.cur != V.last_cur) V.need = 1;
+        if (V.wire && (!V.edges || V.edges_for != V.cur)) build_edges(V.cur);
         if (V.need && V.rt && V.fb && V.zb) {
             const int own = wears(m, texid);
             render(m, own ? rgba : NULL, tw, th);
@@ -321,20 +360,16 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
 void v3d_draw_uv(struct nk_command_buffer *cv, float x, float y, float w, float h)
 {
     const JMesh *m;
-    int i, e;
+    int i;
     if (!V.wire || !V.own || V.cur < 0 || V.cur >= V.ms.n) return;
+    if (!V.edges || V.edges_for != V.cur) build_edges(V.cur);
+    if (!V.edges) return;
     m = &V.ms.m[V.cur];
-    for (i = 0; i < m->nt; i++) {
-        const uint32_t *t = m->ix + i * 3;
-        float u[3], v[3], ou, ov;
-        for (e = 0; e < 3; e++) { u[e] = m->t[t[e] * 2]; v[e] = m->t[t[e] * 2 + 1]; }
-        ou = floorf(fminf(u[0], fminf(u[1], u[2])));   /* a repeating texture: its first copy */
-        ov = floorf(fminf(v[0], fminf(v[1], v[2])));
-        for (e = 0; e < 3; e++) {
-            int f = (e + 1) % 3;
-            nk_stroke_line(cv, x + (u[e] - ou) * w, y + (v[e] - ov) * h, x + (u[f] - ou) * w, y + (v[f] - ov) * h, 1.0f,
-                           nk_rgba(80, 230, 255, 170));
-        }
+    for (i = 0; i < V.nedges; i++) {
+        const float *a = m->t + V.edges[i * 2] * 2, *b = m->t + V.edges[i * 2 + 1] * 2;
+        float ou = floorf(fminf(a[0], b[0])), ov = floorf(fminf(a[1], b[1]));   /* a repeating texture: its first copy */
+        nk_stroke_line(cv, x + (a[0] - ou) * w, y + (a[1] - ov) * h, x + (b[0] - ou) * w, y + (b[1] - ov) * h, 1.0f,
+                       nk_rgba(80, 230, 255, 170));
     }
 }
 

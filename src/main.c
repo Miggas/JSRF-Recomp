@@ -48,7 +48,7 @@
 #include "view3d.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m5b"
+#define MODTOOL_VERSION "m5c"
 
 /* ---- the files ---- */
 
@@ -919,7 +919,7 @@ int main(int argc, char **argv)
     struct nk_context *ctx;
     int running = 1;
     const char *shot = NULL, *shot_pick = NULL, *test_rel = NULL, *test_png = NULL;
-    int i, test_n = 0, paint_test = 0;
+    int i, test_n = 0, paint_test = 0, vsync = 0;
     SDL_SetMainReady();
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game") && i + 1 < argc) snprintf(s_game, sizeof s_game, "%s", argv[++i]);
@@ -948,9 +948,14 @@ int main(int argc, char **argv)
     load_font(ctx, 18);
     style(ctx);
     if (s_game[0]) start_scan();
+    {
+        SDL_RendererInfo ri;
+        if (!SDL_GetRendererInfo(ren, &ri) && (ri.flags & SDL_RENDERER_PRESENTVSYNC)) vsync = 1;
+    }
     while (running) {
         SDL_Event e;
         int ww, wh;
+        Uint64 f0 = SDL_GetPerformanceCounter();
         nk_input_begin(ctx);
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
@@ -1038,7 +1043,14 @@ int main(int argc, char **argv)
     present:
         SDL_RenderPresent(ren);
         if (!running) break;
-        SDL_Delay(SDL_AtomicGet(&s_scan_busy) ? 30 : 10);
+        /* m5c: the screen's refresh paces the frames; a fixed 10 ms on top of
+         * it made every other refresh missed (about 30 fps, choppy painting,
+         * Miggas). Without vsync, about 60 frames a second. */
+        if (SDL_AtomicGet(&s_scan_busy)) SDL_Delay(30);
+        else if (!vsync) {
+            double ms = (double)(SDL_GetPerformanceCounter() - f0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+            if (ms < 15.0) SDL_Delay((Uint32)(16.0 - ms));
+        }
     }
     close_file();
     nk_sdl_shutdown();
