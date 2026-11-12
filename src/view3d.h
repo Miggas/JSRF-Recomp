@@ -27,6 +27,9 @@ void v3d_set_wire(int on);
 int v3d_take_paint_request(void);
 /* m8: Export OBJ was pressed: the model to export (once) */
 int v3d_take_export_request(const JMesh **m);
+/* m9: Import OBJ was pressed: the model to replace (once); the one shown */
+int v3d_take_import_request(const JMesh **m);
+const JMesh *v3d_current(void);
 void v3d_set_paint(int on);   /* (tests) */
 
 #endif

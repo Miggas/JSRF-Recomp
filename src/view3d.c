@@ -39,6 +39,7 @@ static struct {
     int stroking, had;                  /* m6: a stroke; its last sample hit the model */
     float lsx, lsy, lu, lv;             /* m6: the last sample: on the screen, on the texture */
     int want_export;                    /* m8: Export pressed (the model's index + 1) */
+    int want_import;                    /* m9: Import pressed (the same) */
 } V;
 
 static int cmp_edge(const void *a, const void *b)
@@ -347,7 +348,8 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
     /* m6: Paint on the model (starts the painter when it isn't open) */
     nk_layout_row_template_begin(ctx, row);
     nk_layout_row_template_push_static(ctx, 64);
-    nk_layout_row_template_push_static(ctx, 96);
+    nk_layout_row_template_push_static(ctx, 112);
+    nk_layout_row_template_push_static(ctx, 112);
     nk_layout_row_template_push_dynamic(ctx);
     nk_layout_row_template_end(ctx);
     {
@@ -363,8 +365,9 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
         if (!can) V.paint = 0;
     }
     if (nk_button_label(ctx, "Export OBJ")) V.want_export = V.cur + 1;   /* m8: for Blender */
+    if (nk_button_label(ctx, "Import OBJ")) V.want_import = V.cur + 1;   /* m9: back from it */
     nk_label_colored(ctx, !n ? "None known to wear it."
-                     : V.paint ? "Paint: left. Turn: middle."
+                     : V.paint ? "Turn: middle."
                                : "Drag: turn. Right: move.",
                      NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     if (!n && !V.all) { V.own = 0; return; }
@@ -498,4 +501,18 @@ int v3d_take_export_request(const JMesh **m)
     if (k < 0 || k >= V.ms.n) return 0;
     *m = &V.ms.m[k];
     return 1;
+}
+
+int v3d_take_import_request(const JMesh **m)
+{
+    int k = V.want_import - 1;
+    V.want_import = 0;
+    if (k < 0 || k >= V.ms.n) return 0;
+    *m = &V.ms.m[k];
+    return 1;
+}
+
+const JMesh *v3d_current(void)
+{
+    return V.loaded && V.cur >= 0 && V.cur < V.ms.n ? &V.ms.m[V.cur] : NULL;
 }

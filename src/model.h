@@ -24,6 +24,12 @@ typedef struct {
     uint32_t texid;         /* the texture it wears, 0 not known */
     float c[3], r;          /* its centre and radius */
     int index;              /* its number among the file's models */
+    /* m9: for replacing it */
+    int *tmat;              /* each triangle's material (its triangle group's) */
+    size_t item, len;       /* the MDLB in the file */
+    size_t norm, norm_end;  /* the NORM holding it */
+    int part;               /* the one visible part, when its data ends the MDLB; else -1 */
+    int nparts;
 } JMesh;
 
 typedef struct {
@@ -37,6 +43,13 @@ int jm_load(const uint8_t *buf, size_t size, JModels *out);
  * coordinates up the image as Blender has them), its material in
  * mtl_path naming tex_png (a file name beside it; NULL: no texture);
  * name: the object's name. 0 done */
+/* m9: the visible part of m replaced by the .obj at path (as jm_write_obj
+ * writes them: mat<N> materials keep the game's material N), in the file
+ * buf (size); the new file in nb, nsize (malloc'd). Each new vertex takes
+ * its bone weights from the nearest old one. 0 done; else err says why */
+int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *path,
+                  uint8_t **nb, size_t *nsize, char *err, size_t errn);
+
 int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, const char *mtl_file,
                  const char *tex_png, const char *name);
 void jm_free(JModels *ms);

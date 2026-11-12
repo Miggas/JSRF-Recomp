@@ -49,7 +49,7 @@
 #include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m8"
+#define MODTOOL_VERSION "m9"
 
 /* ---- the files ---- */
 
@@ -541,13 +541,19 @@ static int store_texture(int k, const uint8_t *px, const char *note)
 /* ---- m8: a model for Blender: .obj, .mtl and its texture as a PNG, in
  * model_exports/ in the game folder ---- */
 
+static void model_base(char *base, size_t n, const JMesh *m)
+{
+    char *p;
+    snprintf(base, n, "%s", s_files[s_sel_file].rel + (strncmp(s_files[s_sel_file].rel, "Media/", 6) ? 0 : 6));
+    for (p = base; *p; p++) if (*p == '/' || *p == '.') *p = '_';
+    snprintf(base + strlen(base), n - strlen(base), "_model%d", m->index);
+}
+
 static void export_model(const JMesh *m)
 {
-    char base[600], dir[LPATH], obj[LPATH], mtl[LPATH], png[LPATH], nobj[700], nmtl[700], npng[700], *p;
+    char base[600], dir[LPATH], obj[LPATH], mtl[LPATH], png[LPATH], nobj[700], nmtl[700], npng[700];
     int k, tk = -1;
-    snprintf(base, sizeof base, "%s", s_files[s_sel_file].rel + (strncmp(s_files[s_sel_file].rel, "Media/", 6) ? 0 : 6));
-    for (p = base; *p; p++) if (*p == '/' || *p == '.') *p = '_';
-    snprintf(base + strlen(base), sizeof base - strlen(base), "_model%d", m->index);
+    model_base(base, sizeof base, m);
     pjoin(dir, s_game, "model_exports");
     make_dirs(dir);
     snprintf(nobj, sizeof nobj, "%s.obj", base);
@@ -572,6 +578,41 @@ static void export_model(const JMesh *m)
     else
         snprintf(s_msg, sizeof s_msg, "Model %d saved as %s (%d triangles%s)", m->index, obj, m->nt,
                  tk >= 0 ? ", with its texture" : ", its texture isn't in this file");
+}
+
+/* ---- m9: a model replaced from an .obj (the exported one, edited, or one
+ * dropped on the window) ---- */
+
+static void import_model(SDL_Renderer *ren, const JMesh *m, const char *path)
+{
+    char in[LPATH], err[400], done[500];
+    uint8_t *nb;
+    size_t ns;
+    int idx = m->index, tk = s_sel_tex;
+    if (path) snprintf(in, sizeof in, "%s", path);
+    else {
+        char base[600], nobj[700], dir[LPATH];
+        model_base(base, sizeof base, m);
+        snprintf(nobj, sizeof nobj, "%s.obj", base);
+        pjoin(dir, s_game, "model_exports");
+        pjoin(in, dir, nobj);
+    }
+    if (!is_file(in)) { snprintf(s_msg, sizeof s_msg, "No %s: Export OBJ first, or drop an .obj on the window.", in); return; }
+    if (paint_dirty()) { snprintf(s_msg, sizeof s_msg, "Save or close the painting first."); return; }
+    if (paint_on()) paint_stop();               /* nothing unsaved: closed for the new file */
+    if (jm_import_obj(s_cur.buf, s_cur.size, m, in, &nb, &ns, err, sizeof err)) { snprintf(s_msg, sizeof s_msg, "%s", err); return; }
+    snprintf(done, sizeof done, "Model %d replaced (%s)", idx, err);
+    {   /* the file is the new one now */
+        char fp[1024];
+        snprintf(fp, sizeof fp, "%s", s_cur.path);
+        jf_free(&s_cur);
+        jf_parse(&s_cur, fp, nb, ns);
+        js_free(&s_snd);
+        js_scan(s_cur.buf, s_cur.size, &s_snd);
+        v3d_load(s_cur.buf, s_cur.size);
+    }
+    store_file(done);
+    show_texture(ren, tk >= 0 && tk < s_cur.ntex ? tk : 0);
 }
 
 /* ---- m7: sounds ---- */
@@ -904,7 +945,10 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     }
     if (s_dropped) {
         size_t dl = strlen(s_dropped);
-        if (dl > 4 && !SDL_strcasecmp(s_dropped + dl - 4, ".wav")) {   /* m7: a sound */
+        if (dl > 4 && !SDL_strcasecmp(s_dropped + dl - 4, ".obj")) {   /* m9: a model, for the one shown */
+            if (s_sel_file >= 0 && v3d_current()) import_model(ren, v3d_current(), s_dropped);
+            else snprintf(s_msg, sizeof s_msg, "Pick the model in the 3D view first, then drop the .obj on the window.");
+        } else if (dl > 4 && !SDL_strcasecmp(s_dropped + dl - 4, ".wav")) {   /* m7: a sound */
             if (s_sel_file >= 0 && s_sel_snd >= 0) import_sound(s_sel_snd, s_dropped);
             else snprintf(s_msg, sizeof s_msg, "Pick a sound first, then drop the WAV file on it.");
         } else if (paint_on()) snprintf(s_msg, sizeof s_msg, "Close the painter first, then drop the image.");
@@ -1183,6 +1227,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             {
                 const JMesh *em;
                 if (v3d_take_export_request(&em)) export_model(em);              /* m8 */
+                if (v3d_take_import_request(&em)) import_model(ren, em, NULL);   /* m9 */
             }
         } else {
             nk_layout_row_dynamic(ctx, row, 1);

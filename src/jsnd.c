@@ -1,5 +1,6 @@
 /* JSRF sounds: see jsnd.h */
 #include "jsnd.h"
+#include "jcont.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -333,9 +334,8 @@ int js_replace(const uint8_t *buf, size_t size, const JSnd *s, const int16_t *pc
 {
     int16_t *cv;
     int cf;
-    uint8_t *samples, *item, *o;
-    size_t slen, ilen, head = s->data - s->item, tail_at, tail, newlen, padded;
-    long long d;
+    uint8_t *samples, *item;
+    size_t slen, ilen, head = s->data - s->item, tail_at, tail;
     *nb = NULL;
     if (s->fmt != JS_PCM && s->fmt != JS_XADPCM) return -1;
     if (s->fmt == JS_PCM && s->bits != 16) return -1;
@@ -363,55 +363,9 @@ int js_replace(const uint8_t *buf, size_t size, const JSnd *s, const int16_t *pc
     free(samples);
     put32(item + 4, (uint32_t)(ilen - 8));
     put32(item + head - 4, (uint32_t)slen);
-    /* the file: the item swapped, what follows moved by d (kept on the
-     * original's 16-byte rhythm), the NORM's entries and the MULT's fixed */
-    newlen = ilen;
-    if (newlen > s->len) padded = s->len + ((newlen - s->len + 15) & ~(size_t)15);
-    else padded = s->len - ((s->len - newlen) & ~(size_t)15);
-    d = (long long)padded - (long long)s->len;
-    *nsize = (size_t)((long long)size + d);
-    o = (uint8_t *)calloc(1, *nsize);
-    if (!o) { free(item); return -1; }
-    memcpy(o, buf, s->item);
-    memcpy(o + s->item, item, ilen);
-    memcpy(o + s->item + padded, buf + s->item + s->len, size - (s->item + s->len));
-    free(item);
-#define NEWPOS(p) ((p) < s->item + s->len ? (p) : (size_t)((long long)(p) + d))
     {
-        size_t off = s->norm + 16;
-        int guard = 0;
-        while (off + 16 <= s->norm_end && guard++ < 100000) {
-            size_t st = u32(buf + off), e = u32(buf + off + 4);
-            uint8_t *n = o + NEWPOS(off);
-            if (!e || s->norm + e <= off) break;
-            if (s->norm + st == s->item) {
-                put32(n + 4, (uint32_t)((long long)e + d));
-                put32(n + 8, (uint32_t)((long long)u32(buf + off + 8) + d));
-            } else if (s->norm + st > s->item) {
-                put32(n, (uint32_t)((long long)st + d));
-                put32(n + 4, (uint32_t)((long long)e + d));
-            }
-            off = s->norm + e;
-        }
+        int r = jc_replace(buf, size, s->item, s->len, s->norm, s->norm_end, item, ilen, nb, nsize);
+        free(item);
+        return r;
     }
-    if (!memcmp(buf, "MULT", 4)) {
-        size_t moff = 16;
-        int guard = 0;
-        while (moff + 16 <= size && guard++ < 100000) {
-            size_t st = u32(buf + moff), e = u32(buf + moff + 4);
-            uint8_t *n = o + NEWPOS(moff);
-            if (e <= moff) break;
-            if (st == s->norm) {
-                put32(n + 4, (uint32_t)((long long)e + d));
-                put32(n + 8, (uint32_t)((long long)u32(buf + moff + 8) + d));
-            } else if (st > s->norm) {
-                put32(n, (uint32_t)((long long)st + d));
-                put32(n + 4, (uint32_t)((long long)e + d));
-            }
-            moff = e;
-        }
-    }
-#undef NEWPOS
-    *nb = o;
-    return 0;
 }
