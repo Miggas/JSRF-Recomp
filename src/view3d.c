@@ -307,10 +307,10 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
         return;
     }
     for (i = 0; i < V.ms.n; i++) n += wears(&V.ms.m[i], texid);
-    if (V.for_tex != texid || V.cur < 0 || V.cur >= V.ms.n) {   /* the biggest model wearing it */
+    if (V.for_tex != texid || V.cur < 0 || V.cur >= V.ms.n) {   /* m10b: the first model wearing it (Miggas) */
         int best = -1;
-        for (i = 0; i < V.ms.n; i++)
-            if (wears(&V.ms.m[i], texid) && (best < 0 || V.ms.m[i].nt > V.ms.m[best].nt)) best = i;
+        for (i = 0; i < V.ms.n && best < 0; i++)
+            if (wears(&V.ms.m[i], texid)) best = i;
         V.cur = best >= 0 ? best : 0;
         V.for_tex = texid;
         V.cam_set = 0;

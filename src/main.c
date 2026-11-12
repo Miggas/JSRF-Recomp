@@ -49,7 +49,7 @@
 #include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m10"
+#define MODTOOL_VERSION "m10b"
 
 /* ---- the files ---- */
 
@@ -729,7 +729,7 @@ static void material_panel(struct nk_context *ctx, SDL_Renderer *ren, float row)
         wr32(e + 12, (uint32_t)v4);
         memcpy(e + 16, &v5, 4);
         if (memcmp(before, e, 20)) s_mat_dirty = 1;
-        nk_layout_row_dynamic(ctx, row, 2);
+        nk_layout_row_dynamic(ctx, row, s_mat_dirty ? 2 : 1);
         if (s_mat_dirty) {
             if (nk_button_label(ctx, "Save materials")) {
                 char done[96];
@@ -745,7 +745,6 @@ static void material_panel(struct nk_context *ctx, SDL_Renderer *ren, float row)
             }
         } else {
             nk_label_colored(ctx, "Colour multiplies the texture.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-            nk_spacing(ctx, 1);
         }
     }
 }
@@ -1442,7 +1441,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 ver = paint_serial();
             }
             v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row,
-                      (float)wh - top - 50 - row - (s_mat_open ? MAT_H : 0));
+                      (float)wh - top - 66 - row - (s_mat_open ? MAT_H : 0));   /* m10b: room for the Materials button */
             material_panel(ctx, ren, row);              /* m10 */
             if (v3d_take_paint_request() && !paint_on()) start_paint(ren);   /* m6: Paint ticked on the model */
             {
