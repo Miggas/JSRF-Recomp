@@ -34,5 +34,6 @@ const JMesh *v3d_current(void);
  * colour multiplying the texture; hl: one highlighted, the rest dimmed (-1) */
 void v3d_set_materials(const uint8_t *mats, int n, int hl);
 void v3d_set_paint(int on);   /* (tests) */
+int v3d_count(void);          /* m15: the open file's models (0: no 3D view) */
 
 #endif

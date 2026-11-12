@@ -533,6 +533,8 @@ int v3d_take_import_request(const JMesh **m)
     return 1;
 }
 
+int v3d_count(void) { return V.loaded ? V.ms.n : 0; }
+
 const JMesh *v3d_current(void)
 {
     return V.loaded && V.cur >= 0 && V.cur < V.ms.n ? &V.ms.m[V.cur] : NULL;

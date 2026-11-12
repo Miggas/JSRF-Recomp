@@ -52,7 +52,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m14"
+#define MODTOOL_VERSION "m15"
 
 /* ---- the files ---- */
 
@@ -1434,7 +1434,9 @@ static char *s_dropped;                  /* a PNG dropped on the window */
 static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
 {
     const float row = 30, top = 128;
-    const float tex_w = ((float)ww - LW_FILES - LW_TEX) * 0.55f;
+    /* m15: the 3D view only for a file with models (Miggas); without it the texture or sound gets its room */
+    const int show3d = s_sel_file >= 0 && v3d_count() > 0;
+    const float tex_w = ((float)ww - LW_FILES - LW_TEX) * (show3d ? 0.55f : 1.0f);
     int busy = SDL_AtomicGet(&s_scan_busy), i;
     if (SDL_AtomicGet(&s_scan_done)) {
         SDL_AtomicSet(&s_scan_done, 0);
@@ -1787,7 +1789,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     }
 
     /* m5: the 3D view, wearing the picked texture (the painting while painting) */
-    if (nk_begin(ctx, "3D view", nk_rect(LW_FILES + LW_TEX + tex_w, top, (float)ww - LW_FILES - LW_TEX - tex_w, (float)wh - top),
+    if (show3d && nk_begin(ctx, "3D view", nk_rect(LW_FILES + LW_TEX + tex_w, top, (float)ww - LW_FILES - LW_TEX - tex_w, (float)wh - top),
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR)) {
         if (s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
             int pw = s_cur.tex[s_sel_tex].w, ph = s_cur.tex[s_sel_tex].h;
@@ -1813,7 +1815,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             nk_label(ctx, s_sel_snd >= 0 ? "Sounds have no 3D view." : "Pick a texture.", NK_TEXT_LEFT);
         }
     }
-    nk_end(ctx);
+    if (show3d) nk_end(ctx);
 }
 
 int main(int argc, char **argv)
