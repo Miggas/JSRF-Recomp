@@ -726,6 +726,7 @@ next fix.
 - **v301c:** in the picked races, the time the clear screen shows in the middle is hidden too; the mission timer in the corner has it (*Idea by Miggas*).
 - **v301d:** at the clear screen the mission timer leaves the top-left corner and shows big at the bottom middle, about the size of the game's own time, as far from the bottom as "YOU WIN" is from the top (*Idea by Miggas*).
 - **v301e:** at the clear screen the timer shows half a second after it stops, not at once (*Idea by Miggas*).
+- **v302:** Files are no longer opened unbuffered. On drives with 4096-byte sectors every read of Progress.dat failed and the game stayed on a black screen at boot (*Reported by Miggas*).
 - **v301f:** 0122 picked from the mission select skips the first of its two start cutscenes (event 0x18); the second plays (*Idea by Miggas*).
 - Stubs now log: `tools/log_stubs.py` patches `recomp_stubs_unresolved.c` so each stub prints `[STUB] 0x... reached` on its first call. Re-run it after every lift.
 - Remaining call targets were stubbed as unresolved (`recomp_stubs_unresolved.c`).
