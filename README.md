@@ -27,6 +27,10 @@ An edited file is changed in place in the game folder. Before its first change, 
 
 **Materials**, under the 3D view: the shown model's materials. Pick one (Highlight dims the rest of the model, to see which parts use it), change its colour (it multiplies the texture: white leaves it as it is), its shading kind (the kinds JSRF ModTool names: Standard, Skin, Lambert, Metal, reflective metal, semi-transparent, self-illuminated, UV-scrolling), and the three other numbers it holds (what they do isn't known). The 3D view previews the colours; **Save materials** writes them to the game file, **Revert** throws them away.
 
+**Bounds**, under the 3D view: the sphere the game draws the model within (its "draw distance"). A model made bigger than its bounds can pop out of view early: **Bigger** doubles them, **Fit** makes them fit the model again (Import does that by itself).
+
+**Raw items** (the checkbox above a file's textures) lists every item in the file by group, with what it looks like (texture, model, sound, material list, empty, data) and its size, and shows its first bytes. **Extract** saves one as it is into `item_exports/`; **Replace** puts it back from there (or drop any file on the window), whatever its new size; **Copy** and **Paste** copy an item over another, in the same file or another one; **Empty** leaves it with nothing. The original is in `mod_backups/` as for every edit.
+
 **Restore all** (top right) puts back the original of every modded file in `mod_backups/`, and the game's cached copies, after asking once more.
 
 **Sounds** (the Sounds tab, and any file with sounds in it): each sound's length and rate, its waveform, **Play**, **Export WAV** (into `sound_edits/` in the game folder), **Export all**, and **Import WAV** (the exported file, or drop any WAV on the window). An imported WAV can be any length, rate or channel count: it's made the game's rate and channels and its format (Xbox ADPCM or PCM), and the file around it is rebuilt to fit. The original is kept in `mod_backups/` as for textures. Music in `.adx` files isn't covered yet.

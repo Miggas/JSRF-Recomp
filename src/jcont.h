@@ -12,4 +12,14 @@
 int jc_replace(const uint8_t *buf, size_t size, size_t item, size_t len, size_t norm, size_t norm_end,
                const uint8_t *nitem, size_t nlen, uint8_t **nb, size_t *nsize);
 
+/* m13: every item of the file: the NORM it's in (its number, start, end),
+ * its number in it, its 16-byte entry, its bytes, and what it looks like */
+typedef struct {
+    int norm_no, no;
+    size_t norm, norm_end, ent, item, len;
+    const char *kind;   /* "texture", "model", "sound", "material list", "empty", "data" */
+} JItem;
+
+int jc_list(const uint8_t *buf, size_t size, JItem **items, int *n);
+
 #endif

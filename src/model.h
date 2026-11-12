@@ -66,6 +66,12 @@ int jm_materials(const uint8_t *buf, size_t size, const JMesh *m, size_t *at, in
  * as JSRF ModTool's .smd files have them) for Blender (Source Tools). 0 done */
 int jm_write_smd(const JMesh *m, const char *path);
 
+/* m13: where m's bounding sphere is in the file (the visible part's header
+ * +16: centre x, y, z, radius; the last part's when it has several) */
+size_t jm_sphere_at(const JMesh *m);
+/* the sphere that fits m's vertices, in the game's space */
+void jm_fit_sphere(const JMesh *m, float c[3], float *r);
+
 int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, const char *mtl_file,
                  const char *tex_png, const char *name);
 void jm_free(JModels *ms);

@@ -850,3 +850,20 @@ int jm_write_smd(const JMesh *m, const char *path)
     fprintf(f, "end\n");
     return fclose(f) ? -1 : 0;
 }
+
+/* ---- m13: the bounding sphere (what the game draws within) ---- */
+
+size_t jm_sphere_at(const JMesh *m)
+{
+    int part = m->part >= 0 ? m->part : m->nparts - 1;
+    return m->item + 16 + (size_t)part * 128 + 16;
+}
+
+void jm_fit_sphere(const JMesh *m, float c[3], float *r)
+{
+    /* m->c and m->r are the view's (x mirrored): the game's x is the other way */
+    c[0] = -m->c[0];
+    c[1] = m->c[1];
+    c[2] = m->c[2];
+    *r = m->r;
+}

@@ -47,10 +47,11 @@
 #include "paint.h"
 #include "view3d.h"
 #include "jsnd.h"
+#include "jcont.h"
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m12"
+#define MODTOOL_VERSION "m13"
 
 /* ---- the files ---- */
 
@@ -170,6 +171,15 @@ static unsigned s_tex_ver;
 static char s_msg[LPATH + 600];
 static int s_restore_ask;               /* m10: Restore all pressed once */
 static int s_mat_open, s_mat_sel, s_mat_hl = 1, s_mat_dirty;   /* m10: the material editor */
+/* m13: the raw items: shown instead of the texture; the one picked; a copy */
+static int s_raw, s_sel_item = -1;
+static JItem *s_items;
+static int s_nitems;
+static const uint8_t *s_items_for;
+static size_t s_items_size;
+static uint8_t *s_clip;
+static size_t s_clip_len;
+static char s_clip_what[64];
 static char s_restore_msg[200];         /* ... its result, shown when the rescan ends */
 /* m7: the file's sounds, the picked one decoded, playing */
 static JSounds s_snd;
@@ -665,6 +675,232 @@ static void import_model(SDL_Renderer *ren, const JMesh *m, const char *path)
     }
     store_file(done);
     show_texture(ren, tk >= 0 && tk < s_cur.ntex ? tk : 0);
+}
+
+static void show_sound(int k);
+
+/* ---- m13: the file replaced by a new one (nb, ns: malloc'd, taken) and
+ * written to the game, the view kept on the same texture or sound ---- */
+
+static void take_new_file(SDL_Renderer *ren, uint8_t *nb, size_t ns, const char *done)
+{
+    char fp[1024];
+    int tk = s_sel_tex, sk = s_sel_snd;
+    snprintf(fp, sizeof fp, "%s", s_cur.path);
+    if (paint_on()) paint_stop();
+    stop_sound();
+    jf_free(&s_cur);
+    jf_parse(&s_cur, fp, nb, ns);
+    js_free(&s_snd);
+    js_scan(s_cur.buf, s_cur.size, &s_snd);
+    v3d_load(s_cur.buf, s_cur.size);
+    store_file(done);
+    if (sk >= 0 && sk < s_snd.n) show_sound(sk);
+    else show_texture(ren, tk >= 0 && tk < s_cur.ntex ? tk : (s_cur.ntex ? 0 : -1));
+}
+
+/* ---- m13: the raw items: any item of the file saved as it is, replaced
+ * from a file (any size: the file is rebuilt around it), copied and pasted
+ * (between files too), emptied; its first bytes shown ---- */
+
+static void items_refresh(void)
+{
+    if (s_items_for == s_cur.buf && s_items_size == s_cur.size) return;
+    free(s_items);
+    s_items = NULL;
+    s_nitems = 0;
+    if (s_cur.buf) jc_list(s_cur.buf, s_cur.size, &s_items, &s_nitems);
+    s_items_for = s_cur.buf;
+    s_items_size = s_cur.size;
+    if (s_sel_item >= s_nitems) s_sel_item = -1;
+}
+
+static void item_path(char *out, int k)
+{
+    char nm[700], *p;
+    snprintf(nm, sizeof nm, "item_exports" SEP "%s", s_files[s_sel_file].rel + (strncmp(s_files[s_sel_file].rel, "Media/", 6) ? 0 : 6));
+    for (p = nm + 13; *p; p++) if (*p == '/' || *p == '.') *p = '_';
+    snprintf(nm + strlen(nm), sizeof nm - strlen(nm), "_%d_%d.bin", s_items[k].norm_no, s_items[k].no);
+    pjoin(out, s_game, nm);
+}
+
+static void item_put(SDL_Renderer *ren, int k, const uint8_t *data, size_t len, const char *done)
+{
+    const JItem *it = &s_items[k];
+    uint8_t *nb;
+    size_t ns;
+    if (paint_dirty() || s_mat_dirty) { snprintf(s_msg, sizeof s_msg, "Save or throw away the painting or material changes first."); return; }
+    if (jc_replace(s_cur.buf, s_cur.size, it->item, it->len, it->norm, it->norm_end, data, len, &nb, &ns)) {
+        snprintf(s_msg, sizeof s_msg, "Couldn't rebuild the file.");
+        return;
+    }
+    nb[it->ent + 12] = len ? 0 : 1;             /* an empty item's entry says so (as the game's do) */
+    take_new_file(ren, nb, ns, done);
+}
+
+static void item_extract(int k)
+{
+    char out[LPATH], dir[LPATH], *p;
+    item_path(out, k);
+    snprintf(dir, sizeof dir, "%s", out);
+    if ((p = strrchr(dir, SEP[0]))) { *p = 0; make_dirs(dir); }
+    if (write_file(out, s_cur.buf + s_items[k].item, s_items[k].len))
+        snprintf(s_msg, sizeof s_msg, "Item %d.%d (%s, %u bytes) saved as %s", s_items[k].norm_no, s_items[k].no,
+                 s_items[k].kind, (unsigned)s_items[k].len, out);
+    else snprintf(s_msg, sizeof s_msg, "Couldn't write %s", out);
+}
+
+static void item_replace(SDL_Renderer *ren, int k, const char *path)
+{
+    char in[LPATH], done[200];
+    size_t n = 0;
+    char *b;
+    if (path) snprintf(in, sizeof in, "%s", path);
+    else item_path(in, k);
+    b = read_file(in, &n);
+    if (!b) { snprintf(s_msg, sizeof s_msg, "No %s: Extract it first, or drop a file on the window.", in); return; }
+    snprintf(done, sizeof done, "Item %d.%d replaced (%u bytes, was %u)", s_items[k].norm_no, s_items[k].no, (unsigned)n,
+             (unsigned)s_items[k].len);
+    item_put(ren, k, (const uint8_t *)b, n, done);
+    free(b);
+}
+
+static void items_window(struct nk_context *ctx, SDL_Renderer *ren, float row, float x, float top, float w, float h)
+{
+    if (nk_begin(ctx, "Items", nk_rect(x, top, w, h), NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR)) {
+        int i, k = s_sel_item;
+        float list_h = (h - 60) * 0.42f;
+        items_refresh();
+        nk_layout_row_dynamic(ctx, row - 6, 1);
+        nk_labelf(ctx, NK_TEXT_LEFT, "%s: %d items", s_files[s_sel_file].rel, s_nitems);
+        nk_layout_row_dynamic(ctx, list_h, 1);
+        if (nk_group_begin(ctx, "itemlist", NK_WINDOW_BORDER)) {
+            int last = -1;
+            for (i = 0; i < s_nitems; i++) {
+                char lb[96];
+                int sel = i == s_sel_item;
+                if (s_items[i].norm_no != last) {
+                    last = s_items[i].norm_no;
+                    nk_layout_row_dynamic(ctx, row - 8, 1);
+                    nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(150, 150, 160), "Group %d", last);
+                }
+                nk_layout_row_dynamic(ctx, row - 8, 1);
+                snprintf(lb, sizeof lb, "  %d.%d  %s, %u bytes", s_items[i].norm_no, s_items[i].no, s_items[i].kind, (unsigned)s_items[i].len);
+                if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel) s_sel_item = i;
+            }
+            nk_group_end(ctx);
+        }
+        k = s_sel_item;
+        if (k < 0 || k >= s_nitems) {
+            nk_layout_row_dynamic(ctx, row, 1);
+            nk_label(ctx, "Pick an item.", NK_TEXT_LEFT);
+        } else {
+            const JItem *it = &s_items[k];
+            char pl[64];
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            nk_labelf(ctx, NK_TEXT_LEFT, "Item %d.%d: %s, %u bytes, at %u", it->norm_no, it->no, it->kind, (unsigned)it->len, (unsigned)it->item);
+            nk_layout_row_dynamic(ctx, row, 3);
+            if (nk_button_label(ctx, "Extract")) item_extract(k);
+            if (nk_button_label(ctx, "Replace")) item_replace(ren, k, NULL);
+            if (nk_button_label(ctx, "Copy")) {
+                free(s_clip);
+                s_clip_len = it->len;
+                s_clip = (uint8_t *)malloc(it->len + 1);
+                memcpy(s_clip, s_cur.buf + it->item, it->len);
+                snprintf(s_clip_what, sizeof s_clip_what, "item %d.%d (%s)", it->norm_no, it->no, it->kind);
+                snprintf(s_msg, sizeof s_msg, "Copied %s, %u bytes: pick an item (in any file) and Paste.", s_clip_what, (unsigned)s_clip_len);
+            }
+            nk_layout_row_dynamic(ctx, row, 3);
+            snprintf(pl, sizeof pl, s_clip ? "Paste" : "Paste (none)");
+            if (nk_button_label(ctx, pl) && s_clip) {
+                char done[200];
+                snprintf(done, sizeof done, "Item %d.%d replaced by %s", it->norm_no, it->no, s_clip_what);
+                item_put(ren, k, s_clip, s_clip_len, done);
+            } else if (s_sel_item >= 0 && s_sel_item < s_nitems && nk_button_label(ctx, "Empty") && s_items[s_sel_item].len) {
+                char done[120];
+                snprintf(done, sizeof done, "Item %d.%d emptied", s_items[s_sel_item].norm_no, s_items[s_sel_item].no);
+                item_put(ren, s_sel_item, NULL, 0, done);
+            } else {
+                if (nk_button_label(ctx, "Edits folder")) {
+                    char d[LPATH];
+                    pjoin(d, s_game, "item_exports");
+                    make_dirs(d);
+                    open_folder(d);
+                }
+            }
+            /* its first bytes */
+            if (s_sel_item >= 0 && s_sel_item < s_nitems) {
+                const JItem *q = &s_items[s_sel_item];
+                size_t n = q->len < 4096 ? q->len : 4096, o;
+                nk_layout_row_dynamic(ctx, row - 8, 1);
+                nk_label_colored(ctx, n < q->len ? "Its first 4096 bytes:" : "Its bytes:", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+                nk_layout_row_dynamic(ctx, h - list_h - 7 * row - 40, 1);
+                if (nk_group_begin(ctx, "hex", NK_WINDOW_BORDER)) {
+                    int per = w > 560 ? 16 : 8;     /* as many as fit */
+                    for (o = 0; o < n; o += (size_t)per) {
+                        char line[120];
+                        int j, p = 0;
+                        p += snprintf(line + p, sizeof line - p, "%05X  ", (unsigned)o);
+                        for (j = 0; j < per; j++)
+                            p += o + j < n ? snprintf(line + p, sizeof line - p, "%02X ", s_cur.buf[q->item + o + j])
+                                           : snprintf(line + p, sizeof line - p, "   ");
+                        line[p++] = ' ';
+                        for (j = 0; j < per && o + j < n; j++) {
+                            uint8_t c = s_cur.buf[q->item + o + j];
+                            line[p++] = c >= 32 && c < 127 ? (char)c : '.';
+                        }
+                        line[p] = 0;
+                        nk_layout_row_dynamic(ctx, row - 12, 1);
+                        nk_label(ctx, line, NK_TEXT_LEFT);
+                    }
+                    nk_group_end(ctx);
+                }
+            }
+        }
+    }
+    nk_end(ctx);
+}
+
+/* ---- m13: the bounding sphere ("draw distance"): the game draws a model
+ * while this sphere is in view; too small (a model made bigger in an
+ * editor, say) and it pops out early ---- */
+
+static void bounds_row(struct nk_context *ctx, SDL_Renderer *ren, float row)
+{
+    const JMesh *m = v3d_current();
+    size_t at;
+    float c[3], r;
+    if (!m) return;
+    at = jm_sphere_at(m);
+    if (at + 16 > s_cur.size) return;
+    memcpy(c, s_cur.buf + at, 12);
+    memcpy(&r, s_cur.buf + at + 12, 4);
+    nk_layout_row_template_begin(ctx, row);
+    nk_layout_row_template_push_dynamic(ctx);
+    nk_layout_row_template_push_static(ctx, 70);
+    nk_layout_row_template_push_static(ctx, 50);
+    nk_layout_row_template_end(ctx);
+    nk_labelf(ctx, NK_TEXT_LEFT, "Bounds %.1f (fits %.1f)", r, m->r);
+    if (nk_button_label(ctx, "Bigger") && s_mat_dirty == 0 && !paint_dirty()) {
+        uint8_t *nb = (uint8_t *)malloc(s_cur.size);
+        char done[96];
+        r *= 2;
+        memcpy(nb, s_cur.buf, s_cur.size);
+        memcpy(nb + at + 12, &r, 4);
+        snprintf(done, sizeof done, "Model %d drawn from further away (bounds %.1f)", m->index, r);
+        take_new_file(ren, nb, s_cur.size, done);
+        return;
+    }
+    if (nk_button_label(ctx, "Fit") && s_mat_dirty == 0 && !paint_dirty()) {
+        uint8_t *nb = (uint8_t *)malloc(s_cur.size);
+        char done[96];
+        jm_fit_sphere(m, c, &r);
+        memcpy(nb, s_cur.buf, s_cur.size);
+        memcpy(nb + at, c, 12);
+        memcpy(nb + at + 12, &r, 4);
+        snprintf(done, sizeof done, "Model %d's bounds fitted to it (%.1f)", m->index, r);
+        take_new_file(ren, nb, s_cur.size, done);
+    }
 }
 
 /* ---- m10: the material editor, under the 3D view: the shown model's
@@ -1186,6 +1422,15 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         s_restore_msg[0] = 0;
     }
     if (s_dropped) {
+        if (s_raw && s_sel_file >= 0) {             /* m13: any file, as the picked item */
+            items_refresh();
+            if (s_sel_item >= 0 && s_sel_item < s_nitems) item_replace(ren, s_sel_item, s_dropped);
+            else snprintf(s_msg, sizeof s_msg, "Pick an item first, then drop the file on it.");
+            SDL_free(s_dropped);
+            s_dropped = NULL;
+        }
+    }
+    if (s_dropped) {
         size_t dl = strlen(s_dropped);
         if (dl > 4 && (!SDL_strcasecmp(s_dropped + dl - 4, ".obj") || !SDL_strcasecmp(s_dropped + dl - 4, ".smd"))) {   /* m9, m12: a model, for the one shown */
             if (s_sel_file >= 0 && v3d_current()) import_model(ren, v3d_current(), s_dropped);
@@ -1318,13 +1563,20 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     /* its textures */
     if (nk_begin(ctx, s_cur.ntex || !s_snd.n ? "Textures" : "Sounds", nk_rect(LW_FILES, top, LW_TEX, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         nk_layout_row_dynamic(ctx, row - 6, 1);
+        if (s_sel_file >= 0) {                      /* m13 */
+            nk_bool rw = (nk_bool)s_raw;
+            nk_checkbox_label(ctx, "Raw items", &rw);
+            if ((int)rw != s_raw && may_leave_paint()) s_raw = rw;
+        }
         for (i = 0; i < s_cur.ntex; i++) {
             const JTex *t = &s_cur.tex[i];
             int sel = i == s_sel_tex;
             char lb[64];
             snprintf(lb, sizeof lb, "%d: %dx%d %s", i, t->w, t->h, jt_fmt_name(t->fmt));
-            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint())
+            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint()) {
                 show_texture(ren, i);
+                s_raw = 0;
+            }
         }
         if (s_snd.n && s_cur.ntex) nk_label_colored(ctx, "Sounds", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
         for (i = 0; i < s_snd.n; i++) {             /* m7: its sounds */
@@ -1333,12 +1585,18 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             char lb[64];
             if (sn->frames) snprintf(lb, sizeof lb, "%d: %.2f s, %d kHz", i, (double)sn->frames / sn->rate, (sn->rate + 500) / 1000);
             else snprintf(lb, sizeof lb, "%d: %s", i, js_fmt_name(sn->fmt));
-            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint())
+            if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint()) {
                 show_sound(i);
+                s_raw = 0;
+            }
         }
     }
     nk_end(ctx);
 
+    /* m13: the raw items, when asked for */
+    if (s_raw && s_sel_file >= 0) {
+        items_window(ctx, ren, row, LW_FILES + LW_TEX, top, tex_w, (float)wh - top);
+    } else
     /* m7: the sound */
     if (s_sel_file >= 0 && s_sel_snd >= 0 && s_sel_snd < s_snd.n) {
         if (nk_begin(ctx, "Sound", nk_rect(LW_FILES + LW_TEX, top, tex_w, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
@@ -1489,7 +1747,8 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 ver = paint_serial();
             }
             v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row,
-                      (float)wh - top - 76 - row - (s_mat_open ? MAT_H : 0));   /* m10b: room for the Materials button (m10c: a little more) */
+                      (float)wh - top - 80 - 2 * row - (s_mat_open ? MAT_H : 0));   /* m10b: room for the Materials button (m10c: a little more; m13: and the bounds) */
+            bounds_row(ctx, ren, row);                  /* m13 */
             material_panel(ctx, ren, row);              /* m10 */
             if (v3d_take_paint_request() && !paint_on()) start_paint(ren);   /* m6: Paint ticked on the model */
             {
@@ -1585,6 +1844,7 @@ int main(int argc, char **argv)
             open_file(k);
             if (s_cur.ntex) show_texture(ren, getenv("MT_TEX") && atoi(getenv("MT_TEX")) < s_cur.ntex ? atoi(getenv("MT_TEX")) : 0);
             else if (s_snd.n) show_sound(getenv("MT_SND") && atoi(getenv("MT_SND")) < s_snd.n ? atoi(getenv("MT_SND")) : 0);   /* m7 */
+            if (getenv("MT_RAW")) { s_raw = 1; s_sel_item = atoi(getenv("MT_RAW")); }   /* m13 (tests) */
         }
         SDL_SetRenderDrawColor(ren, 20, 20, 24, 255);
         SDL_RenderClear(ren);
