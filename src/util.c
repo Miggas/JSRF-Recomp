@@ -197,7 +197,7 @@ bool move_path(const char *src, const char *dst)
 #endif
 }
 
-static FILE *uopen(const char *p, const char *mode)
+FILE *ufopen(const char *p, const char *mode)
 {
 #ifdef _WIN32
     wchar_t *w = wide(p), *m = wide(mode);
@@ -211,7 +211,7 @@ static FILE *uopen(const char *p, const char *mode)
 
 char *read_file(const char *p, size_t *len)
 {
-    FILE *f = uopen(p, "rb");
+    FILE *f = ufopen(p, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
     long n = ftell(f);
@@ -227,7 +227,7 @@ char *read_file(const char *p, size_t *len)
 
 bool write_file(const char *p, const void *data, size_t len)
 {
-    FILE *f = uopen(p, "wb");
+    FILE *f = ufopen(p, "wb");
     if (!f) return false;
     bool ok = fwrite(data, 1, len, f) == len;
     return fclose(f) == 0 && ok;
@@ -396,7 +396,7 @@ void log_file_open(const char *path)
     snprintf(old, sizeof old, "%s.old", path);
     remove_file(old);
     move_path(path, old);
-    s_log_file = uopen(path, "w");
+    s_log_file = ufopen(path, "w");
     if (s_log_file) {
         char t[64];
         time_t now = time(NULL);
@@ -923,4 +923,15 @@ void make_executable(const char *p)
 #else
     (void)p;
 #endif
+}
+
+/* m14: the first n bytes of a file (fewer when it's shorter); -1 when it can't be read */
+long read_head(const char *p, void *buf, size_t n)
+{
+    FILE *f = ufopen(p, "rb");
+    size_t r;
+    if (!f) return -1;
+    r = fread(buf, 1, n, f);
+    fclose(f);
+    return (long)r;
 }

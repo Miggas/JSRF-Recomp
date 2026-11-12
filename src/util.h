@@ -26,6 +26,9 @@ bool  remove_tree(const char *p);
 bool  move_path(const char *src, const char *dst);
 void  sha256_hex(const unsigned char *d, size_t n, char out[65]);   /* upper-case hex */
 char *read_file(const char *p, size_t *len);
+long  read_head(const char *p, void *buf, size_t n);   /* m14: the first n bytes; -1 can't */
+#include <stdio.h>
+FILE *ufopen(const char *p, const char *mode);         /* m14: fopen with UTF-8 paths on Windows too */
 bool  self_exe(char *out);                 /* v1r: this program's file */
 void  make_executable(const char *p);                    /* malloc'd, 0-terminated */
 bool  write_file(const char *p, const void *data, size_t len);

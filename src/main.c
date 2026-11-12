@@ -47,11 +47,12 @@
 #include "paint.h"
 #include "view3d.h"
 #include "jsnd.h"
+#include "jadx.h"
 #include "jcont.h"
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m13"
+#define MODTOOL_VERSION "m14"
 
 /* ---- the files ---- */
 
@@ -108,6 +109,8 @@ static void classify(Entry *e)
         { "Disp/charicon", CAT_UI, 1, "Character icons" }, { "Disp/map", CAT_UI, 2, "Maps" },
         { "Disp", CAT_UI, 0, "HUD" }, { "Font", CAT_UI, 3, "Fonts" }, { "Title", CAT_UI, 4, "Title screen" },
         { "Garage", CAT_UI, 5, "Garage" }, { "Progress", CAT_UI, 6, "Progress" }, { "Ending", CAT_UI, 7, "Ending" },
+        { "Z_ADX/BGM", CAT_SOUND, 2, "Music" }, { "Z_ADX/Env", CAT_SOUND, 3, "Ambience" },   /* m14 */
+        { "Z_ADX/DJ", CAT_SOUND, 4, "DJ (Professor K)" }, { "Z_ADX", CAT_SOUND, 5, "Other music" },
         { "Mission", CAT_MISSION, 0, "Missions" }, { "Sounds/SE", CAT_SOUND, 0, "Sound effects" }, { "Sounds", CAT_SOUND, 1, "Sounds" } };
     static const char *const graf[5] = { "SS", "S", "M", "L", "XL" };
     const char *r = e->rel + (SDL_strncasecmp(e->rel, "Media/", 6) ? 0 : 6);
@@ -194,7 +197,7 @@ static int want_ext(const char *n)
     const char *d = strrchr(n, '.');
     if (!d) return 0;
     return !SDL_strcasecmp(d, ".dat") || !SDL_strcasecmp(d, ".grf") || !SDL_strcasecmp(d, ".prs")
-        || !SDL_strcasecmp(d, ".jtx");
+        || !SDL_strcasecmp(d, ".jtx") || !SDL_strcasecmp(d, ".adx");   /* m14: the music */
 }
 
 static void game_path(char *out, const char *rel)        /* the original */
@@ -268,6 +271,27 @@ static void walk_cb(const char *name, bool isdir, void *u)
     if (isdir) { walk(p, r); return; }
     if (!want_ext(name)) return;
     SDL_AtomicAdd(&s_scan_seen, 1);
+    {   /* m14: an .adx: its header is enough (the songs are big) */
+        const char *d = strrchr(name, '.');
+        if (!SDL_strcasecmp(d, ".adx")) {
+            uint8_t h[4096];
+            long n = read_head(p, h, sizeof h);
+            if (n > 0 && adx_head_ok(h, (size_t)n)) {
+                SDL_LockMutex(s_mx);
+                if (s_nfiles == s_capfiles) {
+                    s_capfiles = s_capfiles ? s_capfiles * 2 : 256;
+                    s_files = (Entry *)realloc(s_files, sizeof(Entry) * (size_t)s_capfiles);
+                }
+                memset(&s_files[s_nfiles], 0, sizeof s_files[s_nfiles]);
+                snprintf(s_files[s_nfiles].rel, sizeof s_files[s_nfiles].rel, "%s", r);
+                s_files[s_nfiles].nsnd = 1;
+                classify(&s_files[s_nfiles]);
+                s_nfiles++;
+                SDL_UnlockMutex(s_mx);
+            }
+            return;
+        }
+    }
     {
         size_t len = 0;
         char *b = read_file(p, &len);
@@ -1094,7 +1118,7 @@ static int export_sound(int k, int quiet)
     snprintf(dir, sizeof dir, "%s", out);
     if ((p = strrchr(dir, SEP[0]))) { *p = 0; make_dirs(dir); }
     if (js_decode(s_cur.buf, s, &pcm, &fr)) {
-        if (!quiet) snprintf(s_msg, sizeof s_msg, "Sound %d is %s: it can't be read (only PCM and Xbox ADPCM).", k, js_fmt_name(s->fmt));
+        if (!quiet) snprintf(s_msg, sizeof s_msg, "Sound %d is %s: it can't be read (only PCM, Xbox ADPCM and ADX).", k, js_fmt_name(s->fmt));
         return -1;
     }
     if (js_write_wav(out, pcm, fr, s->ch, s->rate)) {
@@ -1583,7 +1607,10 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             const JSnd *sn = &s_snd.s[i];
             int sel = i == s_sel_snd;
             char lb[64];
-            if (sn->frames) snprintf(lb, sizeof lb, "%d: %.2f s, %d kHz", i, (double)sn->frames / sn->rate, (sn->rate + 500) / 1000);
+            if (sn->fmt == JS_ADX && sn->frames) {   /* m14: a song: minutes */
+                int sec = (int)((long long)sn->frames / sn->rate);
+                snprintf(lb, sizeof lb, "%d:%02d%s", sec / 60, sec % 60, sn->loop ? ", looped" : "");
+            } else if (sn->frames) snprintf(lb, sizeof lb, "%d: %.2f s, %d kHz", i, (double)sn->frames / sn->rate, (sn->rate + 500) / 1000);
             else snprintf(lb, sizeof lb, "%d: %s", i, js_fmt_name(sn->fmt));
             if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && may_leave_paint()) {
                 show_sound(i);
@@ -1604,12 +1631,17 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             int playing = sound_playing();
             struct nk_rect wb;
             nk_layout_row_dynamic(ctx, row - 6, 1);
-            nk_labelf(ctx, NK_TEXT_LEFT, "%s, sound %d", s_files[s_sel_file].rel, s_sel_snd);
+            if (sn->fmt == JS_ADX) nk_labelf(ctx, NK_TEXT_LEFT, "%s", s_files[s_sel_file].rel);   /* m14 */
+            else nk_labelf(ctx, NK_TEXT_LEFT, "%s, sound %d", s_files[s_sel_file].rel, s_sel_snd);
             if (sn->frames)
                 nk_labelf(ctx, NK_TEXT_LEFT, "%.2f s, %d Hz, %s, %s", (double)sn->frames / sn->rate, sn->rate,
                           sn->ch == 1 ? "mono" : sn->ch == 2 ? "stereo" : "multichannel", js_fmt_name(sn->fmt));
             else
                 nk_labelf(ctx, NK_TEXT_LEFT, "%s (format 0x%X): can't be played or replaced", js_fmt_name(sn->fmt), sn->fmt);
+            if (sn->loop && sn->loop_end > sn->loop_start)   /* m14 */
+                nk_labelf(ctx, NK_TEXT_LEFT, "Loops %.2f s to %.2f s (green); a new one loops whole",
+                          (double)sn->loop_start / sn->rate, (double)sn->loop_end / sn->rate);
+            else if (sn->fmt == JS_ADX) nk_label(ctx, "Plays once (no loop in the file)", NK_TEXT_LEFT);
             nk_label_colored(ctx, s_cur_modded ? "Modded (original in mod_backups)" : "Original",
                              NK_TEXT_LEFT, s_cur_modded ? nk_rgb(240, 175, 30) : nk_rgb(150, 150, 160));
             nk_layout_row_dynamic(ctx, row, 3);
@@ -1638,21 +1670,41 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 float mid = wb.y + wb.h / 2;
                 nk_fill_rect(cv, wb, 4, nk_rgb(24, 24, 30));
                 nk_stroke_line(cv, wb.x, mid, wb.x + wb.w, mid, 1, nk_rgb(60, 60, 70));
-                if (s_snd_pcm && s_snd_frames > 0 && cols > 0)
-                    for (x = 0; x < cols; x++) {
-                        int f0 = (int)((long long)s_snd_frames * x / cols), f1 = (int)((long long)s_snd_frames * (x + 1) / cols), f;
-                        int lo = 0, hi = 0;
-                        if (f1 <= f0) f1 = f0 + 1;
-                        if (f1 > s_snd_frames) f1 = s_snd_frames;
-                        for (f = f0; f < f1; f++)
-                            for (c = 0; c < ch; c++) {
-                                int v = s_snd_pcm[(size_t)f * ch + c];
-                                if (v < lo) lo = v;
-                                if (v > hi) hi = v;
-                            }
-                        nk_stroke_line(cv, wb.x + x + 0.5f, mid - hi * (wb.h / 2 - 4) / 32768.0f,
-                                       wb.x + x + 0.5f, mid - lo * (wb.h / 2 - 4) / 32768.0f, 1, nk_rgb(240, 175, 30));
+                if (s_snd_pcm && s_snd_frames > 0 && cols > 0) {
+                    /* m14: each column's lowest and highest, worked out once (a song is millions of samples) */
+                    static const int16_t *wf_for;
+                    static int wf_frames, wf_cols;
+                    static int16_t wf_lo[4096], wf_hi[4096];
+                    if (cols > 4096) cols = 4096;
+                    if (wf_for != s_snd_pcm || wf_frames != s_snd_frames || wf_cols != cols) {
+                        for (x = 0; x < cols; x++) {
+                            int f0 = (int)((long long)s_snd_frames * x / cols), f1 = (int)((long long)s_snd_frames * (x + 1) / cols), f;
+                            int lo = 0, hi = 0;
+                            if (f1 <= f0) f1 = f0 + 1;
+                            if (f1 > s_snd_frames) f1 = s_snd_frames;
+                            for (f = f0; f < f1; f++)
+                                for (c = 0; c < ch; c++) {
+                                    int v = s_snd_pcm[(size_t)f * ch + c];
+                                    if (v < lo) lo = v;
+                                    if (v > hi) hi = v;
+                                }
+                            wf_lo[x] = (int16_t)lo;
+                            wf_hi[x] = (int16_t)hi;
+                        }
+                        wf_for = s_snd_pcm;
+                        wf_frames = s_snd_frames;
+                        wf_cols = cols;
                     }
+                    for (x = 0; x < cols; x++)
+                        nk_stroke_line(cv, wb.x + x + 0.5f, mid - wf_hi[x] * (wb.h / 2 - 4) / 32768.0f,
+                                       wb.x + x + 0.5f, mid - wf_lo[x] * (wb.h / 2 - 4) / 32768.0f, 1, nk_rgb(240, 175, 30));
+                    if (sn->loop && sn->loop_end > sn->loop_start) {   /* m14: where it loops */
+                        float lx0 = wb.x + wb.w * (float)sn->loop_start / (float)s_snd_frames;
+                        float lx1 = wb.x + wb.w * (float)sn->loop_end / (float)s_snd_frames;
+                        nk_stroke_line(cv, lx0, wb.y, lx0, wb.y + wb.h, 1, nk_rgb(90, 200, 120));
+                        nk_stroke_line(cv, lx1, wb.y, lx1, wb.y + wb.h, 1, nk_rgb(90, 200, 120));
+                    }
+                }
                 if (playing && s_snd_frames > 0) {
                     Uint32 left = SDL_GetQueuedAudioSize(s_audio) / (2u * (Uint32)ch);
                     float px = wb.x + wb.w * (float)(s_snd_frames - (int)left) / (float)s_snd_frames;

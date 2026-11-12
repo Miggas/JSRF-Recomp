@@ -1,5 +1,6 @@
 /* JSRF game files' textures: see jtex.h */
 #include "jtex.h"
+#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -172,7 +173,7 @@ int jf_load(JFile *f, const char *path)
     long n;
     uint8_t *buf;
     size_t got;
-    fp = fopen(path, "rb");
+    fp = ufopen(path, "rb");
     if (!fp) { memset(f, 0, sizeof *f); return -1; }
     fseek(fp, 0, SEEK_END);
     n = ftell(fp);
@@ -218,7 +219,7 @@ int jf_parse(JFile *f, const char *path, uint8_t *buf, size_t size)
         FILE *fp;
         snprintf(g, sizeof g, "%s", path);
         memcpy(g + strlen(g) - 3, path[strlen(path) - 1] == 'S' ? "GRF" : "grf", 3);
-        if ((fp = fopen(g, "rb"))) {
+        if ((fp = ufopen(g, "rb"))) {
             uint8_t th[18];
             if (fread(th, 1, 18, fp) == 18) { w = th[12] | th[13] << 8; h = th[14] | th[15] << 8; }
             fclose(fp);
@@ -252,7 +253,7 @@ void jf_free(JFile *f)
 
 int jf_save(const JFile *f, const char *path)
 {
-    FILE *fp = fopen(path, "wb");
+    FILE *fp = ufopen(path, "wb");
     int ok;
     if (!fp) return -1;
     ok = fwrite(f->buf, 1, f->size, fp) == f->size;

@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { JS_PCM = 1, JS_XADPCM = 0x69 };
+enum { JS_PCM = 1, JS_XADPCM = 0x69, JS_ADX = 0x10ADC };   /* m14: JS_ADX: a whole .adx file (music) */
 
 typedef struct {
     size_t item, len;           /* the item: the RIFF, its bytes */
@@ -21,6 +21,7 @@ typedef struct {
     int fmt, ch, rate, bits;    /* fmt: JS_PCM, JS_XADPCM, or another tag (shown, not decoded) */
     size_t data, dlen;          /* the samples */
     int frames;                 /* samples a channel */
+    int loop, loop_start, loop_end;   /* m14 (ADX): looped, where (samples) */
 } JSnd;
 
 typedef struct {
@@ -28,6 +29,7 @@ typedef struct {
     int n;
 } JSounds;
 
+/* a .dat's sounds, or (m14) an .adx: one sound, the whole file */
 int js_scan(const uint8_t *buf, size_t size, JSounds *out);
 void js_free(JSounds *ss);
 const char *js_fmt_name(int fmt);

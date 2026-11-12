@@ -1,5 +1,6 @@
 /* JSRF models: see model.h */
 #include "model.h"
+#include "util.h"
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -375,7 +376,7 @@ int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, con
         for (k = i; k > 0 && mats[k] < mats[k - 1]; k--) { int x = mats[k]; mats[k] = mats[k - 1]; mats[k - 1] = x; }
     /* m9: one material a game material (mat<N>), all wearing the texture:
      * the names bring each part back to its material on import */
-    if ((f = fopen(mtl_path, "w"))) {
+    if ((f = ufopen(mtl_path, "w"))) {
         fprintf(f, "# JSRF Mod Tool: mat<N> is the model's material N; keep the names to keep them on import\n");
         for (k = 0; k < nm; k++) {
             fprintf(f, "newmtl mat%d\nKa 1 1 1\nKd 1 1 1\nKs 0 0 0\nd 1\nillum 1\n", mats[k]);
@@ -383,7 +384,7 @@ int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, con
         }
         fclose(f);
     } else return -1;
-    f = fopen(obj_path, "w");
+    f = ufopen(obj_path, "w");
     if (!f) return -1;
     fprintf(f, "# JSRF Mod Tool: %d vertices, %d triangles\nmtllib %s\no %s\n", m->nv, m->nt, mtl_file, name);
     for (i = 0; i < m->nv; i++) fprintf(f, "v %.6f %.6f %.6f\n", m->p[i * 3], m->p[i * 3 + 1], m->p[i * 3 + 2]);
@@ -521,7 +522,7 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
     if (!ngmat) gmat[ngmat++] = 0;
     nmat_total = (int)u32(m0 + 8) ? (int)u32(m0 + 8) : (int)u32(h + 108);
 
-    f = fopen(path, "r");
+    f = ufopen(path, "r");
     if (!f) { snprintf(err, errn, "Can't open %s", path); return -1; }
     if (strlen(path) > 4 && !strcasecmp(path + strlen(path) - 4, ".smd")) {
         /* m12: an .smd: its triangles, in the game's space, each corner with
@@ -812,7 +813,7 @@ int jm_materials(const uint8_t *buf, size_t size, const JMesh *m, size_t *at, in
 
 int jm_write_smd(const JMesh *m, const char *path)
 {
-    FILE *f = fopen(path, "w");
+    FILE *f = ufopen(path, "w");
     int i, k, game_fwd = m->has_n ? !winding(m) : 1;   /* winding() is the view's (x mirrored) */
     if (!f) return -1;
     fprintf(f, "version 1\nnodes\n");

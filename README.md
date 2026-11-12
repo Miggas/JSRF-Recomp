@@ -33,11 +33,13 @@ An edited file is changed in place in the game folder. Before its first change, 
 
 **Restore all** (top right) puts back the original of every modded file in `mod_backups/`, and the game's cached copies, after asking once more.
 
-**Sounds** (the Sounds tab, and any file with sounds in it): each sound's length and rate, its waveform, **Play**, **Export WAV** (into `sound_edits/` in the game folder), **Export all**, and **Import WAV** (the exported file, or drop any WAV on the window). An imported WAV can be any length, rate or channel count: it's made the game's rate and channels and its format (Xbox ADPCM or PCM), and the file around it is rebuilt to fit. The original is kept in `mod_backups/` as for textures. Music in `.adx` files isn't covered yet.
+**Sounds** (the Sounds tab, and any file with sounds in it): each sound's length and rate, its waveform, **Play**, **Export WAV** (into `sound_edits/` in the game folder), **Export all**, and **Import WAV** (the exported file, or drop any WAV on the window). An imported WAV can be any length, rate or channel count: it's made the game's rate and channels and its format (Xbox ADPCM or PCM), and the file around it is rebuilt to fit. The original is kept in `mod_backups/` as for textures.
+
+**Music** (m14, idea by Miggas): the `.adx` files in `Media/Z_ADX` are in the Sounds tab too: **Music** (BGM), **Ambience** (Env) and **DJ (Professor K)**. They play, export and import like the other sounds. An imported song can be any length: it's encoded as ADX at the original's rate and channels. A song that loops in the game (the green lines on its waveform) loops the whole new song. Encrypted ADX files aren't read (JSRF's aren't).
 
 Sizes: an image the texture's own size goes in as it is. A texture in a `.dat` can be made bigger: import a square image of 512, 1024, 2048 or 4096 pixels (larger than the texture) and the file makes room for it; the game reads the new size from the texture itself. Any other size is resized to the texture's. Graffiti (`.grf`, `.prs`, `.JTX`) always keep their size.
 
-What it reads: characters, objects, stages, HUD sprites, fonts and logos (`.dat`), and graffiti (`.grf`, `.prs`, `.JTX`). Textures in DXT1, DXT3 and DXT5 are written back in the same format, with their smaller mip levels made again from the new image.
+What it reads: characters, objects, stages, HUD sprites, fonts and logos (`.dat`), graffiti (`.grf`, `.prs`, `.JTX`), and music (`.adx`). Textures in DXT1, DXT3 and DXT5 are written back in the same format, with their smaller mip levels made again from the new image.
 
 ## Build
 
@@ -48,4 +50,4 @@ Both download Zig (the compiler) into `deps/` the first time, the same way the l
 
 ## Credits
 
-The file formats were learned from [JSRF ModTool](https://github.com/neodoso/JSRF_ModTool) by neodoso and his [jsrf-inside](https://jsrf-inside.blogspot.com) blog. No code was taken from it: this tool is written from scratch in C. Idea by Miggas.
+The file formats were learned from [JSRF ModTool](https://github.com/neodoso/JSRF_ModTool) by neodoso and his [jsrf-inside](https://jsrf-inside.blogspot.com) blog. No code was taken from it: this tool is written from scratch in C. The ADX music format (CRI's) was written from its public description, no code taken. Idea by Miggas.

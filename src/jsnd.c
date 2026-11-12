@@ -1,6 +1,8 @@
 /* JSRF sounds: see jsnd.h */
 #include "jsnd.h"
 #include "jcont.h"
+#include "jadx.h"
+#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +14,7 @@ static void put16(uint8_t *b, uint16_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(
 
 const char *js_fmt_name(int fmt)
 {
-    return fmt == JS_PCM ? "PCM" : fmt == JS_XADPCM ? "Xbox ADPCM" : "other";
+    return fmt == JS_PCM ? "PCM" : fmt == JS_XADPCM ? "Xbox ADPCM" : fmt == JS_ADX ? "ADX" : "other";
 }
 
 /* ---- finding them ---- */
@@ -85,6 +87,26 @@ int js_scan(const uint8_t *b, size_t size, JSounds *o)
     int cap = 0;
     memset(o, 0, sizeof *o);
     if (size < 32) return -1;
+    {   /* m14: an .adx: the whole file */
+        JAdx a;
+        if (!adx_parse(b, size, &a)) {
+            JSnd sn;
+            memset(&sn, 0, sizeof sn);
+            sn.len = size;
+            sn.fmt = JS_ADX;
+            sn.ch = a.ch;
+            sn.rate = a.rate;
+            sn.bits = 4;
+            sn.data = a.data;
+            sn.dlen = size - a.data;
+            sn.frames = a.frames;
+            sn.loop = a.loop;
+            sn.loop_start = a.loop_start;
+            sn.loop_end = a.loop_end;
+            add(o, &cap, &sn);
+            return 0;
+        }
+    }
     if (!memcmp(b, "MULT", 4)) {
         size_t off = 16;
         int guard = 0;
@@ -150,6 +172,12 @@ int js_decode(const uint8_t *buf, const JSnd *s, int16_t **pcm, int *frames)
     *pcm = NULL;
     *frames = s->frames;
     if (s->frames <= 0) return -1;
+    if (s->fmt == JS_ADX) {     /* m14 */
+        JAdx a;
+        if (adx_parse(buf, s->len, &a)) return -1;
+        *frames = a.frames;
+        return adx_decode(buf, s->len, &a, pcm);
+    }
     o = (int16_t *)malloc(sizeof(int16_t) * (size_t)s->frames * (size_t)ch);
     if (!o) return -1;
     if (s->fmt == JS_PCM && s->bits == 16) {
@@ -215,7 +243,7 @@ static uint8_t *adpcm_encode(const int16_t *in, int frames, int ch, size_t *outl
 
 int js_read_wav(const char *path, int16_t **pcm, int *frames, int *ch, int *rate, char *err, size_t errn)
 {
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = ufopen(path, "rb");
     uint8_t *b;
     long n;
     size_t off = 12, fmt = 0, data = 0, dlen = 0;
@@ -275,7 +303,7 @@ int js_read_wav(const char *path, int16_t **pcm, int *frames, int *ch, int *rate
 
 int js_write_wav(const char *path, const int16_t *pcm, int frames, int ch, int rate)
 {
-    FILE *fp = fopen(path, "wb");
+    FILE *fp = ufopen(path, "wb");
     uint8_t h[44];
     size_t dl = (size_t)frames * (size_t)ch * 2, i;
     if (!fp) return -1;
@@ -337,6 +365,11 @@ int js_replace(const uint8_t *buf, size_t size, const JSnd *s, const int16_t *pc
     uint8_t *samples, *item;
     size_t slen, ilen, head = s->data - s->item, tail_at, tail;
     *nb = NULL;
+    if (s->fmt == JS_ADX) {     /* m14: the file made again */
+        JAdx a;
+        if (adx_parse(buf, size, &a)) return -1;
+        return adx_build(buf, size, &a, pcm, frames, ch, rate, nb, nsize);
+    }
     if (s->fmt != JS_PCM && s->fmt != JS_XADPCM) return -1;
     if (s->fmt == JS_PCM && s->bits != 16) return -1;
     cv = convert(pcm, frames, ch, rate, s->ch, s->rate, &cf);   /* the game's rate and channels */
