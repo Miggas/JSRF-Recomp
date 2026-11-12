@@ -49,6 +49,28 @@ static void layout(int vs, uint32_t fvf, int *nrm, int *uv)
     }
 }
 
+/* m12: where a vertex's skinning is: blend weights (floats) after the
+ * position, the last one 4 bone ids when 0x1000 (Direct3D's "last beta
+ * UBYTE4") is set: nw weights at 12, ids at 12 + 4 nw, nw + 1 bones (the
+ * last gets what's left). -1 when it has none. Beat: 0x1218, one weight
+ * and the ids (JSRF ModTool writes them the same way) */
+static int skin_layout(int vs, uint32_t fvf, int *nw, int *iof)
+{
+    static const int betas[8] = { 0, 0, 0, 1, 2, 3, 4, 5 };
+    int b = betas[(fvf >> 1) & 7], n, u;
+    layout(vs, fvf, &n, &u);
+    if (b < 1 || !(fvf & 0x1000) || fvf >= 0x10000) return -1;
+    {   /* only when the format adds up to the vertex, as layout() checks */
+        static const int pos[8] = { 0, 12, 16, 16, 20, 24, 28, 32 };
+        int o = pos[(fvf >> 1) & 7] + ((fvf & 0x10) ? 12 : 0) + ((fvf & 0x20) ? 4 : 0) + ((fvf & 0x40) ? 4 : 0)
+                + ((fvf & 0x80) ? 4 : 0) + 8 * (int)((fvf >> 8) & 0xF);
+        if (o != vs) return -1;
+    }
+    *nw = b - 1;
+    *iof = 12 + 4 * *nw;
+    return 12;
+}
+
 /* m9: the material of the triangle starting at index i of part header h
  * (its triangle groups: +112 their offset - 16, +116 their count; a group:
  * +0 its triangles, +4 its first index, +16 its material) */
@@ -90,7 +112,7 @@ static int data_is_last(const uint8_t *m, size_t len, uint32_t p, uint32_t parts
 static int parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
 {
     uint32_t parts, p;
-    int any_visible = 0, pass, vis_n = 0, vis_p = -1;
+    int any_visible = 0, pass, vis_n = 0, vis_p = -1, q3;
     size_t nv = 0, nt = 0;
     memset(out, 0, sizeof *out);
     if (len < 16 || memcmp(m, "MDLB", 4)) return -1;
@@ -105,14 +127,19 @@ static int parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
             out->t = (float *)malloc(nv * 2 * sizeof(float) + 1);
             out->ix = (uint32_t *)malloc(nt * 3 * sizeof(uint32_t) + 1);
             out->tmat = (int *)malloc(nt * sizeof(int) + 1);
-            if (!out->p || !out->n || !out->t || !out->ix || !out->tmat) return -1;
+            out->bi = (uint8_t *)calloc(nv * 4 + 1, 1);
+            out->bw = (float *)calloc(nv * 4 + 1, sizeof(float));
+            out->bonepos = (float *)calloc((size_t)parts * 3 + 1, sizeof(float));
+            if (!out->p || !out->n || !out->t || !out->ix || !out->tmat || !out->bi || !out->bw || !out->bonepos) return -1;
+            for (p = 0; p < parts; p++)
+                for (q3 = 0; q3 < 3; q3++) out->bonepos[p * 3 + q3] = f32(m + 16 + p * 128 + 32 + q3 * 4);
             out->has_n = 1;
         }
         nv = nt = 0;
         for (p = 0; p < parts; p++) {
             const uint8_t *h = m + 16 + p * 128;
             size_t vb = (size_t)u32(h) + 16, vo, to, vc, vs, tc, i;
-            int strip, no, uo;
+            int strip, no, uo, wo, nw = 0, iof = 0;
             if (any_visible ? u32(h + 12) != 0 : p != parts - 1) continue;
             if (vb + 32 > len) continue;
             vo = (size_t)u32(m + vb) + 16;
@@ -124,6 +151,7 @@ static int parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
             if (pass) { vis_n++; vis_p = (int)p; }
             if (vs < 12 || vs > 128 || vc > 65536 || vo + vc * vs > len || to + tc * 2 > len) continue;
             layout((int)vs, u32(m + vb + 8), &no, &uo);
+            wo = skin_layout((int)vs, u32(m + vb + 8), &nw, &iof);
             if (no < 0 && pass) out->has_n = 0;
             if (pass) {
                 for (i = 0; i < vc; i++) {
@@ -134,6 +162,15 @@ static int parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
                     else nn[0] = nn[1] = nn[2] = 0;
                     if (uo >= 0) { tt[0] = f32(v + uo); tt[1] = f32(v + uo + 4); }
                     else tt[0] = tt[1] = 0;
+                    if (wo >= 0) {              /* m12: its bones and weights */
+                        uint8_t *bi = out->bi + (vbase + i) * 4;
+                        float *bw = out->bw + (vbase + i) * 4, left = 1;
+                        int k;
+                        for (k = 0; k < 4; k++) bi[k] = v[iof + k];
+                        for (k = 0; k < nw && k < 3; k++) { bw[k] = f32(v + wo + 4 * k); left -= bw[k]; }
+                        bw[k] = left;
+                        if (nw + 1 > out->nbv) out->nbv = nw + 1 > 4 ? 4 : nw + 1;
+                    }
                 }
             }
             if (strip) {
@@ -253,7 +290,10 @@ int jm_load(const uint8_t *b, size_t size, JModels *out)
             JMesh m;
             if (it->e <= it->s || it->e - it->s < 16 || memcmp(b + it->s, "MDLB", 4)) continue;
             count++;
-            if (parse_mdlb(b + it->s, it->e - it->s, &m)) { free(m.p); free(m.n); free(m.t); free(m.ix); free(m.tmat); continue; }
+            if (parse_mdlb(b + it->s, it->e - it->s, &m)) {
+                free(m.p); free(m.n); free(m.t); free(m.ix); free(m.tmat); free(m.bi); free(m.bw); free(m.bonepos);
+                continue;
+            }
             m.index = count;
             m.item = it->s;
             m.len = it->e - it->s;
@@ -292,6 +332,9 @@ void jm_free(JModels *ms)
         free(ms->m[i].t);
         free(ms->m[i].ix);
         free(ms->m[i].tmat);
+        free(ms->m[i].bi);
+        free(ms->m[i].bw);
+        free(ms->m[i].bonepos);
     }
     free(ms->m);
     ms->m = NULL;
@@ -368,7 +411,69 @@ int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, con
 static void put32(uint8_t *b, uint32_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); b[2] = (uint8_t)(v >> 16); b[3] = (uint8_t)(v >> 24); }
 static void putf(uint8_t *b, float f) { uint32_t v; memcpy(&v, &f, 4); put32(b, v); }
 
-typedef struct { float *p, *t, *n; int np, nt, nn, cp, ct, cn; } ObjPools;
+static void pool_add(float **a, int *n, int *cap, int k, const float *v)
+{
+    if (*n == *cap) { *cap = *cap ? *cap * 2 : 1024; *a = (float *)realloc(*a, sizeof(float) * (size_t)k * (size_t)*cap); }
+    memcpy(*a + (size_t)*n * k, v, sizeof(float) * (size_t)k);
+    (*n)++;
+}
+
+typedef struct {
+    float *p, *t, *n;
+    int np, nt, nn, cp, ct, cn;
+    uint8_t *wb;            /* m12 (.smd): each position's bones (4) ... */
+    float *ww;              /* ... and weights (4); NULL for an .obj */
+    int cw;
+} ObjPools;
+
+/* m12: a value already in the pool (k floats, plus 4 bones and weights for
+ * positions) found by a hash, else added; its index */
+typedef struct { int *slot; int size; } VHash;
+
+static unsigned vh_key(const float *v, int k, const uint8_t *b, const float *w)
+{
+    unsigned h = 2166136261u;
+    int i;
+    for (i = 0; i < k; i++) { uint32_t x; memcpy(&x, &v[i], 4); h = (h ^ x) * 16777619u; }
+    if (b) for (i = 0; i < 4; i++) { uint32_t x; memcpy(&x, &w[i], 4); h = (h ^ b[i] ^ (x << 8)) * 16777619u; }
+    return h;
+}
+
+static int vh_find_add(VHash *H, float **pool, int *n, int *cap, int k, const float *v,
+                       uint8_t **wb, float **ww, int *cw, const uint8_t *b, const float *w)
+{
+    unsigned slot;
+    int i;
+    if (*n * 2 >= H->size) {                    /* grow and rehash */
+        int ns = H->size ? H->size * 2 : 4096, j;
+        int *nslot = (int *)malloc(sizeof(int) * (size_t)ns);
+        for (j = 0; j < ns; j++) nslot[j] = -1;
+        for (j = 0; j < *n; j++) {
+            unsigned q = vh_key(*pool + (size_t)j * k, k, wb ? *wb + (size_t)j * 4 : NULL, ww ? *ww + (size_t)j * 4 : NULL) & (unsigned)(ns - 1);
+            while (nslot[q] >= 0) q = (q + 1) & (unsigned)(ns - 1);
+            nslot[q] = j;
+        }
+        free(H->slot);
+        H->slot = nslot;
+        H->size = ns;
+    }
+    slot = vh_key(v, k, b, w) & (unsigned)(H->size - 1);
+    while ((i = H->slot[slot]) >= 0) {
+        if (!memcmp(*pool + (size_t)i * k, v, sizeof(float) * (size_t)k)
+            && (!b || (!memcmp(*wb + (size_t)i * 4, b, 4) && !memcmp(*ww + (size_t)i * 4, w, 16))))
+            return i;
+        slot = (slot + 1) & (unsigned)(H->size - 1);
+    }
+    if (b && *n == *cw) {
+        *cw = *cw ? *cw * 2 : 1024;
+        *wb = (uint8_t *)realloc(*wb, (size_t)*cw * 4);
+        *ww = (float *)realloc(*ww, sizeof(float) * 4 * (size_t)*cw);
+    }
+    if (b) { memcpy(*wb + (size_t)*n * 4, b, 4); memcpy(*ww + (size_t)*n * 4, w, 16); }
+    pool_add(pool, n, cap, k, v);
+    H->slot[slot] = *n - 1;
+    return *n - 1;
+}
 typedef struct { int v, t, n, mat; } Corner;
 
 static int obj_index(const char *s, int count)   /* 1-based, or negative from the end; -1 none */
@@ -377,13 +482,6 @@ static int obj_index(const char *s, int count)   /* 1-based, or negative from th
     if (i > 0) return i - 1 < count ? i - 1 : -1;
     if (i < 0) return count + i >= 0 ? count + i : -1;
     return -1;
-}
-
-static void pool_add(float **a, int *n, int *cap, int k, const float *v)
-{
-    if (*n == *cap) { *cap = *cap ? *cap * 2 : 1024; *a = (float *)realloc(*a, sizeof(float) * (size_t)k * (size_t)*cap); }
-    memcpy(*a + (size_t)*n * k, v, sizeof(float) * (size_t)k);
-    (*n)++;
 }
 
 int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *path,
@@ -396,7 +494,7 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
     int ncs = 0, ccs = 0, cur_mat = -1, nnames = 0, i, k;
     const uint8_t *m0 = buf + m->item, *h, *ov;
     size_t vb, vo, vs, ovc, go, gn;
-    int nrm_off, uv_off, gmat[64], ngmat = 0, nmat_total;
+    int nrm_off, uv_off, gmat[64], ngmat = 0, nmat_total, wo, nw = 0, iof = 0;
     *nb = NULL;
     memset(&P, 0, sizeof P);
     if (m->part < 0) {
@@ -409,6 +507,7 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
     ovc = u32(m0 + vb + 4);
     vs = u32(m0 + vb + 12);
     layout((int)vs, u32(m0 + vb + 8), &nrm_off, &uv_off);
+    wo = skin_layout((int)vs, u32(m0 + vb + 8), &nw, &iof);
     if (uv_off < 0) { snprintf(err, errn, "Model %d's vertices (%u bytes) aren't a kind this tool can write.", m->index, (unsigned)vs); return -1; }
     ov = m0 + vo;
     go = u32(h + 112) ? (size_t)u32(h + 112) + 16 : 0;
@@ -422,10 +521,89 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
     if (!ngmat) gmat[ngmat++] = 0;
     nmat_total = (int)u32(m0 + 8) ? (int)u32(m0 + 8) : (int)u32(h + 108);
 
-    /* the .obj */
     f = fopen(path, "r");
     if (!f) { snprintf(err, errn, "Can't open %s", path); return -1; }
-    while (fgets(line, sizeof line, f)) {
+    if (strlen(path) > 4 && !strcasecmp(path + strlen(path) - 4, ".smd")) {
+        /* m12: an .smd: its triangles, in the game's space, each corner with
+         * its bones (part numbers) and weights; corners that are the same
+         * made one vertex again */
+        VHash hp = { 0 }, ht = { 0 }, hn = { 0 };
+        int in_tri = 0, corner = 0;
+        char mat[64] = "";
+        while (fgets(line, sizeof line, f)) {
+            char *ln = line;
+            while (*ln == ' ' || *ln == '\t') ln++;
+            if (!in_tri) { if (!strncmp(ln, "triangles", 9)) in_tri = 1; continue; }
+            if (!strncmp(ln, "end", 3)) break;
+            if (corner == 0) {                  /* the material's name */
+                size_t l;
+                snprintf(mat, sizeof mat, "%s", ln);
+                l = strlen(mat);
+                while (l && (mat[l - 1] == '\n' || mat[l - 1] == '\r' || mat[l - 1] == ' ')) mat[--l] = 0;
+                if (!strncmp(mat, "mat", 3) && mat[3] >= '0' && mat[3] <= '9') cur_mat = atoi(mat + 3);
+                else {
+                    for (k = 0; k < nnames && strcmp(names[k], mat); k++) ;
+                    if (k == nnames && nnames < 64) snprintf(names[nnames++], 64, "%s", mat);
+                    cur_mat = gmat[k % ngmat];
+                }
+                corner = 1;
+                continue;
+            } else {
+                int parent = 0, links = 0, nread = 0, j;
+                float x, y, z, nx, ny, nz, u, v, pv[3], nv3[3], tv[2], w[4] = { 1, 0, 0, 0 };
+                uint8_t b[4] = { 0, 0, 0, 0 };
+                char *q;
+                Corner cr;
+                if (sscanf(ln, "%d %f %f %f %f %f %f %f %f%n", &parent, &x, &y, &z, &nx, &ny, &nz, &u, &v, &nread) < 9) {
+                    fclose(f);
+                    snprintf(err, errn, "%s: a vertex line it can't read: %.60s", path, ln);
+                    free(P.p); free(P.t); free(P.n); free(P.wb); free(P.ww); free(cs); free(hp.slot); free(ht.slot); free(hn.slot);
+                    return -1;
+                }
+                q = ln + nread;
+                b[0] = (uint8_t)(parent >= 0 && parent < 256 ? parent : 0);
+                if (sscanf(q, "%d%n", &links, &nread) == 1 && links > 0) {
+                    /* the heaviest bones first, at most 4, weights summing to 1 */
+                    int lb[32], n = 0;
+                    float lw[32], sum = 0;
+                    q += nread;
+                    for (j = 0; j < links && j < 32; j++) {
+                        if (sscanf(q, "%d %f%n", &lb[n], &lw[n], &nread) < 2) break;
+                        q += nread;
+                        if (lw[n] > 0) n++;
+                    }
+                    for (j = 1; j < n; j++) {
+                        int a = j;
+                        while (a > 0 && lw[a] > lw[a - 1]) {
+                            float tw = lw[a]; int tb = lb[a];
+                            lw[a] = lw[a - 1]; lb[a] = lb[a - 1]; lw[a - 1] = tw; lb[a - 1] = tb; a--;
+                        }
+                    }
+                    if (n > 4) n = 4;
+                    for (j = 0; j < n; j++) sum += lw[j];
+                    if (n && sum > 0) {
+                        for (j = 0; j < 4; j++) { b[j] = (uint8_t)(j < n ? (lb[j] >= 0 && lb[j] < 256 ? lb[j] : 0) : lb[0]); w[j] = j < n ? lw[j] / sum : 0; }
+                    }
+                }
+                /* into the .obj's terms (x mirrored, v up), as the rest expects */
+                pv[0] = -x; pv[1] = y; pv[2] = z;
+                nv3[0] = -nx; nv3[1] = ny; nv3[2] = nz;
+                tv[0] = u; tv[1] = v;
+                cr.v = vh_find_add(&hp, &P.p, &P.np, &P.cp, 3, pv, &P.wb, &P.ww, &P.cw, b, w);
+                cr.t = vh_find_add(&ht, &P.t, &P.nt, &P.ct, 2, tv, NULL, NULL, NULL, NULL, NULL);
+                cr.n = vh_find_add(&hn, &P.n, &P.nn, &P.cn, 3, nv3, NULL, NULL, NULL, NULL, NULL);
+                cr.mat = cur_mat;
+                if (ncs + 1 > ccs) { ccs = ccs ? ccs * 2 : 3072; cs = (Corner *)realloc(cs, sizeof(Corner) * (size_t)ccs); }
+                cs[ncs++] = cr;
+                if (++corner == 4) corner = 0;
+            }
+        }
+        fclose(f);
+        free(hp.slot); free(ht.slot); free(hn.slot);
+        ncs -= ncs % 3;
+        f = NULL;
+    }
+    while (f && fgets(line, sizeof line, f)) {
         float v[3] = { 0, 0, 0 };
         if (line[0] == 'v' && line[1] == ' ') { sscanf(line + 2, "%f %f %f", &v[0], &v[1], &v[2]); pool_add(&P.p, &P.np, &P.cp, 3, v); }
         else if (line[0] == 'v' && line[1] == 't') { sscanf(line + 3, "%f %f", &v[0], &v[1]); pool_add(&P.t, &P.nt, &P.ct, 2, v); }
@@ -460,8 +638,8 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
             }
         }
     }
-    fclose(f);
-    if (!ncs) { snprintf(err, errn, "No triangles in %s", path); free(P.p); free(P.t); free(P.n); free(cs); return -1; }
+    if (f) fclose(f);
+    if (!ncs) { snprintf(err, errn, "No triangles in %s", path); free(P.p); free(P.t); free(P.n); free(P.wb); free(P.ww); free(cs); return -1; }
 
     {
         /* the new vertices: one for each different corner (position,
@@ -487,7 +665,7 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
         free(hash);
         if (nv > 65535) {
             snprintf(err, errn, "%d vertices: the game takes at most 65535 in one model.", nv);
-            free(vidx); free(uv); free(tri); free(P.p); free(P.t); free(P.n); free(cs);
+            free(vidx); free(uv); free(tri); free(P.p); free(P.t); free(P.n); free(P.wb); free(P.ww); free(cs);
             return -1;
         }
         pos = (float *)calloc((size_t)nv * 3, sizeof(float));
@@ -556,6 +734,13 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
                 if (dd < bd) { bd = dd; best = j; }
             }
             if (ovc) memcpy(d, ov + best * vs, vs);
+            if (P.wb && wo >= 0) {              /* m12: the .smd's bones and weights */
+                const uint8_t *bb = P.wb + (size_t)uv[i].v * 4;
+                const float *bwt = P.ww + (size_t)uv[i].v * 4;
+                int j;
+                for (j = 0; j < 4; j++) d[iof + j] = bb[j] < m->nparts ? bb[j] : 0;
+                for (j = 0; j < nw; j++) putf(d + wo + 4 * j, bwt[j]);
+            }
             putf(d, pos[i * 3]); putf(d + 4, pos[i * 3 + 1]); putf(d + 8, pos[i * 3 + 2]);
             if (nrm_off >= 0) { putf(d + nrm_off, nrm[i * 3]); putf(d + nrm_off + 4, nrm[i * 3 + 1]); putf(d + nrm_off + 8, nrm[i * 3 + 2]); }
             putf(d + uv_off, tex[i * 2]); putf(d + uv_off + 4, tex[i * 2 + 1]);
@@ -594,7 +779,7 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
         if (r) snprintf(err, errn, "Couldn't rebuild the file.");
         else snprintf(err, errn, "%d vertices, %d triangles, %d material%s", nv, nt, nused, nused == 1 ? "" : "s");
         free(o); free(order); free(tri); free(pos); free(nrm); free(tex); free(vidx); free(uv);
-        free(P.p); free(P.t); free(P.n); free(cs);
+        free(P.p); free(P.t); free(P.n); free(P.wb); free(P.ww); free(cs);
         return r;
     }
 }
@@ -621,4 +806,47 @@ int jm_materials(const uint8_t *buf, size_t size, const JMesh *m, size_t *at, in
     if (*count < 1 || *count > 64 || o + (size_t)*count * 20 > m->len) { *count = 0; return -1; }
     *at = m->item + o;
     return 0;
+}
+
+/* ---- m12: Valve .smd, with the skeleton and the bone weights ---- */
+
+int jm_write_smd(const JMesh *m, const char *path)
+{
+    FILE *f = fopen(path, "w");
+    int i, k, game_fwd = m->has_n ? !winding(m) : 1;   /* winding() is the view's (x mirrored) */
+    if (!f) return -1;
+    fprintf(f, "version 1\nnodes\n");
+    for (i = 0; i < m->nparts; i++) fprintf(f, "%d \"part%d\" -1\n", i, i);
+    fprintf(f, "end\nskeleton\ntime 0\n");
+    for (i = 0; i < m->nparts; i++)
+        fprintf(f, "%d %.6f %.6f %.6f 0 0 0\n", i, m->bonepos[i * 3], m->bonepos[i * 3 + 1], m->bonepos[i * 3 + 2]);
+    fprintf(f, "end\ntriangles\n");
+    for (i = 0; i < m->nt; i++) {
+        int c[3] = { (int)m->ix[i * 3], (int)m->ix[i * 3 + 1], (int)m->ix[i * 3 + 2] };
+        if (!game_fwd) { int x = c[1]; c[1] = c[2]; c[2] = x; }
+        fprintf(f, "mat%d\n", m->tmat ? m->tmat[i] : 0);
+        for (k = 0; k < 3; k++) {
+            int v = c[k], j, links = 0, first = 0;
+            char w[160] = "";
+            if (m->nbv) {                       /* its bones, by part number, with their weights */
+                for (j = 0; j < m->nbv; j++) {
+                    int b = m->bi[v * 4 + j], q, dup = 0;
+                    float wt = m->bw[v * 4 + j];
+                    if (wt <= 0.0005f) continue;
+                    for (q = 0; q < j; q++) if (m->bi[v * 4 + q] == b && m->bw[v * 4 + q] > 0.0005f) dup = 1;
+                    if (dup) continue;
+                    if (!links) first = b;
+                    snprintf(w + strlen(w), sizeof w - strlen(w), " %d %.6f", b, wt);
+                    links++;
+                }
+            }
+            /* the game's space: x back, texture v up as Source Tools has it */
+            fprintf(f, "%d %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f %d%s\n", first,
+                    -m->p[v * 3], m->p[v * 3 + 1], m->p[v * 3 + 2],
+                    -m->n[v * 3], m->n[v * 3 + 1], m->n[v * 3 + 2],
+                    m->t[v * 2], 1.0f - m->t[v * 2 + 1], links, w);
+        }
+    }
+    fprintf(f, "end\n");
+    return fclose(f) ? -1 : 0;
 }

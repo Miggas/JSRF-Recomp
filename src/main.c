@@ -47,9 +47,10 @@
 #include "paint.h"
 #include "view3d.h"
 #include "jsnd.h"
+#include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m11"
+#define MODTOOL_VERSION "m12"
 
 /* ---- the files ---- */
 
@@ -615,11 +616,16 @@ static void export_model(const JMesh *m)
         if (tk >= 0 && !stbi_write_png(png, w, h, 4, src, w * 4)) tk = -1;
         free(px);
     }
-    if (jm_write_obj(m, obj, mtl, nmtl, tk >= 0 ? npng : NULL, base))
-        snprintf(s_msg, sizeof s_msg, "Couldn't write %s", obj);
-    else
-        snprintf(s_msg, sizeof s_msg, "Model %d saved as %s (%d triangles%s)", m->index, obj, m->nt,
-                 tk >= 0 ? ", with its texture" : ", its texture isn't in this file");
+    {
+        char nsmd[700], smd[LPATH];
+        snprintf(nsmd, sizeof nsmd, "%s.smd", base);
+        pjoin(smd, dir, nsmd);
+        if (jm_write_obj(m, obj, mtl, nmtl, tk >= 0 ? npng : NULL, base) || jm_write_smd(m, smd))   /* m12: and the .smd */
+            snprintf(s_msg, sizeof s_msg, "Couldn't write %s", obj);
+        else
+            snprintf(s_msg, sizeof s_msg, "Model %d saved as %s, and .smd with its bones (%d triangles%s)", m->index, obj, m->nt,
+                     tk >= 0 ? ", with its texture" : ", its texture isn't in this file");
+    }
 }
 
 /* ---- m9: a model replaced from an .obj (the exported one, edited, or one
@@ -632,14 +638,18 @@ static void import_model(SDL_Renderer *ren, const JMesh *m, const char *path)
     size_t ns;
     int idx = m->index, tk = s_sel_tex;
     if (path) snprintf(in, sizeof in, "%s", path);
-    else {
-        char base[600], nobj[700], dir[LPATH];
+    else {                                      /* m12: the exported .obj or .smd, whichever was saved last */
+        char base[600], nobj[700], nsmd[700], dir[LPATH], smd[LPATH];
+        struct stat a, b;
         model_base(base, sizeof base, m);
         snprintf(nobj, sizeof nobj, "%s.obj", base);
+        snprintf(nsmd, sizeof nsmd, "%s.smd", base);
         pjoin(dir, s_game, "model_exports");
         pjoin(in, dir, nobj);
+        pjoin(smd, dir, nsmd);
+        if (!stat(smd, &b) && (stat(in, &a) || b.st_mtime > a.st_mtime)) snprintf(in, sizeof in, "%s", smd);
     }
-    if (!is_file(in)) { snprintf(s_msg, sizeof s_msg, "No %s: Export OBJ first, or drop an .obj on the window.", in); return; }
+    if (!is_file(in)) { snprintf(s_msg, sizeof s_msg, "No %s: Export it first, or drop an .obj or .smd on the window.", in); return; }
     if (paint_dirty()) { snprintf(s_msg, sizeof s_msg, "Save or close the painting first."); return; }
     if (paint_on()) paint_stop();               /* nothing unsaved: closed for the new file */
     if (jm_import_obj(s_cur.buf, s_cur.size, m, in, &nb, &ns, err, sizeof err)) { snprintf(s_msg, sizeof s_msg, "%s", err); return; }
@@ -1177,9 +1187,9 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     }
     if (s_dropped) {
         size_t dl = strlen(s_dropped);
-        if (dl > 4 && !SDL_strcasecmp(s_dropped + dl - 4, ".obj")) {   /* m9: a model, for the one shown */
+        if (dl > 4 && (!SDL_strcasecmp(s_dropped + dl - 4, ".obj") || !SDL_strcasecmp(s_dropped + dl - 4, ".smd"))) {   /* m9, m12: a model, for the one shown */
             if (s_sel_file >= 0 && v3d_current()) import_model(ren, v3d_current(), s_dropped);
-            else snprintf(s_msg, sizeof s_msg, "Pick the model in the 3D view first, then drop the .obj on the window.");
+            else snprintf(s_msg, sizeof s_msg, "Pick the model in the 3D view first, then drop the .obj or .smd on the window.");
         } else if (dl > 4 && !SDL_strcasecmp(s_dropped + dl - 4, ".wav")) {   /* m7: a sound */
             if (s_sel_file >= 0 && s_sel_snd >= 0) import_sound(s_sel_snd, s_dropped);
             else snprintf(s_msg, sizeof s_msg, "Pick a sound first, then drop the WAV file on it.");

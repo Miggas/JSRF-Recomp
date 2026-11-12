@@ -30,6 +30,12 @@ typedef struct {
     size_t norm, norm_end;  /* the NORM holding it */
     int part;               /* the one visible part, when its data ends the MDLB; else -1 */
     int nparts;
+    /* m12: skinning, when the vertices carry it: each vertex's bones (4
+     * ids, by part number) and their weights; nbv how many it uses (0: none) */
+    uint8_t *bi;
+    float *bw;
+    int nbv;
+    float *bonepos;         /* each part's bone position (3 a part, the game's space) */
 } JMesh;
 
 typedef struct {
@@ -43,7 +49,8 @@ int jm_load(const uint8_t *buf, size_t size, JModels *out);
  * coordinates up the image as Blender has them), its material in
  * mtl_path naming tex_png (a file name beside it; NULL: no texture);
  * name: the object's name. 0 done */
-/* m9: the visible part of m replaced by the .obj at path (as jm_write_obj
+/* m9: the visible part of m replaced by the .obj (m12: or .smd, with its
+ * bone weights) at path (as jm_write_obj
  * writes them: mat<N> materials keep the game's material N), in the file
  * buf (size); the new file in nb, nsize (malloc'd). Each new vertex takes
  * its bone weights from the nearest old one. 0 done; else err says why */
@@ -53,6 +60,11 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
 /* m10: where m's materials are in the file (20 bytes each: B, G, R, A, the
  * shading kind, two more numbers, a float), and how many; 0 done */
 int jm_materials(const uint8_t *buf, size_t size, const JMesh *m, size_t *at, int *count);
+
+/* m12: m as a Valve .smd (the skeleton: a bone a part at its position; the
+ * vertices with their bone weights; the game's own space and bone numbers,
+ * as JSRF ModTool's .smd files have them) for Blender (Source Tools). 0 done */
+int jm_write_smd(const JMesh *m, const char *path);
 
 int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, const char *mtl_file,
                  const char *tex_png, const char *name);

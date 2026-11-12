@@ -369,8 +369,8 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
     /* m6: Paint on the model (starts the painter when it isn't open) */
     nk_layout_row_template_begin(ctx, row);
     nk_layout_row_template_push_static(ctx, 64);
-    nk_layout_row_template_push_static(ctx, 112);
-    nk_layout_row_template_push_static(ctx, 112);
+    nk_layout_row_template_push_static(ctx, 90);
+    nk_layout_row_template_push_static(ctx, 90);
     nk_layout_row_template_push_dynamic(ctx);
     nk_layout_row_template_end(ctx);
     {
@@ -385,8 +385,8 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
         }
         if (!can) V.paint = 0;
     }
-    if (nk_button_label(ctx, "Export OBJ")) V.want_export = V.cur + 1;   /* m8: for Blender */
-    if (nk_button_label(ctx, "Import OBJ")) V.want_import = V.cur + 1;   /* m9: back from it */
+    if (nk_button_label(ctx, "Export")) V.want_export = V.cur + 1;   /* m8: for Blender (m12: .obj and .smd) */
+    if (nk_button_label(ctx, "Import")) V.want_import = V.cur + 1;   /* m9: back from it */
     nk_label_colored(ctx, !n ? "None known to wear it."
                      : V.paint ? "Turn: middle."
                                : "Drag: turn. Right: move.",
