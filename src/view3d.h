@@ -30,6 +30,9 @@ int v3d_take_export_request(const JMesh **m);
 /* m9: Import OBJ was pressed: the model to replace (once); the one shown */
 int v3d_take_import_request(const JMesh **m);
 const JMesh *v3d_current(void);
+/* m10: the shown model's materials (20 bytes each, B G R A first), the
+ * colour multiplying the texture; hl: one highlighted, the rest dimmed (-1) */
+void v3d_set_materials(const uint8_t *mats, int n, int hl);
 void v3d_set_paint(int on);   /* (tests) */
 
 #endif

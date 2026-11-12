@@ -50,6 +50,10 @@ int jm_load(const uint8_t *buf, size_t size, JModels *out);
 int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *path,
                   uint8_t **nb, size_t *nsize, char *err, size_t errn);
 
+/* m10: where m's materials are in the file (20 bytes each: B, G, R, A, the
+ * shading kind, two more numbers, a float), and how many; 0 done */
+int jm_materials(const uint8_t *buf, size_t size, const JMesh *m, size_t *at, int *count);
+
 int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, const char *mtl_file,
                  const char *tex_png, const char *name);
 void jm_free(JModels *ms);

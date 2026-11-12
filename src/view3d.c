@@ -40,6 +40,8 @@ static struct {
     float lsx, lsy, lu, lv;             /* m6: the last sample: on the screen, on the texture */
     int want_export;                    /* m8: Export pressed (the model's index + 1) */
     int want_import;                    /* m9: Import pressed (the same) */
+    float mcol[64][3];                  /* m10: each material's colour, multiplying the texture */
+    int nmcol, hl;                      /* m10: how many; the one highlighted (-1 none) */
 } V;
 
 static int cmp_edge(const void *a, const void *b)
@@ -95,6 +97,8 @@ void v3d_load(const uint8_t *buf, size_t size)
     V.cur = -1;
     V.for_tex = 0;
     V.need = 1;
+    V.nmcol = 0;                                /* m10 */
+    V.hl = -1;
 }
 
 /* m5: only a model known to wear it (HUD files hold hundreds of models
@@ -105,7 +109,7 @@ static int wears(const JMesh *m, uint32_t texid) { return texid && m->texid == t
 
 typedef struct { float sx, sy, iz, u, v, l; int ok; } SV;   /* a vertex on the screen */
 
-static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, int tw, int th)
+static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, int tw, int th, const float *tint)
 {
     float minx = a->sx, maxx = a->sx, miny = a->sy, maxy = a->sy, area;
     int x0, x1, y0, y1, x, y;
@@ -142,11 +146,13 @@ static void raster(const SV *a, const SV *b, const SV *c, const uint8_t *tex, in
                 if (ty >= th) ty = th - 1;
                 t = tex + ((size_t)ty * tw + tx) * 4;
                 if (t[3] < 128) continue;       /* see-through parts */
-                o[0] = (uint8_t)(t[0] * l > 255 ? 255 : t[0] * l);
-                o[1] = (uint8_t)(t[1] * l > 255 ? 255 : t[1] * l);
-                o[2] = (uint8_t)(t[2] * l > 255 ? 255 : t[2] * l);
+                o[0] = (uint8_t)(t[0] * l * tint[0] > 255 ? 255 : t[0] * l * tint[0]);
+                o[1] = (uint8_t)(t[1] * l * tint[1] > 255 ? 255 : t[1] * l * tint[1]);
+                o[2] = (uint8_t)(t[2] * l * tint[2] > 255 ? 255 : t[2] * l * tint[2]);
             } else {
-                o[0] = o[1] = o[2] = (uint8_t)(170 * l > 255 ? 255 : 170 * l);
+                o[0] = (uint8_t)(170 * l * tint[0] > 255 ? 255 : 170 * l * tint[0]);
+                o[1] = (uint8_t)(170 * l * tint[1] > 255 ? 255 : 170 * l * tint[1]);
+                o[2] = (uint8_t)(170 * l * tint[2] > 255 ? 255 : 170 * l * tint[2]);
             }
             o[3] = 255;
             V.zb[i] = iz;
@@ -223,8 +229,12 @@ static void render(const JMesh *m, const uint8_t *tex, int tw, int th)
     }
     for (i = 0; i < m->nt; i++) {
         const uint32_t *t = m->ix + i * 3;
+        float tint[3] = { 1, 1, 1 };
+        int mt = m->tmat ? m->tmat[i] : 0;
         if (!sv[t[0]].ok || !sv[t[1]].ok || !sv[t[2]].ok) continue;
-        raster(&sv[t[0]], &sv[t[1]], &sv[t[2]], tex, tw, th);
+        if (mt >= 0 && mt < V.nmcol) { tint[0] = V.mcol[mt][0]; tint[1] = V.mcol[mt][1]; tint[2] = V.mcol[mt][2]; }
+        if (V.nmcol && V.hl >= 0 && mt != V.hl) { tint[0] *= 0.3f; tint[1] *= 0.3f; tint[2] *= 0.3f; }   /* m10: the others dimmed */
+        raster(&sv[t[0]], &sv[t[1]], &sv[t[2]], tex, tw, th, tint);
     }
     if (V.wire && V.edges && V.edges_for >= 0 && &V.ms.m[V.edges_for] == m)   /* m5b: the edges, where they're seen */
         for (i = 0; i < V.nedges; i++) {
@@ -515,4 +525,23 @@ int v3d_take_import_request(const JMesh **m)
 const JMesh *v3d_current(void)
 {
     return V.loaded && V.cur >= 0 && V.cur < V.ms.n ? &V.ms.m[V.cur] : NULL;
+}
+
+void v3d_set_materials(const uint8_t *mats, int n, int hl)
+{
+    float c[64][3];
+    int i;
+    if (n > 64) n = 64;
+    if (n < 0) n = 0;
+    for (i = 0; i < n; i++) {                   /* B, G, R, A */
+        c[i][0] = mats[i * 20 + 2] / 255.0f;
+        c[i][1] = mats[i * 20 + 1] / 255.0f;
+        c[i][2] = mats[i * 20 + 0] / 255.0f;
+    }
+    if (n != V.nmcol || hl != V.hl || memcmp(c, V.mcol, sizeof(float) * 3 * (size_t)n)) {
+        memcpy(V.mcol, c, sizeof(float) * 3 * (size_t)n);
+        V.nmcol = n;
+        V.hl = hl;
+        V.need = 1;
+    }
 }

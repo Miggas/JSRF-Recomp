@@ -49,7 +49,7 @@
 #include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m9"
+#define MODTOOL_VERSION "m10"
 
 /* ---- the files ---- */
 
@@ -167,6 +167,9 @@ static int s_pw, s_ph;
 static uint8_t *s_tex_rgba;             /* m5: the picked texture's pixels, for the 3D view */
 static unsigned s_tex_ver;
 static char s_msg[LPATH + 600];
+static int s_restore_ask;               /* m10: Restore all pressed once */
+static int s_mat_open, s_mat_sel, s_mat_hl = 1, s_mat_dirty;   /* m10: the material editor */
+static char s_restore_msg[200];         /* ... its result, shown when the rescan ends */
 /* m7: the file's sounds, the picked one decoded, playing */
 static JSounds s_snd;
 static int s_sel_snd = -1;
@@ -317,6 +320,7 @@ static void close_file(void)
     s_snd_pcm = NULL;
     s_sel_snd = -1;
     jf_free(&s_cur);
+    s_mat_dirty = 0;                            /* m10: the edits went with it */
     if (s_preview) SDL_DestroyTexture(s_preview);
     s_preview = NULL;
     s_sel_tex = -1;
@@ -515,6 +519,7 @@ static int store_file(const char *done)
         snprintf(s_msg, sizeof s_msg, "Couldn't write %s", out);
         return -1;
     }
+    s_mat_dirty = 0;                            /* m10: material edits are in the file now */
     {
         char cp[LPATH];
         cache_path(cp, s_files[s_sel_file].rel);
@@ -613,6 +618,136 @@ static void import_model(SDL_Renderer *ren, const JMesh *m, const char *path)
     }
     store_file(done);
     show_texture(ren, tk >= 0 && tk < s_cur.ntex ? tk : 0);
+}
+
+/* ---- m10: the material editor, under the 3D view: the shown model's
+ * materials (colour, shading kind, the other numbers), edited in place,
+ * previewed on the model, saved to the game file ---- */
+
+#define MAT_H 372.0f
+
+static const struct { const char *name; uint32_t v; } SHADING[] = {   /* the kinds JSRF ModTool names */
+    { "Standard", 1328128 }, { "Skin", 1360896 }, { "Lambert", 16711680 }, { "Metal", 1122978 },
+    { "Metal, reflective", 6726306 }, { "Metal, reflective 2", 6693602 }, { "Semi-transparent", 4612770 },
+    { "Self-illuminated", 524287 }, { "UV scroll X (ticking)", 4661255 }, { "UV scroll X (sliding)", 459263 } };
+#define NSHADING ((int)(sizeof SHADING / sizeof SHADING[0]))
+
+static uint32_t rd32(const uint8_t *b) { return b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24; }
+static void wr32(uint8_t *b, uint32_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); b[2] = (uint8_t)(v >> 16); b[3] = (uint8_t)(v >> 24); }
+
+static void material_panel(struct nk_context *ctx, SDL_Renderer *ren, float row)
+{
+    const JMesh *m = v3d_current();
+    size_t at = 0;
+    int n = 0, i;
+    char t[96];
+    if (!m || jm_materials(s_cur.buf, s_cur.size, m, &at, &n)) { v3d_set_materials(NULL, 0, -1); n = 0; }
+    nk_layout_row_dynamic(ctx, row, 1);
+    snprintf(t, sizeof t, "%s Materials (%d)%s", s_mat_open ? "-" : "+", n, s_mat_dirty ? ", not saved" : "");
+    if (nk_button_label(ctx, t)) s_mat_open = !s_mat_open;
+    if (!n) { if (s_mat_open) { nk_layout_row_dynamic(ctx, row, 1); nk_label(ctx, "No materials found for this model.", NK_TEXT_LEFT); } return; }
+    if (s_mat_sel >= n) s_mat_sel = 0;
+    {   /* (tests) MT_MATS=k: the editor open on material k; MT_MATCOL=RRGGBB: its colour, once */
+        static int once;
+        if (!once && getenv("MT_MATS")) {
+            once = 1;
+            s_mat_open = 1;
+            s_mat_sel = atoi(getenv("MT_MATS")) < n ? atoi(getenv("MT_MATS")) : 0;
+            if (getenv("MT_MATCOL")) {
+                unsigned v = (unsigned)strtoul(getenv("MT_MATCOL"), NULL, 16);
+                uint8_t *e = s_cur.buf + at + (size_t)s_mat_sel * 20;
+                e[2] = (uint8_t)(v >> 16); e[1] = (uint8_t)(v >> 8); e[0] = (uint8_t)v;
+                s_mat_dirty = 1;
+            }
+        }
+    }
+    v3d_set_materials(s_cur.buf + at, n, s_mat_open && s_mat_hl ? s_mat_sel : -1);
+    if (!s_mat_open) return;
+    {
+        uint8_t *e = s_cur.buf + at + (size_t)s_mat_sel * 20, before[20];
+        struct nk_colorf c;
+        uint32_t kind = rd32(e + 4);
+        int k, known = -1, v3 = (int)rd32(e + 8), v4 = (int)rd32(e + 12);
+        float v5;
+        memcpy(before, e, 20);
+        memcpy(&v5, e + 16, 4);
+        for (k = 0; k < NSHADING; k++) if (SHADING[k].v == kind) known = k;
+        /* which one, and its triangles shown */
+        nk_layout_row_template_begin(ctx, row);
+        nk_layout_row_template_push_dynamic(ctx);
+        nk_layout_row_template_push_static(ctx, 100);
+        nk_layout_row_template_end(ctx);
+        snprintf(t, sizeof t, "Material %d", s_mat_sel);
+        if (nk_combo_begin_label(ctx, t, nk_vec2(nk_widget_width(ctx), 300))) {
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            for (i = 0; i < n; i++) {
+                char it[48];
+                snprintf(it, sizeof it, "Material %d", i);
+                if (nk_combo_item_label(ctx, it, NK_TEXT_LEFT)) s_mat_sel = i;
+            }
+            nk_combo_end(ctx);
+        }
+        {
+            nk_bool hl = (nk_bool)s_mat_hl;
+            nk_checkbox_label(ctx, "Highlight", &hl);
+            s_mat_hl = hl;
+        }
+        /* its colour (stored B, G, R, A): multiplies the texture */
+        c.r = e[2] / 255.0f; c.g = e[1] / 255.0f; c.b = e[0] / 255.0f; c.a = e[3] / 255.0f;
+        nk_layout_row_dynamic(ctx, 96, 1);
+        c = nk_color_picker(ctx, c, NK_RGBA);
+        nk_layout_row_dynamic(ctx, row - 4, 2);
+        {
+            int r = (int)(c.r * 255 + 0.5f), g = (int)(c.g * 255 + 0.5f), b = (int)(c.b * 255 + 0.5f), a = (int)(c.a * 255 + 0.5f);
+            r = nk_propertyi(ctx, "#R:", 0, r, 255, 1, 1);
+            g = nk_propertyi(ctx, "#G:", 0, g, 255, 1, 1);
+            b = nk_propertyi(ctx, "#B:", 0, b, 255, 1, 1);
+            a = nk_propertyi(ctx, "#A:", 0, a, 255, 1, 1);
+            e[2] = (uint8_t)r; e[1] = (uint8_t)g; e[0] = (uint8_t)b; e[3] = (uint8_t)a;
+        }
+        /* its shading kind */
+        nk_layout_row_template_begin(ctx, row);
+        nk_layout_row_template_push_static(ctx, 70);
+        nk_layout_row_template_push_dynamic(ctx);
+        nk_layout_row_template_end(ctx);
+        nk_label(ctx, "Shading", NK_TEXT_LEFT);
+        if (known >= 0) snprintf(t, sizeof t, "%s", SHADING[known].name);
+        else snprintf(t, sizeof t, "Other (%u)", (unsigned)kind);
+        if (nk_combo_begin_label(ctx, t, nk_vec2(nk_widget_width(ctx), 330))) {
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            for (k = 0; k < NSHADING; k++)
+                if (nk_combo_item_label(ctx, SHADING[k].name, NK_TEXT_LEFT)) wr32(e + 4, SHADING[k].v);
+            nk_combo_end(ctx);
+        }
+        /* the rest, as they are: what they do isn't known */
+        nk_layout_row_dynamic(ctx, row - 4, 2);
+        v3 = nk_propertyi(ctx, "#Value 3:", -2147483647, v3, 2147483647, 1, 1);
+        v4 = nk_propertyi(ctx, "#Value 4:", -2147483647, v4, 2147483647, 1, 1);
+        v5 = nk_propertyf(ctx, "#Value 5:", -100000.0f, v5, 100000.0f, 1.0f, 0.5f);
+        nk_label_colored(ctx, "3-5: use not known", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+        wr32(e + 8, (uint32_t)v3);
+        wr32(e + 12, (uint32_t)v4);
+        memcpy(e + 16, &v5, 4);
+        if (memcmp(before, e, 20)) s_mat_dirty = 1;
+        nk_layout_row_dynamic(ctx, row, 2);
+        if (s_mat_dirty) {
+            if (nk_button_label(ctx, "Save materials")) {
+                char done[96];
+                snprintf(done, sizeof done, "Materials of model %d saved", m->index);
+                store_file(done);
+            }
+            if (nk_button_label(ctx, "Revert")) {
+                int tk = s_sel_tex;
+                s_mat_dirty = 0;
+                open_file(s_sel_file);
+                show_texture(ren, tk >= 0 && tk < s_cur.ntex ? tk : 0);
+                snprintf(s_msg, sizeof s_msg, "Material changes thrown away.");
+            }
+        } else {
+            nk_label_colored(ctx, "Colour multiplies the texture.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+            nk_spacing(ctx, 1);
+        }
+    }
 }
 
 /* ---- m7: sounds ---- */
@@ -818,12 +953,71 @@ static void save_paint(SDL_Renderer *ren)
 /* m4: may the picked file or texture change? not with unsaved painting */
 static int may_leave_paint(void)
 {
+    if (s_mat_dirty) {                          /* m10 */
+        snprintf(s_msg, sizeof s_msg, "Unsaved material changes: Save materials, or Revert them.");
+        return 0;
+    }
     if (paint_dirty()) {
         snprintf(s_msg, sizeof s_msg, "Unsaved painting: Save it to the game, or Close it (twice) to throw it away.");
         return 0;
     }
     paint_stop();
     return 1;
+}
+
+/* ---- m10: every modded file back to its original (the files in
+ * mod_backups/), their cached copies too ---- */
+
+typedef struct { char dir[LPATH]; char rel[512]; int *n, *bad; int dry; } RWalk;
+
+static void restore_walk(const char *dir, const char *rel, int *n, int *bad, int dry);
+
+static void restore_cb(const char *name, bool isdir, void *u)
+{
+    const RWalk *w = (const RWalk *)u;
+    char p[LPATH], r[512];
+    if (name[0] == '.') return;
+    pjoin(p, w->dir, name);
+    snprintf(r, sizeof r, "%s%s%s", w->rel, w->rel[0] ? "/" : "", name);
+    if (isdir) { restore_walk(p, r, w->n, w->bad, w->dry); return; }
+    (*w->n)++;
+    if (w->dry) return;
+    {
+        char g[LPATH], cp[LPATH];
+        game_path(g, r);
+        if (!copy_file(p, g)) { (*w->bad)++; return; }
+        cache_path(cp, r);
+        if (is_file(cp)) {                      /* the game's cached copy, padded as it reads it */
+            size_t n = 0;
+            char *b = read_file(p, &n);
+            if (b) write_cache(cp, (const uint8_t *)b, n);
+            free(b);
+        }
+        remove_file(p);
+    }
+}
+
+static void restore_walk(const char *dir, const char *rel, int *n, int *bad, int dry)
+{
+    RWalk w;
+    snprintf(w.dir, sizeof w.dir, "%s", dir);
+    snprintf(w.rel, sizeof w.rel, "%s", rel);
+    w.n = n;
+    w.bad = bad;
+    w.dry = dry;
+    list_dir(dir, restore_cb, &w);
+}
+
+/* the modded files (counted), or (go) put back */
+static int restore_all(int go, int *bad)
+{
+    char d[LPATH];
+    int n = 0, b = 0;
+    pjoin(d, s_game, "mod_backups");
+    if (!is_dir(d)) return 0;
+    restore_walk(d, "", &n, &b, !go);
+    if (bad) *bad = b;
+    return n;
 }
 
 static void revert_file(SDL_Renderer *ren)
@@ -941,7 +1135,9 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         SDL_LockMutex(s_mx);
         qsort(s_files, (size_t)s_nfiles, sizeof(Entry), cmp_entry);
         SDL_UnlockMutex(s_mx);
-        snprintf(s_msg, sizeof s_msg, "%d files with textures or sounds (of %d looked at).", s_nfiles, SDL_AtomicGet(&s_scan_seen));
+        snprintf(s_msg, sizeof s_msg, "%s%s%d files with textures or sounds (of %d looked at).", s_restore_msg,
+                 s_restore_msg[0] ? " " : "", s_nfiles, SDL_AtomicGet(&s_scan_seen));
+        s_restore_msg[0] = 0;
     }
     if (s_dropped) {
         size_t dl = strlen(s_dropped);
@@ -964,6 +1160,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         nk_layout_row_template_push_dynamic(ctx);
         nk_layout_row_template_push_static(ctx, 110);
         nk_layout_row_template_push_static(ctx, 90);
+        nk_layout_row_template_push_static(ctx, 120);
         nk_layout_row_template_end(ctx);
         nk_label(ctx, "Game folder", NK_TEXT_LEFT);
         nk_label(ctx, s_game[0] ? s_game : "(none: choose the folder with default.xbe and Media)", NK_TEXT_LEFT);
@@ -971,7 +1168,29 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             char d[LPATH];
             if (pick_folder(s_game, d)) set_game(d);
         }
-        if (nk_button_label(ctx, busy ? "..." : "Rescan")) start_scan();
+        if (nk_button_label(ctx, busy ? "..." : "Rescan")) { start_scan(); s_restore_ask = 0; }
+        if (nk_button_label(ctx, s_restore_ask ? "Sure? Again" : "Restore all") && !busy && s_game[0]) {   /* m10 */
+            int n = restore_all(0, NULL), bad = 0;
+            if (!n) { snprintf(s_msg, sizeof s_msg, "Nothing to restore: no file is modded."); s_restore_ask = 0; }
+            else if (!s_restore_ask) {
+                s_restore_ask = 1;
+                snprintf(s_msg, sizeof s_msg, "Restore all puts back the original of the %d modded file%s (every texture, sound "
+                         "and model change in them). Press it again to do it.", n, n == 1 ? "" : "s");
+            } else if (paint_dirty()) {
+                snprintf(s_msg, sizeof s_msg, "Save or close the painting first.");
+            } else {
+                char msg[200];
+                s_restore_ask = 0;
+                paint_stop();
+                close_file();
+                s_sel_file = -1;
+                n = restore_all(1, &bad);
+                if (bad) snprintf(msg, sizeof msg, "%d file%s put back; %d couldn't be (still in mod_backups).", n - bad, n - bad == 1 ? "" : "s", bad);
+                else snprintf(msg, sizeof msg, "All %d modded file%s put back to the original.", n, n == 1 ? "" : "s");
+                start_scan();
+                snprintf(s_restore_msg, sizeof s_restore_msg, "%s", msg);
+            }
+        }
         {                                           /* m3: the tabs, with their counts */
             int cnt[CAT_N] = { 0 }, c;
             SDL_LockMutex(s_mx);
@@ -1222,7 +1441,9 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 paint_size(&pw, &ph);
                 ver = paint_serial();
             }
-            v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row, (float)wh - top - 50);
+            v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row,
+                      (float)wh - top - 50 - row - (s_mat_open ? MAT_H : 0));
+            material_panel(ctx, ren, row);              /* m10 */
             if (v3d_take_paint_request() && !paint_on()) start_paint(ren);   /* m6: Paint ticked on the model */
             {
                 const JMesh *em;
@@ -1244,13 +1465,14 @@ int main(int argc, char **argv)
     struct nk_context *ctx;
     int running = 1;
     const char *shot = NULL, *shot_pick = NULL, *test_rel = NULL, *test_png = NULL;
-    int i, test_n = 0, paint_test = 0, vsync = 0;
+    int i, test_n = 0, paint_test = 0, vsync = 0, restore_test = 0;
     SDL_SetMainReady();
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game") && i + 1 < argc) snprintf(s_game, sizeof s_game, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];   /* a screenshot, then quit (tests) */
         else if (!strcmp(argv[i], "--pick") && i + 1 < argc) shot_pick = argv[++i];   /* ... of this file */
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) s_tab = atoi(argv[++i]);     /* ... on this tab */
+        else if (!strcmp(argv[i], "--restore-test")) restore_test = 1;   /* Restore all, then the shot (tests) */
         else if (!strcmp(argv[i], "--paint-test")) paint_test = 1;   /* ... after a stroke painted (tests) */
         else if (!strcmp(argv[i], "--test") && i + 3 < argc) {   /* tests: import PNG into REL's texture N, or undo (N -1) */
             test_rel = argv[++i];
@@ -1272,6 +1494,10 @@ int main(int argc, char **argv)
     ctx = nk_sdl_init(win, ren);
     load_font(ctx, 18);
     style(ctx);
+    if (restore_test && s_game[0]) {
+        int bad = 0, n = restore_all(1, &bad);
+        printf("restored %d, failed %d\n", n, bad);
+    }
     if (s_game[0]) start_scan();
     {
         SDL_RendererInfo ri;

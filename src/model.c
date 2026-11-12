@@ -576,3 +576,27 @@ int jm_import_obj(const uint8_t *buf, size_t size, const JMesh *m, const char *p
         return r;
     }
 }
+
+int jm_materials(const uint8_t *buf, size_t size, const JMesh *m, size_t *at, int *count)
+{
+    const uint8_t *m0 = buf + m->item, *h;
+    int parts, vis;
+    size_t o;
+    *count = 0;
+    if (m->item + m->len > size || m->len < 16) return -1;
+    parts = (int)u32(m0 + 4);
+    if (parts < 1) return -1;
+    vis = m->part >= 0 ? m->part : parts - 1;
+    if (u32(m0 + 8)) {                          /* the model's list, after the last part's groups */
+        h = m0 + 16 + (size_t)(parts - 1) * 128;
+        o = (size_t)u32(h + 4) + 16;
+        *count = (int)u32(m0 + 8);
+    } else {                                    /* none: the visible part's, after its vertex block's header */
+        h = m0 + 16 + (size_t)vis * 128;
+        o = (size_t)u32(h) + 16 + 32;
+        *count = (int)u32(h + 108);
+    }
+    if (*count < 1 || *count > 64 || o + (size_t)*count * 20 > m->len) { *count = 0; return -1; }
+    *at = m->item + o;
+    return 0;
+}
