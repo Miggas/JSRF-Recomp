@@ -18,6 +18,8 @@ An edited file is changed in place in the game folder. Before its first change, 
 
 **Paint** in the 3D view paints straight on the model, with the painter's tool, colour and size (ticking it opens the painter if it isn't open). The brush's circle shows its size on the model where the cursor is. A stroke that crosses onto another part of the texture carries on there, without a line through the texture between. The picker and fill work on the model too. Middle drag turns the model while Paint is on, right drag moves it, the wheel zooms. Undo, redo and Save are the painter's: it is one painting, whichever side you paint on.
 
+**Export OBJ** in the 3D view saves the model shown as a Wavefront `.obj` with its `.mtl` and its texture as a PNG (the painting, while painting it), in `model_exports/` in the game folder: open it in Blender with File > Import > Wavefront.
+
 **Sounds** (the Sounds tab, and any file with sounds in it): each sound's length and rate, its waveform, **Play**, **Export WAV** (into `sound_edits/` in the game folder), **Export all**, and **Import WAV** (the exported file, or drop any WAV on the window). An imported WAV can be any length, rate or channel count: it's made the game's rate and channels and its format (Xbox ADPCM or PCM), and the file around it is rebuilt to fit. The original is kept in `mod_backups/` as for textures. Music in `.adx` files isn't covered yet.
 
 Sizes: an image the texture's own size goes in as it is. A texture in a `.dat` can be made bigger: import a square image of 512, 1024, 2048 or 4096 pixels (larger than the texture) and the file makes room for it; the game reads the new size from the texture itself. Any other size is resized to the texture's. Graffiti (`.grf`, `.prs`, `.JTX`) always keep their size.

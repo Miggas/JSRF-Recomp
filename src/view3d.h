@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <SDL.h>
+#include "model.h"
 
 struct nk_context;
 struct nk_command_buffer;
@@ -24,6 +25,8 @@ void v3d_draw_uv(struct nk_command_buffer *cv, float x, float y, float w, float 
 void v3d_set_wire(int on);
 /* m6: Paint was ticked with the painter closed: open it (once) */
 int v3d_take_paint_request(void);
+/* m8: Export OBJ was pressed: the model to export (once) */
+int v3d_take_export_request(const JMesh **m);
 void v3d_set_paint(int on);   /* (tests) */
 
 #endif

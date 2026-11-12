@@ -38,6 +38,7 @@ static struct {
     int paint, want_paint;              /* m6: painting on the model; asked to start the painter */
     int stroking, had;                  /* m6: a stroke; its last sample hit the model */
     float lsx, lsy, lu, lv;             /* m6: the last sample: on the screen, on the texture */
+    int want_export;                    /* m8: Export pressed (the model's index + 1) */
 } V;
 
 static int cmp_edge(const void *a, const void *b)
@@ -346,6 +347,7 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
     /* m6: Paint on the model (starts the painter when it isn't open) */
     nk_layout_row_template_begin(ctx, row);
     nk_layout_row_template_push_static(ctx, 64);
+    nk_layout_row_template_push_static(ctx, 96);
     nk_layout_row_template_push_dynamic(ctx);
     nk_layout_row_template_end(ctx);
     {
@@ -360,9 +362,10 @@ void v3d_panel(struct nk_context *ctx, SDL_Renderer *ren, uint32_t texid, const 
         }
         if (!can) V.paint = 0;
     }
-    nk_label_colored(ctx, !n ? "No model known to wear it. All: look anyway."
-                     : V.paint ? "Paint: left. Turn: middle. Move: right."
-                               : "Drag: turn. Right drag: move. Wheel: zoom.",
+    if (nk_button_label(ctx, "Export OBJ")) V.want_export = V.cur + 1;   /* m8: for Blender */
+    nk_label_colored(ctx, !n ? "None known to wear it."
+                     : V.paint ? "Paint: left. Turn: middle."
+                               : "Drag: turn. Right: move.",
                      NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     if (!n && !V.all) { V.own = 0; return; }
 
@@ -487,3 +490,12 @@ void v3d_draw_uv(struct nk_command_buffer *cv, float x, float y, float w, float 
 
 void v3d_set_wire(int on) { V.wire = on; V.need = 1; }
 void v3d_set_paint(int on) { V.paint = on; }
+
+int v3d_take_export_request(const JMesh **m)
+{
+    int k = V.want_export - 1;
+    V.want_export = 0;
+    if (k < 0 || k >= V.ms.n) return 0;
+    *m = &V.ms.m[k];
+    return 1;
+}

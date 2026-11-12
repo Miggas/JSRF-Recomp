@@ -49,7 +49,7 @@
 #include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m7"
+#define MODTOOL_VERSION "m8"
 
 /* ---- the files ---- */
 
@@ -536,6 +536,42 @@ static int store_texture(int k, const uint8_t *px, const char *note)
     }
     snprintf(done, sizeof done, "Texture %d replaced%s", k, note);
     return store_file(done);
+}
+
+/* ---- m8: a model for Blender: .obj, .mtl and its texture as a PNG, in
+ * model_exports/ in the game folder ---- */
+
+static void export_model(const JMesh *m)
+{
+    char base[600], dir[LPATH], obj[LPATH], mtl[LPATH], png[LPATH], nobj[700], nmtl[700], npng[700], *p;
+    int k, tk = -1;
+    snprintf(base, sizeof base, "%s", s_files[s_sel_file].rel + (strncmp(s_files[s_sel_file].rel, "Media/", 6) ? 0 : 6));
+    for (p = base; *p; p++) if (*p == '/' || *p == '.') *p = '_';
+    snprintf(base + strlen(base), sizeof base - strlen(base), "_model%d", m->index);
+    pjoin(dir, s_game, "model_exports");
+    make_dirs(dir);
+    snprintf(nobj, sizeof nobj, "%s.obj", base);
+    snprintf(nmtl, sizeof nmtl, "%s.mtl", base);
+    snprintf(npng, sizeof npng, "%s.png", base);
+    pjoin(obj, dir, nobj);
+    pjoin(mtl, dir, nmtl);
+    pjoin(png, dir, npng);
+    for (k = 0; k < s_cur.ntex; k++) if (m->texid && s_cur.tex[k].id == m->texid) { tk = k; break; }
+    if (tk >= 0) {                              /* its texture (the painting's, while painting it) */
+        const JTex *t = &s_cur.tex[tk];
+        int w = t->w, h = t->h;
+        uint8_t *px = (uint8_t *)malloc((size_t)w * h * 4);
+        const uint8_t *src = px;
+        if (paint_on() && tk == s_sel_tex) { src = paint_image(); paint_size(&w, &h); }
+        else if (!px || jt_decode(&s_cur, t, px)) tk = -1;
+        if (tk >= 0 && !stbi_write_png(png, w, h, 4, src, w * 4)) tk = -1;
+        free(px);
+    }
+    if (jm_write_obj(m, obj, mtl, nmtl, tk >= 0 ? npng : NULL, base))
+        snprintf(s_msg, sizeof s_msg, "Couldn't write %s", obj);
+    else
+        snprintf(s_msg, sizeof s_msg, "Model %d saved as %s (%d triangles%s)", m->index, obj, m->nt,
+                 tk >= 0 ? ", with its texture" : ", its texture isn't in this file");
 }
 
 /* ---- m7: sounds ---- */
@@ -1144,6 +1180,10 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             }
             v3d_panel(ctx, ren, s_cur.tex[s_sel_tex].id, px, pw, ph, ver, row, (float)wh - top - 50);
             if (v3d_take_paint_request() && !paint_on()) start_paint(ren);   /* m6: Paint ticked on the model */
+            {
+                const JMesh *em;
+                if (v3d_take_export_request(&em)) export_model(em);              /* m8 */
+            }
         } else {
             nk_layout_row_dynamic(ctx, row, 1);
             nk_label(ctx, s_sel_snd >= 0 ? "Sounds have no 3D view." : "Pick a texture.", NK_TEXT_LEFT);

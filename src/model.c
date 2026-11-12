@@ -2,6 +2,7 @@
 #include "model.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 static uint32_t u32(const uint8_t *b) { return b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24; }
@@ -223,4 +224,51 @@ void jm_free(JModels *ms)
     free(ms->m);
     ms->m = NULL;
     ms->n = 0;
+}
+
+/* the face winding that agrees with the vertex normals (mirroring x for the
+ * view turned it round): 1 when a, b, c is right, 0 for a, c, b */
+static int winding(const JMesh *m)
+{
+    int i, agree = 0, against = 0;
+    if (!m->has_n) return 0;
+    for (i = 0; i < m->nt; i++) {
+        const uint32_t *t = m->ix + i * 3;
+        const float *a = m->p + t[0] * 3, *b = m->p + t[1] * 3, *c = m->p + t[2] * 3;
+        float u[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] }, v[3] = { c[0] - a[0], c[1] - a[1], c[2] - a[2] };
+        float fn[3] = { u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0] }, d = 0;
+        int k, j;
+        for (k = 0; k < 3; k++)
+            for (j = 0; j < 3; j++) d += fn[j] * m->n[t[k] * 3 + j];
+        if (d > 0) agree++;
+        else if (d < 0) against++;
+    }
+    return agree >= against;
+}
+
+int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, const char *mtl_file,
+                 const char *tex_png, const char *name)
+{
+    FILE *f;
+    int i, fwd = winding(m);
+    if ((f = fopen(mtl_path, "w"))) {
+        fprintf(f, "# JSRF Mod Tool\nnewmtl %s\nKa 1 1 1\nKd 1 1 1\nKs 0 0 0\nd 1\nillum 1\n", name);
+        if (tex_png) fprintf(f, "map_Kd %s\nmap_d %s\n", tex_png, tex_png);
+        fclose(f);
+    } else return -1;
+    f = fopen(obj_path, "w");
+    if (!f) return -1;
+    fprintf(f, "# JSRF Mod Tool: %d vertices, %d triangles\nmtllib %s\no %s\n", m->nv, m->nt, mtl_file, name);
+    for (i = 0; i < m->nv; i++) fprintf(f, "v %.6f %.6f %.6f\n", m->p[i * 3], m->p[i * 3 + 1], m->p[i * 3 + 2]);
+    for (i = 0; i < m->nv; i++) fprintf(f, "vt %.6f %.6f\n", m->t[i * 2], 1.0f - m->t[i * 2 + 1]);
+    if (m->has_n)
+        for (i = 0; i < m->nv; i++) fprintf(f, "vn %.6f %.6f %.6f\n", m->n[i * 3], m->n[i * 3 + 1], m->n[i * 3 + 2]);
+    fprintf(f, "usemtl %s\ns off\n", name);
+    for (i = 0; i < m->nt; i++) {
+        uint32_t a = m->ix[i * 3] + 1, b = m->ix[i * 3 + 1] + 1, c = m->ix[i * 3 + 2] + 1;
+        if (!fwd) { uint32_t x = b; b = c; c = x; }
+        if (m->has_n) fprintf(f, "f %u/%u/%u %u/%u/%u %u/%u/%u\n", a, a, a, b, b, b, c, c, c);
+        else fprintf(f, "f %u/%u %u/%u %u/%u\n", a, a, b, b, c, c);
+    }
+    return fclose(f) ? -1 : 0;
 }

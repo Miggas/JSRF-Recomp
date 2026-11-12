@@ -32,6 +32,13 @@ typedef struct {
 } JModels;
 
 int jm_load(const uint8_t *buf, size_t size, JModels *out);
+
+/* m8: m as a Wavefront .obj at obj_path (as the 3D view shows it, texture
+ * coordinates up the image as Blender has them), its material in
+ * mtl_path naming tex_png (a file name beside it; NULL: no texture);
+ * name: the object's name. 0 done */
+int jm_write_obj(const JMesh *m, const char *obj_path, const char *mtl_path, const char *mtl_file,
+                 const char *tex_png, const char *name);
 void jm_free(JModels *ms);
 
 #endif
