@@ -49,7 +49,7 @@
 #include "jsnd.h"
 #include "util.h"
 
-#define MODTOOL_VERSION "m10d"
+#define MODTOOL_VERSION "m11"
 
 /* ---- the files ---- */
 
@@ -377,6 +377,42 @@ static void load_settings(void)
     free(b);
 }
 
+/* m11: placed next to the JSRF launcher (its launcher.ini beside us), the
+ * launcher's game folder: GAME_DIR= as set in its Play tab, else the
+ * jsrf/ (or older game/) folder it keeps the game in. 1 when found */
+static int s_from_launcher;
+
+static int launcher_game(char *out)
+{
+    char d[LPATH], li[LPATH], g[LPATH], m[LPATH];
+    size_t n;
+    char *b, *line;
+    exe_dir(d);
+    pjoin(li, d, "launcher.ini");
+    if (!is_file(li)) return 0;
+    g[0] = 0;
+    if ((b = read_file(li, &n))) {
+        for (line = strtok(b, "\r\n"); line; line = strtok(NULL, "\r\n")) {
+            while (*line == ' ' || *line == '\t') line++;
+            if (!strncmp(line, "GAME_DIR=", 9) && line[9]) {
+                size_t l;
+                snprintf(g, sizeof g, "%s", line + 9);
+                l = strlen(g);
+                while (l && (g[l - 1] == ' ' || g[l - 1] == '\t')) g[--l] = 0;
+            }
+        }
+        free(b);
+    }
+    if (g[0]) { pjoin(m, g, "Media"); if (is_dir(m)) { snprintf(out, LPATH, "%s", g); return 1; } }
+    pjoin(g, d, "jsrf");
+    pjoin(m, g, "Media");
+    if (is_dir(m)) { snprintf(out, LPATH, "%s", g); return 1; }
+    pjoin(g, d, "game");
+    pjoin(m, g, "Media");
+    if (is_dir(m)) { snprintf(out, LPATH, "%s", g); return 1; }
+    return 0;
+}
+
 static void save_settings(void)
 {
     char p[LPATH], t[LPATH + 16];
@@ -396,6 +432,7 @@ static void set_game(const char *d)
         parent[s - s_game] = 0;
         snprintf(s_game, sizeof s_game, "%s", parent);
     }
+    s_from_launcher = 0;                        /* chosen here: this one, for now */
     save_settings();
     start_scan();
 }
@@ -1162,7 +1199,8 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         nk_layout_row_template_push_static(ctx, 120);
         nk_layout_row_template_end(ctx);
         nk_label(ctx, "Game folder", NK_TEXT_LEFT);
-        nk_label(ctx, s_game[0] ? s_game : "(none: choose the folder with default.xbe and Media)", NK_TEXT_LEFT);
+        if (s_game[0] && s_from_launcher) nk_labelf(ctx, NK_TEXT_LEFT, "%s  (the launcher's)", s_game);
+        else nk_label(ctx, s_game[0] ? s_game : "(none: choose the folder with default.xbe and Media)", NK_TEXT_LEFT);
         if (nk_button_label(ctx, "Choose...")) {
             char d[LPATH];
             if (pick_folder(s_game, d)) set_game(d);
@@ -1481,7 +1519,11 @@ int main(int argc, char **argv)
     }
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     s_mx = SDL_CreateMutex();
-    if (!s_game[0]) load_settings();
+    if (!s_game[0]) {                           /* m11: the launcher's game folder when it's beside us */
+        char g[LPATH];
+        if (launcher_game(g)) { snprintf(s_game, sizeof s_game, "%s", g); s_from_launcher = 1; }
+        else load_settings();
+    }
     win = SDL_CreateWindow("JSRF Mod Tool " MODTOOL_VERSION, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            1280, 800, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) { fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }

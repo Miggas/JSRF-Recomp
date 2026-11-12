@@ -1,12 +1,12 @@
 # JSRF Mod Tool
 
-Shows the textures in Jet Set Radio Future's game files, exports them to PNG and puts edited PNGs back, for the [JSRF recomp](https://github.com/Miggas/JSRF-Recomp). Windows and Linux (Steam Deck included).
+Edits Jet Set Radio Future's game files for the [JSRF recomp](https://github.com/Miggas/JSRF-Recomp): textures (export, import, paint on them or on the 3D model), models (export to and import from Blender), materials and sounds. Windows and Linux (Steam Deck included).
 
 An edited file is changed in place in the game folder. Before its first change, the original is kept in `mod_backups/` at the game's own path (`mod_backups/Media/Player/Beat.dat`), and **Undo all (file)** puts it back. The game keeps copies of most of its files in its cache (`savegame/Cache` in the game folder) and reads those after the first time: the tool changes that copy too when there is one. Nothing is needed from the recomp.
 
 ## Use
 
-1. **Choose...** the game folder: the one with `default.xbe` and `Media`. The tool looks through `Media` and lists every file with textures, in tabs: Characters (by their names in the game), Graffiti (in sections SS, S, M, L and XL: `grf_0_` to `grf_4_`), Stages, Objects, Cutscenes, Menus & HUD, each in collapsible sections.
+1. **Choose...** the game folder: the one with `default.xbe` and `Media`. Put the tool in the JSRF launcher's folder and it uses the launcher's game folder by itself (the one set in Play, else `jsrf/` beside the launcher). The tool looks through `Media` and lists every file with textures, in tabs: Characters (by their names in the game), Graffiti (in sections SS, S, M, L and XL: `grf_0_` to `grf_4_`), Stages, Objects, Cutscenes, Menus & HUD, each in collapsible sections.
 2. Pick a file, then one of its textures.
 3. **Export PNG** saves it to `texture_edits/` in the game folder (**Open edits folder** opens it).
 4. Edit the PNG in any image editor and save it under the same name. Transparency is kept.
