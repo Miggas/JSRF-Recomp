@@ -3884,6 +3884,7 @@ static uint32_t heap_alloc_locked(uint32_t size, uint32_t alignment)
             result = g_heap_blocks[i].addr;
             guest_make_rw(result, size);
             memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
+            xbox_WatchVa("heap block handed out again", result, size);   /* v303 */
             return result;
         }
     }
@@ -3930,6 +3931,7 @@ static uint32_t heap_alloc_locked(uint32_t size, uint32_t alignment)
 
     /* Zero-fill the allocated block (Xbox memory is always zeroed) */
     memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
+    xbox_WatchVa("heap block handed out", result, size);   /* v303 */
 
     if (g_heap_block_count < XBOX_HEAP_MAX_BLOCKS) {
         g_heap_blocks[g_heap_block_count].addr = result;
@@ -3986,6 +3988,36 @@ uint32_t xbox_HeapBlockSize(uint32_t xbox_va)
     return r;
 }
 
+/* v303: a watched range, to name what writes over it (see the header) */
+static volatile uint32_t g_watch_lo, g_watch_hi;
+static char g_watch_name[48];
+static volatile LONG g_watch_said;
+
+void xbox_WatchSet(uint32_t xbox_va, uint32_t len, const char *name)
+{
+    g_watch_hi = 0;
+    g_watch_lo = xbox_va;
+    snprintf(g_watch_name, sizeof g_watch_name, "%s", name ? name : "");
+    g_watch_hi = len ? xbox_va + len : 0;
+}
+
+void xbox_WatchVa(const char *what, uint32_t xbox_va, uint32_t len)
+{
+    uint32_t lo = g_watch_lo, hi = g_watch_hi;
+    if (!hi || !len || xbox_va >= hi || xbox_va + len <= lo)
+        return;
+    if (InterlockedIncrement(&g_watch_said) > 24)
+        return;
+    fprintf(stderr, "[WATCH] %s 0x%08X..0x%08X, over %s at 0x%08X..0x%08X\n",
+            what, xbox_va, xbox_va + len, g_watch_name, lo, hi);
+    fflush(stderr);
+}
+
+void xbox_WatchHost(const char *what, const void *host, uint32_t len)
+{
+    xbox_WatchVa(what, (uint32_t)((uintptr_t)host - (uintptr_t)g_memory_offset), len);
+}
+
 void xbox_HeapFree(uint32_t xbox_va)
 {
     static int frees = 0, matched = 0;
@@ -4005,6 +4037,7 @@ void xbox_HeapFree(uint32_t xbox_va)
             continue;
         }
         g_heap_blocks[i].free = 1;
+        xbox_WatchVa("heap block freed", g_heap_blocks[i].addr, g_heap_blocks[i].size);   /* v303 */
         if (++matched % 512 == 0) {
             fprintf(stderr, "  [HEAP] frees=%d matched=%d blocks=%d\n",
                     frees, matched, g_heap_block_count);

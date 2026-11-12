@@ -3735,6 +3735,11 @@ static void bridge_NtReadFile(void)
     /* What a read actually delivered. A decoder that rejects its input cannot
      * say whether the bytes were wrong or the read was, and the two look
      * identical from inside the title -- the first bytes settle it. */
+    {   /* v303: a read into the watched range ([WATCH]) */
+        char what[64];
+        snprintf(what, sizeof what, "file read (h=%08X, from 0x%08X)", STACK_ARG(0), g_xbox_kernel_caller);
+        xbox_WatchVa(what, buffer_va, (uint32_t)ios.Information);
+    }
     {
         const uint8_t *p = (const uint8_t *)XBOX_TO_NATIVE(buffer_va);
         uint32_t got = (uint32_t)ios.Information;

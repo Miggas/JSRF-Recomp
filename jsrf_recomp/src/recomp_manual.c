@@ -193,16 +193,108 @@ static void mssn_log(const char *where, uint32_t self)
                 where, self ? MEM32(self + 0x58) : 0, p);
 }
 
+/* v303: the mission data's safety net (a player's NTSC-U run, v302 log):
+ * mission 0110 loaded right, then before its stage was asked for something
+ * wrote over its first bytes (texture-like data), the stage number read
+ * FFFFFFFF, the game asked for Stg55_.bin over and over and showed the
+ * damaged-disc screen. Rare and timing-dependent: the same route ran fine
+ * on another PC and on his next start. A copy of the data is kept when it
+ * loads; when the stage is asked for and the stage number has changed, the
+ * overwritten run at the start (up to the first 256 unchanged bytes) is put
+ * back and logged. The range is watched ([WATCH]: heap blocks handed out or
+ * freed over it, file reads into it) to name the writer next time. */
+uint32_t xbox_HeapBlockSize(uint32_t xbox_va);
+void xbox_WatchSet(uint32_t xbox_va, uint32_t len, const char *name);
+
+static uint8_t *s_ms_copy;
+static uint32_t s_ms_va, s_ms_len, s_ms_id;
+
+static void mssn_keep(uint32_t self)
+{
+    uint32_t p = MEM32(self + 0x1040), len;
+    char name[32];
+    free(s_ms_copy);
+    s_ms_copy = NULL;
+    s_ms_va = s_ms_len = 0;
+    xbox_WatchSet(0, 0, NULL);
+    if (!p || p >= 0x04000000u)
+        return;
+    len = xbox_HeapBlockSize(p);           /* to the end of its block */
+    if (!len) len = 64u * 1024u;           /* not a block of ours: its first 64 KB */
+    if (len > 1024u * 1024u) len = 1024u * 1024u;   /* (not hex: the release translation reads hex as addresses) */
+    if (p + len > 0x04000000u) len = 0x04000000u - p;
+    s_ms_copy = (uint8_t *)malloc(len);
+    if (!s_ms_copy)
+        return;
+    memcpy(s_ms_copy, (const void *)XBOX_PTR(p), len);
+    s_ms_va = p;
+    s_ms_len = len;
+    s_ms_id = MEM32(self + 0x58);
+    snprintf(name, sizeof name, "mission 0x%05X's data", s_ms_id);
+    xbox_WatchSet(p, len, name);
+}
+
+static void mssn_check(uint32_t self)
+{
+    uint32_t p = MEM32(self + 0x1040), i, diff = 0, end = 0, same = 0, first = 0, cur_stage;
+    uint8_t *g;
+    if (!s_ms_copy || p != s_ms_va || MEM32(self + 0x58) != s_ms_id)
+        return;
+    g = (uint8_t *)XBOX_PTR(p);
+    for (i = 0; i < s_ms_len; i++)
+        if (g[i] != s_ms_copy[i]) {
+            if (!diff) first = i;
+            diff++;
+        }
+    if (!diff)
+        return;
+    if (!memcmp(g, s_ms_copy, 4)) {        /* the stage number held: only noted */
+        fprintf(stderr, "[MSSN] mission 0x%05X's data: %u byte(s) changed since it loaded (first at +0x%X), stage number intact\n",
+                s_ms_id, diff, first);
+        return;
+    }
+    cur_stage = MEM32(p);
+    for (i = 0; i < s_ms_len && same < 256; i++) {   /* the overwritten run at the start */
+        if (g[i] != s_ms_copy[i]) { end = i + 1; same = 0; }
+        else same++;
+    }
+    {   /* put back word by word, leaving any word the game has already
+         * relocated (its offset plus the data's address); at this point
+         * nothing is relocated yet in a good run (the header's offsets
+         * 0x20, 0x98 still read as offsets), so this only guards */
+        uint32_t w, kept = 0, put = 0;
+        end = (end + 3u) & ~3u;
+        if (end > s_ms_len) end = s_ms_len & ~3u;
+        for (w = 0; w < end; w += 4) {
+            uint32_t cur, was;
+            memcpy(&cur, g + w, 4);
+            memcpy(&was, s_ms_copy + w, 4);
+            if (cur == was) continue;
+            if (was && was < s_ms_len && cur == was + p) { kept++; continue; }
+            memcpy(g + w, &was, 4);
+            put++;
+        }
+        fprintf(stderr, "[MSSN] mission 0x%05X's data at %08X was written over (stage %08X, should be %08X; "
+                "%u byte(s) changed, block %s): %u word(s) put back in its first %u bytes, %u relocated kept\n",
+                s_ms_id, p, cur_stage, *(const uint32_t *)s_ms_copy, diff,
+                xbox_HeapBlockSize(p) ? "still allocated" : "freed or not the heap's", put, end, kept);
+        fflush(stderr);
+    }
+}
+
 void sub_000520D0(void)                     /* CMission::WaitMssnBin (thiscall) */
 {
     uint32_t self = g_ecx, before = MEM32(self + 0x48);
     sub_000520D0_gen();
-    if (!before && MEM32(self + 0x48) == 1)
+    if (!before && MEM32(self + 0x48) == 1) {
         mssn_log("mission data loaded", self);
+        mssn_keep(self);                    /* v303 */
+    }
 }
 
 void sub_0004AC80(void)                     /* CMission::InitStage1 (thiscall) */
 {
+    mssn_check(g_ecx);                      /* v303 */
     mssn_log("stage requested", g_ecx);
     sub_0004AC80_gen();
 }
