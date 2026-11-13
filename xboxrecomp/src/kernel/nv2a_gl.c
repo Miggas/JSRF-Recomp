@@ -17,6 +17,9 @@
  *    Depth clamp stands in for the NV2A's lack of near/far clipping.
  */
 #include "nv2a_gl.h"
+#ifdef XBOXRECOMP_HAVE_VK
+#include "nv2a_vk.h"
+#endif
 #include "xbox_memory_layout.h"   /* v117: xbox_gw_* write-watch */
 #include <math.h>
 
@@ -2491,6 +2494,12 @@ static int init_gl(void)
     use_prog(&s_p_old);
     glBindVertexArray(s_vao); s_cur_attr_ok = 0;
     {
+#ifdef XBOXRECOMP_HAVE_VK
+        /* vulkan-test: RECOMP_RENDERER=vulkan -- the probe, on a thread of
+         * its own; the game draws with OpenGL meanwhile (nv2a_vk.h) */
+        if (nv2a_vk_wanted())
+            nv2a_vk_probe_async();
+#endif
         /* v172: from here on the GL calls are made on the GL thread
          * (not with the opt-in DXGI presentation, which stays as it was) */
         const char *pm = getenv("RECOMP_GL_PRESENT");

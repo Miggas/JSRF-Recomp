@@ -39,7 +39,17 @@ else()
     list(APPEND KERNEL_SOURCES nv2a_gl_stub.c)
 endif()
 
+# vulkan-test: the Vulkan renderer beside OpenGL (cmake/vulkan.cmake)
+if(XBOXRECOMP_GL AND XBOXRECOMP_VULKAN)
+    list(APPEND KERNEL_SOURCES nv2a_vk.c)
+endif()
+
 add_library(xbox_kernel STATIC ${KERNEL_SOURCES})
+
+if(XBOXRECOMP_GL AND XBOXRECOMP_VULKAN)
+    target_link_libraries(xbox_kernel PUBLIC xrvk_deps)
+    target_compile_definitions(xbox_kernel PRIVATE XBOXRECOMP_HAVE_VK=1)
+endif()
 
 if(XBOXRECOMP_GL)
     target_include_directories(xbox_kernel PRIVATE
