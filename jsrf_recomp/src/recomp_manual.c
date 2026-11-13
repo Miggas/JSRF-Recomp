@@ -3235,8 +3235,9 @@ void sub_001BAF70(void)
  *
  * Miggas's behaviour: the right stick turns the camera, moving or standing
  * still (the game doesn't see it, so its first-person look is not used;
- * v265b, v265 left the stick to it standing still). A second after the
- * stick is let go while moving the camera eases back behind; standing
+ * v265b, v265 left the stick to it standing still). Let go while moving,
+ * the view stays where it was turned and only its height eases back (v306;
+ * it used to ease back behind after a second); standing
  * still it stays where it was turned until the skater moves. The L trigger puts it straight behind, as
  * the game does with its own. Not in conversations (camera mode +0x208 12)
  * or the first-person look (14), and only in single player.
@@ -3272,6 +3273,7 @@ static struct {
     int      have_view;
     int      commit;            /* v266i: hand the left / right turn to the game's camera */
     float    setoff_t;          /* v266j: seconds since setting off, counting down */
+    int      was_turning;       /* v306: the right stick was turning the camera last frame */
     uint32_t frames, last_frame;
     uint32_t cam;
     float    game_eye[3], our_eye[3];
@@ -3407,6 +3409,18 @@ static void rcam_apply(uint32_t cam)
         s_rcam.follow_t = 0.0f;
         s_rcam.commit = 0;
     } else if (moving) {
+        /* v306 (Miggas): the stick let go while moving -- the view stops
+         * where it is. The left / right turn is handed to the game's camera
+         * at once (as when setting off, v266i), so it follows the skater from
+         * there; kept on top of it for the second's wait, the view went on
+         * turning as the game's camera swung round behind the skater, who
+         * was steered by the turned view, until the turn eased out. Up /
+         * down eases back to the game's camera height at once, no wait. */
+        if (s_rcam.was_turning) {
+            s_rcam.commit = s_rcam.yaw != 0.0f;
+            s_rcam.follow_t = 0.0f;
+            s_rcam.idle = RCAM_HOLD;
+        }
         s_rcam.idle += dt;
         if (s_rcam.follow_t > 0.0f) {
             /* v266f: the view along the skater's way, once he is clearly going somewhere */
@@ -3451,6 +3465,7 @@ static void rcam_apply(uint32_t cam)
         }
         if (s_rcam.setoff_t > 0.0f) s_rcam.setoff_t -= dt;
     }                                           /* standing still: kept */
+    s_rcam.was_turning = ok && !s_rcam.lt && (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f);
     while (s_rcam.yaw >  3.14159265f) s_rcam.yaw -= 6.28318531f;
     while (s_rcam.yaw < -3.14159265f) s_rcam.yaw += 6.28318531f;
     if (s_rcam.pitch >  RCAM_PMAX) s_rcam.pitch =  RCAM_PMAX;
@@ -3494,7 +3509,7 @@ static void rcam_apply(uint32_t cam)
         MEM32(cam + 0x228) = (uint32_t)(int32_t)(int16_t)(uint16_t)(hd
                              + (int32_t)lrintf(s_rcam.yaw * (65536.0f / 6.28318531f)));
         if (s_rcam.log)
-            fprintf(stderr, "[CAM] setting off: %.0f degrees given to the game's camera (heading %d -> %d)\n",
+            fprintf(stderr, "[CAM] %.0f degrees given to the game's camera (heading %d -> %d)\n",
                     s_rcam.yaw * 57.29578f, (int)(int16_t)hd, (int)(int32_t)MEM32(cam + 0x228));
         s_rcam.yaw = 0.0f;
         s_rcam.commit = 0;
