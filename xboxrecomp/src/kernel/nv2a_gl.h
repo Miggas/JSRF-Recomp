@@ -77,6 +77,8 @@ typedef struct {
     NvGlTexture  tex[4];
     uint32_t     bg_far;         /* v200d: the backdrop, drawn at the far plane */
     uint32_t     ws_stretch;     /* v209: a menu part drawn across the whole width */
+    uint32_t     ws_box;         /* v304: clip narrowed by a window clip smaller than a split view */
+    uint32_t     sclip_x, sclip_w;   /* v304: the surface clip before the window clip */
     float        ws_cut;         /* v217c: on a row-filled menu, k: kept off the columns the
                                     sides are filled from (< 0: not drawn at all) */
 } NvGlState;
