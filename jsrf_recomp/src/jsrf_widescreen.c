@@ -96,6 +96,8 @@ static const struct { uint32_t addr; int anchor; } ws_hud[] = {
     { 0x00109B70u,  3 },    /* boost-ready icon (3D) */
     { 0x000FFFD0u, -1 },    /* trick count and score rows */
     { 0x00101F20u, -1 },    /* trick name */
+    { 0x00102DB0u,  3 },    /* v305: VS race position ("1 ST") */
+    { 0x00103AE0u,  3 },    /* v305: VS lap count ("3/3 LAP") */
     { 0x000F7720u,  9 },    /* v191b: letterbox bars (cutscenes, dialogue) */
     { 0x000F7990u,  9 },    /* v191b: the bars opening and closing */
 };
@@ -228,6 +230,40 @@ WS_HUD_SCOPE(sub_0010DC60, 0x0010DC60u)
 WS_HUD_SCOPE(sub_00109B70, 0x00109B70u)
 WS_HUD_SCOPE(sub_000FFFD0, 0x000FFFD0u)
 WS_HUD_SCOPE(sub_00101F20, 0x00101F20u)
+/* v305: VS mode's race position and lap count, to the right edge with the
+ * health bar and spray count (Idea by Miggas). Found with Miggas's
+ * RECOMP_MENU_LOG run: their draws' call chains end in these functions. */
+WS_HUD_SCOPE(sub_00102DB0, 0x00102DB0u)
+WS_HUD_SCOPE(sub_00103AE0, 0x00103AE0u)
+
+/* v305: the race banner (FINAL LAP) in VS mode, sub_000FD3E0 (drawn through
+ * the object draw from 0xFD752). The game puts it right of the middle and
+ * level with the lap count, over "3/3 LAP" (on the Xbox and xemu too). In
+ * widescreen it is moved under the time, centred on it, while it draws
+ * (Idea by Miggas): RECOMP_BANNER_DX / RECOMP_BANNER_DY, guest pixels
+ * (default -38 and -40, from Miggas's 4:3 screenshot: the banner's middle at
+ * x 358, the time's at 320; its top at y 115, the time's bottom at 67). */
+extern void sub_000FD3E0_gen(void);
+void sub_000FD3E0(void)
+{
+    static float dx = 1e9f, dy;
+    uint32_t device = MEM32(0x19DCE0u);
+    float x, y;
+    if (!ws_hud_on() || !device || xbox_WidescreenK() > 0.9999) {
+        sub_000FD3E0_gen();
+        return;
+    }
+    if (dx == 1e9f) {
+        const char *a = getenv("RECOMP_BANNER_DX"), *b = getenv("RECOMP_BANNER_DY");
+        dx = a && *a ? (float)atof(a) : -38.0f;
+        dy = b && *b ? (float)atof(b) : -40.0f;
+    }
+    x = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
+    y = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
+    ws_set_screen_offset(x + dx, y + dy);
+    sub_000FD3E0_gen();
+    ws_set_screen_offset(x, y);
+}
 
 /* v191b, after Piaka's widescreen notes: the letterbox bars. The Xbox adds
  * 0.53125 to every position (D3D's pixel-centre bias), so bars the game

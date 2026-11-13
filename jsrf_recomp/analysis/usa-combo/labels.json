@@ -29327,7 +29327,7 @@
     "name": "sub_00102D80",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00102FF0",
@@ -29362,7 +29362,7 @@
     "name": "sub_00103AB0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00103D10",

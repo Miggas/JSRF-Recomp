@@ -83332,9 +83332,9 @@
   "size": 624,
   "name": "sub_00102D80",
   "section": ".text",
-  "confidence": 0.88,
-  "detection_method": "tail_jump_alias",
-  "num_instructions": 165,
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
+  "num_instructions": 150,
   "has_prologue": false,
   "calls_to": [
    "0x000128C0"
@@ -83426,9 +83426,9 @@
   "size": 608,
   "name": "sub_00103AB0",
   "section": ".text",
-  "confidence": 0.88,
-  "detection_method": "tail_jump_alias",
-  "num_instructions": 175,
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
+  "num_instructions": 154,
   "has_prologue": false,
   "calls_to": [
    "0x000128C0"
