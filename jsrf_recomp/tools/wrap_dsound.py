@@ -25,6 +25,7 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_001060B0", "sub_0010D480", "sub_0010DC60", "sub_00109B70",   # HUD, right
          "sub_000FFFD0", "sub_00101F20",                                   # HUD, left
          "sub_00102DB0", "sub_00103AE0", "sub_000FD3E0",   # v305: VS race position, laps, banner
+         "sub_0015A560",                # v307: sprite quads added several at once (the trick name)
          "sub_000F7720", "sub_000F7990",   # v191b: letterbox bars, edge push
          "sub_00077730", "sub_0011AC50",                                   # 4:3-only screens
          "D3D8_D3DDevice_SetViewport",  # v187r: split screen seen (HUD not moved)

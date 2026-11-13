@@ -423,6 +423,38 @@ static void ws_sprite_queue(void)
         MEMF(before + v * 32u) += (float)anchor * extra;
 }
 
+/* v307: the quad batch's other way in, vtable +0x18 (sub_0015A560): n
+ * quads at once, from one of three vertex layouts, converted to the
+ * batch's own (4 vertices of 32 bytes a quad, x first, written at this+0x1C
+ * as sub_0015A880 does). The trick name ("Back Slide") is drawn this way,
+ * so the HUD's move to the left edge, made only in sub_0015A880, missed it
+ * (Miggas: it stayed in the 4:3 area while the trick count went left).
+ * Every vertex it wrote is moved as a single quad's would be. */
+extern void sub_0015A560_gen(void);
+void sub_0015A560(void)
+{
+    uint32_t obj = MEM32(g_esp + 4), before, after, v;
+    int anchor;
+    float dx;
+    if (ws_depth <= 0 || ws_depth > 32 || !ws_hud_on()) {
+        sub_0015A560_gen();
+        return;
+    }
+    anchor = ws_stack[ws_depth - 1].anchor;
+    if (anchor != 1 && anchor != -1) {
+        sub_0015A560_gen();
+        return;
+    }
+    before = MEM32(obj + 0x1C);
+    sub_0015A560_gen();
+    after = MEM32(obj + 0x1C);
+    if (g_eax != 0 || after <= before || ((after - before) & 31u) || after - before > 256u * 1024u)
+        return;
+    dx = (float)anchor * ws_half_extra();
+    for (v = before; v < after; v += 32u)
+        MEMF(v) += dx;
+}
+
 /* ── screens kept at 4:3 ─────────────────────────────────────────────────
  * Found by Piaka by comparing which game functions run in each screen and
  * never in gameplay:
@@ -939,7 +971,16 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
     }
     if (wsm_in_header)
         where = -1;
-    else if (wsm_cur >= 0) {
+    else if (wsm_cur < 0 && ws_depth > 0 && ws_depth <= 32 && ws_hud_on()) {
+        /* v307: a string added while a HUD function moved to an edge runs
+         * (anchor -1 / +1) goes with its sprites: the trick name and the "x"
+         * between the trick count's numbers stayed in the 4:3 area while
+         * the numbers went to the left edge (Miggas). Strings are drawn
+         * later, in a pass of their own, so the sprite move never saw them. */
+        int a = ws_stack[ws_depth - 1].anchor;
+        if (a == 1 || a == -1)
+            where = a;
+    } else if (wsm_cur >= 0) {
         const WsmScreen *sc = &wsm_screens[wsm_cur];
         uint32_t ret = MEM32(g_esp);
         for (k = 0; k < sc->ntext; k++)
