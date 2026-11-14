@@ -95,7 +95,9 @@ static const struct { uint32_t addr; int anchor; } ws_hud[] = {
     { 0x0010DC60u,  3 },    /* spray can (3D), "x" and count */
     { 0x00109B70u,  3 },    /* boost-ready icon (3D) */
     { 0x000FFFD0u, -1 },    /* trick count and score rows */
-    { 0x00101F20u, -1 },    /* trick name */
+    { 0x00101F20u, -3 },    /* trick name; v307b: -3, its own sprite object
+                             * fills the batch, drawn inside this function
+                             * (0x10224C), so the screen offset moves it */
     { 0x00102DB0u,  3 },    /* v305: VS race position ("1 ST") */
     { 0x00103AE0u,  3 },    /* v305: VS lap count ("3/3 LAP") */
     { 0x000F7720u,  9 },    /* v191b: letterbox bars (cutscenes, dialogue) */
