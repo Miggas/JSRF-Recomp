@@ -244,7 +244,21 @@ WS_HUD_SCOPE(sub_00101F20, 0x00101F20u)
  * scope moved to the left edge, the string goes with it (v307c). */
 WS_HUD_SCOPE(sub_001045D0, 0x001045D0u)
 WS_HUD_SCOPE(sub_00102DB0, 0x00102DB0u)
-WS_HUD_SCOPE(sub_00103AE0, 0x00103AE0u)
+/* v309: the lap count, as v305, and when it last drew: the banner below is
+ * only moved during a race (its function also draws CLEARED, which v305
+ * moved up and left on every cleared screen) */
+static volatile DWORD s_lap_ms;
+static volatile int s_lap_seen;
+extern void sub_00103AE0_gen(void);
+void sub_00103AE0(void)
+{
+    s_lap_ms = GetTickCount();
+    s_lap_seen = 1;
+    if (!ws_hud_on()) { sub_00103AE0_gen(); return; }
+    ws_enter(0x00103AE0u);
+    sub_00103AE0_gen();
+    ws_leave();
+}
 
 /* v305: the race banner (FINAL LAP) in VS mode, sub_000FD3E0 (drawn through
  * the object draw from 0xFD752). The game puts it right of the middle and
@@ -259,7 +273,8 @@ void sub_000FD3E0(void)
     static float dx = 1e9f, dy;
     uint32_t device = MEM32(0x19DCE0u);
     float x, y;
-    if (!ws_hud_on() || !device || xbox_WidescreenK() > 0.9999) {
+    if (!ws_hud_on() || !device || xbox_WidescreenK() > 0.9999
+            || !s_lap_seen || GetTickCount() - s_lap_ms > 500) {   /* v309: races only */
         sub_000FD3E0_gen();
         return;
     }

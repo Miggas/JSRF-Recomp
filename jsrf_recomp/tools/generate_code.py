@@ -61,6 +61,54 @@ EXTRA = (("0x0002F420", "0x0002F5A0"), ("0x000D02F0", "0x000D03F0"),
          # by a tail jump from 0x107FD5 in VS mode; folded into sub_00109B70.
          # Skipped, the item box showed its item at once instead of cycling.
          ("0x00109FA0", "0x0010A035"))
+# v309h: function starts the analysis found that are not starts, each in
+# the middle of another function, per release (its own addresses). The lift
+# makes every function its own C function, and a split right after a compare
+# loses the compare's result: the jump at the split's first instruction
+# reads the fallback flag, always 0. 0x74004 (imm_ref_target: a number in the
+# code that happened to equal it) splits the waiting state of the HUD's
+# cleared object (class 0x1CCB68, update sub_00073C20): "cmp eax, 1" (a press
+# of A / START) at 0x74001, "jne" at 0x74004, so the press was never waited
+# for and every cleared screen ended about a second in (Reported by Miggas).
+# They are folded back into the function before them (its end moved to
+# theirs) in copies of the four analysis files the lift reads. PAL has the
+# whole function as one (sub_00073D70) and needs nothing.
+DROP_STARTS = {
+    "usa": ("0x00074004",),
+    "jpn": ("0x00074004",),
+    "usa-combo": ("0x00074004",),
+}
+
+
+def drop_starts(an, tag, outdir):
+    """copies of the analysis files without DROP_STARTS[tag]; returns the
+    inputs for the lift, or None when there is nothing to drop"""
+    drop = {int(a, 16) for a in DROP_STARTS.get(tag, ())}
+    if not drop:
+        return None
+    paths = {}
+    for n, key in (("functions_named.json", "start"), ("identified_functions.json", "start"),
+                   ("labels.json", "address"), ("abi_functions.json", "address")):
+        items = json.load(open(os.path.join(an, n)))
+        gone = [x for x in items if int(x[key], 16) in drop]
+        items = [x for x in items if int(x[key], 16) not in drop]
+        if key == "start":
+            # the function before each dropped one takes its range
+            for g in gone:
+                for x in items:
+                    if x["end"].lower() == g["start"].lower():
+                        x["end"] = g["end"]
+                        if "size" in x:
+                            x["size"] = int(x["end"], 16) - int(x["start"], 16)
+                        if "num_instructions" in x and "num_instructions" in g:
+                            x["num_instructions"] += g["num_instructions"]
+        paths[n] = os.path.join(outdir, n)
+        with open(paths[n], "w") as f:
+            json.dump(items, f, indent=1)
+    return ["--functions", paths["functions_named.json"], "--labels", paths["labels.json"],
+            "--identified", paths["identified_functions.json"], "--abi", paths["abi_functions.json"]]
+
+
 EXTRA_HEADER = """/**
  * Jet Set Radio Future - functions the detector folded into a neighbour
  * and that are reached only through data tables (v66).
@@ -173,6 +221,11 @@ def main():
               "--labels", os.path.join(an, "labels.json"),
               "--identified", os.path.join(an, "identified_functions.json"),
               "--abi", os.path.join(an, "abi_functions.json")]
+    dropdir = tempfile.mkdtemp(prefix="jsrf_drop_")     # v309h
+    dropped = drop_starts(an, tag, dropdir)
+    if dropped:
+        inputs = dropped
+        print("  starts that are not starts, folded back: %s" % ", ".join(DROP_STARTS[tag]))
     manual = MANUAL
     tmpdir = None
     if tr:
@@ -191,7 +244,7 @@ def main():
 
     # 3. recomp_extra.c
     print("\n[3/4] The functions reached only through data tables...")
-    funcs = json.load(open(os.path.join(an, "functions_named.json")))
+    funcs = json.load(open(inputs[1]))
     have = {f["start"] for f in funcs}
     extra = EXTRA
     if tr:
@@ -281,6 +334,7 @@ def main():
     with open(os.path.join(GEN, "release.txt"), "w", newline="\n") as f:
         f.write(tag + "\n" + digest.lower() + "\n")   # v270f: and which file (the launcher checks it)
 
+    shutil.rmtree(dropdir, ignore_errors=True)
     n = len([f for f in os.listdir(GEN) if f.endswith(".c")])
     print("\nDone: %d files in src/recomp/gen. Now build the game (the launcher's Build)." % n)
 
