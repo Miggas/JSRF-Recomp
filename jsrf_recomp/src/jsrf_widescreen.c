@@ -290,11 +290,12 @@ static int ws_edge_on(void)
     return on;
 }
 
+static int ws_letterbox_on(void);    /* v308: the bars can be left out */
 #define WS_EDGE_SCOPE(name, addr)                   \
     extern void name##_gen(void);                   \
     void name(void)                                 \
     {                                               \
-        if (!ws_edge_on()) { name##_gen(); return; } \
+        if (!ws_edge_on() && ws_letterbox_on()) { name##_gen(); return; } \
         ws_enter(addr);                             \
         name##_gen();                               \
         ws_leave();                                 \
@@ -385,6 +386,23 @@ void sub_0015A880(void)
     sprite_log(obj, a2, a3, before, ret, nret);
 }
 
+/* v308: RECOMP_LETTERBOX=0 (the launcher's Gameplay > "Cutscene black
+ * bars", Idea by Miggas): the letterbox bars of cutscenes and conversations
+ * are left out. They are still queued, so the game goes on exactly as it
+ * did; each bar's quad is folded into a point (its four corners on its
+ * first), which draws nothing. */
+static int ws_letterbox_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_LETTERBOX");
+        on = !(e && e[0] == '0');
+        if (!on)
+            fprintf(stderr, "[WS] cutscene black bars left out (RECOMP_LETTERBOX=0)\n");
+    }
+    return on;
+}
+
 static void ws_sprite_queue(void)
 {
     uint32_t obj, before, v;
@@ -413,6 +431,13 @@ static void ws_sprite_queue(void)
         if (!(k > 0.2 && k < 0.9999)) k = 1.0;
         if (g_eax != 0 || MEM32(obj + 0x1C) - before != 0x80)
             return;
+        if (!ws_letterbox_on()) {           /* v308: the bars left out */
+            for (v = 1; v < 4; ++v) {
+                MEMF(before + v * 32u) = MEMF(before);
+                MEMF(before + v * 32u + 4u) = MEMF(before + 4u);
+            }
+            return;
+        }
         for (v = 0; v < 4; ++v) {
             uint32_t p = before + v * 32u;
             float x0 = MEMF(p), y = MEMF(p + 4);
