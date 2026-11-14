@@ -1570,6 +1570,15 @@ static void hud_watch(void)
             now[8] = MEM32(ch + 0x44u); now[9] = MEM32(ch + 0xB0u);
             now[10] = MEM32(ch + 0xA8u); now[11] = MEM32(ch + 0xACu);
         }
+        if (ch && now[5] != last[k][5]) {
+            /* v309g: the pad its waiting state reads (sub_00072990): its
+             * player number +0xA0, that pad's pressed byte and connected word */
+            const uint32_t pl = MEM32(ch + 0xA0u);
+            fprintf(stderr, "[CLEARWATCH] t=%lu child state %u: player +A0 %d, its pressed byte %02X,"
+                    " connected %08X, +B8 %08X\n", (unsigned long)GetTickCount(), now[5], (int)pl,
+                    pl < 64u ? MEM8(0x00251DE8u + pl * 0x40u) : 0xEEu,
+                    pl < 64u ? MEM32(0x00251DE8u + 0x34u + pl * 0x40u) : 0xEEEEEEEEu, MEM32(ch + 0xB8u));
+        }
         if (hud && memcmp(now, last[k], sizeof now)
                 && !(now[6] != last[k][6] && !memcmp(now, last[k], 6 * 4) && !memcmp(now + 7, last[k] + 7, 5 * 4)))
             fprintf(stderr, "[CLEARWATCH] t=%lu hud %X at %08X mode %d +1700 %08X | child id %d at %08X:"
