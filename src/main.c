@@ -646,6 +646,14 @@ static void panel_gameplay(struct nk_context *ctx, float w)
     bool nv = check(ctx, "Skip intros", on);
     if (nv != on) { if (nv) put("RECOMP_SKIP_INTRO", "1", "game"); else off("RECOMP_SKIP_INTRO"); }
     desc(ctx, w, "Skips the logos at start.", C_DIM);
+    /* v2v: the cutscene black bars (the game's v308, Idea by Miggas) */
+    {
+        bool bars = strcmp(get_or("RECOMP_LETTERBOX", "1"), "0") != 0;
+        bool nb = check(ctx, "Cutscene black bars", bars);
+        if (nb != bars) { if (nb) off("RECOMP_LETTERBOX"); else put("RECOMP_LETTERBOX", "0", "game"); }
+        desc(ctx, w, "The black bars at the top and bottom of the screen in cutscenes and conversations. "
+                     "Off: the whole picture is shown. Needs the game's v308 or newer.", C_DIM);
+    }
     /* v2a: the game's language (the game's v271) */
     {
         static const char *const items[] = { "English", "French", "German", "Spanish", "Italian", "Japanese" };
@@ -792,9 +800,9 @@ static void panel_input(struct nk_context *ctx, float w)
         bool on = strcmp(get_or("RECOMP_CAM_ORBIT", "1"), "0") != 0;
         bool n = check(ctx, "Modern 3rd person camera", on);
         if (n != on) { if (n) off("RECOMP_CAM_ORBIT"); else put("RECOMP_CAM_ORBIT", "0", "input"); }
-        desc(ctx, w, "The right stick turns the camera around the skater. While skating it swings back "
-                     "behind a second after you let go; standing still it stays until you move. "
-                     "Off: the original camera.", C_DIM);
+        desc(ctx, w, "The right stick turns the camera around the skater. Let go while skating and it "
+                     "stays where you turned it, easing back to its usual height; standing still it "
+                     "stays until you move. Off: the original camera.", C_DIM);
         if (!n) nk_widget_disable_begin(ctx);
         {
             bool y = !strcmp(get_or("RECOMP_CAM_INVERT_Y", "0"), "1");
