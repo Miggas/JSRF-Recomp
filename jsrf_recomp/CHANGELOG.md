@@ -11,6 +11,15 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 
 ---
 
+## v309 — 2026-11-14
+
+### Fixed
+- Widescreen: the CLEARED sign sat too high and to the left on the cleared
+  screen (v305's race-banner move now applies in races only).
+- The cleared screen of a mission picked from the mission select was cut
+  short a couple of seconds in: it now stays at least 6 s
+  (`RECOMP_CLEAR_HOLD`, seconds; 0 for the old way).
+
 ## v308 — 2026-11-14
 
 ### Added

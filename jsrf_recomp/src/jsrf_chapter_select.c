@@ -170,6 +170,9 @@ static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to t
 static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
 static int s_pick_seen;                /* v285b: the picked mission has run */
 static int s_pick_cleared;             /* v289: it has been cleared */
+static uint32_t s_clear_tick;          /* v309: when (sequence steps) */
+static uint32_t s_run_st;              /* v309: the state the mission ran in */
+static int s_exit_held;                /* v309: its exit is being put off */
 static uint32_t s_tm_obj;              /* v300: the timer's mission object */
 
 static int chs_on(void)
@@ -183,6 +186,8 @@ static int chs_on(void)
         s_pick_live = s_pick_obj;
         s_pick_seen = 0;
         s_pick_cleared = 0;
+        s_run_st = 0;                   /* v309 */
+        s_exit_held = 0;
         s_tm_obj = 0;                   /* v300: the timer from 0 */
         g_xbox_timer[0] = 0;
         g_xbox_timer_big = 0;
@@ -1099,10 +1104,41 @@ static void cleared_tick(uint32_t o)
         for (k = 0; k < cc && k < 32u && ok; k++) ok = (uint32_t)flag_holds(MEM32(co + 4u * k));
         if (ok) {
             s_pick_cleared = 1;
+            s_clear_tick = s_seq_ticks;         /* v309 */
             fprintf(stderr, "[MISSION-SELECT] mssn%04u cleared\n", s_pick);
             return;
         }
     }
+}
+
+/* v309: the cleared screen held. A picked mission's exit after its clear
+ * went straight back to the title, cutting the cleared screen (and the
+ * game's fade, which the exit starts) about two seconds in. Now an exit
+ * that comes sooner than RECOMP_CLEAR_HOLD seconds (default 6; 0 off)
+ * after the clear is put off: the mission object goes back to the state it
+ * was running in, and once the time is up the pick ends as before. */
+static uint32_t clear_hold_ticks(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("RECOMP_CLEAR_HOLD");
+        v = e && *e ? atoi(e) : 6;
+        if (v < 0) v = 0;
+        if (v > 60) v = 60;
+    }
+    return (uint32_t)v * 60u;
+}
+static int exit_put_off(uint32_t o, uint32_t st)
+{
+    const uint32_t hold = clear_hold_ticks();
+    if (!s_pick_cleared || !hold || !s_run_st || s_seq_ticks - s_clear_tick >= hold)
+        return 0;
+    if (!s_exit_held)
+        fprintf(stderr, "[MISSION-SELECT] mssn%04u: the exit (state 0x%X) put off, the cleared screen"
+                " stays %.1f s more\n", s_pick, st, (double)(hold - (s_seq_ticks - s_clear_tick)) / 60.0);
+    s_exit_held = 1;
+    MEM32(o + 0x5Cu) = s_run_st;
+    return 1;
 }
 
 static void pick_exit_check(uint32_t o)
@@ -1110,6 +1146,18 @@ static void pick_exit_check(uint32_t o)
     uint32_t st, tgt;
     if (!o) return;
     st = MEM32(o + 0x5Cu);
+    if (s_pick_live && st < 0x5Du && !s_exit_held) s_run_st = st;   /* v309 */
+    if (s_pick_live && s_exit_held && !exit_put_off(o, 0x5Du)) {
+        /* v309: the hold is over: end the pick as its exit would have */
+        fprintf(stderr, "[MISSION-SELECT] mssn%04u ended (after the cleared screen): back to the title\n",
+                s_pick);
+        s_exit_held = 0;
+        s_pick_live = 0;
+        var_set(VAR_NEXT, SEQ_TITLE);
+        MEM32(o + 0x5Cu) = GAME_END;
+        return;
+    }
+    if (s_exit_held) return;
     if (s_pick_live && !s_sel_target) {
         /* v285b: another mission running in its place without an exit we
          * saw (a cutscene that loads the next one, 0513 -> 0514) ends it */
@@ -1146,6 +1194,7 @@ static void pick_exit_check(uint32_t o)
     } else {
         tgt = 0;
     }
+    if (exit_put_off(o, st)) return;            /* v309 */
     fprintf(stderr, "[MISSION-SELECT] mssn%04u ended (state 0x%X, next %u): back to the title\n",
             s_pick, st, tgt);
     s_pick_live = 0;
