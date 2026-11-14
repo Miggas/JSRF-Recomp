@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.20)
 #   4. Add any game-specific compile definitions or link libraries
 # ============================================================================
 
-project(jsrf_recomp C)
+project(jsrf_recomp C CXX)   # CXX: glslang, for the Vulkan renderer (vulkan-test)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
