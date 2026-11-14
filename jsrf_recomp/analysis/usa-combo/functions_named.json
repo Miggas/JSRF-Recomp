@@ -17292,8 +17292,8 @@
   "size": 63,
   "name": "sub_0003D610",
   "section": ".text",
-  "confidence": 0.9,
-  "detection_method": "call_target",
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
   "num_instructions": 22,
   "has_prologue": false,
   "calls_to": [

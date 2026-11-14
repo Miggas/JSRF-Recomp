@@ -954,6 +954,32 @@ void sub_000488B0(void)             /* ...and its plain quads */
     wsm_draw(sub_000488B0_gen, where);
 }
 
+/* v307c: the edge a string added now goes to: -1 / +1 inside a HUD
+ * function moved to the left / right edge, by its sprites (1) or by the
+ * screen offset (3). Strings are drawn later, in a pass of their own
+ * (sub_0003C310 from sub_00012680), so neither move reaches them. */
+static int ws_text_anchor(void)
+{
+    int a;
+    if (ws_depth <= 0 || ws_depth > 32 || !ws_hud_on())
+        return 0;
+    a = ws_stack[ws_depth - 1].anchor;
+    return a == 1 || a == 3 ? 1 : a == -1 || a == -3 ? -1 : 0;
+}
+
+/* v307c: the other way to add a string, the same seven arguments (x at
+ * esp+4), another kind of string: the trick name ("Back Slide") is added
+ * here by its own text object, and stayed in the 4:3 area (Miggas; v307b's
+ * screen offset can't reach a string drawn later) */
+extern void sub_0003D610_gen(void);
+void sub_0003D610(void)
+{
+    int where = wsm_cur < 0 && !wsm_in_header ? ws_text_anchor() : 0;
+    if (where)
+        MEMF(g_esp + 4) += (float)where * ws_half_extra();
+    sub_0003D610_gen();
+}
+
 void sub_0003D5D0(void)             /* add a string: x at esp+4 */
 {
     int where = 0;
@@ -979,9 +1005,7 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
          * between the trick count's numbers stayed in the 4:3 area while
          * the numbers went to the left edge (Miggas). Strings are drawn
          * later, in a pass of their own, so the sprite move never saw them. */
-        int a = ws_stack[ws_depth - 1].anchor;
-        if (a == 1 || a == -1)
-            where = a;
+        where = ws_text_anchor();
     } else if (wsm_cur >= 0) {
         const WsmScreen *sc = &wsm_screens[wsm_cur];
         uint32_t ret = MEM32(g_esp);
