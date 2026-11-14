@@ -41552,12 +41552,12 @@
   {
     "address": "0x00104FCE",
     "calling_convention": "cdecl",
-    "estimated_params": 1,
+    "estimated_params": 0,
     "return_hint": "int_or_void",
     "frame_type": "fpo_leaf",
     "stack_frame_size": 0,
-    "heuristic_confidence": 0.65,
-    "heuristic_notes": "ret cleaned 4 bytes"
+    "heuristic_confidence": 0.5,
+    "heuristic_notes": "low-confidence default"
   },
   {
     "address": "0x00104FF0",

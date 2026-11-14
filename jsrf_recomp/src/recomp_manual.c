@@ -193,16 +193,108 @@ static void mssn_log(const char *where, uint32_t self)
                 where, self ? MEM32(self + 0x58) : 0, p);
 }
 
+/* v303: the mission data's safety net (a player's NTSC-U run, v302 log):
+ * mission 0110 loaded right, then before its stage was asked for something
+ * wrote over its first bytes (texture-like data), the stage number read
+ * FFFFFFFF, the game asked for Stg55_.bin over and over and showed the
+ * damaged-disc screen. Rare and timing-dependent: the same route ran fine
+ * on another PC and on his next start. A copy of the data is kept when it
+ * loads; when the stage is asked for and the stage number has changed, the
+ * overwritten run at the start (up to the first 256 unchanged bytes) is put
+ * back and logged. The range is watched ([WATCH]: heap blocks handed out or
+ * freed over it, file reads into it) to name the writer next time. */
+uint32_t xbox_HeapBlockSize(uint32_t xbox_va);
+void xbox_WatchSet(uint32_t xbox_va, uint32_t len, const char *name);
+
+static uint8_t *s_ms_copy;
+static uint32_t s_ms_va, s_ms_len, s_ms_id;
+
+static void mssn_keep(uint32_t self)
+{
+    uint32_t p = MEM32(self + 0x1040), len;
+    char name[32];
+    free(s_ms_copy);
+    s_ms_copy = NULL;
+    s_ms_va = s_ms_len = 0;
+    xbox_WatchSet(0, 0, NULL);
+    if (!p || p >= 0x04000000u)
+        return;
+    len = xbox_HeapBlockSize(p);           /* to the end of its block */
+    if (!len) len = 64u * 1024u;           /* not a block of ours: its first 64 KB */
+    if (len > 1024u * 1024u) len = 1024u * 1024u;   /* (not hex: the release translation reads hex as addresses) */
+    if (p + len > 0x04000000u) len = 0x04000000u - p;
+    s_ms_copy = (uint8_t *)malloc(len);
+    if (!s_ms_copy)
+        return;
+    memcpy(s_ms_copy, (const void *)XBOX_PTR(p), len);
+    s_ms_va = p;
+    s_ms_len = len;
+    s_ms_id = MEM32(self + 0x58);
+    snprintf(name, sizeof name, "mission 0x%05X's data", s_ms_id);
+    xbox_WatchSet(p, len, name);
+}
+
+static void mssn_check(uint32_t self)
+{
+    uint32_t p = MEM32(self + 0x1040), i, diff = 0, end = 0, same = 0, first = 0, cur_stage;
+    uint8_t *g;
+    if (!s_ms_copy || p != s_ms_va || MEM32(self + 0x58) != s_ms_id)
+        return;
+    g = (uint8_t *)XBOX_PTR(p);
+    for (i = 0; i < s_ms_len; i++)
+        if (g[i] != s_ms_copy[i]) {
+            if (!diff) first = i;
+            diff++;
+        }
+    if (!diff)
+        return;
+    if (!memcmp(g, s_ms_copy, 4)) {        /* the stage number held: only noted */
+        fprintf(stderr, "[MSSN] mission 0x%05X's data: %u byte(s) changed since it loaded (first at +0x%X), stage number intact\n",
+                s_ms_id, diff, first);
+        return;
+    }
+    cur_stage = MEM32(p);
+    for (i = 0; i < s_ms_len && same < 256; i++) {   /* the overwritten run at the start */
+        if (g[i] != s_ms_copy[i]) { end = i + 1; same = 0; }
+        else same++;
+    }
+    {   /* put back word by word, leaving any word the game has already
+         * relocated (its offset plus the data's address); at this point
+         * nothing is relocated yet in a good run (the header's offsets
+         * 0x20, 0x98 still read as offsets), so this only guards */
+        uint32_t w, kept = 0, put = 0;
+        end = (end + 3u) & ~3u;
+        if (end > s_ms_len) end = s_ms_len & ~3u;
+        for (w = 0; w < end; w += 4) {
+            uint32_t cur, was;
+            memcpy(&cur, g + w, 4);
+            memcpy(&was, s_ms_copy + w, 4);
+            if (cur == was) continue;
+            if (was && was < s_ms_len && cur == was + p) { kept++; continue; }
+            memcpy(g + w, &was, 4);
+            put++;
+        }
+        fprintf(stderr, "[MSSN] mission 0x%05X's data at %08X was written over (stage %08X, should be %08X; "
+                "%u byte(s) changed, block %s): %u word(s) put back in its first %u bytes, %u relocated kept\n",
+                s_ms_id, p, cur_stage, *(const uint32_t *)s_ms_copy, diff,
+                xbox_HeapBlockSize(p) ? "still allocated" : "freed or not the heap's", put, end, kept);
+        fflush(stderr);
+    }
+}
+
 void sub_000520D0(void)                     /* CMission::WaitMssnBin (thiscall) */
 {
     uint32_t self = g_ecx, before = MEM32(self + 0x48);
     sub_000520D0_gen();
-    if (!before && MEM32(self + 0x48) == 1)
+    if (!before && MEM32(self + 0x48) == 1) {
         mssn_log("mission data loaded", self);
+        mssn_keep(self);                    /* v303 */
+    }
 }
 
 void sub_0004AC80(void)                     /* CMission::InitStage1 (thiscall) */
 {
+    mssn_check(g_ecx);                      /* v303 */
     mssn_log("stage requested", g_ecx);
     sub_0004AC80_gen();
 }
@@ -1567,6 +1659,8 @@ static void boot_ws_hold(uint32_t handler)
         xbox_MenuScreen();
 }
 
+void jsrf_mission_select_tick(uint32_t state);   /* v278: jsrf_chapter_select.c */
+
 void sub_0007BDD0(void)
 {
     uint32_t self = g_ecx;
@@ -1574,6 +1668,7 @@ void sub_0007BDD0(void)
     {
         uint32_t st = MEM32(self + 0x48);
         DWORD now = GetTickCount();
+        jsrf_mission_select_tick(st);   /* v278: the title's mission select */
         if (st < 0x40)
             boot_ws_hold(MEM32(0x0020D2B8u + 4 * st));
         if (st != boot_state) {
@@ -3140,8 +3235,9 @@ void sub_001BAF70(void)
  *
  * Miggas's behaviour: the right stick turns the camera, moving or standing
  * still (the game doesn't see it, so its first-person look is not used;
- * v265b, v265 left the stick to it standing still). A second after the
- * stick is let go while moving the camera eases back behind; standing
+ * v265b, v265 left the stick to it standing still). Let go while moving,
+ * the view stays where it was turned and only its height eases back (v306;
+ * it used to ease back behind after a second); standing
  * still it stays where it was turned until the skater moves. The L trigger puts it straight behind, as
  * the game does with its own. Not in conversations (camera mode +0x208 12)
  * or the first-person look (14), and only in single player.
@@ -3177,6 +3273,7 @@ static struct {
     int      have_view;
     int      commit;            /* v266i: hand the left / right turn to the game's camera */
     float    setoff_t;          /* v266j: seconds since setting off, counting down */
+    int      was_turning;       /* v306: the right stick was turning the camera last frame */
     uint32_t frames, last_frame;
     uint32_t cam;
     float    game_eye[3], our_eye[3];
@@ -3312,6 +3409,18 @@ static void rcam_apply(uint32_t cam)
         s_rcam.follow_t = 0.0f;
         s_rcam.commit = 0;
     } else if (moving) {
+        /* v306 (Miggas): the stick let go while moving -- the view stops
+         * where it is. The left / right turn is handed to the game's camera
+         * at once (as when setting off, v266i), so it follows the skater from
+         * there; kept on top of it for the second's wait, the view went on
+         * turning as the game's camera swung round behind the skater, who
+         * was steered by the turned view, until the turn eased out. Up /
+         * down eases back to the game's camera height at once, no wait. */
+        if (s_rcam.was_turning) {
+            s_rcam.commit = s_rcam.yaw != 0.0f;
+            s_rcam.follow_t = 0.0f;
+            s_rcam.idle = RCAM_HOLD;
+        }
         s_rcam.idle += dt;
         if (s_rcam.follow_t > 0.0f) {
             /* v266f: the view along the skater's way, once he is clearly going somewhere */
@@ -3356,6 +3465,7 @@ static void rcam_apply(uint32_t cam)
         }
         if (s_rcam.setoff_t > 0.0f) s_rcam.setoff_t -= dt;
     }                                           /* standing still: kept */
+    s_rcam.was_turning = ok && !s_rcam.lt && (s_rcam.rx != 0.0f || s_rcam.ry != 0.0f);
     while (s_rcam.yaw >  3.14159265f) s_rcam.yaw -= 6.28318531f;
     while (s_rcam.yaw < -3.14159265f) s_rcam.yaw += 6.28318531f;
     if (s_rcam.pitch >  RCAM_PMAX) s_rcam.pitch =  RCAM_PMAX;
@@ -3399,7 +3509,7 @@ static void rcam_apply(uint32_t cam)
         MEM32(cam + 0x228) = (uint32_t)(int32_t)(int16_t)(uint16_t)(hd
                              + (int32_t)lrintf(s_rcam.yaw * (65536.0f / 6.28318531f)));
         if (s_rcam.log)
-            fprintf(stderr, "[CAM] setting off: %.0f degrees given to the game's camera (heading %d -> %d)\n",
+            fprintf(stderr, "[CAM] %.0f degrees given to the game's camera (heading %d -> %d)\n",
                     s_rcam.yaw * 57.29578f, (int)(int16_t)hd, (int)(int32_t)MEM32(cam + 0x228));
         s_rcam.yaw = 0.0f;
         s_rcam.commit = 0;
@@ -3883,6 +3993,41 @@ void sub_001192E0(void)
         }
         snd_log("play", mgr, bank, ch, pos, g_eax);
     }
+}
+
+/* v298/v298c: a voice bank two characters share. In the NTSC releases
+ * (US, Japan) Yoyo and YoyoB (NT 3000) both speak from bank 19, pv_yoyo
+ * (the character -> voice bank table, 0x1EE6B8); the PAL release gave YoyoB
+ * its own, bank 38, pv_yoyob.dat. The player loader counts each character's
+ * hold on its voice bank by character (loader+0x1FC + ch*4), not by bank,
+ * so when the last of one of them was freed the bank went with it while
+ * the other still used it: after the chapter 7 garage, where both are
+ * loaded, Yoyo had no voice for the rest of the stage, every play of bank
+ * 19 failing (Miggas's NTSC-U and PAL logs; Reported by Miggas). A voice
+ * bank released by the player frees is now kept while another character
+ * still held by the loader speaks from it (the game's own table, so the
+ * PAL release, where nobody shares, is unchanged). The two frees: the
+ * player's (0x329F7, loader in ebp) and the other characters' (0x337A4,
+ * loader in ebx); v298 only covered the first, and the garage's
+ * characters go through the second. */
+extern void sub_00118BA0_gen(void);
+void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
+{
+    uint32_t bank = MEM32(g_esp + 4), from = MEM32(g_esp), ld = 0, c;
+    if (from == 0x000329FCu)
+        ld = g_ebp;                         /* the player's free */
+    else if (from == 0x000337A9u)
+        ld = g_ebx;                         /* the other characters' free */
+    if (ld && bank >= 11u && bank <= 33u)
+        for (c = 0; c < 24u; c++)
+            if (MEM32(0x001EE6B8u + c * 4u) == bank && (int32_t)MEM32(ld + 0x1FCu + c * 4u) > 0) {
+                fprintf(stderr, "[VOICE] voice bank %u kept: character %u still speaks from it\n",
+                        bank, c);
+                g_eax = 1;
+                g_esp += 4;                 /* ret */
+                return;
+            }
+    sub_00118BA0_gen();
 }
 
 void sub_00118A60(void)

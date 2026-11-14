@@ -48581,8 +48581,8 @@
   },
   {
     "start": "0x0010457E",
-    "end": "0x0010475B",
-    "size": 477,
+    "end": "0x001045A0",
+    "size": 34,
     "name": "sub_0010457E",
     "section": ".text",
     "category": "unknown",

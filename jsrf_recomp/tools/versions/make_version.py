@@ -284,7 +284,31 @@ def main():
         # seeds found through data pointers that the toolkit swallowed into
         # a start of its own (0x1FD40, inside a "gap" start at 0x1FD02)
         swallowed = set(x for x in ptr_size if x not in got2)
-        extra = sorted(set(x for x in free if x not in got2) | hit | swallowed)
+        # and the slots of the vtables the matcher paired that are a US
+        # function but no start here, swallowed into a start this toolkit
+        # run guessed (v287, Miggas: PAL's 0x10C140, the deleting destructor
+        # of the Hud, Standings and ItemIndicator, inside a "gap" start at
+        # 0x10C126; every delete of one failed, so the race's standings bar
+        # was never freed and stayed drawn). A matched table's slots are
+        # code pointers, unlike a number in the data that looks like one.
+        us_starts_named = {int(f["start"], 16) for f in us_named}
+        rd = m.us.section(".rdata")
+        vt_slots = {}
+        for v, ev in (m.refs.items() if rd else ()):
+            if not (rd[1] <= v < rd[1] + rd[2]):
+                continue
+            for k in range(64):
+                p = struct.unpack_from("<I", m.us.mem, v + 4 * k)[0]
+                q = struct.unpack_from("<I", m.ot.mem, ev + 4 * k)[0]
+                if m.us.section_of(p) != ".text" or m.ot.section_of(q) != ".text":
+                    break
+                if p in us_starts_named and m.map.get(p, q) == q and q not in got2:
+                    vt_slots[q] = us_end_all.get(p, 0x40)
+        if vt_slots:
+            print("  vtable slots lifted on their own: " + " ".join("%X" % x for x in sorted(vt_slots)))
+        for x, n in vt_slots.items():
+            ptr_size.setdefault(x, n)
+        extra = sorted(set(x for x in free if x not in got2) | hit | swallowed | set(vt_slots))
         size_of = dict(ptr_size)
         size_of.update(us_end)
         json.dump([["0x%08X" % x, "0x%08X" % (x + size_of[x])] for x in extra],

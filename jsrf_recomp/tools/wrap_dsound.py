@@ -24,6 +24,10 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_0015A880",                # sprite quad submission
          "sub_001060B0", "sub_0010D480", "sub_0010DC60", "sub_00109B70",   # HUD, right
          "sub_000FFFD0", "sub_00101F20",                                   # HUD, left
+         "sub_00102DB0", "sub_00103AE0", "sub_000FD3E0",   # v305: VS race position, laps, banner
+         "sub_0015A560",                # v307: sprite quads added several at once
+         "sub_0003D610",                # v307c: the other way to add a string
+         "sub_001045D0",                # v307e: the trick name's text (jsrf_widescreen.c)
          "sub_000F7720", "sub_000F7990",   # v191b: letterbox bars, edge push
          "sub_00077730", "sub_0011AC50",                                   # 4:3-only screens
          "D3D8_D3DDevice_SetViewport",  # v187r: split screen seen (HUD not moved)
@@ -54,6 +58,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_001133A0",                # v235: the start menu in battles in widescreen
          "sub_0006A7C0",                # v239b: the stage's light pass (marked as the map's)
          "sub_0007C9E0",                # v276b: chapter select on a new game (jsrf_chapter_select.c)
+         "sub_00051FC0",                # v278c: the stage game object's update (Quit to Title)
+         "sub_0010EC10",                # v300b: the HUD's time, hidden in picked races (jsrf_chapter_select.c)
          # v275: the DSOUND lift (jsrf_dsound_lift.c), every entry point the game calls
          "sub_0019E4BC",
          "sub_0019E4C1",

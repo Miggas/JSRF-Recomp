@@ -3139,6 +3139,16 @@ static GlSurf *bind_surface(const NvGlState *st)
         int w = (int)st->clip_w, h = (int)st->clip_h;
         int sy;
         if (!w || !h) { x = 0; y = 0; w = (int)s->w; h = (int)s->h; }
+        /* v304: widescreen: a 2D draw clipped to a box has its clip squeezed
+         * with it, about the same centre (st->ws_c, NDC); unsqueezed, the
+         * clip stayed at the box's 4:3 place stretched to the wide screen,
+         * and Professor K's text in VS mode showed past his box (Miggas) */
+        if (st->ws_box && st->ws_2d && st->ws_k > 0.0f && st->ws_k < 1.0f) {
+            float c = (st->ws_c + 1.0f) * 0.5f * (float)s->w;
+            float a = c + ((float)x - c) * st->ws_k, b = c + ((float)(x + w) - c) * st->ws_k;
+            x = (int)floorf(a);
+            w = (int)ceilf(b) - x;
+        }
         sy = (int)s->h - (y + h);
         x = SC(x); sy = SC(sy); w = SC(w); h = SC(h);
         if (st->ws_cut < 0.0f)
@@ -4568,6 +4578,7 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
  * the controllers itself. Only when that frame went to the game window (the
  * window is drawn on that path); otherwise the game runs on under it. */
 extern int xbox_QuitDialogOpen(void);
+extern int xbox_DialogOpen(void);       /* v278: the quit window or a list menu */
 extern void xbox_QuitDialogPoll(void);
 extern volatile LONG g_xbox_game_held;
 
@@ -4587,11 +4598,11 @@ static void game_unhold(void)
 
 void nv2a_gl_quit_hold(void)
 {
-    if (!xbox_QuitDialogOpen() || !s_last_win || s_state != 1)
+    if (!xbox_DialogOpen() || !s_last_win || s_state != 1)
         return;
     InterlockedExchange(&g_xbox_game_held, 1);
     fprintf(stderr, "[QUIT] game held\n");
-    while (xbox_QuitDialogOpen()) {
+    while (xbox_DialogOpen()) {
         xbox_QuitDialogPoll();
         if (!gl_window_present(s_last_win))
             break;

@@ -30,6 +30,14 @@
 #endif
 
 extern int xbox_QuitDialogOpen(void);   /* input/xinput_device.c */
+/* v278: the list menu (mission select) and the note line, same file */
+extern int xbox_ListMenuOpen(void), xbox_ListMenuCount(void), xbox_ListMenuSel(void);
+extern const char *xbox_ListMenuTitle(void), *xbox_ListMenuItem(int i);
+extern int xbox_ListMenuPickable(int i);
+extern char g_xbox_note[96];
+extern char g_xbox_timer[24];   /* v300 */
+extern int g_xbox_timer_big;    /* v301d: the clear screen's place */
+extern char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: a panel beside the list menu */
 
 typedef struct { float x, y, u, v, r, g, b, a; } QdVert;   /* u < 0: no texture */
 #define QD_MAX (6 * 6000)
@@ -259,7 +267,8 @@ static void qd_ttf_text(float cx, float cy, float k, const char *s, const float 
     }
 }
 
-extern int xbox_QuitDialogSel(void);   /* 0 YES, 1 NO */
+extern int xbox_QuitDialogSel(void);   /* v278b: 0 Quit Game, 1 Quit to Title, 2 Return */
+extern int xbox_QuitTitleOK(void);
 
 /* the picked button pulses: red, fading to white over a second, then red
  * again (as the game's; Miggas's description); t = 0 red .. 1 white */
@@ -270,7 +279,15 @@ static void qd_mix(float *o, const float *a, const float *b, float t)
     for (int i = 0; i < 4; i++) o[i] = a[i] + (b[i] - a[i]) * t;
 }
 
+static void qd_button_f(float x0, float x1, const char *label, int picked, float t, int off);
 static void qd_button(float x0, float x1, const char *label, int picked, float t)
+{
+    qd_button_f(x0, x1, label, picked, t, 0);
+}
+
+/* v278b: a button the width of its box (long labels shrink to fit); off:
+ * greyed, not pickable */
+static void qd_button_f(float x0, float x1, const char *label, int picked, float t, int off)
 {
     static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 }, black[4] = { 0.04f, 0.04f, 0.04f, 1 },
                        shade[4] = { 0.45f, 0.45f, 0.45f, 1 };
@@ -279,6 +296,13 @@ static void qd_button(float x0, float x1, const char *label, int picked, float t
     const float y0 = 243.3f, y1 = 268.0f, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     float edge[4], fill[4], text[4], sh[4];
     if (!picked) t = 1.0f;
+    if (off) {
+        static const float grey[4] = { 0.40f, 0.40f, 0.40f, 1 }, dark[4] = { 0.03f, 0.03f, 0.03f, 1 };
+        qd_frame(x0, y0, x1, y1, 1.6f, 0.8f, grey, dark);
+        if (s_qd_font) qd_ttf_text(cx, cy, qd_ttf_scale(label, 11.0f, x1 - x0 - 8.0f), label, grey);
+        else qd_text(cx, cy, 1.5f, 1.95f, 0.4f, 0.06f, label, grey);
+        return;
+    }
     qd_mix(edge, red, white, t);
     qd_mix(fill, redfill, black, t);
     qd_mix(text, redtext, white, t);
@@ -286,12 +310,14 @@ static void qd_button(float x0, float x1, const char *label, int picked, float t
     sh[3] = t;                                   /* the shadow comes in with the white */
     qd_frame(x0, y0, x1, y1, 1.6f, 0.8f, edge, fill);
     if (s_qd_font) {
-        float k = qd_ttf_scale(label, 11.0f, 52.0f);
+        float k = qd_ttf_scale(label, 11.0f, x1 - x0 - 8.0f);
         qd_ttf_text(cx + 0.7f, cy + 0.7f, k, label, sh);
         qd_ttf_text(cx, cy, k, label, text);
     } else {
-        qd_text(cx + 0.7f, cy + 0.7f, 2.75f, 1.95f, 0.6f, 0.06f, label, sh);
-        qd_text(cx, cy, 2.75f, 1.95f, 0.6f, 0.06f, label, text);
+        float kx = 2.75f, w = qd_text_w(label, 1.0f);
+        if (w * kx > x1 - x0 - 8.0f) kx = (x1 - x0 - 8.0f) / w;
+        qd_text(cx + 0.7f, cy + 0.7f, kx, 1.95f, 0.6f, 0.06f, label, sh);
+        qd_text(cx, cy, kx, 1.95f, 0.6f, 0.06f, label, text);
     }
 }
 
@@ -301,9 +327,9 @@ extern char g_gl_build_msg[64];   /* v253: nv2a_gl.c, while shaders are built */
 
 static void present_overlay_f(int cw, int ch, int flip)
 {
-    int quit = xbox_QuitDialogOpen();
+    int quit = xbox_QuitDialogOpen(), menu = xbox_ListMenuOpen();
     if (!quit) s_qd_last_sel = -1;
-    if ((!quit && !g_gl_build_msg[0]) || cw <= 0 || ch <= 0) return;
+    if ((!quit && !menu && !g_gl_build_msg[0] && !g_xbox_note[0] && !g_xbox_timer[0]) || cw <= 0 || ch <= 0) return;
     if (!s_qd_state) {
         GLint p0 = 0, va0 = 0, ab0 = 0;
         glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
@@ -349,15 +375,172 @@ static void present_overlay_f(int cw, int ch, int flip)
                 qd_text(320.5f, 440.0f, 1.45f, 1.9f, 0.45f, 0.22f, m, white);
             }
         }
+        if (g_xbox_timer[0] && g_xbox_timer_big && !menu && !quit) {
+            /* v301d: at the clear screen (Miggas): big, bottom middle, as far
+             * from the bottom as the game's "YOU WIN" is from the top, the
+             * size of the game's own time */
+            static const float white[4] = { 0.97f, 0.97f, 0.97f, 1 }, sh[4] = { 0.0f, 0.0f, 0.0f, 0.75f };
+            char m[24];
+            memcpy(m, g_xbox_timer, sizeof m);
+            m[23] = 0;
+            if (s_qd_font) {
+                float k = qd_ttf_scale(m, 19.0f, 0.0f);
+                qd_ttf_text(321.5f, 418.5f, k, m, sh);
+                qd_ttf_text(320.0f, 417.0f, k, m, white);
+            } else {
+                qd_text(321.5f, 418.5f, 3.4f, 4.2f, 1.0f, 0.0f, m, sh);
+                qd_text(320.0f, 417.0f, 3.4f, 4.2f, 1.0f, 0.0f, m, white);
+            }
+        } else if (g_xbox_timer[0] && !menu && !quit) {
+            /* v300: the mission timer (mission select), the window's top-left */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 };
+            char m[24];
+            const float x0 = 10.0f - s_qx / s_qs, y0 = 10.0f - s_qy / s_qs;
+            memcpy(m, g_xbox_timer, sizeof m);
+            m[23] = 0;
+            if (s_qd_font) {
+                float k = qd_ttf_scale(m, 10.0f, 0.0f), w = qd_ttf_w("00:00.00") * k + 18.0f;
+                qd_frame(x0, y0, x0 + w, y0 + 24.0f, 1.6f, 0.9f, edge, box);
+                qd_ttf_text(x0 + 9.0f + qd_ttf_w(m) * k / 2, y0 + 12.0f, k, m, white);   /* from the left */
+            } else {
+                float w = qd_text_w("00:00.00", 1.6f) + 18.0f;
+                qd_frame(x0, y0, x0 + w, y0 + 24.0f, 1.6f, 0.9f, edge, box);
+                qd_text(x0 + w / 2 + 0.5f, y0 + 12.0f, 1.6f, 1.9f, 0.45f, 0.22f, m, white);
+            }
+        }
+        if (g_xbox_note[0] && !g_gl_build_msg[0] && !menu) {
+            /* v278: a note (mission select: "... ready: choose NEW GAME"), bottom middle */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 };
+            char m[96];
+            memcpy(m, g_xbox_note, sizeof m);
+            m[95] = 0;
+            if (s_qd_font) {
+                float k = qd_ttf_scale(m, 9.0f, 560.0f), w = qd_ttf_w(m) * k + 22.0f;
+                qd_frame(320.0f - w / 2, 428.0f, 320.0f + w / 2, 452.0f, 1.6f, 0.9f, edge, box);
+                qd_ttf_text(320.0f, 440.0f, k, m, white);
+            } else {
+                float w = qd_text_w(m, 1.45f) + 22.0f;
+                qd_frame(320.0f - w / 2, 428.0f, 320.0f + w / 2, 452.0f, 1.6f, 0.9f, edge, box);
+                qd_text(320.5f, 440.0f, 1.45f, 1.9f, 0.45f, 0.22f, m, white);
+            }
+        }
+        if (menu) {
+            /* v278: the list menu: a title bar, 11 rows around the pick, a hint line */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 }, dim[4] = { 0.62f, 0.63f, 0.62f, 1 };
+            static const float red[4] = { 0.85f, 0.29f, 0.28f, 1 }, redfill[4] = { 0.13f, 0.04f, 0.04f, 1 },
+                               redtext[4] = { 1.0f, 0.33f, 0.33f, 1 }, black[4] = { 0.04f, 0.04f, 0.04f, 1 };
+            enum { ROWS = 11 };
+            int n = xbox_ListMenuCount(), sel = xbox_ListMenuSel(), first, i;
+            /* v292c: a short list (the "Start with" menu, Miggas) gets a box
+             * of its rows only, narrower, in the middle of the screen */
+            const int rows = n < ROWS ? (n > 0 ? n : 1) : ROWS;
+            const float rh = 22.0f;
+            float wide = n <= 6 ? 300.0f : 460.0f;   /* v279: wide, for the objectives */
+            /* v301: a side panel (the personal bests, Miggas) right of the
+             * menu: the two side by side in the middle of the window, the
+             * menu narrower when the window is too (4:3) */
+            const int side = g_xbox_side_title[0] && n > 6;
+            const float sw = 214.0f, gap = 10.0f;
+            float mx = 320.0f;
+            if (side) {
+                const float ww = cw / s_qs, wl = -s_qx / s_qs;
+                if (wide + 12.0f + gap + sw + 20.0f > ww) wide = ww - 12.0f - gap - sw - 20.0f;
+                mx = wl + ww / 2 - (gap + sw) / 2;
+            }
+            const float x0 = mx - wide / 2, x1 = mx + wide / 2;
+            const float bt = 240.0f - (52.0f + rows * rh + 34.0f) / 2;  /* the box's top (76 when full) */
+            const float top = bt + 52.0f;
+            const char *ttl = xbox_ListMenuTitle();
+            static int last_sel = -1;
+            static unsigned long long m0;
+            if (sel != last_sel) { last_sel = sel; m0 = now; }
+            float mt = (float)((now - m0) % 1000) / 1000.0f;
+            first = sel - ROWS / 2;
+            if (first > n - ROWS) first = n - ROWS;
+            if (first < 0) first = 0;
+            qd_frame(x0 - 6.0f, bt, x1 + 6.0f, top + rows * rh + 34.0f, 1.8f, 1.1f, edge, box);
+            qd_frame(x0 - 2.0f, bt + 6.0f, x1 + 2.0f, bt + 30.0f, 0.0f, 0.8f, bar_edge, teal);
+            if (s_qd_font) qd_ttf_text(mx, bt + 18.0f, qd_ttf_scale(ttl, 12.0f, x1 - x0 - 20.0f), ttl, ink);
+            else qd_text(mx + 0.5f, bt + 17.5f, 2.05f, 2.55f, 0.6f, 0.24f, ttl, ink);
+            for (i = 0; i < rows && first + i < n; i++) {
+                const char *it = xbox_ListMenuItem(first + i);
+                float y0 = top + i * rh, cy = y0 + rh / 2 - 1.0f;
+                float e4[4], f4[4], t4[4];
+                if (!it[0]) continue;                       /* v288: a gap */
+                if (it[0] == '\x01') {
+                    /* v288: a heading (Chapter 1, ...): teal, not pickable */
+                    static const float head[4] = { 0.25f, 0.82f, 0.82f, 1 };
+                    it++;
+                    if (s_qd_font) qd_ttf_text(mx, cy, qd_ttf_scale(it, 9.5f, x1 - x0 - 16.0f), it, head);
+                    else qd_text(mx + 0.5f, cy, 1.6f, 2.0f, 0.45f, 0.18f, it, head);
+                    continue;
+                }
+                if (first + i == sel) {
+                    qd_mix(e4, red, white, mt);
+                    qd_mix(f4, redfill, black, mt);
+                    qd_mix(t4, redtext, white, mt);
+                    qd_frame(x0, y0, x1, y0 + rh - 3.0f, 1.4f, 0.6f, e4, f4);
+                } else {
+                    memcpy(t4, dim, sizeof t4);
+                }
+                if (s_qd_font) qd_ttf_text(mx, cy, qd_ttf_scale(it, 8.5f, x1 - x0 - 16.0f), it, t4);
+                else qd_text(mx + 0.5f, cy, 1.4f, 1.8f, 0.4f, 0.15f, it, t4);
+            }
+            {
+                char h[96];
+                int at = 0, all = 0, heads = 0, k;
+                for (k = 0; k < n; k++) {                   /* v288: counted on the pickable rows */
+                    if (xbox_ListMenuPickable(k)) { all++; if (k <= sel) at++; }
+                    else heads += xbox_ListMenuItem(k)[0] == '\x01';
+                }
+                if (heads || n > ROWS)                      /* v288b: a heading's section a step */
+                    snprintf(h, sizeof h, "%d / %d    A = choose    B = back    left / right = %s", at, all,
+                             heads ? "chapter" : "page");
+                else                                        /* v292c: nothing to page through */
+                    snprintf(h, sizeof h, "%d / %d    A = choose    B = back", at, all);
+                if (s_qd_font) qd_ttf_text(mx, top + rows * rh + 16.0f, qd_ttf_scale(h, 7.0f, x1 - x0), h, white);
+                else qd_text(mx + 0.5f, top + rows * rh + 16.0f, 1.2f, 1.6f, 0.3f, 0.1f, h, white);
+            }
+            if (side) {
+                /* v301: the panel: its title bar, then a row each, from the left */
+                const float px0 = x1 + 6.0f + gap, px1 = px0 + sw, pr = 26.0f;
+                int k;
+                char pt[32];
+                memcpy(pt, g_xbox_side_title, sizeof pt);
+                pt[31] = 0;
+                qd_frame(px0, bt, px1, bt + 40.0f + 5 * pr + 8.0f, 1.8f, 1.1f, edge, box);
+                qd_frame(px0 + 4.0f, bt + 6.0f, px1 - 4.0f, bt + 30.0f, 0.0f, 0.8f, bar_edge, teal);
+                if (s_qd_font) qd_ttf_text((px0 + px1) / 2, bt + 18.0f, qd_ttf_scale(pt, 12.0f, sw - 24.0f), pt, ink);
+                else qd_text((px0 + px1) / 2 + 0.5f, bt + 17.5f, 2.05f, 2.55f, 0.6f, 0.24f, pt, ink);
+                for (k = 0; k < 5; k++) {
+                    char r[48];
+                    float cy = bt + 40.0f + k * pr + pr / 2;
+                    memcpy(r, g_xbox_side_rows[k], sizeof r);
+                    r[47] = 0;
+                    if (!r[0]) continue;
+                    if (s_qd_font) {
+                        float kk = qd_ttf_scale(r, 9.0f, sw - 24.0f);
+                        qd_ttf_text(px0 + 12.0f + qd_ttf_w(r) * kk / 2, cy, kk, r, white);
+                    } else {
+                        float kx = 1.5f, w = qd_text_w(r, kx);
+                        if (w > sw - 24.0f) kx *= (sw - 24.0f) / w, w = sw - 24.0f;
+                        qd_text(px0 + 12.0f + w / 2, cy, kx, 1.9f, 0.45f, 0.18f, r, white);
+                    }
+                }
+            }
+        }
         if (quit) {
-            qd_frame(195.0f, 205.7f, 446.0f, 275.3f, 1.8f, 1.1f, edge, box);
-            qd_frame(199.0f, 211.7f, 442.0f, 236.0f, 0.0f, 0.8f, bar_edge, teal);
+            /* v278b: Quit Game, Quit to Title (greyed when the game can't go
+             * back now), Return (Miggas) */
+            qd_frame(165.0f, 205.7f, 476.0f, 275.3f, 1.8f, 1.1f, edge, box);
+            qd_frame(169.0f, 211.7f, 472.0f, 236.0f, 0.0f, 0.8f, bar_edge, teal);
             if (s_qd_font)
                 qd_ttf_text(320.0f, 223.9f, qd_ttf_scale("Quit the game?", 12.0f, 228.0f), "Quit the game?", ink);
             else
                 qd_text(320.5f, 223.4f, 2.05f, 2.55f, 0.6f, 0.24f, "Quit the game?", ink);
-            qd_button(240.0f, 300.0f, "YES", sel == 0, t);
-            qd_button(340.7f, 400.7f, "NO", sel == 1, t);
+            qd_button(176.0f, 266.0f, "Quit Game", sel == 0, t);
+            qd_button_f(275.0f, 365.0f, "Quit to Title", sel == 1, t, !xbox_QuitTitleOK());
+            qd_button(374.0f, 464.0f, "Return", sel == 2, t);
         }
     }
 

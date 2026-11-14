@@ -2839,6 +2839,9 @@ static int gl_state(NvGlState *st)
     st->surf_has_alpha = (s_gpu.format & 0xF) == 0x8;
     st->clip_x = s_gpu.clip_x; st->clip_y = s_gpu.clip_y;
     st->clip_w = s_gpu.clip_w; st->clip_h = s_gpu.clip_h;
+    st->sclip_x = s_gpu.clip_x;
+    st->sclip_w = s_gpu.clip_w ? s_gpu.clip_w : st->width;
+    st->ws_box = 0;
     /* v186d: and narrowed to window clip 0 when it draws inside a smaller
      * rectangle (the split-screen halves). An exclusive clip, or one that
      * leaves nothing, is left alone. RECOMP_GL_NO_WINDOW_CLIP=1 ignores it. */
@@ -2858,6 +2861,10 @@ static int gl_state(NvGlState *st)
                     && (x0 != cx0 || x1 != cx1 || y0 != cy0 || y1 != cy1)) {
                 st->clip_x = x0; st->clip_w = x1 - x0 + 1;
                 st->clip_y = y0; st->clip_h = y1 - y0 + 1;
+                /* v304: a box, not a split-screen view (those are at least
+                 * half the screen tall): Professor K's text in VS mode is
+                 * clipped to his box's inside (x 94..582, 32 rows) */
+                st->ws_box = (float)st->clip_h < 0.45f * (float)st->height;
             }
         }
     }
@@ -3915,6 +3922,11 @@ static float ws_centre(const NvGlState *st)
     if (!st->width || !st->clip_w)
         return 0.0f;
     cx = (float)st->clip_x + 0.5f * (float)st->clip_w;
+    /* v304: 2D clipped to a box (a window clip smaller than a split view) is
+     * squeezed about the screen's middle, as the box drawn around it is; the
+     * box's own middle put Professor K's text off his box (Miggas) */
+    if (st->ws_box && st->ws_2d)
+        cx = (float)st->sclip_x + 0.5f * (float)st->sclip_w;
     return 2.0f * cx / (float)st->width - 1.0f;
 }
 
@@ -4055,11 +4067,12 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
             if (!known && ns < 96) {
                 seen[ns++] = key;
                 fprintf(stderr, "[WS] full-width layer: kind %d%s, %u vertices, texture %s%08X "
-                        "%ux%u%s, stencil %u, blend %u, x %.0f..%.0f of %u -> %s\n", kind,
+                        "%ux%u%s, stencil %u, blend %u, x %.0f..%.0f of %u, y %.0f..%.0f of %u -> %s\n", kind,
                         st->screen_space ? " (pass-through)" : "", s_gpu.idx_count,
                         s_gpu.texs[0].valid ? "" : "none ", s_gpu.texs[0].offset,
                         s_gpu.texs[0].width, s_gpu.texs[0].height, rt ? " (a frame)" : "",
                         st->stencil_test, st->blend_enable, lo, hi, st->width,
+                        s_ws_ymin, s_ws_ymax, st->height,
                         keep ? "full width" : "fitted");
             }
         }

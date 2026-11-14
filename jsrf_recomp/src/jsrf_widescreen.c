@@ -95,14 +95,19 @@ static const struct { uint32_t addr; int anchor; } ws_hud[] = {
     { 0x0010DC60u,  3 },    /* spray can (3D), "x" and count */
     { 0x00109B70u,  3 },    /* boost-ready icon (3D) */
     { 0x000FFFD0u, -1 },    /* trick count and score rows */
-    { 0x00101F20u, -1 },    /* trick name */
+    { 0x00101F20u, -3 },    /* trick name; v307b: -3, its own sprite object
+                             * fills the batch, drawn inside this function
+                             * (0x10224C), so the screen offset moves it */
+    { 0x001045D0u, -1 },    /* v307e: the trick name's text, sliding in */
+    { 0x00102DB0u,  3 },    /* v305: VS race position ("1 ST") */
+    { 0x00103AE0u,  3 },    /* v305: VS lap count ("3/3 LAP") */
     { 0x000F7720u,  9 },    /* v191b: letterbox bars (cutscenes, dialogue) */
     { 0x000F7990u,  9 },    /* v191b: the bars opening and closing */
 };
 
 extern void D3D8_D3DDevice_SetScreenSpaceOffset(void);
 
-typedef struct { int anchor, changed, prev_screen; float x, y; } WsScope;
+typedef struct { int anchor, changed, prev_screen; float x, y; uint32_t addr; } WsScope;
 static RECOMP_TLS WsScope ws_stack[32];
 static RECOMP_TLS int ws_depth;
 static RECOMP_TLS int ws_screen;    /* anchor the screen offset currently has */
@@ -180,6 +185,7 @@ static void ws_enter(uint32_t addr)
         if (ws_hud[k].addr == addr)
             anchor = ws_hud[k].anchor;
     s->anchor = anchor;
+    s->addr = addr;                     /* v307d: for the text log */
     s->changed = 0;
     if (anchor == 3 || anchor == -3) {
         /* D3D device at 0x19DCE0; its screen-space offset is stored at +0x9E8
@@ -228,6 +234,46 @@ WS_HUD_SCOPE(sub_0010DC60, 0x0010DC60u)
 WS_HUD_SCOPE(sub_00109B70, 0x00109B70u)
 WS_HUD_SCOPE(sub_000FFFD0, 0x000FFFD0u)
 WS_HUD_SCOPE(sub_00101F20, 0x00101F20u)
+/* v305: VS mode's race position and lap count, to the right edge with the
+ * health bar and spray count (Idea by Miggas). Found with Miggas's
+ * RECOMP_MENU_LOG run: their draws' call chains end in these functions. */
+/* v307e: the trick name's text ("Back Slide"): a string added from 0x104781
+ * in sub_001045D0, which the game reaches through a method table, outside
+ * every HUD function wrapped before -- Miggas's RECOMP_WS_TEXT_LOG run: "from
+ * 00104781 ... y 78 | scope none" (its x sliding in from -61 to 46). In a
+ * scope moved to the left edge, the string goes with it (v307c). */
+WS_HUD_SCOPE(sub_001045D0, 0x001045D0u)
+WS_HUD_SCOPE(sub_00102DB0, 0x00102DB0u)
+WS_HUD_SCOPE(sub_00103AE0, 0x00103AE0u)
+
+/* v305: the race banner (FINAL LAP) in VS mode, sub_000FD3E0 (drawn through
+ * the object draw from 0xFD752). The game puts it right of the middle and
+ * level with the lap count, over "3/3 LAP" (on the Xbox and xemu too). In
+ * widescreen it is moved under the time, centred on it, while it draws
+ * (Idea by Miggas): RECOMP_BANNER_DX / RECOMP_BANNER_DY, guest pixels
+ * (default -38 and -40, from Miggas's 4:3 screenshot: the banner's middle at
+ * x 358, the time's at 320; its top at y 115, the time's bottom at 67). */
+extern void sub_000FD3E0_gen(void);
+void sub_000FD3E0(void)
+{
+    static float dx = 1e9f, dy;
+    uint32_t device = MEM32(0x19DCE0u);
+    float x, y;
+    if (!ws_hud_on() || !device || xbox_WidescreenK() > 0.9999) {
+        sub_000FD3E0_gen();
+        return;
+    }
+    if (dx == 1e9f) {
+        const char *a = getenv("RECOMP_BANNER_DX"), *b = getenv("RECOMP_BANNER_DY");
+        dx = a && *a ? (float)atof(a) : -38.0f;
+        dy = b && *b ? (float)atof(b) : -40.0f;
+    }
+    x = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
+    y = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
+    ws_set_screen_offset(x + dx, y + dy);
+    sub_000FD3E0_gen();
+    ws_set_screen_offset(x, y);
+}
 
 /* v191b, after Piaka's widescreen notes: the letterbox bars. The Xbox adds
  * 0.53125 to every position (D3D's pixel-centre bias), so bars the game
@@ -244,11 +290,12 @@ static int ws_edge_on(void)
     return on;
 }
 
+static int ws_letterbox_on(void);    /* v308: the bars can be left out */
 #define WS_EDGE_SCOPE(name, addr)                   \
     extern void name##_gen(void);                   \
     void name(void)                                 \
     {                                               \
-        if (!ws_edge_on()) { name##_gen(); return; } \
+        if (!ws_edge_on() && ws_letterbox_on()) { name##_gen(); return; } \
         ws_enter(addr);                             \
         name##_gen();                               \
         ws_leave();                                 \
@@ -339,6 +386,23 @@ void sub_0015A880(void)
     sprite_log(obj, a2, a3, before, ret, nret);
 }
 
+/* v308: RECOMP_LETTERBOX=0 (the launcher's Gameplay > "Cutscene black
+ * bars", Idea by Miggas): the letterbox bars of cutscenes and conversations
+ * are left out. They are still queued, so the game goes on exactly as it
+ * did; each bar's quad is folded into a point (its four corners on its
+ * first), which draws nothing. */
+static int ws_letterbox_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_LETTERBOX");
+        on = !(e && e[0] == '0');
+        if (!on)
+            fprintf(stderr, "[WS] cutscene black bars left out (RECOMP_LETTERBOX=0)\n");
+    }
+    return on;
+}
+
 static void ws_sprite_queue(void)
 {
     uint32_t obj, before, v;
@@ -367,6 +431,13 @@ static void ws_sprite_queue(void)
         if (!(k > 0.2 && k < 0.9999)) k = 1.0;
         if (g_eax != 0 || MEM32(obj + 0x1C) - before != 0x80)
             return;
+        if (!ws_letterbox_on()) {           /* v308: the bars left out */
+            for (v = 1; v < 4; ++v) {
+                MEMF(before + v * 32u) = MEMF(before);
+                MEMF(before + v * 32u + 4u) = MEMF(before + 4u);
+            }
+            return;
+        }
         for (v = 0; v < 4; ++v) {
             uint32_t p = before + v * 32u;
             float x0 = MEMF(p), y = MEMF(p + 4);
@@ -385,6 +456,38 @@ static void ws_sprite_queue(void)
     extra = ws_half_extra();
     for (v = 0; v < 4; ++v)
         MEMF(before + v * 32u) += (float)anchor * extra;
+}
+
+/* v307: the quad batch's other way in, vtable +0x18 (sub_0015A560): n
+ * quads at once, from one of three vertex layouts, converted to the
+ * batch's own (4 vertices of 32 bytes a quad, x first, written at this+0x1C
+ * as sub_0015A880 does). The trick name ("Back Slide") is drawn this way,
+ * so the HUD's move to the left edge, made only in sub_0015A880, missed it
+ * (Miggas: it stayed in the 4:3 area while the trick count went left).
+ * Every vertex it wrote is moved as a single quad's would be. */
+extern void sub_0015A560_gen(void);
+void sub_0015A560(void)
+{
+    uint32_t obj = MEM32(g_esp + 4), before, after, v;
+    int anchor;
+    float dx;
+    if (ws_depth <= 0 || ws_depth > 32 || !ws_hud_on()) {
+        sub_0015A560_gen();
+        return;
+    }
+    anchor = ws_stack[ws_depth - 1].anchor;
+    if (anchor != 1 && anchor != -1) {
+        sub_0015A560_gen();
+        return;
+    }
+    before = MEM32(obj + 0x1C);
+    sub_0015A560_gen();
+    after = MEM32(obj + 0x1C);
+    if (g_eax != 0 || after <= before || ((after - before) & 31u) || after - before > 256u * 1024u)
+        return;
+    dx = (float)anchor * ws_half_extra();
+    for (v = before; v < after; v += 32u)
+        MEMF(v) += dx;
 }
 
 /* ── screens kept at 4:3 ─────────────────────────────────────────────────
@@ -837,13 +940,37 @@ extern void sub_0003D5D0_gen(void);
  * A menu screen not made wide keeps it where it was. */
 extern int xbox_MenuScreenNow(void);
 #define WSM_SIGN_DY 28.0f
+/* v297: only the signs (ids 0xF-0x25, the labels of the arrow that points
+ * where a path leads). The same draw shows the capture-the-flag marker's
+ * "FLAG" (id 0x27, `this`+0x54), which belongs under its arrow in the middle
+ * (Reported by Miggas). */
 void sub_000FD190(void)             /* the garage menus' header */
 {
     int on = wsm_map_active();
-    int sign = !on && ws_hud_on() && !xbox_MenuScreenNow();
+    uint32_t id = g_ecx ? MEM32(g_ecx + 0x54u) : 0;
+    int sign = !on && ws_hud_on() && !xbox_MenuScreenNow() && id >= 0xFu && id <= 0x25u;
+    float flag_dy = 0.0f, fx = 0.0f, fy = 0.0f;
+    uint32_t device = MEM32(0x19DCE0u);
+    if (id == 0x27u && !on && device) {
+        /* v297b: and moved up, closer to its arrow (Idea by Miggas).
+         * RECOMP_FLAG_DY: guest pixels down (negative: up), default -14 */
+        static float dy = 1e9f;
+        if (dy == 1e9f) {
+            const char *e = getenv("RECOMP_FLAG_DY");
+            dy = e && *e ? (float)atof(e) : -14.0f;
+        }
+        flag_dy = dy;
+    }
+    if (flag_dy != 0.0f) {
+        fx = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
+        fy = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
+        ws_set_screen_offset(fx, fy + flag_dy);
+    }
     if (on || sign) wsm_in_header++;
     if (sign) wsm_dy = WSM_SIGN_DY;
     sub_000FD190_gen();
+    if (flag_dy != 0.0f)
+        ws_set_screen_offset(fx, fy);
     if (sign) wsm_dy = 0.0f;
     if (on || sign) wsm_in_header--;
 }
@@ -858,6 +985,74 @@ void sub_000488B0(void)             /* ...and its plain quads */
 {
     int where = (wsm_cur >= 0 || wsm_in_header) ? wsm_part(g_esp) : 0;
     wsm_draw(sub_000488B0_gen, where);
+}
+
+/* v307c: the edge a string added now goes to: -1 / +1 inside a HUD
+ * function moved to the left / right edge, by its sprites (1) or by the
+ * screen offset (3). Strings are drawn later, in a pass of their own
+ * (sub_0003C310 from sub_00012680), so neither move reaches them. */
+/* v307d: RECOMP_WS_TEXT_LOG=1 -- each string added through sub_0003D5D0 /
+ * sub_0003D610 (the first 400 different ones): where from (the return
+ * address, and the code addresses further up the stack), its x and y, and
+ * the HUD scope it was added in (function, anchor) and what was done with
+ * it. For the trick name, which three tries did not move (Miggas). */
+static void ws_text_log(const char *fn, int where)
+{
+    static int on = -1;
+    static uint32_t seen[400];
+    static unsigned ns;
+    uint32_t ret = MEM32(g_esp), key, i, k, nret = 0, up[6];
+    float x = MEMF(g_esp + 4), y = MEMF(g_esp + 8);
+    if (on < 0) {
+        const char *e = getenv("RECOMP_WS_TEXT_LOG");
+        on = e && e[0] == '1';
+        if (on)
+            fprintf(stderr, "[WSTEXT] on: strings added, with the HUD scope they were added in\n");
+    }
+    if (!on)
+        return;
+    key = ret ^ ((uint32_t)(int)x << 20) ^ ((uint32_t)(int)y << 8);
+    for (i = 0; i < ns; i++)
+        if (seen[i] == key)
+            return;
+    if (ns >= 400)
+        return;
+    seen[ns++] = key;
+    for (k = 1; k < 96 && nret < 6; k++) {   /* code addresses further up the stack */
+        uint32_t w = MEM32(g_esp + 4u * k);
+        if (w >= 0x00011000u && w < 0x001D0000u)
+            up[nret++] = w;
+    }
+    fprintf(stderr, "[WSTEXT] %s from %08X x %.1f y %.1f | scope %s%08X anchor %d depth %d -> moved %d |",
+            fn, ret, x, y, ws_depth > 0 && ws_depth <= 32 ? "" : "none ",
+            ws_depth > 0 && ws_depth <= 32 ? ws_stack[ws_depth - 1].addr : 0,
+            ws_depth > 0 && ws_depth <= 32 ? ws_stack[ws_depth - 1].anchor : 0, ws_depth, where);
+    for (k = 0; k < nret; k++)
+        fprintf(stderr, " %08X", up[k]);
+    fputc('\n', stderr);
+}
+
+static int ws_text_anchor(void)
+{
+    int a;
+    if (ws_depth <= 0 || ws_depth > 32 || !ws_hud_on())
+        return 0;
+    a = ws_stack[ws_depth - 1].anchor;
+    return a == 1 || a == 3 ? 1 : a == -1 || a == -3 ? -1 : 0;
+}
+
+/* v307c: the other way to add a string, the same seven arguments (x at
+ * esp+4), another kind of string: the trick name ("Back Slide") is added
+ * here by its own text object, and stayed in the 4:3 area (Miggas; v307b's
+ * screen offset can't reach a string drawn later) */
+extern void sub_0003D610_gen(void);
+void sub_0003D610(void)
+{
+    int where = wsm_cur < 0 && !wsm_in_header ? ws_text_anchor() : 0;
+    ws_text_log("3D610", where);
+    if (where)
+        MEMF(g_esp + 4) += (float)where * ws_half_extra();
+    sub_0003D610_gen();
 }
 
 void sub_0003D5D0(void)             /* add a string: x at esp+4 */
@@ -879,7 +1074,14 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
     }
     if (wsm_in_header)
         where = -1;
-    else if (wsm_cur >= 0) {
+    else if (wsm_cur < 0 && ws_depth > 0 && ws_depth <= 32 && ws_hud_on()) {
+        /* v307: a string added while a HUD function moved to an edge runs
+         * (anchor -1 / +1) goes with its sprites: the trick name and the "x"
+         * between the trick count's numbers stayed in the 4:3 area while
+         * the numbers went to the left edge (Miggas). Strings are drawn
+         * later, in a pass of their own, so the sprite move never saw them. */
+        where = ws_text_anchor();
+    } else if (wsm_cur >= 0) {
         const WsmScreen *sc = &wsm_screens[wsm_cur];
         uint32_t ret = MEM32(g_esp);
         for (k = 0; k < sc->ntext; k++)
@@ -892,6 +1094,7 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
             where = 0;
         }
     }
+    ws_text_log("3D5D0", where);
     if (where) {
         float extra = ws_half_extra();
         MEMF(g_esp + 4) += (float)where * extra;

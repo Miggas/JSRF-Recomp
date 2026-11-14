@@ -5576,7 +5576,7 @@
     "name": "sub_0003DDA0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003DDE0",
@@ -8348,7 +8348,7 @@
     "name": "sub_00052780",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x000527D0",
@@ -13458,7 +13458,7 @@
     "name": "sub_00080710",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x000807D0",
@@ -28977,7 +28977,7 @@
     "name": "sub_001037D0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00103A40",
@@ -29012,7 +29012,7 @@
     "name": "sub_00104500",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00104760",
@@ -29096,7 +29096,7 @@
     "name": "sub_00104FF0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x001051B0",
@@ -30104,7 +30104,7 @@
     "name": "sub_0010F640",
     "type": "function",
     "section": ".text",
-    "confidence": 0.85
+    "confidence": 0.95
   },
   {
     "address": "0x0010FE20",
@@ -31329,7 +31329,7 @@
     "name": "sub_00119570",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x001195A0",
@@ -41472,7 +41472,7 @@
     "name": "sub_0015AFE0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x0015B0E0",

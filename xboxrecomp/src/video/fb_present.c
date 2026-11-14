@@ -32,6 +32,14 @@ void xbox_SetTitleExtra(const char *t)
     strncpy(s_title_extra, t, sizeof s_title_extra - 1);
     s_title_extra[sizeof s_title_extra - 1] = 0;
 }
+/* v279: the current mission (jsrf: RECOMP_SHOW_MISSION), after the extra text */
+static char s_title_mission[96];
+void xbox_SetTitleMission(const char *t)
+{
+    if (!t) t = "";
+    strncpy(s_title_mission, t, sizeof s_title_mission - 1);
+    s_title_mission[sizeof s_title_mission - 1] = 0;
+}
 
 static volatile LONG s_fb_running;
 static uint32_t      s_fb_va, s_fb_pitch, s_fb_width = 640, s_fb_height = 480;
@@ -773,13 +781,13 @@ static DWORD WINAPI fb_thread(LPVOID unused)
             static DWORD t0;
             static LONG f0;
             DWORD now = GetTickCount();
-            if (now - t0 >= (s_title_extra[0] ? 250u : 1000u)) {
+            if (now - t0 >= (s_title_extra[0] || s_title_mission[0] ? 250u : 1000u)) {
                 LONG f = s_flips;
                 wchar_t tb[256];
-                _snwprintf(tb, 255, L"%ls | FPS: %.1f | draws: %ld%hs%hs", s_title,
+                _snwprintf(tb, 255, L"%ls | FPS: %.1f | draws: %ld%hs%hs%hs%hs", s_title,
                            t0 ? (f - f0) * 1000.0 / (now - t0) : 0.0,
                            (long)s_frame_draws, s_title_extra[0] ? " | " : "",
-                           s_title_extra);
+                           s_title_extra, s_title_mission[0] ? " | " : "", s_title_mission);
                 tb[255] = 0;
                 SetWindowTextW(hwnd, tb);
                 t0 = now; f0 = f;
@@ -853,6 +861,14 @@ void xbox_SetTitleExtra(const char *t)
     if (!t) t = "";
     strncpy(s_title_extra, t, sizeof s_title_extra - 1);
     s_title_extra[sizeof s_title_extra - 1] = 0;
+}
+/* v279: the current mission (jsrf: RECOMP_SHOW_MISSION), after the extra text */
+static char s_title_mission[96];
+void xbox_SetTitleMission(const char *t)
+{
+    if (!t) t = "";
+    strncpy(s_title_mission, t, sizeof s_title_mission - 1);
+    s_title_mission[sizeof s_title_mission - 1] = 0;
 }
 void *xbox_FramebufferWindowHwnd(void) { return NULL; }
 void xbox_FramebufferWindowGLOwned(void) { s_gl_owned = 1; }
@@ -1156,11 +1172,12 @@ void xbox_FramebufferWindowPump(void)
     {
         uint64_t now = ms_now();
         if (!t0) { t0 = now; f0 = s_flips; }
-        if (now - t0 >= (s_title_extra[0] ? 250u : 1000u)) {
+        if (now - t0 >= (s_title_extra[0] || s_title_mission[0] ? 250u : 1000u)) {
             char tb[256];
             double fps = (double)(s_flips - f0) * 1000.0 / (double)(now - t0);
-            snprintf(tb, sizeof tb, "%s | FPS: %.1f | draws: %ld%s%s", s_title, fps,
-                     (long)s_frame_draws, s_title_extra[0] ? " | " : "", s_title_extra);
+            snprintf(tb, sizeof tb, "%s | FPS: %.1f | draws: %ld%s%s%s%s", s_title, fps,
+                     (long)s_frame_draws, s_title_extra[0] ? " | " : "", s_title_extra,
+                     s_title_mission[0] ? " | " : "", s_title_mission);
             SDL_SetWindowTitle(s_sw, tb);
             t0 = now; f0 = s_flips;
         }

@@ -459,6 +459,15 @@ void xbox_HeapFree(uint32_t xbox_va);
 uint32_t xbox_HeapBlockSize(uint32_t xbox_va);
 
 /**
+ * A watched guest range (one at a time; len 0 stops watching). Heap blocks
+ * handed out or freed over it, and file reads into it, are logged ([WATCH],
+ * the first 24): a title's data that something else writes over.
+ */
+void xbox_WatchSet(uint32_t xbox_va, uint32_t len, const char *name);
+void xbox_WatchVa(const char *what, uint32_t xbox_va, uint32_t len);
+void xbox_WatchHost(const char *what, const void *host, uint32_t len);
+
+/**
  * True when RECOMP_HEAP_RECLAIM is set: freed heap blocks are split rather than
  * handed over whole, and NtFreeVirtualMemory returns heap memory to the heap.
  * Off by default; it changes which address later allocations get.

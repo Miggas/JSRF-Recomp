@@ -158,9 +158,10 @@ controller. The keyboard works as controller 1:
 | `Backspace` | BACK |
 | `Shift` / `Ctrl` | Click the left / right stick (L3 / R3) |
 
-- **Quit:** click both sticks, **L3 + R3** (`Shift` + `Ctrl`), pick **YES** and press **A**.
+- **Quit:** click both sticks (`Shift` + `Ctrl`): **Quit Game**, **Quit to Title** (while in a level) or **Return**, then **A**.
   Closing the window or `Alt+F4` works too.
 - **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
+- **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of the story's races, boss fights and challenges by chapter. Pick one and how many spray cans to start with (none, 20 or as many as your character carries), then choose **NEW GAME**: pick your character (all are unlocked) and the mission starts. Refight a boss or redo a race without touching your save (just don't save afterwards): when the mission ends, the game goes back to the title. *Idea by Miggas.*
 
 ---
 
@@ -243,6 +244,8 @@ override the file.
 | `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
 | `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
 | `RECOMP_CHAPTER_SELECT=2` | Chapter select: a new game starts at chapter 2's opening; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the game's save points save over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
+| `RECOMP_SHOW_MISSION=1` | The window title shows the current mission (`mssnCCMM`), your position and the objective. F9 writes your position to the log. |
+| `RECOMP_MISSION_SPAWN=CCMM:x,y,z,facing` | A mission picked in mission select starts at that spot, facing that way (from F9: it logs the way you were skating). Several missions on one line, separated by `;`. |
 
 **`[compatibility]`**: try these if something goes wrong.
 
@@ -335,7 +338,7 @@ co-author.
   placement from his widescreen work.
 - mstan's JSRFRecomp for the idea of holding START to skip cutscenes.
 - The quit window and the "Building Shaders" message use the
-  [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"),
+  [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"; its V, X and K redrawn here),
   drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
 - s-ilent for MSAA (`RECOMP_GL_MSAA`, [pull request #4](https://github.com/Miggas/JSRF-Recomp/pull/4)).
 - [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)
