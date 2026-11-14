@@ -1158,7 +1158,29 @@ static const char *fs_nz(void)
     return src;
 }
 
+#ifdef XBOXRECOMP_HAVE_VK
+/* vulkan-test: each program also built on Vulkan (RECOMP_RENDERER=vkmirror),
+ * with OpenGL's time and whether it came from OpenGL's own cache */
+static GLuint link_with2(const char *vsrc, const char *fsrc)
+{
+    unsigned h0, h1, m0;
+    uint64_t k0, t0 = TM_NOW();
+    GLuint pr;
+    if (!nv2a_vk_wanted())
+        return rb_program_build(vsrc, fsrc);
+    rb_program_stats(&h0, &m0, &k0);
+    pr = rb_program_build(vsrc, fsrc);
+    rb_program_stats(&h1, &m0, &k0);
+    if (pr) {
+        const char *d = shader_defs();
+        nv2a_vk_mirror(vsrc, fsrc, d ? d : "", (double)(TM_NOW() - t0) * 1000.0
+                       / (double)SDL_GetPerformanceFrequency(), h1 != h0);
+    }
+    return pr;
+}
+#else
 static GLuint link_with2(const char *vsrc, const char *fsrc) { return rb_program_build(vsrc, fsrc); }
+#endif
 
 void nv2a_gl_frame_stats(uint64_t *compiles, uint64_t *compile_ticks, uint64_t *texups,
                          uint64_t *texup_ticks, uint64_t *wait_ticks, uint64_t *freq)

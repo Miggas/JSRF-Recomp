@@ -1,4 +1,5 @@
-/* Vulkan renderer, step 1: the probe (see nv2a_vk.h).
+/* Vulkan renderer, step 1: the probe; step 2: the shader mirror (see
+ * nv2a_vk.h).
  *
  * Why Vulkan (Miggas, a player's log): on an RX 9060 XT with AMD's newest
  * driver, OpenGL compiles each of the renderer's shaders in 0.3-0.4 s, and
@@ -26,6 +27,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#endif
 
 #define VK_LOG(...) fprintf(stderr, "[VK] " __VA_ARGS__)
 
@@ -94,7 +100,7 @@ static glslang_shader_t *gl_shader(glslang_stage_t stage, const char *src, glsla
                                | GLSLANG_SHADER_VULKAN_RULES_RELAXED);
     glslang_shader_set_default_uniform_block_set_and_binding(sh, 0, 0);
     if (!glslang_shader_preprocess(sh, in) || !glslang_shader_parse(sh, in)) {
-        VK_LOG("GLSL (%s) did not compile:\n%s\n",
+        VK_LOG("GLSL (%s) did not compile:\n%.1500s\n",
                stage == GLSLANG_STAGE_VERTEX ? "vertex" : "fragment",
                glslang_shader_get_info_log(sh));
         glslang_shader_delete(sh);
@@ -132,9 +138,9 @@ static int glsl_to_spirv(const char *vs, const char *fs, Spirv *v, Spirv *f)
     glslang_program_add_shader(pg, sv);
     glslang_program_add_shader(pg, sf);
     if (!glslang_program_link(pg, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT))
-        VK_LOG("GLSL did not link:\n%s\n", glslang_program_get_info_log(pg));
+        VK_LOG("GLSL did not link:\n%.1500s\n", glslang_program_get_info_log(pg));
     else if (!glslang_program_map_io(pg))
-        VK_LOG("GLSL inputs/outputs could not be mapped:\n%s\n", glslang_program_get_info_log(pg));
+        VK_LOG("GLSL inputs/outputs could not be mapped:\n%.1500s\n", glslang_program_get_info_log(pg));
     else
         ok = spirv_take(pg, GLSLANG_STAGE_VERTEX, v) && spirv_take(pg, GLSLANG_STAGE_FRAGMENT, f);
     glslang_program_delete(pg);
@@ -165,6 +171,7 @@ typedef struct {
     VkPipelineCache cache;
     VkPipeline pipe, pipe2;
     VkShaderModule vsm, fsm;
+    int feedback;           /* VK_EXT_pipeline_creation_feedback (or 1.3) */
 } Probe;
 
 #define PW 64
@@ -304,6 +311,30 @@ static int probe_device(Probe *p)
     qi.pQueuePriorities = &prio;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qi;
+    {   /* step 2: what the renderer's shaders need (gl_ClipDistance), and
+         * the driver telling whether a pipeline came from the cache */
+        static VkPhysicalDeviceFeatures want;
+        static const char *ext[1];
+        VkPhysicalDeviceFeatures have;
+        VkExtensionProperties ep[512];
+        uint32_t ne = 512, k;
+        vkGetPhysicalDeviceFeatures(p->pd, &have);
+        memset(&want, 0, sizeof want);
+        want.shaderClipDistance = have.shaderClipDistance;
+        dci.pEnabledFeatures = &want;
+        p->feedback = 0;
+        if (vkEnumerateDeviceExtensionProperties(p->pd, NULL, &ne, ep) >= 0)
+            for (k = 0; k < ne; k++)
+                if (!strcmp(ep[k].extensionName, "VK_EXT_pipeline_creation_feedback")) {
+                    ext[0] = "VK_EXT_pipeline_creation_feedback";
+                    dci.enabledExtensionCount = 1;
+                    dci.ppEnabledExtensionNames = ext;
+                    p->feedback = 1;
+                }
+        if (!have.shaderClipDistance)
+            VK_LOG("the device has no shaderClipDistance: the renderer's vertex shaders"
+                   " will not build\n");
+    }
     if (vkCreateDevice(p->pd, &dci, NULL, &p->dev) != VK_SUCCESS) {
         VK_LOG("the device could not be opened\n");
         return 0;
@@ -606,10 +637,438 @@ out:
     return ok ? 0 : 1;
 }
 
+/* ── step 2: the shader mirror ───────────────────────────────────────── */
+
+typedef struct MJob {
+    char *vs, *fs;
+    double gl_ms;
+    int gl_cached;
+    struct MJob *next;
+} MJob;
+
+static SDL_SpinLock s_mq_lock;
+static MJob *s_mq_head, *s_mq_tail;
+static SDL_sem *s_mq_sem;
+static int s_mq_n;              /* programs queued so far */
+
+/* src with defs after its #version line, as nv2a_gl.c's compile() does */
+static char *with_defs(const char *src, const char *defs)
+{
+    const char *nl = strchr(src, '\n');
+    size_t n = strlen(src), d = defs ? strlen(defs) : 0;
+    char *o = (char *)malloc(n + d + 1);
+    if (!o)
+        return NULL;
+    if (d && nl && !strncmp(src, "#version", 8)) {
+        size_t h = (size_t)(nl - src) + 1;
+        memcpy(o, src, h);
+        memcpy(o + h, defs, d);
+        memcpy(o + h + d, nl + 1, n - h + 1);
+    } else
+        memcpy(o, src, n + 1);
+    return o;
+}
+
+void nv2a_vk_mirror(const char *vs, const char *fs, const char *defs, double gl_ms, int gl_cached)
+{
+    MJob *j = (MJob *)calloc(1, sizeof *j);
+    if (!j)
+        return;
+    j->vs = with_defs(vs, defs);
+    j->fs = with_defs(fs, defs);
+    j->gl_ms = gl_ms;
+    j->gl_cached = gl_cached;
+    if (!j->vs || !j->fs) {
+        free(j->vs); free(j->fs); free(j);
+        return;
+    }
+    SDL_AtomicLock(&s_mq_lock);
+    if (!s_mq_sem)
+        s_mq_sem = SDL_CreateSemaphore(0);
+    if (s_mq_tail) s_mq_tail->next = j; else s_mq_head = j;
+    s_mq_tail = j;
+    s_mq_n++;
+    SDL_AtomicUnlock(&s_mq_lock);
+    if (s_mq_sem)
+        SDL_SemPost(s_mq_sem);
+}
+
+static MJob *mq_take(void)
+{
+    MJob *j;
+    SDL_AtomicLock(&s_mq_lock);
+    j = s_mq_head;
+    if (j) {
+        s_mq_head = j->next;
+        if (!s_mq_head) s_mq_tail = NULL;
+    }
+    SDL_AtomicUnlock(&s_mq_lock);
+    return j;
+}
+
+/* The descriptors a SPIR-V module uses: set 0 bindings and their type,
+ * read off its decorations (glslang's automatic bindings). */
+#define MX_BIND 32
+typedef struct { int used; VkDescriptorType type; } MBind;
+
+static int spirv_bindings(const Spirv *s, MBind *b)
+{
+    uint32_t bound, i, w;
+    uint32_t *bind, *set, *ptr_type, *ptr_sc, *kind;
+    const uint32_t *c = s->code;
+    if (s->words < 5 || c[0] != 0x07230203u)
+        return 0;
+    bound = c[3];
+    if (!bound || bound > (1u << 22))
+        return 0;
+    bind = (uint32_t *)calloc(bound, 4 * 5);
+    if (!bind)
+        return 0;
+    set = bind + bound; ptr_type = set + bound; ptr_sc = ptr_type + bound; kind = ptr_sc + bound;
+    for (i = 0; i < bound; i++) { bind[i] = ~0u; set[i] = 0; }
+    /* first pass: decorations and types */
+    for (w = 5; w < s->words; ) {
+        uint32_t op = c[w] & 0xFFFF, n = c[w] >> 16;
+        if (!n || w + n > s->words) break;
+        if (op == 71 && n >= 4 && c[w + 1] < bound) {          /* OpDecorate */
+            if (c[w + 2] == 33) bind[c[w + 1]] = c[w + 3];     /* Binding */
+            else if (c[w + 2] == 34) set[c[w + 1]] = c[w + 3]; /* DescriptorSet */
+        } else if (op == 32 && n >= 4 && c[w + 1] < bound) {   /* OpTypePointer */
+            ptr_sc[c[w + 1]] = c[w + 2];
+            ptr_type[c[w + 1]] = c[w + 3];
+        } else if ((op == 27 || op == 25 || op == 26 || op == 30 || op == 28) && n >= 2 && c[w + 1] < bound) {
+            kind[c[w + 1]] = op;
+            if (op == 28 && n >= 3 && c[w + 2] < bound)        /* array: its element */
+                kind[c[w + 1]] = 0x10000u | c[w + 2];
+        }
+        w += n;
+    }
+    /* second pass: the variables */
+    for (w = 5; w < s->words; ) {
+        uint32_t op = c[w] & 0xFFFF, n = c[w] >> 16;
+        if (!n || w + n > s->words) break;
+        if (op == 59 && n >= 4 && c[w + 1] < bound && c[w + 2] < bound) {   /* OpVariable */
+            uint32_t id = c[w + 2], pt = c[w + 1], sc = c[w + 3], t = ptr_type[pt], k;
+            if ((sc == 0 || sc == 2 || sc == 12) && bind[id] != ~0u && set[id] == 0 && bind[id] < MX_BIND) {
+                k = t < bound ? kind[t] : 0;
+                while ((k & 0x10000u) && (k & 0xFFFFu) < bound) k = kind[k & 0xFFFFu];
+                b[bind[id]].used = 1;
+                b[bind[id]].type = sc == 12 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                 : k == 30 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                 : k == 27 ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                                 : k == 25 ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                                 : VK_DESCRIPTOR_TYPE_SAMPLER;
+            }
+        }
+        w += n;
+    }
+    free(bind);
+    return 1;
+}
+
+typedef struct {
+    Probe d;                    /* the device */
+    VkRenderPass rp;
+    VkFormat zfmt;
+    char cache_path[64];
+    int n, fails, hits;
+    double gl_ms, glsl_ms, pipe_ms, gl_cached_ms, pipe_cached_ms;
+    int gl_cached_n, pipe_cached_n;
+} Mirror;
+
+static int mirror_pass(Mirror *m)
+{
+    VkAttachmentDescription at[2];
+    VkAttachmentReference cr = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+    VkAttachmentReference zr = { 1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+    VkSubpassDescription sp = { 0 };
+    VkRenderPassCreateInfo rpi = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+    VkFormatProperties fp;
+    int i;
+    /* depth as the renderer will keep it: float with stencil, else 24-bit */
+    m->zfmt = VK_FORMAT_D32_SFLOAT_S8_UINT;
+    vkGetPhysicalDeviceFormatProperties(m->d.pd, m->zfmt, &fp);
+    if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
+        m->zfmt = VK_FORMAT_D24_UNORM_S8_UINT;
+    memset(at, 0, sizeof at);
+    for (i = 0; i < 2; i++) {
+        at[i].samples = VK_SAMPLE_COUNT_1_BIT;
+        at[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        at[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        at[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        at[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    }
+    at[0].format = VK_FORMAT_B8G8R8A8_UNORM;
+    at[0].initialLayout = at[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    at[1].format = m->zfmt;
+    at[1].initialLayout = at[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    sp.colorAttachmentCount = 1;
+    sp.pColorAttachments = &cr;
+    sp.pDepthStencilAttachment = &zr;
+    rpi.attachmentCount = 2;
+    rpi.pAttachments = at;
+    rpi.subpassCount = 1;
+    rpi.pSubpasses = &sp;
+    return vkCreateRenderPass(m->d.dev, &rpi, NULL, &m->rp) == VK_SUCCESS;
+}
+
+static void mirror_cache_load(Mirror *m)
+{
+    VkPipelineCacheCreateInfo ci = { VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+    FILE *f;
+    void *data = NULL;
+    long len = 0;
+#if defined(_WIN32)
+    snprintf(m->cache_path, sizeof m->cache_path, "shader_cache\\vk_pipelines.bin");
+#else
+    snprintf(m->cache_path, sizeof m->cache_path, "shader_cache/vk_pipelines.bin");
+#endif
+    f = fopen(m->cache_path, "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (len > 32 && len < (256L << 20) && (data = malloc((size_t)len))
+                && fread(data, 1, (size_t)len, f) == (size_t)len) {
+            ci.initialDataSize = (size_t)len;   /* the driver checks it is its own */
+            ci.pInitialData = data;
+        }
+        fclose(f);
+    }
+    if (vkCreatePipelineCache(m->d.dev, &ci, NULL, &m->d.cache) != VK_SUCCESS) {
+        ci.initialDataSize = 0;
+        ci.pInitialData = NULL;
+        vkCreatePipelineCache(m->d.dev, &ci, NULL, &m->d.cache);
+    }
+    VK_LOG("mirror: pipeline cache %s (%s)\n", m->cache_path,
+           ci.initialDataSize ? "loaded" : "new");
+    free(data);
+}
+
+static void mirror_cache_save(Mirror *m)
+{
+    size_t len = 0;
+    void *data;
+    FILE *f;
+    if (!m->d.cache || vkGetPipelineCacheData(m->d.dev, m->d.cache, &len, NULL) != VK_SUCCESS || !len)
+        return;
+    if (!(data = malloc(len)))
+        return;
+    if (vkGetPipelineCacheData(m->d.dev, m->d.cache, &len, data) == VK_SUCCESS) {
+        char tmp[80];
+        snprintf(tmp, sizeof tmp, "%s.tmp", m->cache_path);
+        f = fopen(tmp, "wb");
+        if (f) {
+            int ok = fwrite(data, 1, len, f) == len;
+            ok = !fclose(f) && ok;
+            remove(m->cache_path);
+            if (!ok || rename(tmp, m->cache_path))
+                remove(tmp);
+        }
+    }
+    free(data);
+}
+
+/* one program: GLSL -> SPIR-V, then the pipeline, as the renderer will
+ * build it (16 vec4 inputs, colour and depth-stencil, blending and depth
+ * on, the rest dynamic) */
+static void mirror_one(Mirror *m, MJob *j)
+{
+    Spirv v, f;
+    MBind b[MX_BIND];
+    VkDescriptorSetLayoutBinding lb[MX_BIND];
+    VkDescriptorSetLayoutCreateInfo di = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+    VkPipelineLayoutCreateInfo li = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+    VkDescriptorSetLayout dsl = VK_NULL_HANDLE;
+    VkPipelineLayout pl = VK_NULL_HANDLE;
+    VkShaderModule vsm = VK_NULL_HANDLE, fsm = VK_NULL_HANDLE;
+    VkPipeline pipe = VK_NULL_HANDLE;
+    VkPipelineShaderStageCreateInfo st[2] = {
+        { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO },
+        { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO } };
+    VkVertexInputBindingDescription vb = { 0, 256, VK_VERTEX_INPUT_RATE_VERTEX };
+    VkVertexInputAttributeDescription va[16];
+    VkPipelineVertexInputStateCreateInfo vi = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    VkPipelineInputAssemblyStateCreateInfo ia = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+    VkPipelineViewportStateCreateInfo vs = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+    VkPipelineRasterizationStateCreateInfo rs = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+    VkPipelineMultisampleStateCreateInfo ms_ = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+    VkPipelineDepthStencilStateCreateInfo ds = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+    VkPipelineColorBlendAttachmentState cba = { 0 };
+    VkPipelineColorBlendStateCreateInfo cb = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+    VkDynamicState dyn[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_DEPTH_BIAS, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+        VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK, VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+        VK_DYNAMIC_STATE_STENCIL_REFERENCE };
+    VkPipelineDynamicStateCreateInfo dy = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+    VkGraphicsPipelineCreateInfo gi = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+    VkPipelineCreationFeedback fb_all = { 0 }, fb_st[2];
+    VkPipelineCreationFeedbackCreateInfo fbi = { VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO };
+    Uint64 t0;
+    double t_glsl, t_pipe;
+    uint32_t i, nb = 0;
+    int no = ++m->n, hit = -1;
+    const char *what = "failed";
+
+    t0 = SDL_GetPerformanceCounter();
+    if (!glsl_to_spirv(j->vs, j->fs, &v, &f)) {
+        m->fails++;
+        VK_LOG("mirror %d: the GLSL did not become SPIR-V (above)\n", no);
+        return;
+    }
+    t_glsl = ms_since(t0);
+    memset(b, 0, sizeof b);
+    spirv_bindings(&v, b);
+    spirv_bindings(&f, b);
+    for (i = 0; i < MX_BIND; i++)
+        if (b[i].used) {
+            lb[nb].binding = i;
+            lb[nb].descriptorType = b[i].type;
+            lb[nb].descriptorCount = 1;
+            lb[nb].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+            lb[nb].pImmutableSamplers = NULL;
+            nb++;
+        }
+    di.bindingCount = nb;
+    di.pBindings = lb;
+    vsm = module_of(&m->d, &v);
+    fsm = module_of(&m->d, &f);
+    free(v.code);
+    free(f.code);
+    if (!vsm || !fsm || vkCreateDescriptorSetLayout(m->d.dev, &di, NULL, &dsl) != VK_SUCCESS)
+        goto done;
+    li.setLayoutCount = 1;
+    li.pSetLayouts = &dsl;
+    if (vkCreatePipelineLayout(m->d.dev, &li, NULL, &pl) != VK_SUCCESS)
+        goto done;
+
+    st[0].stage = VK_SHADER_STAGE_VERTEX_BIT; st[0].module = vsm; st[0].pName = "main";
+    st[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; st[1].module = fsm; st[1].pName = "main";
+    for (i = 0; i < 16; i++) {
+        va[i].location = i;
+        va[i].binding = 0;
+        va[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        va[i].offset = i * 16;
+    }
+    vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &vb;
+    vi.vertexAttributeDescriptionCount = 16; vi.pVertexAttributeDescriptions = va;
+    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    vs.viewportCount = 1; vs.scissorCount = 1;
+    rs.polygonMode = VK_POLYGON_MODE_FILL;
+    rs.cullMode = VK_CULL_MODE_NONE;
+    rs.depthBiasEnable = VK_TRUE;
+    rs.lineWidth = 1.0f;
+    ms_.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    ds.depthTestEnable = VK_TRUE;
+    ds.depthWriteEnable = VK_TRUE;
+    ds.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+    cba.blendEnable = VK_TRUE;
+    cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cba.colorBlendOp = VK_BLEND_OP_ADD;
+    cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cba.alphaBlendOp = VK_BLEND_OP_ADD;
+    cba.colorWriteMask = 0xF;
+    cb.attachmentCount = 1; cb.pAttachments = &cba;
+    dy.dynamicStateCount = (uint32_t)(sizeof dyn / sizeof dyn[0]);
+    dy.pDynamicStates = dyn;
+    gi.stageCount = 2; gi.pStages = st;
+    gi.pVertexInputState = &vi; gi.pInputAssemblyState = &ia;
+    gi.pViewportState = &vs; gi.pRasterizationState = &rs;
+    gi.pMultisampleState = &ms_; gi.pDepthStencilState = &ds;
+    gi.pColorBlendState = &cb; gi.pDynamicState = &dy;
+    gi.layout = pl; gi.renderPass = m->rp;
+    if (m->d.feedback) {
+        memset(fb_st, 0, sizeof fb_st);
+        fbi.pPipelineCreationFeedback = &fb_all;
+        fbi.pipelineStageCreationFeedbackCount = 2;
+        fbi.pPipelineStageCreationFeedbacks = fb_st;
+        gi.pNext = &fbi;
+    }
+    t0 = SDL_GetPerformanceCounter();
+    if (vkCreateGraphicsPipelines(m->d.dev, m->d.cache, 1, &gi, NULL, &pipe) != VK_SUCCESS)
+        goto done;
+    t_pipe = ms_since(t0);
+    if (m->d.feedback && (fb_all.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT))
+        hit = (fb_all.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) != 0;
+    m->gl_ms += j->gl_ms;
+    m->glsl_ms += t_glsl;
+    m->pipe_ms += t_pipe;
+    if (j->gl_cached) { m->gl_cached_n++; m->gl_cached_ms += j->gl_ms; }
+    if (hit == 1) { m->hits++; m->pipe_cached_n++; m->pipe_cached_ms += t_pipe; }
+    what = hit == 1 ? "from the pipeline cache" : hit == 0 ? "compiled" : "built";
+    VK_LOG("mirror %d: OpenGL %.1f ms (%s) | Vulkan: GLSL -> SPIR-V %.1f ms, pipeline %.1f ms (%s)\n",
+           no, j->gl_ms, j->gl_cached ? "its shader cache" : "compiled", t_glsl, t_pipe, what);
+done:
+    if (!pipe) {
+        m->fails++;
+        VK_LOG("mirror %d: the Vulkan pipeline could not be built\n", no);
+    }
+    if (pipe) vkDestroyPipeline(m->d.dev, pipe, NULL);
+    if (pl) vkDestroyPipelineLayout(m->d.dev, pl, NULL);
+    if (dsl) vkDestroyDescriptorSetLayout(m->d.dev, dsl, NULL);
+    if (vsm) vkDestroyShaderModule(m->d.dev, vsm, NULL);
+    if (fsm) vkDestroyShaderModule(m->d.dev, fsm, NULL);
+}
+
+static void mirror_run(void)
+{
+    static Mirror M;
+    Mirror *m = &M;
+    int since_save = 0;
+    memset(m, 0, sizeof *m);
+    if (!probe_device(&m->d) || !mirror_pass(m)) {
+        VK_LOG("mirror: no Vulkan device for it, so no comparison\n");
+        return;
+    }
+#if defined(_WIN32)
+    CreateDirectoryA("shader_cache", NULL);
+#else
+    mkdir("shader_cache", 0755);
+#endif
+    mirror_cache_load(m);
+    glslang_initialize_process();
+    SDL_AtomicLock(&s_mq_lock);
+    if (!s_mq_sem)
+        s_mq_sem = SDL_CreateSemaphore(0);
+    SDL_AtomicUnlock(&s_mq_lock);
+    VK_LOG("mirror: every shader program OpenGL builds is built on Vulkan too, timed"
+           " (depth %s)\n", m->zfmt == VK_FORMAT_D32_SFLOAT_S8_UINT ? "D32F+S8" : "D24S8");
+    for (;;) {
+        MJob *j = mq_take();
+        if (!j) {
+            if (since_save) {
+                /* caught up: keep what was built, and the totals so far */
+                mirror_cache_save(m);
+                since_save = 0;
+                VK_LOG("mirror so far: %d program(s) -- OpenGL %.0f ms in all (%d from its cache,"
+                       " %.0f ms); Vulkan %.0f ms in all: GLSL -> SPIR-V %.0f ms, pipelines"
+                       " %.0f ms (%d from the pipeline cache, %.0f ms)%s\n",
+                       m->n, m->gl_ms, m->gl_cached_n, m->gl_cached_ms,
+                       m->glsl_ms + m->pipe_ms, m->glsl_ms, m->pipe_ms, m->pipe_cached_n,
+                       m->pipe_cached_ms, m->fails ? " -- some failed, see above" : "");
+            }
+            if (s_mq_sem)
+                SDL_SemWait(s_mq_sem);
+            else
+                SDL_Delay(50);
+            continue;
+        }
+        mirror_one(m, j);
+        since_save++;
+        free(j->vs);
+        free(j->fs);
+        free(j);
+    }
+}
+
 static int probe_thread(void *u)
 {
     (void)u;
     nv2a_vk_probe();
+    mirror_run();
     return 0;
 }
 
@@ -620,8 +1079,8 @@ void nv2a_vk_probe_async(void)
     if (started++)
         return;
     VK_LOG("RECOMP_RENDERER=vulkan: the Vulkan renderer is being built on the vulkan-test"
-           " branch; for now the game draws with OpenGL and a probe tests Vulkan"
-           " on this computer\n");
+           " branch; for now the game draws with OpenGL, a probe tests Vulkan on this"
+           " computer and every shader OpenGL builds is built on Vulkan too, timed\n");
     t = SDL_CreateThread(probe_thread, "vk_probe", NULL);
     if (t)
         SDL_DetachThread(t);
