@@ -1545,34 +1545,39 @@ static void clear_watch(uint32_t o, const char *when)
  * byte +0 has bit 0x04 (sub_00072990), or after 300 frames with its flag
  * 0x2000. Every change of the first 8 bytes and the connected word (+0x34)
  * of the four players while the cleared screen is up. */
-/* v309d (diagnostic): the HUD manager (object 0x1163 in the object table
- * at [0x22FCE0] +0x98) and its cleared object (its +0x8C, class 0x1CCB68:
- * state +0x90, counter +0x94, flags +0x48, +0x44, +0xB0, children +0xA8 /
- * +0xAC), each change while the cleared screen is up: which way it ends */
+/* v309d/e (diagnostic): the HUD objects of the cleared screen -- ids
+ * 0x115E..0x1161 in the object table at [0x22FCE0] +0x98 (the ones the
+ * mission's step 0x1D asks, sub_00106F40 -> sub_00107AF0) -- with their mode
+ * (+0x16F0) and +0x1700, and each one's cleared object (its +0x8C, class
+ * 0x1CCB68: state +0x90, counter +0x94, flags +0x48, +0x44, +0xB0, children
+ * +0xA8 / +0xAC), each change while the cleared screen is up */
 static void hud_watch(void)
 {
-    static uint32_t last[12];
-    uint32_t now[12], mgr, hud, cid, ch;
-    memset(now, 0, sizeof now);
-    mgr = MEM32(0x0022FCE0u);
-    hud = mgr ? MEM32(mgr + 0x98u + 0x1163u * 4u) : 0;
-    cid = hud ? MEM32(hud + 0x8Cu) : 0xFFFFFFFFu;
-    ch = (mgr && cid < 0x2000u) ? MEM32(mgr + 0x98u + cid * 4u) : 0;
-    now[0] = hud; now[1] = hud ? MEM32(hud + 0x16F0u) : 0; now[2] = hud ? MEM32(hud + 0x1700u) : 0;
-    now[3] = cid; now[4] = ch;
-    if (ch) {
-        now[5] = MEM32(ch + 0x90u); now[6] = MEM32(ch + 0x94u); now[7] = MEM32(ch + 0x48u);
-        now[8] = MEM32(ch + 0x44u); now[9] = MEM32(ch + 0xB0u);
-        now[10] = MEM32(ch + 0xA8u); now[11] = MEM32(ch + 0xACu);
+    static uint32_t last[4][12];
+    uint32_t mgr = MEM32(0x0022FCE0u);
+    int k;
+    if (!mgr) return;
+    for (k = 0; k < 4; k++) {
+        uint32_t now[12], hud, cid, ch;
+        memset(now, 0, sizeof now);
+        hud = MEM32(mgr + 0x98u + (0x115Eu + (uint32_t)k) * 4u);
+        cid = hud ? MEM32(hud + 0x8Cu) : 0xFFFFFFFFu;
+        ch = (cid < 0x2000u) ? MEM32(mgr + 0x98u + cid * 4u) : 0;
+        now[0] = hud; now[1] = hud ? MEM32(hud + 0x16F0u) : 0; now[2] = hud ? MEM32(hud + 0x1700u) : 0;
+        now[3] = cid; now[4] = ch;
+        if (ch) {
+            now[5] = MEM32(ch + 0x90u); now[6] = MEM32(ch + 0x94u); now[7] = MEM32(ch + 0x48u);
+            now[8] = MEM32(ch + 0x44u); now[9] = MEM32(ch + 0xB0u);
+            now[10] = MEM32(ch + 0xA8u); now[11] = MEM32(ch + 0xACu);
+        }
+        if (hud && memcmp(now, last[k], sizeof now)
+                && !(now[6] != last[k][6] && !memcmp(now, last[k], 6 * 4) && !memcmp(now + 7, last[k] + 7, 5 * 4)))
+            fprintf(stderr, "[CLEARWATCH] t=%lu hud %X at %08X mode %d +1700 %08X | child id %d at %08X:"
+                    " state %u count %u flags %08X +44 %08X +B0 %08X children %d %d\n",
+                    (unsigned long)GetTickCount(), 0x115Eu + (uint32_t)k, now[0], (int)now[1], now[2],
+                    (int)now[3], now[4], now[5], now[6], now[7], now[8], now[9], (int)now[10], (int)now[11]);
+        memcpy(last[k], now, sizeof now);
     }
-    if (memcmp(now, last, sizeof now) && !(now[6] != last[6] && now[5] == last[5]
-            && !memcmp(now, last, 6 * 4) && !memcmp(now + 7, last + 7, 5 * 4))) {
-        fprintf(stderr, "[CLEARWATCH] t=%lu hud %08X mode %d +1700 %08X | child id %d at %08X: state %u"
-                " count %u flags %08X +44 %08X +B0 %08X children %d %d\n",
-                (unsigned long)GetTickCount(), now[0], (int)now[1], now[2], (int)now[3], now[4],
-                now[5], now[6], now[7], now[8], now[9], (int)now[10], (int)now[11]);
-    }
-    memcpy(last, now, sizeof now);
 }
 
 static void pad_watch(void)
