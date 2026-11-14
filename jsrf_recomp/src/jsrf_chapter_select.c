@@ -1540,6 +1540,30 @@ static void clear_watch(uint32_t o, const char *when)
     if (g_xi_watch && !(st >= 0x18u && st <= 0x1Du)) g_xi_watch = 0;
     last_o = o; last_st = st;
 }
+/* v309c (diagnostic): the game's own pad table (0x251DE8, 0x40 bytes a
+ * player): the HUD's cleared object, once shown, ends when its player's
+ * byte +0 has bit 0x04 (sub_00072990), or after 300 frames with its flag
+ * 0x2000. Every change of the first 8 bytes and the connected word (+0x34)
+ * of the four players while the cleared screen is up. */
+static void pad_watch(void)
+{
+    static uint8_t last[4][12];
+    int p, i;
+    if (!g_xi_watch) return;
+    for (p = 0; p < 4; p++) {
+        uint8_t now[12];
+        const uint32_t b = 0x00251DE8u + 0x40u * (uint32_t)p;
+        for (i = 0; i < 8; i++) now[i] = MEM8(b + (uint32_t)i);
+        for (i = 0; i < 4; i++) now[8 + i] = MEM8(b + 0x34u + (uint32_t)i);
+        if (memcmp(now, last[p], sizeof now)) {
+            memcpy(last[p], now, sizeof now);
+            fprintf(stderr, "[CLEARWATCH] t=%lu game pad %d: %02X %02X %02X %02X %02X %02X %02X %02X"
+                    " connected %02X%02X%02X%02X\n", (unsigned long)GetTickCount(), p,
+                    now[0], now[1], now[2], now[3], now[4], now[5], now[6], now[7],
+                    now[11], now[10], now[9], now[8]);
+        }
+    }
+}
 
 void sub_00051FC0(void)
 {
@@ -1568,6 +1592,7 @@ void sub_00051FC0(void)
     }
     sub_00051FC0_gen();
     clear_watch(o, "after it");
+    pad_watch();
     if (s_pick_live || s_sel_target) {
         const uint32_t a = g_eax, d = g_edx;
         pick_exit_check(o);
