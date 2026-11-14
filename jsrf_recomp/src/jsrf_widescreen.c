@@ -98,6 +98,7 @@ static const struct { uint32_t addr; int anchor; } ws_hud[] = {
     { 0x00101F20u, -3 },    /* trick name; v307b: -3, its own sprite object
                              * fills the batch, drawn inside this function
                              * (0x10224C), so the screen offset moves it */
+    { 0x001045D0u, -1 },    /* v307e: the trick name's text, sliding in */
     { 0x00102DB0u,  3 },    /* v305: VS race position ("1 ST") */
     { 0x00103AE0u,  3 },    /* v305: VS lap count ("3/3 LAP") */
     { 0x000F7720u,  9 },    /* v191b: letterbox bars (cutscenes, dialogue) */
@@ -236,6 +237,12 @@ WS_HUD_SCOPE(sub_00101F20, 0x00101F20u)
 /* v305: VS mode's race position and lap count, to the right edge with the
  * health bar and spray count (Idea by Miggas). Found with Miggas's
  * RECOMP_MENU_LOG run: their draws' call chains end in these functions. */
+/* v307e: the trick name's text ("Back Slide"): a string added from 0x104781
+ * in sub_001045D0, which the game reaches through a method table, outside
+ * every HUD function wrapped before -- Miggas's RECOMP_WS_TEXT_LOG run: "from
+ * 00104781 ... y 78 | scope none" (its x sliding in from -61 to 46). In a
+ * scope moved to the left edge, the string goes with it (v307c). */
+WS_HUD_SCOPE(sub_001045D0, 0x001045D0u)
 WS_HUD_SCOPE(sub_00102DB0, 0x00102DB0u)
 WS_HUD_SCOPE(sub_00103AE0, 0x00103AE0u)
 

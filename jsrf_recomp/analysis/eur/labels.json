@@ -29096,7 +29096,7 @@
     "name": "sub_00104FF0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x001051B0",

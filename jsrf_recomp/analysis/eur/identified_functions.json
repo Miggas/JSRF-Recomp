@@ -47922,8 +47922,8 @@
   },
   {
     "start": "0x00104FCE",
-    "end": "0x001051AB",
-    "size": 477,
+    "end": "0x00104FF0",
+    "size": 34,
     "name": "sub_00104FCE",
     "section": ".text",
     "category": "unknown",

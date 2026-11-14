@@ -29446,7 +29446,7 @@
     "name": "sub_001045A0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00104760",
