@@ -106,7 +106,7 @@ static const struct { uint32_t addr; int anchor; } ws_hud[] = {
 
 extern void D3D8_D3DDevice_SetScreenSpaceOffset(void);
 
-typedef struct { int anchor, changed, prev_screen; float x, y; } WsScope;
+typedef struct { int anchor, changed, prev_screen; float x, y; uint32_t addr; } WsScope;
 static RECOMP_TLS WsScope ws_stack[32];
 static RECOMP_TLS int ws_depth;
 static RECOMP_TLS int ws_screen;    /* anchor the screen offset currently has */
@@ -184,6 +184,7 @@ static void ws_enter(uint32_t addr)
         if (ws_hud[k].addr == addr)
             anchor = ws_hud[k].anchor;
     s->anchor = anchor;
+    s->addr = addr;                     /* v307d: for the text log */
     s->changed = 0;
     if (anchor == 3 || anchor == -3) {
         /* D3D device at 0x19DCE0; its screen-space offset is stored at +0x9E8
@@ -958,6 +959,47 @@ void sub_000488B0(void)             /* ...and its plain quads */
  * function moved to the left / right edge, by its sprites (1) or by the
  * screen offset (3). Strings are drawn later, in a pass of their own
  * (sub_0003C310 from sub_00012680), so neither move reaches them. */
+/* v307d: RECOMP_WS_TEXT_LOG=1 -- each string added through sub_0003D5D0 /
+ * sub_0003D610 (the first 400 different ones): where from (the return
+ * address, and the code addresses further up the stack), its x and y, and
+ * the HUD scope it was added in (function, anchor) and what was done with
+ * it. For the trick name, which three tries did not move (Miggas). */
+static void ws_text_log(const char *fn, int where)
+{
+    static int on = -1;
+    static uint32_t seen[400];
+    static unsigned ns;
+    uint32_t ret = MEM32(g_esp), key, i, k, nret = 0, up[6];
+    float x = MEMF(g_esp + 4), y = MEMF(g_esp + 8);
+    if (on < 0) {
+        const char *e = getenv("RECOMP_WS_TEXT_LOG");
+        on = e && e[0] == '1';
+        if (on)
+            fprintf(stderr, "[WSTEXT] on: strings added, with the HUD scope they were added in\n");
+    }
+    if (!on)
+        return;
+    key = ret ^ ((uint32_t)(int)x << 20) ^ ((uint32_t)(int)y << 8);
+    for (i = 0; i < ns; i++)
+        if (seen[i] == key)
+            return;
+    if (ns >= 400)
+        return;
+    seen[ns++] = key;
+    for (k = 1; k < 96 && nret < 6; k++) {   /* code addresses further up the stack */
+        uint32_t w = MEM32(g_esp + 4u * k);
+        if (w >= 0x00011000u && w < 0x001D0000u)
+            up[nret++] = w;
+    }
+    fprintf(stderr, "[WSTEXT] %s from %08X x %.1f y %.1f | scope %s%08X anchor %d depth %d -> moved %d |",
+            fn, ret, x, y, ws_depth > 0 && ws_depth <= 32 ? "" : "none ",
+            ws_depth > 0 && ws_depth <= 32 ? ws_stack[ws_depth - 1].addr : 0,
+            ws_depth > 0 && ws_depth <= 32 ? ws_stack[ws_depth - 1].anchor : 0, ws_depth, where);
+    for (k = 0; k < nret; k++)
+        fprintf(stderr, " %08X", up[k]);
+    fputc('\n', stderr);
+}
+
 static int ws_text_anchor(void)
 {
     int a;
@@ -975,6 +1017,7 @@ extern void sub_0003D610_gen(void);
 void sub_0003D610(void)
 {
     int where = wsm_cur < 0 && !wsm_in_header ? ws_text_anchor() : 0;
+    ws_text_log("3D610", where);
     if (where)
         MEMF(g_esp + 4) += (float)where * ws_half_extra();
     sub_0003D610_gen();
@@ -1019,6 +1062,7 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
             where = 0;
         }
     }
+    ws_text_log("3D5D0", where);
     if (where) {
         float extra = ws_half_extra();
         MEMF(g_esp + 4) += (float)where * extra;
