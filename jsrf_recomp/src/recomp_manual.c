@@ -1891,6 +1891,7 @@ void sub_001BDE21(void)
     sub_001BDE21_gen();
 }
 
+volatile int g_xi_watch;               /* v309b: set by jsrf_chapter_select.c */
 void sub_001C3E14(void)
 {
     uint32_t h = MEM32(g_esp + 4), ps = MEM32(g_esp + 8);
@@ -1901,6 +1902,25 @@ void sub_001C3E14(void)
         fprintf(stderr, "[XINPUT] %u XInputGetState calls, %u XInputPoll calls, %u USB reports delivered; "
                         "last: rc %u packet %u buttons 0x%04X\n",
                 xi_get, xi_poll, xbox_OhciReportCount(), g_eax, MEM32(ps), MEM16(ps + 4));
+    }
+    if (ps && g_xi_watch) {
+        /* v309b (diagnostic): during a cleared screen, every change of the
+         * whole pad state the game reads (buttons, the 8 analog buttons,
+         * both sticks), and the call count, to see what ends it */
+        static uint8_t last[18];
+        static unsigned calls;
+        uint8_t now[18];
+        int i;
+        calls++;
+        for (i = 0; i < 18; i++) now[i] = MEM8(ps + 4 + (uint32_t)i);
+        if (memcmp(now, last, sizeof now) || calls == 1) {
+            memcpy(last, now, sizeof now);
+            fprintf(stderr, "[CLEARWATCH] t=%lu pad 0x%08X call %u: buttons 0x%04X analog %u %u %u %u %u %u %u %u"
+                    " sticks %d %d %d %d\n", (unsigned long)GetTickCount(), h, calls, MEM16(ps + 4),
+                    now[2], now[3], now[4], now[5], now[6], now[7], now[8], now[9],
+                    (int)(int16_t)MEM16(ps + 12), (int)(int16_t)MEM16(ps + 14),
+                    (int)(int16_t)MEM16(ps + 16), (int)(int16_t)MEM16(ps + 18));
+        }
     }
     if (ps) {
         uint32_t b = MEM16(ps + 4) | ((uint32_t)MEM8(ps + 6) << 16);   /* wButtons, A */

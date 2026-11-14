@@ -1122,7 +1122,7 @@ static uint32_t clear_hold_ticks(void)
     static int v = -1;
     if (v < 0) {
         const char *e = getenv("RECOMP_CLEAR_HOLD");
-        v = e && *e ? atoi(e) : 6;
+        v = e && *e ? atoi(e) : 0;      /* v309b: off by default (the screen ends before it) */
         if (v < 0) v = 0;
         if (v > 60) v = 60;
     }
@@ -1515,9 +1515,36 @@ void sub_0010EC10(void)
     sub_0010EC10_gen();
 }
 
+/* v309b (diagnostic): the cleared screen, story or picked. Each change of
+ * the mission object's state from the cleared screen's first step (0x18)
+ * until it leaves (an exit, 0x5D and up, or back to play), with the time,
+ * and the pad state the game reads meanwhile (recomp_manual.c). */
+extern volatile int g_xi_watch;
+static void clear_watch(uint32_t o, const char *when)
+{
+    static uint32_t last_o, last_st;
+    static DWORD t0;
+    uint32_t st;
+    if (!o) return;
+    st = MEM32(o + 0x5Cu);
+    if (o == last_o && st == last_st) return;
+    if (st >= 0x18u && st <= 0x1Du) {
+        if (!g_xi_watch) t0 = GetTickCount();
+        g_xi_watch = 1;
+    }
+    if (g_xi_watch || (st >= 0x18u && st <= 0x1Du))
+        fprintf(stderr, "[CLEARWATCH] t=%lu (+%lu ms) mission %u%02u state 0x%X -> 0x%X (%s)\n",
+                (unsigned long)GetTickCount(), (unsigned long)(GetTickCount() - t0),
+                MEM32(o + 0x4Cu) & 0xFFFFu, MEM32(o + 0x50u) & 0xFFFFu,
+                o == last_o ? last_st : 0u, st, when);
+    if (g_xi_watch && !(st >= 0x18u && st <= 0x1Du)) g_xi_watch = 0;
+    last_o = o; last_st = st;
+}
+
 void sub_00051FC0(void)
 {
     const uint32_t o = g_ecx;
+    clear_watch(o, "before its update");
     s_game_this = o;
     s_game_seen = s_seq_ticks;
     if (s_place_on || s_conv_on || s_skip_on) {
@@ -1540,6 +1567,7 @@ void sub_00051FC0(void)
         g_ecx = o;
     }
     sub_00051FC0_gen();
+    clear_watch(o, "after it");
     if (s_pick_live || s_sel_target) {
         const uint32_t a = g_eax, d = g_edx;
         pick_exit_check(o);
