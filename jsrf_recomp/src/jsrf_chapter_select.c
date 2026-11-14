@@ -170,9 +170,6 @@ static int s_pick_obj, s_pick_live;    /* it has an objective; its end goes to t
 static unsigned s_sel_target;          /* v281: the pick, after the character select (0 none) */
 static int s_pick_seen;                /* v285b: the picked mission has run */
 static int s_pick_cleared;             /* v289: it has been cleared */
-static uint32_t s_clear_tick;          /* v309: when (sequence steps) */
-static uint32_t s_run_st;              /* v309: the state the mission ran in */
-static int s_exit_held;                /* v309: its exit is being put off */
 static uint32_t s_tm_obj;              /* v300: the timer's mission object */
 
 static int chs_on(void)
@@ -186,8 +183,6 @@ static int chs_on(void)
         s_pick_live = s_pick_obj;
         s_pick_seen = 0;
         s_pick_cleared = 0;
-        s_run_st = 0;                   /* v309 */
-        s_exit_held = 0;
         s_tm_obj = 0;                   /* v300: the timer from 0 */
         g_xbox_timer[0] = 0;
         g_xbox_timer_big = 0;
@@ -1104,41 +1099,10 @@ static void cleared_tick(uint32_t o)
         for (k = 0; k < cc && k < 32u && ok; k++) ok = (uint32_t)flag_holds(MEM32(co + 4u * k));
         if (ok) {
             s_pick_cleared = 1;
-            s_clear_tick = s_seq_ticks;         /* v309 */
             fprintf(stderr, "[MISSION-SELECT] mssn%04u cleared\n", s_pick);
             return;
         }
     }
-}
-
-/* v309: the cleared screen held. A picked mission's exit after its clear
- * went straight back to the title, cutting the cleared screen (and the
- * game's fade, which the exit starts) about two seconds in. Now an exit
- * that comes sooner than RECOMP_CLEAR_HOLD seconds (default 6; 0 off)
- * after the clear is put off: the mission object goes back to the state it
- * was running in, and once the time is up the pick ends as before. */
-static uint32_t clear_hold_ticks(void)
-{
-    static int v = -1;
-    if (v < 0) {
-        const char *e = getenv("RECOMP_CLEAR_HOLD");
-        v = e && *e ? atoi(e) : 0;      /* v309b: off by default (the screen ends before it) */
-        if (v < 0) v = 0;
-        if (v > 60) v = 60;
-    }
-    return (uint32_t)v * 60u;
-}
-static int exit_put_off(uint32_t o, uint32_t st)
-{
-    const uint32_t hold = clear_hold_ticks();
-    if (!s_pick_cleared || !hold || !s_run_st || s_seq_ticks - s_clear_tick >= hold)
-        return 0;
-    if (!s_exit_held)
-        fprintf(stderr, "[MISSION-SELECT] mssn%04u: the exit (state 0x%X) put off, the cleared screen"
-                " stays %.1f s more\n", s_pick, st, (double)(hold - (s_seq_ticks - s_clear_tick)) / 60.0);
-    s_exit_held = 1;
-    MEM32(o + 0x5Cu) = s_run_st;
-    return 1;
 }
 
 static void pick_exit_check(uint32_t o)
@@ -1146,18 +1110,6 @@ static void pick_exit_check(uint32_t o)
     uint32_t st, tgt;
     if (!o) return;
     st = MEM32(o + 0x5Cu);
-    if (s_pick_live && st < 0x5Du && !s_exit_held) s_run_st = st;   /* v309 */
-    if (s_pick_live && s_exit_held && !exit_put_off(o, 0x5Du)) {
-        /* v309: the hold is over: end the pick as its exit would have */
-        fprintf(stderr, "[MISSION-SELECT] mssn%04u ended (after the cleared screen): back to the title\n",
-                s_pick);
-        s_exit_held = 0;
-        s_pick_live = 0;
-        var_set(VAR_NEXT, SEQ_TITLE);
-        MEM32(o + 0x5Cu) = GAME_END;
-        return;
-    }
-    if (s_exit_held) return;
     if (s_pick_live && !s_sel_target) {
         /* v285b: another mission running in its place without an exit we
          * saw (a cutscene that loads the next one, 0513 -> 0514) ends it */
@@ -1194,7 +1146,6 @@ static void pick_exit_check(uint32_t o)
     } else {
         tgt = 0;
     }
-    if (exit_put_off(o, st)) return;            /* v309 */
     fprintf(stderr, "[MISSION-SELECT] mssn%04u ended (state 0x%X, next %u): back to the title\n",
             s_pick, st, tgt);
     s_pick_live = 0;
@@ -1515,105 +1466,9 @@ void sub_0010EC10(void)
     sub_0010EC10_gen();
 }
 
-/* v309b (diagnostic): the cleared screen, story or picked. Each change of
- * the mission object's state from the cleared screen's first step (0x18)
- * until it leaves (an exit, 0x5D and up, or back to play), with the time,
- * and the pad state the game reads meanwhile (recomp_manual.c). */
-extern volatile int g_xi_watch;
-static void clear_watch(uint32_t o, const char *when)
-{
-    static uint32_t last_o, last_st;
-    static DWORD t0;
-    uint32_t st;
-    if (!o) return;
-    st = MEM32(o + 0x5Cu);
-    if (o == last_o && st == last_st) return;
-    if (st >= 0x18u && st <= 0x1Du) {
-        if (!g_xi_watch) t0 = GetTickCount();
-        g_xi_watch = 1;
-    }
-    if (g_xi_watch || (st >= 0x18u && st <= 0x1Du))
-        fprintf(stderr, "[CLEARWATCH] t=%lu (+%lu ms) mission %u%02u state 0x%X -> 0x%X (%s)\n",
-                (unsigned long)GetTickCount(), (unsigned long)(GetTickCount() - t0),
-                MEM32(o + 0x4Cu) & 0xFFFFu, MEM32(o + 0x50u) & 0xFFFFu,
-                o == last_o ? last_st : 0u, st, when);
-    if (g_xi_watch && !(st >= 0x18u && st <= 0x1Du)) g_xi_watch = 0;
-    last_o = o; last_st = st;
-}
-/* v309c (diagnostic): the game's own pad table (0x251DE8, 0x40 bytes a
- * player): the HUD's cleared object, once shown, ends when its player's
- * byte +0 has bit 0x04 (sub_00072990), or after 300 frames with its flag
- * 0x2000. Every change of the first 8 bytes and the connected word (+0x34)
- * of the four players while the cleared screen is up. */
-/* v309d/e (diagnostic): the HUD objects of the cleared screen -- ids
- * 0x115E..0x1161 in the object table at [0x22FCE0] +0x98 (the ones the
- * mission's step 0x1D asks, sub_00106F40 -> sub_00107AF0) -- with their mode
- * (+0x16F0) and +0x1700, and each one's cleared object (its +0x8C, class
- * 0x1CCB68: state +0x90, counter +0x94, flags +0x48, +0x44, +0xB0, children
- * +0xA8 / +0xAC), each change while the cleared screen is up */
-static void hud_watch(void)
-{
-    static uint32_t last[4][12];
-    uint32_t mgr = MEM32(0x0022FCE0u);
-    int k;
-    if (!mgr) return;
-    for (k = 0; k < 4; k++) {
-        uint32_t now[12], hud, cid, ch;
-        memset(now, 0, sizeof now);
-        hud = MEM32(mgr + 0x98u + (0x115Eu + (uint32_t)k) * 4u);
-        cid = hud ? MEM32(hud + 0x8Cu) : 0xFFFFFFFFu;
-        ch = (cid < 0x2000u) ? MEM32(mgr + 0x98u + cid * 4u) : 0;
-        now[0] = hud; now[1] = hud ? MEM32(hud + 0x16F0u) : 0; now[2] = hud ? MEM32(hud + 0x1700u) : 0;
-        now[3] = cid; now[4] = ch;
-        if (ch) {
-            now[5] = MEM32(ch + 0x90u); now[6] = MEM32(ch + 0x94u); now[7] = MEM32(ch + 0x48u);
-            now[8] = MEM32(ch + 0x44u); now[9] = MEM32(ch + 0xB0u);
-            now[10] = MEM32(ch + 0xA8u); now[11] = MEM32(ch + 0xACu);
-        }
-        if (ch && now[5] != last[k][5]) {
-            /* v309g: the pad its waiting state reads (sub_00072990): its
-             * player number +0xA0, that pad's pressed byte and connected word */
-            const uint32_t pl = MEM32(ch + 0xA0u);
-            fprintf(stderr, "[CLEARWATCH] t=%lu child state %u: player +A0 %d, its pressed byte %02X,"
-                    " connected %08X, +B8 %08X\n", (unsigned long)GetTickCount(), now[5], (int)pl,
-                    pl < 64u ? MEM8(0x00251DE8u + pl * 0x40u) : 0xEEu,
-                    pl < 64u ? MEM32(0x00251DE8u + 0x34u + pl * 0x40u) : 0xEEEEEEEEu, MEM32(ch + 0xB8u));
-        }
-        if (hud && memcmp(now, last[k], sizeof now)
-                && !(now[6] != last[k][6] && !memcmp(now, last[k], 6 * 4) && !memcmp(now + 7, last[k] + 7, 5 * 4)))
-            fprintf(stderr, "[CLEARWATCH] t=%lu hud %X at %08X mode %d +1700 %08X | child id %d at %08X:"
-                    " state %u count %u flags %08X +44 %08X +B0 %08X children %d %d\n",
-                    (unsigned long)GetTickCount(), 0x115Eu + (uint32_t)k, now[0], (int)now[1], now[2],
-                    (int)now[3], now[4], now[5], now[6], now[7], now[8], now[9], (int)now[10], (int)now[11]);
-        memcpy(last[k], now, sizeof now);
-    }
-}
-
-static void pad_watch(void)
-{
-    static uint8_t last[4][12];
-    int p, i;
-    if (!g_xi_watch) return;
-    hud_watch();
-    for (p = 0; p < 4; p++) {
-        uint8_t now[12];
-        const uint32_t b = 0x00251DE8u + 0x40u * (uint32_t)p;
-        for (i = 0; i < 8; i++) now[i] = MEM8(b + (uint32_t)i);
-        for (i = 0; i < 4; i++) now[8 + i] = MEM8(b + 0x34u + (uint32_t)i);
-        if (memcmp(now, last[p], sizeof now)) {
-            memcpy(last[p], now, sizeof now);
-            fprintf(stderr, "[CLEARWATCH] t=%lu game pad %d: %02X %02X %02X %02X %02X %02X %02X %02X"
-                    " connected %02X%02X%02X%02X\n", (unsigned long)GetTickCount(), p,
-                    now[0], now[1], now[2], now[3], now[4], now[5], now[6], now[7],
-                    now[11], now[10], now[9], now[8]);
-        }
-    }
-}
-
 void sub_00051FC0(void)
 {
     const uint32_t o = g_ecx;
-    clear_watch(o, "before its update");
     s_game_this = o;
     s_game_seen = s_seq_ticks;
     if (s_place_on || s_conv_on || s_skip_on) {
@@ -1636,8 +1491,6 @@ void sub_00051FC0(void)
         g_ecx = o;
     }
     sub_00051FC0_gen();
-    clear_watch(o, "after it");
-    pad_watch();
     if (s_pick_live || s_sel_target) {
         const uint32_t a = g_eax, d = g_edx;
         pick_exit_check(o);

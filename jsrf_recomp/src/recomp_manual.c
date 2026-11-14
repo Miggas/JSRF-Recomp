@@ -1891,7 +1891,6 @@ void sub_001BDE21(void)
     sub_001BDE21_gen();
 }
 
-volatile int g_xi_watch;               /* v309b: set by jsrf_chapter_select.c */
 void sub_001C3E14(void)
 {
     uint32_t h = MEM32(g_esp + 4), ps = MEM32(g_esp + 8);
@@ -1902,45 +1901,6 @@ void sub_001C3E14(void)
         fprintf(stderr, "[XINPUT] %u XInputGetState calls, %u XInputPoll calls, %u USB reports delivered; "
                         "last: rc %u packet %u buttons 0x%04X\n",
                 xi_get, xi_poll, xbox_OhciReportCount(), g_eax, MEM32(ps), MEM16(ps + 4));
-    }
-    if (g_xi_watch) {
-        /* v309f (diagnostic): the game's input as it stood after the last
-         * frame's update (sub_000659C0 builds it once a frame, after this
-         * call): player 0's raw buttons, pressed, released and re-armed bits
-         * (0x251DE0..0x251DEF) and the device state they come from (the
-         * 0xB0-byte block at [0x251D7C] +0x14: its POV at +0x34 and buttons
-         * at +0x44..+0x4F), on each change */
-        static uint32_t lastv[8];
-        uint32_t v[8], dev = MEM32(0x00251D7Cu);
-        const uint32_t tb = 0x00251DE8u - 8u;
-        v[0] = MEM32(tb); v[1] = MEM32(tb + 8u); v[2] = MEM32(tb + 12u); v[3] = MEM32(tb + 16u);
-        v[4] = dev ? MEM32(dev + 0x34u) : 0; v[5] = dev ? MEM32(dev + 0x44u) : 0;
-        v[6] = dev ? MEM32(dev + 0x48u) : 0; v[7] = dev ? MEM32(dev + 0x4Cu) : 0;
-        if (memcmp(v, lastv, sizeof v)) {
-            memcpy(lastv, v, sizeof v);
-            fprintf(stderr, "[CLEARWATCH] t=%lu game input: raw %08X pressed %08X released %08X armed %08X"
-                    " | device pov %08X buttons %08X %08X %08X\n", (unsigned long)GetTickCount(),
-                    v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
-        }
-    }
-    if (ps && g_xi_watch) {
-        /* v309b (diagnostic): during a cleared screen, every change of the
-         * whole pad state the game reads (buttons, the 8 analog buttons,
-         * both sticks), and the call count, to see what ends it */
-        static uint8_t last[18];
-        static unsigned calls;
-        uint8_t now[18];
-        int i;
-        calls++;
-        for (i = 0; i < 18; i++) now[i] = MEM8(ps + 4 + (uint32_t)i);
-        if (memcmp(now, last, sizeof now) || calls == 1) {
-            memcpy(last, now, sizeof now);
-            fprintf(stderr, "[CLEARWATCH] t=%lu pad 0x%08X call %u: buttons 0x%04X analog %u %u %u %u %u %u %u %u"
-                    " sticks %d %d %d %d\n", (unsigned long)GetTickCount(), h, calls, MEM16(ps + 4),
-                    now[2], now[3], now[4], now[5], now[6], now[7], now[8], now[9],
-                    (int)(int16_t)MEM16(ps + 12), (int)(int16_t)MEM16(ps + 14),
-                    (int)(int16_t)MEM16(ps + 16), (int)(int16_t)MEM16(ps + 18));
-        }
     }
     if (ps) {
         uint32_t b = MEM16(ps + 4) | ((uint32_t)MEM8(ps + 6) << 16);   /* wButtons, A */

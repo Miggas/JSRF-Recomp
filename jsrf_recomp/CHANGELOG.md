@@ -14,14 +14,18 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 ## v309 — 2026-11-14
 
 ### Fixed
+- The cleared screen ended about a second in, in the story and the mission
+  select, instead of waiting for A or START (US, Japanese and Sega GT 2002 +
+  JSRF releases; PAL never had it). The code analysis had cut the cleared
+  screen's "wait for a button" in two, losing the button check. Build
+  generates the code again.
 - Widescreen: the CLEARED sign sat too high and to the left on the cleared
   screen (v305's race-banner move now applies in races only).
 
 ### Developer
-- `[CLEARWATCH]` logs the cleared screen's steps and the pad state the game
-  reads meanwhile, to find why it ends after about 1.7 s.
-- `RECOMP_CLEAR_HOLD=<seconds>` holds a picked mission's exit after its clear
-  (off by default).
+- `tools/generate_code.py` folds starts that are not starts back into their
+  function (`DROP_STARTS`).
+- v309b-v309g were diagnostic builds (`[CLEARWATCH]`), taken out in v309h.
 
 ## v308 — 2026-11-14
 
