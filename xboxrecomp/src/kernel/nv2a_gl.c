@@ -5029,6 +5029,84 @@ static void standin_miss(const NvGlTexture *t, uint64_t h)
             t->width, t->height, t->color, t->levels, t->offset, (unsigned long long)h);
 }
 
+/* v310e: bigger stand-ins for textures uploaded decoded (any format but
+ * DXT), matched by the decoded texels (A8R8G8B8, row 0 first): the same
+ * pixels whatever format and swizzle the title made of them. */
+#define RGBA_STANDIN_MAX 16
+typedef struct {
+    uint64_t key;       /* hash_bytes of the small texels */
+    int sw, sh, w, h;
+    uint32_t *data;     /* w x h */
+    uint32_t used;
+    int hits;
+} RgbaStandIn;
+static RgbaStandIn s_rstandin[RGBA_STANDIN_MAX];
+static SDL_SpinLock s_rstandin_lock;
+static int s_rstandin_any;
+
+void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big, int w, int h)
+{
+    uint64_t key = hash_bytes((const uint8_t *)small, (size_t)sw * (size_t)sh * 4u);
+    uint32_t *copy = (uint32_t *)malloc((size_t)w * (size_t)h * 4u);
+    RgbaStandIn *e = NULL;
+    int i;
+    if (!copy)
+        return;
+    memcpy(copy, big, (size_t)w * (size_t)h * 4u);
+    SDL_AtomicLock(&s_rstandin_lock);
+    for (i = 0; i < RGBA_STANDIN_MAX; i++)
+        if (s_rstandin[i].data && s_rstandin[i].key == key) { e = &s_rstandin[i]; break; }
+    for (i = 0; !e && i < RGBA_STANDIN_MAX; i++)
+        if (!s_rstandin[i].data) e = &s_rstandin[i];
+    if (!e) {
+        e = &s_rstandin[0];
+        for (i = 1; i < RGBA_STANDIN_MAX; i++)
+            if (s_rstandin[i].used < e->used) e = &s_rstandin[i];
+    }
+    free(e->data);
+    e->key = key; e->sw = sw; e->sh = sh; e->w = w; e->h = h; e->data = copy; e->hits = 0;
+    e->used = ++s_standin_clock;
+    s_rstandin_any = 1;
+    SDL_AtomicUnlock(&s_rstandin_lock);
+}
+
+/* the decoded texels px of t: a stand-in for them uploaded, 1 */
+static int rgba_standin_upload(const NvGlTexture *t, const uint32_t *px)
+{
+    int i, done = 0, same = 0;
+    uint64_t key = 0;
+    static int missed;
+    if (!s_rstandin_any || t->cube || !t->normalised)
+        return 0;
+    SDL_AtomicLock(&s_rstandin_lock);
+    for (i = 0; i < RGBA_STANDIN_MAX; i++) {
+        RgbaStandIn *e = &s_rstandin[i];
+        if (!e->data || e->sw != (int)t->width || e->sh != (int)t->height)
+            continue;
+        if (!same) {
+            key = hash_bytes((const uint8_t *)px, (size_t)t->width * t->height * 4u);
+            same = 1;
+        }
+        if (e->key == key) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
+                         GL_UNSIGNED_INT_8_8_8_8_REV, e->data);
+            e->used = ++s_standin_clock;
+            if (e->hits++ < 2)
+                fprintf(stderr, "[GL] stand-in %dx%d used for texture %ux%u format 0x%02X at 0x%08X\n",
+                        e->w, e->h, t->width, t->height, t->color, t->offset);
+            done = 1;
+            break;
+        }
+    }
+    SDL_AtomicUnlock(&s_rstandin_lock);
+    if (same && !done && missed < 24) {
+        missed++;
+        fprintf(stderr, "[GL] stand-in not matched: texture %ux%u format 0x%02X at 0x%08X, texels %08X %08X\n",
+                t->width, t->height, t->color, t->offset, px[0], px[(size_t)t->width * t->height / 2 + t->width / 2]);
+    }
+    return done;
+}
+
 static uint64_t tex_hash(const NvGlTexture *t, const uint8_t *mem)
 {
     uint64_t h = hash_bytes(mem + t->offset, t->bytes);
@@ -5403,6 +5481,8 @@ static void bind_texture(int stage, const NvGlTexture *t)
                 for (f = 0; f < faces; f++) {
                     if (!nv2a_exec_decode_texture(stage, f, px))
                         memset(px, 0xFF, (size_t)t->width * t->height * 4);
+                    else if (!f && s_rstandin_any && rgba_standin_upload(t, px))
+                        continue;           /* v310e: a bigger one went up */
                     glTexImage2D(t->cube ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + f
                                          : GL_TEXTURE_2D,
                                  0, GL_RGBA8, (GLsizei)t->width,

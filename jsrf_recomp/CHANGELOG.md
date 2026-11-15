@@ -16,7 +16,7 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 ### Added
 - Bigger graffiti: a graffiti's `.prs` and `.grf` can be 2, 4 or 8 times as
   wide and tall (the mod tool's m16 makes them). Stages show the graffiti at
-  that detail; the graffiti select shows it at the game's size.
+  that detail, in the stages and the graffiti select.
   `RECOMP_HIRES_GRAFFITI=0` turns it off.
 
 ### Developer

@@ -40,6 +40,7 @@
 
 void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size);
 void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);
+void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big, int w, int h);
 
 #define SLOTS       0x001EE5A0u       /* 16 bytes a graffiti size */
 #define SHEET_PTR   0x00230DBCu       /* the sheet being packed */
@@ -235,7 +236,8 @@ void sub_0002D8D0(void)
  * which the menu takes for granted: a bigger one came out scrambled, in the
  * menu and on its wall. Now, once read, a .grf 2, 4 or 8 times its slot is
  * made that size again (k x k boxes averaged), its header and size with it.
- * (The menu only shows it small: no stand-in there.) */
+ * v310e: the big one goes to the renderer as the stand-in for the
+ * texture the menu makes of it, matched by its texels. */
 static int grf_size_class(uint32_t name_va)
 {
     char nm[96];
@@ -260,7 +262,7 @@ void sub_00038DF0(void)
     const uint32_t before = MEM32(obj + 0x1880u);
     uint32_t num, buf, have, sw, sh, w, h, idl, px, tail, nsz, x, y;
     int c, k;
-    uint8_t *p;
+    uint8_t *p, *big;
     sub_00038DF0_gen();
     if (!on() || before != 1u || MEM32(obj + 0x1880u) != 2u)
         return;
@@ -288,6 +290,9 @@ void sub_00038DF0(void)
         return;
     px = 18u + idl;
     tail = have - px - w * h * 4u;              /* a TGA footer, kept */
+    big = (uint8_t *)malloc((size_t)w * h * 4u);
+    if (big)
+        memcpy(big, p + px, (size_t)w * h * 4u);
     for (y = 0; y < sh; y++)                    /* in place: row y only reads rows >= y*k */
         for (x = 0; x < sw; x++) {
             uint32_t sum[4] = {0, 0, 0, 0}, i, j, q;
@@ -304,5 +309,22 @@ void sub_00038DF0(void)
     p[12] = (uint8_t)sw; p[13] = (uint8_t)(sw >> 8);
     p[14] = (uint8_t)sh; p[15] = (uint8_t)(sh >> 8);
     MEM32(obj + 0x17Cu) = nsz;
+    if (big) {
+        /* v310e: the big one for the renderer, as the texture's texels
+         * would be if the menu keeps the file's rows as they are, and
+         * turned over (TGA rows go bottom up) */
+        uint8_t *sf = (uint8_t *)malloc((size_t)sw * sh * 4u), *bf = (uint8_t *)malloc((size_t)w * h * 4u);
+        nv2a_gl_tex_standin_rgba(p + px, (int)sw, (int)sh, big, (int)w, (int)h);
+        if (sf && bf) {
+            for (y = 0; y < sh; y++)
+                memcpy(sf + (size_t)y * sw * 4u, p + px + (size_t)(sh - 1u - y) * sw * 4u, (size_t)sw * 4u);
+            for (y = 0; y < h; y++)
+                memcpy(bf + (size_t)y * w * 4u, big + (size_t)(h - 1u - y) * w * 4u, (size_t)w * 4u);
+            nv2a_gl_tex_standin_rgba(sf, (int)sw, (int)sh, bf, (int)w, (int)h);
+        }
+        free(sf);
+        free(bf);
+        free(big);
+    }
     fprintf(stderr, "[GRAFFITI] menu picture %u: %ux%u made %ux%u (x%d)\n", num, w, h, sw, sh, k);
 }
