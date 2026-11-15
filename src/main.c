@@ -57,7 +57,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m24"
+#define MODTOOL_VERSION "m25"
 
 /* ---- the files ---- */
 
@@ -2057,7 +2057,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             } else if (r == PAINT_SAVE) close_asked = 0;
         } else if (s_sel_file >= 0 && s_sel_tex >= 0 && s_sel_tex < s_cur.ntex) {
             const JTex *t = &s_cur.tex[s_sel_tex];
-            float avail = tex_w - 56, side = (float)wh - top - 9 * row - 40;
+            float avail = tex_w - 56, side = (float)wh - top - 8 * row - 40;   /* m25: a row less */
             float sz = avail < side ? avail : side;
             nk_layout_row_dynamic(ctx, row - 6, 1);
             nk_labelf(ctx, NK_TEXT_LEFT, "%s, texture %d", s_files[s_sel_file].rel, s_sel_tex);
@@ -2065,21 +2065,20 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                       t->levels == 1 ? "" : "s", t->alpha ? ", transparency" : "", t->swizzled ? ", swizzled" : "");
             nk_label_colored(ctx, s_cur_modded ? "Modded (original in mod_backups)" : "Original",
                              NK_TEXT_LEFT, s_cur_modded ? nk_rgb(240, 175, 30) : nk_rgb(150, 150, 160));
-            /* m5: two rows that share the narrower panel */
-            nk_layout_row_dynamic(ctx, row, 3);
+            /* m25: the buttons in one row (Miggas; m5 had two), short names
+             * when the panel is narrow (the 3D view beside it) */
+            const int narrow = tex_w < 640;
+            nk_layout_row_dynamic(ctx, row, s_cur_modded ? 5 : 4);
             if (nk_button_label(ctx, "Paint")) start_paint(ren);
-            if (nk_button_label(ctx, "Export PNG")) export_texture(s_sel_tex);
-            if (nk_button_label(ctx, "Import PNG")) import_texture(ren, s_sel_tex, NULL);
-            nk_layout_row_dynamic(ctx, row, 2);
-            if (nk_button_label(ctx, "Edits folder")) {
+            if (nk_button_label(ctx, narrow ? "Export" : "Export PNG")) export_texture(s_sel_tex);
+            if (nk_button_label(ctx, narrow ? "Import" : "Import PNG")) import_texture(ren, s_sel_tex, NULL);
+            if (nk_button_label(ctx, narrow ? "Folder" : "Edits folder")) {
                 char d[LPATH];
                 pjoin(d, s_game, "texture_edits");
                 make_dirs(d);
                 open_folder(d);
             }
-            if (s_cur_modded) {
-                if (nk_button_label(ctx, "Restore original")) revert_file(ren);
-            } else nk_spacing(ctx, 1);
+            if (s_cur_modded && nk_button_label(ctx, narrow ? "Restore" : "Restore original")) revert_file(ren);
             nk_layout_row_dynamic(ctx, row - 8, 1);
             nk_label_colored(ctx, "Import: the exported PNG, or drop an image here.", NK_TEXT_LEFT,
                              nk_rgb(150, 150, 160));
