@@ -52,7 +52,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m15"
+#define MODTOOL_VERSION "m16"
 
 /* ---- the files ---- */
 
@@ -1190,8 +1190,23 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
     free(b);
     if (!px) { snprintf(s_msg, sizeof s_msg, "%s isn't a PNG or TGA image.", in); return; }
     /* m2: a bigger texture (Miggas): square, 512, 1024, 2048 or 4096, in a
-     * .dat (graffiti keep their size: the game knows them by it) */
-    if ((w != t->w || h != t->h) && w == h && t->box && w > t->w
+     * .dat. m16: graffiti too, 2, 4 or 8 times as wide and tall (an
+     * experiment: their files don't say their size, the game may not read
+     * the bigger one) */
+    if (!t->box && t->hdr == (size_t)-1 && w > t->w && w % t->w == 0 && h % t->h == 0
+        && w / t->w == h / t->h && (w / t->w == 2 || w / t->w == 4 || w / t->w == 8) && w <= 4096 && h <= 4096) {
+        int ow = t->w, oh = t->h;
+        if (jt_grow_raw(&s_cur, k, w / t->w)) {
+            stbi_image_free(px);
+            snprintf(s_msg, sizeof s_msg, "Couldn't make room for a %dx%d graffiti: nothing changed.", w, h);
+            open_file(s_sel_file);
+            show_texture(ren, k);
+            return;
+        }
+        t = &s_cur.tex[k];
+        grown = 1;
+        snprintf(note, sizeof note, " (now %dx%d, was %dx%d: experimental)", w, h, ow, oh);
+    } else if ((w != t->w || h != t->h) && w == h && t->box && w > t->w
         && (w == 512 || w == 1024 || w == 2048 || w == 4096)) {
         int ow = t->w;
         if (jt_grow(&s_cur, k, w)) {
@@ -1209,7 +1224,8 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
         stbi_image_free(px);
         px = r;
         if (!t->box)
-            snprintf(note, sizeof note, " (resized from %dx%d: graffiti keep their size)", w, h);
+            snprintf(note, sizeof note, " (resized from %dx%d: a bigger graffiti must be 2, 4 or 8 times"
+                     " its size, up to 4096)", w, h);
         else if (w != h || w > 4096 || (w != 512 && w != 1024 && w != 2048 && w != 4096) || w < t->w)
             snprintf(note, sizeof note, " (resized from %dx%d: a bigger texture must be square, "
                      "512, 1024, 2048 or 4096)", w, h);
@@ -1229,7 +1245,8 @@ static void start_paint(SDL_Renderer *ren)
     if (!px || jt_decode(&s_cur, t, px) || paint_start(ren, px, t->w, t->h))
         snprintf(s_msg, sizeof s_msg, "Couldn't open the texture for painting.");
     else
-        paint_allow_resize(t->box && t->w == t->h ? 4096 : 0);   /* m4c: a .dat's (square) textures can grow */
+        paint_allow_resize((t->box && t->w == t->h) || (!t->box && t->hdr == (size_t)-1)
+                           ? 4096 : 0);   /* m4c: a .dat's (square) textures can grow; m16: graffiti too */
     free(px);
 }
 
@@ -1240,14 +1257,16 @@ static void save_paint(SDL_Renderer *ren)
     char note[64] = " (painted)";
     paint_size(&pw, &ph);
     if (pw != s_cur.tex[s_sel_tex].w) {     /* m4c: resized: the texture made that size first */
-        int ow = s_cur.tex[s_sel_tex].w;
-        if (jt_grow(&s_cur, s_sel_tex, pw)) {
+        int ow = s_cur.tex[s_sel_tex].w, oh = s_cur.tex[s_sel_tex].h;
+        const int raw = !s_cur.tex[s_sel_tex].box && s_cur.tex[s_sel_tex].hdr == (size_t)-1;   /* m16 */
+        if (raw ? jt_grow_raw(&s_cur, s_sel_tex, pw / ow) : jt_grow(&s_cur, s_sel_tex, pw)) {
             snprintf(s_msg, sizeof s_msg, "Couldn't make room for a %dx%d texture: nothing saved.", pw, ph);
             open_file(s_sel_file);
             pw = -1;
         } else {
             grown = 1;
-            snprintf(note, sizeof note, " (painted, now %dx%d, was %dx%d)", pw, ph, ow, ow);
+            snprintf(note, sizeof note, " (painted, now %dx%d, was %dx%d%s)", pw, ph, ow, oh,
+                     raw ? ": experimental" : "");
         }
     }
     if (pw > 0 && !store_texture(s_sel_tex, paint_image(), note)) {

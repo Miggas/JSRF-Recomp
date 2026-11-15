@@ -77,11 +77,18 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "grow") && argc == 7) {      /* grow FILE N SIZE PNG OUT */
         int n = atoi(argv[3]), sz = atoi(argv[4]), w, h, c;
         uint8_t *px;
-        if (jf_load(&f, argv[2]) || jt_grow(&f, n, sz)) { fprintf(stderr, "can't grow\n"); return 1; }
+        int raw, th;
+        if (jf_load(&f, argv[2]) || n < 0 || n >= f.ntex) { fprintf(stderr, "can't grow\n"); return 1; }
+        raw = !f.tex[n].box && f.tex[n].hdr == (size_t)-1;      /* m16: a graffiti: SIZE its new width */
+        th = raw ? f.tex[n].h * (sz / f.tex[n].w) : sz;
+        if (raw ? (sz % f.tex[n].w || jt_grow_raw(&f, n, sz / f.tex[n].w)) : jt_grow(&f, n, sz)) {
+            fprintf(stderr, "can't grow\n");
+            return 1;
+        }
         px = stbi_load(argv[5], &w, &h, &c, 4);
-        if (!px || w != sz || h != sz) { fprintf(stderr, "need a %dx%d image\n", sz, sz); return 1; }
+        if (!px || w != sz || h != th) { fprintf(stderr, "need a %dx%d image\n", sz, th); return 1; }
         if (jt_encode(&f, &f.tex[n], px) || jf_save(&f, argv[6])) { fprintf(stderr, "failed\n"); return 1; }
-        printf("%s: texture %d now %dx%d\n", argv[6], n, sz, sz);
+        printf("%s: texture %d now %dx%d\n", argv[6], n, sz, th);
         return 0;
     }
     fprintf(stderr, "bad arguments\n");

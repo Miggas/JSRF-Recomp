@@ -590,7 +590,7 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
     nk_label_colored(ctx, P.status, NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     nk_labelf(ctx, NK_TEXT_RIGHT, "%d x %d, %d%%", P.w, P.h, (int)(P.zoom * 100 + 0.5f));
     nk_layout_row_dynamic(ctx, row, 3);
-    {   /* m4c: integer scaling, x2 x4 x8, greyed past 4096 (or always, for graffiti) */
+    {   /* m4c: integer scaling, x2 x4 x8, greyed past 4096 (m16: graffiti too) */
         struct nk_rect r = nk_widget_bounds(ctx);
         if (!P.resize_max) nk_widget_disable_begin(ctx);
         if (nk_combo_begin_label(ctx, "Resize", nk_vec2(200, 4 * row + 10))) {
@@ -610,7 +610,7 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
         }
         if (!P.resize_max) {
             nk_widget_disable_end(ctx);
-            if (nk_input_is_mouse_hovering_rect(in, r)) nk_tooltip(ctx, "Graffiti keep their size");
+            if (nk_input_is_mouse_hovering_rect(in, r)) nk_tooltip(ctx, "Only square textures can be made bigger");
         }
     }
     if (nk_button_label(ctx, P.dirty ? "Save" : "Saved")) ret = PAINT_SAVE;
