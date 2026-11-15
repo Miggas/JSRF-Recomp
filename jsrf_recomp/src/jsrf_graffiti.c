@@ -231,7 +231,8 @@ void sub_0002D8D0(void)
 /* v310d: the graffiti select's pictures. sub_00038DF0 (a method of the
  * menu's loader, thiscall, no arguments) reads .grf number +0x187C of the
  * names at GRF_NAMES (A:\Media\Mark\TEX\grf_<size>_<nn>.grf and the like)
- * into a buffer (+0x1874, file size +0x17C), state +0x1880 0 -> 1 -> 2.
+ * into a buffer (+0x1874, file size +0x17C), state +0x1880 0 -> 1 -> 2
+ * (all in one call when the read ends at once, as it does here).
  * The .grf is a TGA (32 bits a pixel, uncompressed) of its slot's size,
  * which the menu takes for granted: a bigger one came out scrambled, in the
  * menu and on its wall. Now, once read, a .grf 2, 4 or 8 times its slot is
@@ -264,7 +265,7 @@ void sub_00038DF0(void)
     int c, k;
     uint8_t *p, *big;
     sub_00038DF0_gen();
-    if (!on() || before != 1u || MEM32(obj + 0x1880u) != 2u)
+    if (!on() || before == 2u || MEM32(obj + 0x1880u) != 2u)   /* v310f: 0 -> 2 in one call when the read is at once */
         return;
     num = MEM32(obj + 0x187Cu);
     buf = MEM32(obj + 0x1874u);
@@ -282,6 +283,8 @@ void sub_00038DF0(void)
     h = (uint32_t)(p[14] | p[15] << 8);
     sw = MEM32(SLOTS + (uint32_t)c * 16u + 8u) * 128u;
     sh = MEM32(SLOTS + (uint32_t)c * 16u + 12u) * 128u;
+    if (w != sw || h != sh)
+        fprintf(stderr, "[GRAFFITI] menu picture %u: %ux%u, file %u bytes, its slot %ux%u\n", num, w, h, have, sw, sh);
     if (!sw || !sh || w <= sw)
         return;
     for (k = 2; k <= 8; k *= 2)
