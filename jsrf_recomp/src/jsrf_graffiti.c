@@ -38,13 +38,28 @@
 #endif
 #include "gen/recomp_types.h"
 
+/* v310i: the lossless picture beside a .prs */
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size);
 void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);
 void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big, int w, int h);
+void nv2a_gl_tex_standin_bgra(const void *guest, size_t n, int w, int h, const void *bgra);
+void nv2a_gl_dxt3_decode(const void *src, int w, int h, void *bgra);
+#if defined(_WIN32)
+BOOL xbox_translate_path(const char *xbox_path, WCHAR *host_path_buf, DWORD buf_size);
+#else
+BOOL xbox_translate_path(const char *xbox_path, char *host_path_buf, DWORD buf_size);
+#endif
 
 #define SLOTS       0x001EE5A0u       /* 16 bytes a graffiti size */
 #define SHEET_PTR   0x00230DBCu       /* the sheet being packed */
 #define GRF_NAMES   0x001EF988u       /* the graffiti select's .grf files, by number */
+#define PRS_NAMES   0x001EE218u       /* the .prs files, by graffiti number */
 #define CUSTOM_OBJ  0x001EFFB0u       /* sub_0003A870's this: is this slot the player's own */
 #define RET_MARK    0x0007BDD0u       /* return address our own guest calls push */
 #define SHEET_PX    1024
@@ -53,6 +68,7 @@ void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big
 extern void sub_0002DA70_gen(void);
 extern void sub_0002D8D0_gen(void);
 extern void sub_0003A870(void);
+extern void sub_0003A820(void);
 extern void sub_00038DF0_gen(void);
 
 static int on(void)
@@ -70,7 +86,8 @@ static int on(void)
 typedef struct {
     int x, y, w, h;     /* the slot, in pixels of the game's sheet */
     int k;              /* how much bigger */
-    uint8_t *dxt;       /* (w * k) x (h * k), DXT3 */
+    uint8_t *dxt;       /* (w * k) x (h * k), DXT3, or NULL */
+    uint8_t *bgra;      /* v310i: or as well, from the .png beside the .prs: B8G8R8A8 */
 } Piece;
 static Piece s_p[MAXP];
 static int s_np;
@@ -78,7 +95,7 @@ static int s_np;
 static void pieces_clear(void)
 {
     int i;
-    for (i = 0; i < s_np; i++) free(s_p[i].dxt);
+    for (i = 0; i < s_np; i++) { free(s_p[i].dxt); free(s_p[i].bgra); }
     s_np = 0;
 }
 
@@ -130,6 +147,91 @@ static int slot_custom(uint32_t mgr)
     return r != 0;
 }
 
+/* the graffiti number of the slot about to be filled (sub_0003A820, the
+ * same call as sub_0003A870's) */
+static uint32_t slot_number(uint32_t mgr)
+{
+    uint32_t sv_ecx = g_ecx, r;
+    g_ecx = CUSTOM_OBJ;
+    PUSH32(g_esp, MEM32(mgr + 0x1890u));
+    PUSH32(g_esp, MEM32(mgr + 0x1898u));
+    PUSH32(g_esp, MEM32(mgr + 0x1894u));
+    PUSH32(g_esp, RET_MARK);
+    RECOMP_ABI_CALL(0x0003A820u, sub_0003A820);
+    r = g_eax;
+    g_ecx = sv_ecx;
+    return r;
+}
+
+/* v310i: the .png beside .prs number num (the mod tool writes it with a
+ * bigger graffiti: the picture before DXT3), if it is 2, 4 or 8 times
+ * sw x sh. B8G8R8A8, its times in *k. */
+static uint8_t *prs_png(uint32_t num, uint32_t sw, uint32_t sh, int *k)
+{
+    char xp[160];
+    uint32_t name = num < 4096u ? MEM32(PRS_NAMES + num * 4u) : 0u;
+    int i, n, w, h, c;
+    char *dot;
+    FILE *f = NULL;
+    uint8_t *file, *px;
+    long sz;
+    if (!name)
+        return NULL;
+    for (i = 0; i < (int)sizeof xp - 5; i++) {
+        xp[i] = (char)MEM8(name + (uint32_t)i);
+        if (!xp[i]) break;
+    }
+    xp[i] = 0;
+    dot = strrchr(xp, '.');
+    if (!dot || (dot[1] | 32) != 'p' || (dot[2] | 32) != 'r' || (dot[3] | 32) != 's' || dot[4])
+        return NULL;
+    strcpy(dot, ".png");
+    {
+#if defined(_WIN32)
+        WCHAR hp[1024];
+        if (xbox_translate_path(xp, hp, 1024)) f = _wfopen(hp, L"rb");
+#else
+        char hp[1024];
+        if (xbox_translate_path(xp, hp, (DWORD)sizeof hp)) f = fopen(hp, "rb");
+#endif
+    }
+    if (!f)
+        return NULL;
+    fseek(f, 0, SEEK_END);
+    sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    file = sz > 0 && sz < (64L << 20) ? (uint8_t *)malloc((size_t)sz) : NULL;
+    if (!file || fread(file, 1, (size_t)sz, f) != (size_t)sz) {
+        free(file);
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    px = stbi_load_from_memory(file, (int)sz, &w, &h, &c, 4);
+    free(file);
+    if (!px)
+        return NULL;
+    for (n = 2; n <= 8; n *= 2)
+        if ((uint32_t)w == sw * (uint32_t)n && (uint32_t)h == sh * (uint32_t)n) break;
+    if (n > 8) {
+        fprintf(stderr, "[GRAFFITI] %s is %dx%d, not 2, 4 or 8 times %ux%u: not used\n", xp, w, h, sw, sh);
+        stbi_image_free(px);
+        return NULL;
+    }
+    {
+        uint8_t *o = (uint8_t *)malloc((size_t)w * (size_t)h * 4u);
+        size_t j;
+        if (o)
+            for (j = 0; j < (size_t)w * (size_t)h; j++) {
+                o[j * 4] = px[j * 4 + 2]; o[j * 4 + 1] = px[j * 4 + 1];
+                o[j * 4 + 2] = px[j * 4]; o[j * 4 + 3] = px[j * 4 + 3];
+            }
+        stbi_image_free(px);
+        *k = n;
+        return o;
+    }
+}
+
 /* sub_0002DA70(size, band): thiscall on the manager, ret 8 */
 void sub_0002DA70(void)
 {
@@ -157,37 +259,117 @@ void sub_0002DA70(void)
                     size, band, sw, sh, sx, sy, have, need, buf);
         }
     }
-    if (!buf || !need || sx + sw > SHEET_PX || sy + sh > SHEET_PX || have <= need) {
+    if (!buf || !need || sx + sw > SHEET_PX || sy + sh > SHEET_PX || have < need || s_np >= MAXP
+            || slot_custom(mgr)) {
         sub_0002DA70_gen();
         return;
     }
     for (k = 2; k <= 8; k *= 2)
         if (have == need * (uint32_t)(k * k)) break;
-    if (k > 8 || slot_custom(mgr)) {
-        sub_0002DA70_gen();
-        return;
-    }
     {
-        /* keep the big one; the game's copy made small, in place */
-        uint8_t *big = (uint8_t *)malloc(have);
-        uint8_t *small = (uint8_t *)malloc(need);
-        if (big && small && s_np < MAXP) {
-            memcpy(big, (const uint8_t *)XBOX_PTR(buf), have);
-            nv2a_gl_dxt3_shrink(big, (int)sw * k, (int)sh * k, k, small);
-            memcpy((uint8_t *)XBOX_PTR(buf), small, need);
-            s_p[s_np].x = (int)sx; s_p[s_np].y = (int)sy;
-            s_p[s_np].w = (int)sw; s_p[s_np].h = (int)sh;
-            s_p[s_np].k = k;
-            s_p[s_np].dxt = big;
-            s_np++;
-            fprintf(stderr, "[GRAFFITI] a %ux%u graffiti for the %ux%u slot at %u,%u (x%d)\n",
-                    sw * (uint32_t)k, sh * (uint32_t)k, sw, sh, sx, sy, k);
-            big = NULL;
+        int pk = 0;
+        uint8_t *png = prs_png(slot_number(mgr), sw, sh, &pk);
+        uint8_t *big = NULL;
+        if (k <= 8) {
+            /* keep the big one; the game's copy made small, in place */
+            uint8_t *small = (uint8_t *)malloc(need);
+            big = (uint8_t *)malloc(have);
+            if (big && small) {
+                memcpy(big, (const uint8_t *)XBOX_PTR(buf), have);
+                nv2a_gl_dxt3_shrink(big, (int)sw * k, (int)sh * k, k, small);
+                memcpy((uint8_t *)XBOX_PTR(buf), small, need);
+            } else {
+                free(big);
+                big = NULL;
+            }
+            free(small);
         }
-        free(big);
-        free(small);
+        if (big || png) {
+            Piece *p = &s_p[s_np++];
+            p->x = (int)sx; p->y = (int)sy; p->w = (int)sw; p->h = (int)sh;
+            p->dxt = big && (!png || pk == k) ? big : NULL;
+            if (big && !p->dxt) free(big);
+            p->bgra = png;
+            p->k = png ? pk : k;
+            fprintf(stderr, "[GRAFFITI] a %ux%u graffiti for the %ux%u slot at %u,%u (x%d%s)\n",
+                    sw * (uint32_t)p->k, sh * (uint32_t)p->k, sw, sh, sx, sy, p->k,
+                    png ? ", lossless from its .png" : "");
+        }
     }
     sub_0002DA70_gen();
+}
+
+/* the big sheet, DXT3, from the game's (g) and the pieces with DXT3 */
+static void sheet_dxt(const uint8_t *g, int k)
+{
+    size_t pitch = (size_t)SHEET_PX * (size_t)k / 4u * 16u;
+    uint8_t *big = (uint8_t *)malloc(pitch * (size_t)(SHEET_PX * k / 4));
+    int i, row;
+    if (!big)
+        return;
+    dxt_up(g, SHEET_PX, SHEET_PX, k, big, pitch);
+    for (i = 0; i < s_np; i++) {
+        const Piece *p = &s_p[i];
+        int f = k / p->k;
+        uint8_t *at = big + (size_t)(p->y * k / 4) * pitch + (size_t)(p->x * k / 4) * 16u;
+        if (!p->dxt)
+            continue;
+        if (f == 1) {
+            size_t rb = (size_t)(p->w * p->k / 4) * 16u;
+            for (row = 0; row < p->h * p->k / 4; row++)
+                memcpy(at + (size_t)row * pitch, p->dxt + (size_t)row * rb, rb);
+        } else {
+            dxt_up(p->dxt, p->w * p->k, p->h * p->k, f, at, pitch);
+        }
+    }
+    nv2a_gl_tex_standin(g, SHEET_BYTES, SHEET_PX * k, SHEET_PX * k, big, pitch * (size_t)(SHEET_PX * k / 4));
+    free(big);
+}
+
+/* v310i: the big sheet uncompressed, when a piece has its .png: the game's
+ * sheet decoded and spread out, the pieces over it (their .png, else their
+ * DXT3 decoded) */
+static void sheet_bgra(const uint8_t *g, int k)
+{
+    const size_t W = (size_t)SHEET_PX * (size_t)k;
+    uint32_t *small = (uint32_t *)malloc((size_t)SHEET_PX * SHEET_PX * 4u);
+    uint32_t *big = (uint32_t *)malloc(W * W * 4u);
+    size_t x, y;
+    int i;
+    if (!small || !big) {
+        free(small);
+        free(big);
+        sheet_dxt(g, k);
+        return;
+    }
+    nv2a_gl_dxt3_decode(g, SHEET_PX, SHEET_PX, small);
+    for (y = 0; y < W; y++) {
+        const uint32_t *src = small + (y / (size_t)k) * SHEET_PX;
+        uint32_t *dst = big + y * W;
+        for (x = 0; x < W; x++) dst[x] = src[x / (size_t)k];
+    }
+    for (i = 0; i < s_np; i++) {
+        const Piece *p = &s_p[i];
+        const size_t pw = (size_t)(p->w * p->k), ph = (size_t)(p->h * p->k);
+        const int f = k / p->k;
+        uint32_t *pic = (uint32_t *)p->bgra, *dec = NULL;
+        if (!pic && p->dxt) {
+            dec = (uint32_t *)malloc(pw * ph * 4u);
+            if (dec) nv2a_gl_dxt3_decode(p->dxt, (int)pw, (int)ph, dec);
+            pic = dec;
+        }
+        if (!pic)
+            continue;
+        for (y = 0; y < ph * (size_t)f; y++) {
+            uint32_t *dst = big + ((size_t)p->y * (size_t)k + y) * W + (size_t)p->x * (size_t)k;
+            const uint32_t *src = pic + (y / (size_t)f) * pw;
+            for (x = 0; x < pw * (size_t)f; x++) dst[x] = src[x / (size_t)f];
+        }
+        free(dec);
+    }
+    nv2a_gl_tex_standin_bgra(g, SHEET_BYTES, (int)W, (int)W, big);
+    free(small);
+    free(big);
 }
 
 /* sub_0002D8D0: the finished sheet written to the cache drive (thiscall,
@@ -197,32 +379,18 @@ void sub_0002D8D0(void)
     uint32_t sheet = MEM32(SHEET_PTR);
     if (on() && s_np && sheet) {
         const uint8_t *g = (const uint8_t *)XBOX_PTR(sheet);
-        int k = 1, i;
-        uint8_t *big;
-        size_t pitch;
-        for (i = 0; i < s_np; i++) if (s_p[i].k > k) k = s_p[i].k;
-        pitch = (size_t)SHEET_PX * (size_t)k / 4u * 16u;
-        big = (uint8_t *)malloc(pitch * (size_t)(SHEET_PX * k / 4));
-        if (big) {
-            dxt_up(g, SHEET_PX, SHEET_PX, k, big, pitch);
-            for (i = 0; i < s_np; i++) {
-                const Piece *p = &s_p[i];
-                int f = k / p->k, row;
-                uint8_t *at = big + (size_t)(p->y * k / 4) * pitch + (size_t)(p->x * k / 4) * 16u;
-                if (f == 1) {
-                    size_t rb = (size_t)(p->w * p->k / 4) * 16u;
-                    for (row = 0; row < p->h * p->k / 4; row++)
-                        memcpy(at + (size_t)row * pitch, p->dxt + (size_t)row * rb, rb);
-                } else {
-                    dxt_up(p->dxt, p->w * p->k, p->h * p->k, f, at, pitch);
-                }
-            }
-            nv2a_gl_tex_standin(g, SHEET_BYTES, SHEET_PX * k, SHEET_PX * k, big,
-                                pitch * (size_t)(SHEET_PX * k / 4));
-            fprintf(stderr, "[GRAFFITI] sheet %u: %d bigger graffiti, %dx%d (the game's at 0x%08X)\n",
-                    MEM32(g_ecx + 0x1890u), s_np, SHEET_PX * k, SHEET_PX * k, sheet);
-            free(big);
+        int k = 1, i, lossless = 0;
+        for (i = 0; i < s_np; i++) {
+            if (s_p[i].k > k) k = s_p[i].k;
+            lossless |= s_p[i].bgra != NULL;
         }
+        if (lossless && k <= 4)
+            sheet_bgra(g, k);
+        else
+            sheet_dxt(g, k);
+        fprintf(stderr, "[GRAFFITI] sheet %u: %d bigger graffiti, %dx%d%s (the game's at 0x%08X)\n",
+                MEM32(g_ecx + 0x1890u), s_np, SHEET_PX * k, SHEET_PX * k,
+                lossless && k <= 4 ? ", uncompressed" : "", sheet);
     }
     pieces_clear();
     sub_0002D8D0_gen();

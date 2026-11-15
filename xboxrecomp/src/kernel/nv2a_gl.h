@@ -245,6 +245,10 @@ void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *
  * found inside a bigger texture, that texture goes up as many times bigger
  * with `big` over it (v310h). Copied. */
 void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big, int w, int h);
+/* v310i: the same, the stand-in uncompressed (w x h B8G8R8A8, mips made
+ * from it); and DXT3 (w x h) decoded to B8G8R8A8. */
+void nv2a_gl_tex_standin_bgra(const void *guest, size_t n, int w, int h, const void *bgra);
+void nv2a_gl_dxt3_decode(const void *src, int w, int h, void *bgra);
 /* src (w x h, DXT3) made k times smaller (k x k boxes averaged) into dst. */
 void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);
 

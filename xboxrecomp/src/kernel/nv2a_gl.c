@@ -4735,6 +4735,7 @@ typedef struct {
     uint32_t src_draws;  /* ...as of this many draws into it */
     int      comp;       /* v80: uploaded as S3TC with the guest's mip chain */
     int      nlev;       /* ...this many levels of it */
+    int      standin;    /* v310i: a bigger stand-in went up: mips whatever the filter */
     GLint    p_maxlev;   /* GL_TEXTURE_MAX_LEVEL last set (GL default 1000) */
     XboxGwMark wm, wmp;  /* v117: write-watch over its bytes and its palette */
     uint32_t w_dirty_frame, w_ban;   /* ...last frame it reported a write; off until */
@@ -4912,6 +4913,7 @@ typedef struct {
     int w, h, nlev;     /* the biggest level; how many levels above the guest's */
     uint8_t *lev[STANDIN_LEV];
     size_t lsz[STANDIN_LEV];
+    int rgba;           /* v310i: lev[0] is w x h B8G8R8A8, nothing compressed */
     uint32_t used;      /* for throwing out the oldest */
     int hits;
 } StandIn;
@@ -4926,6 +4928,8 @@ static void standin_free(StandIn *e)
     for (i = 0; i < e->nlev; i++) free(e->lev[i]);
     e->nlev = 0;
 }
+
+static void standin_put(StandIn *ne);
 
 void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size)
 {
@@ -4951,6 +4955,15 @@ void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *
     }
     if (!ne.nlev)
         return;
+    standin_put(&ne);
+}
+
+static void standin_put(StandIn *ne_)
+{
+    StandIn ne = *ne_, *e = NULL;
+    uint64_t key = ne.key;
+    size_t n = ne.n;
+    int i, w = ne.w, h = ne.h;
     SDL_AtomicLock(&s_standin_lock);
     for (i = 0; i < STANDIN_MAX; i++)
         if (s_standin[i].nlev && s_standin[i].key == key && s_standin[i].n == n) { e = &s_standin[i]; break; }
@@ -4966,12 +4979,44 @@ void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *
     e->used = ++s_standin_clock;
     s_standin_any = 1;
     SDL_AtomicUnlock(&s_standin_lock);
-    fprintf(stderr, "[GL] stand-in %dx%d (%d levels) for a %u-byte texture (%016llX)\n", w, h,
-            ne.nlev, (unsigned)n, (unsigned long long)key);
+    fprintf(stderr, "[GL] stand-in %dx%d (%s) for a %u-byte texture (%016llX)\n", w, h,
+            ne.rgba ? "uncompressed" : ne.nlev > 1 ? "with mips" : "one level", (unsigned)n,
+            (unsigned long long)key);
+}
+
+void nv2a_gl_tex_standin_bgra(const void *guest, size_t n, int w, int h, const void *bgra)
+{
+    StandIn ne;
+    memset(&ne, 0, sizeof ne);
+    ne.key = hash_bytes((const uint8_t *)guest, n);
+    ne.n = n; ne.w = w; ne.h = h; ne.rgba = 1;
+    ne.lsz[0] = (size_t)w * (size_t)h * 4u;
+    ne.lev[0] = (uint8_t *)malloc(ne.lsz[0]);
+    if (!ne.lev[0])
+        return;
+    memcpy(ne.lev[0], bgra, ne.lsz[0]);
+    ne.nlev = 1;
+    standin_put(&ne);
+}
+
+void nv2a_gl_dxt3_decode(const void *src, int w, int h, void *bgra)
+{
+    const uint8_t *b = (const uint8_t *)src;
+    uint8_t *o = (uint8_t *)bgra, px[16][4];
+    int bx, by, i;
+    for (by = 0; by < h / 4; by++)
+        for (bx = 0; bx < w / 4; bx++, b += 16) {
+            dxt3_dec(b, px);
+            for (i = 0; i < 16; i++) {
+                uint8_t *q = o + ((size_t)(by * 4 + i / 4) * (size_t)w + (size_t)(bx * 4 + (i & 3))) * 4u;
+                q[0] = px[i][2]; q[1] = px[i][1]; q[2] = px[i][0]; q[3] = px[i][3];
+            }
+        }
 }
 
 /* The stand-in for t (its level 0's hash h): its own levels, then the
- * guest's chain from mem. How many levels went up, or 0. */
+ * guest's chain from mem. How many levels went up, or 0; -1 for one
+ * uncompressed level (v310i). */
 static int standin_upload(const NvGlTexture *t, const uint8_t *mem, uint64_t h, GLenum cfmt,
                           uint32_t block)
 {
@@ -4981,6 +5026,16 @@ static int standin_upload(const NvGlTexture *t, const uint8_t *mem, uint64_t h, 
     SDL_AtomicLock(&s_standin_lock);
     for (i = 0; i < STANDIN_MAX; i++) {
         StandIn *e = &s_standin[i];
+        if (e->nlev && e->key == h && e->n == t->bytes && e->rgba) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
+                         GL_UNSIGNED_INT_8_8_8_8_REV, e->lev[0]);
+            e->used = ++s_standin_clock;
+            if (e->hits++ < 3)
+                fprintf(stderr, "[GL] stand-in %dx%d (uncompressed) used for texture %ux%u at 0x%08X\n",
+                        e->w, e->h, t->width, t->height, t->offset);
+            n = -1;
+            break;
+        }
         if (e->nlev && e->key == h && e->n == t->bytes) {
             uint32_t lv, levels = t->levels ? t->levels : 1, w = t->width, hh = t->height;
             uint32_t off = t->offset, limit = t->offset + 2u * t->bytes;
@@ -5341,7 +5396,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
         e->pitch = t->pitch; e->bytes = t->bytes;
         e->hash = 0; e->checked_frame = 0; e->mips = -1; e->rewritten = 0;
         e->alloc = 0; e->from_gpu = 0; e->src_fbo = 0; e->src_draws = 0;
-        e->comp = 0; e->nlev = 0;
+        e->comp = 0; e->nlev = 0; e->standin = 0;
         e->wm.ok = e->wmp.ok = 0; e->w_streak = 0; e->w_ban = 0;
     }
     s_tex_hint[hk] = (uint16_t)(e - s_tex + 1);
@@ -5496,19 +5551,23 @@ static void bind_texture(int stage, const NvGlTexture *t)
                 fprintf(stderr, "[GL] DXT textures uploaded %s\n",
                         s_dxt_ok ? "compressed (S3TC)" : "decoded on the CPU");
             }
+            e->standin = 0;
             if (s_standin_any)
                 standin_miss(t, h);
             if (cfmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT && s_dxt_ok && !t->cube && !t->palette
                     && !(t->width & 3) && !(t->height & 3)
-                    && (e->nlev = standin_upload(t, mem, h, cfmt, block)) > 0) {
-                /* v310: a bigger stand-in (nv2a_gl_tex_standin) */
-                e->comp = 1;
+                    && (e->nlev = standin_upload(t, mem, h, cfmt, block)) != 0) {
+                /* v310: a bigger stand-in (nv2a_gl_tex_standin); v310i: an
+                 * uncompressed one gets mips from level 0, as any other */
+                e->comp = e->nlev > 0;
+                if (e->nlev < 0) e->nlev = 0;
+                e->standin = 1;
                 e->hash = h;
                 e->mips = -1;
                 e->alloc = 1;
                 e->from_gpu = 0;
                 s_n_texup++;
-                s_n_texcomp++;
+                s_n_texcomp += e->comp;
                 s_tm[3] += TM_NOW() - t0;
                 goto uploaded;
             }
@@ -5584,6 +5643,12 @@ uploaded:
     linear = (mag == 2 || min == 2 || min == 4 || min == 6);
     mips = (min >= 3 && min <= 6) && !(t->width & (t->width - 1))
         && !(t->height & (t->height - 1)) && t->normalised;
+    if (e->standin && min == 2 && t->normalised) {
+        /* v310i: a stand-in is bigger than the guest's texture, so the
+         * game's plain linear filter would shimmer: trilinear over its mips */
+        mips = 1;
+        min = 6;
+    }
     if (e->comp) {
         /* the guest's chain: only as many levels as it has, and with one
          * level no mip filter at all (what the NV2A does: LOD clamps to the
