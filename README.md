@@ -6,7 +6,7 @@ An edited file is changed in place in the game folder. Before its first change, 
 
 ## Use
 
-1. **Choose...** the game folder: the one with `default.xbe` and `Media`. Put the tool in the JSRF launcher's folder and it uses the launcher's game folder by itself (the one set in Play, else `jsrf/` beside the launcher). The tool looks through `Media` and lists every file with textures, in tabs: Characters (by their names in the game), Graffiti (in sections SS, S, M, L and XL: `grf_0_` to `grf_4_`, one entry a graffiti, by its number, its thumbnail at the right of its box), Stages, Objects, Cutscenes, Menus & HUD (the graffiti editor's files among them), each in collapsible sections, closed at first. The graffiti sheets (`Mark/PRESS`) aren't listed.
+1. **Choose...** the game folder: the one with `default.xbe` and `Media`. Put the tool in the JSRF launcher's folder and it uses the launcher's game folder by itself (the one set in Play, else `jsrf/` beside the launcher). The tool looks through `Media` and lists every file with textures, in tabs: Characters (by their names in the game), Graffiti (in sections SS, S, M, L and XL: `grf_0_` to `grf_4_`, one entry a graffiti, by its number, its thumbnail at the right of its box; then the rivals' graffiti in Rokkaku Police (`rpolice_`) and Golden Rhinos (`sai_`), by size), Stages, Objects, Cutscenes, Menus & HUD (the graffiti editor's files among them), each in collapsible sections, closed at first. The graffiti sheets (`Mark/PRESS`) aren't listed.
 2. Pick a file, then one of its textures.
 3. **Export PNG** saves it to `texture_edits/` in the game folder (**Open edits folder** opens it).
 4. Edit the PNG in any image editor and save it under the same name. Transparency is kept.

@@ -57,7 +57,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m23"
+#define MODTOOL_VERSION "m24"
 
 /* ---- the files ---- */
 
@@ -164,6 +164,24 @@ static void classify(Entry *e)
                     if (is_file(g)) e->cat = CAT_OTHER;
                 }
                 snprintf(e->label, sizeof e->label, "#%.*s", nl, base + 6);
+            }
+        } else if ((!SDL_strncasecmp(base, "rpolice_", 8) || !SDL_strncasecmp(base, "sai_", 4))
+                   && strchr(base, '_')[1] >= '0' && strchr(base, '_')[1] <= '9') {
+            /* m24: the rivals' graffiti (Miggas): rpolice_<size>_.. the
+             * Rokkaku Police's, sai_<size>_.. the Golden Rhinos'; the size
+             * as the player's, the other number nothing: one entry each (its
+             * .grf, its .prs following it), shown by its size */
+            const int police = !SDL_strncasecmp(base, "rpolice_", 8);
+            const char *dot = strrchr(base, '.');
+            int sz = atoi(strchr(base, '_') + 1);
+            e->sec = police ? 5 : 6;
+            snprintf(e->secname, sizeof e->secname, "%s", police ? "Rokkaku Police" : "Golden Rhinos");
+            snprintf(e->label, sizeof e->label, "%s", sz >= 0 && sz <= 4 ? graf[sz] : "?");
+            if (dot && !SDL_strcasecmp(dot, ".prs")) {
+                char g[LPATH], gr[512];
+                snprintf(gr, sizeof gr, "%.*s.grf", (int)(dot - e->rel), e->rel);
+                game_path(g, gr);
+                if (is_file(g)) e->cat = CAT_OTHER;
             }
         } else {
             e->sec = 9;
@@ -1705,6 +1723,8 @@ static int cmp_view(const void *a, const void *b)
     if (x->cat != y->cat) return x->cat - y->cat;
     if (x->sec != y->sec) return x->sec - y->sec;
     if ((c = SDL_strcasecmp(x->secname, y->secname))) return c;
+    if (x->cat == CAT_GRAF && (x->sec == 5 || x->sec == 6))
+        return SDL_strcasecmp(x->rel, y->rel);      /* m24: the rivals' by size (their file names) */
     return SDL_strcasecmp(x->label, y->label);
 }
 
@@ -1852,9 +1872,9 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                     const Entry *e = &s_files[view[q]];
                     char lb[160];
                     int sel = view[q] == s_sel_file;
-                    const Thumb *th = e->cat == CAT_GRAF && e->sec <= 4 ? thumb_get(ren, e->rel) : NULL;
+                    const Thumb *th = e->cat == CAT_GRAF && e->sec <= 6 ? thumb_get(ren, e->rel) : NULL;
                     struct nk_rect tb = nk_rect(0, 0, 0, 0);
-                    if (e->cat == CAT_GRAF && e->sec <= 4) {      /* m22: its number, its thumbnail inside the box at the right */
+                    if (e->cat == CAT_GRAF && e->sec <= 6) {      /* m22: its number, its thumbnail inside the box at the right (m24: the rivals' too) */
                         nk_layout_row_dynamic(ctx, (float)THUMB_H + 6, 1);
                         tb = nk_widget_bounds(ctx);
                         snprintf(lb, sizeof lb, "%s", e->label);
