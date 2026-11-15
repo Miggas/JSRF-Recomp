@@ -241,7 +241,9 @@ void nv2a_gl_times(uint64_t t[4], uint64_t *freq);
 void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size);
 /* v310e: the same for a texture uploaded decoded (any format but DXT):
  * when its texels, decoded to A8R8G8B8 row 0 first, are `small` (sw x sh),
- * `big` (w x h, the same layout) goes to the GPU instead. Copied. */
+ * `big` (w x h, the same layout) goes to the GPU instead; when `small` is
+ * found inside a bigger texture, that texture goes up as many times bigger
+ * with `big` over it (v310h). Copied. */
 void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big, int w, int h);
 /* src (w x h, DXT3) made k times smaller (k x k boxes averaged) into dst. */
 void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);

@@ -5037,6 +5037,7 @@ typedef struct {
     uint64_t key;       /* hash_bytes of the small texels */
     int sw, sh, w, h;
     uint32_t *data;     /* w x h */
+    uint32_t *small;    /* sw x sh: v310h, looked for inside bigger textures */
     uint32_t used;
     int hits;
 } RgbaStandIn;
@@ -5048,11 +5049,16 @@ void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big
 {
     uint64_t key = hash_bytes((const uint8_t *)small, (size_t)sw * (size_t)sh * 4u);
     uint32_t *copy = (uint32_t *)malloc((size_t)w * (size_t)h * 4u);
+    uint32_t *scopy = (uint32_t *)malloc((size_t)sw * (size_t)sh * 4u);
     RgbaStandIn *e = NULL;
     int i;
-    if (!copy)
+    if (!copy || !scopy || sw < 8 || sh < 8 || w % sw || h % sh || w / sw != h / sh) {
+        free(copy);
+        free(scopy);
         return;
+    }
     memcpy(copy, big, (size_t)w * (size_t)h * 4u);
+    memcpy(scopy, small, (size_t)sw * (size_t)sh * 4u);
     SDL_AtomicLock(&s_rstandin_lock);
     for (i = 0; i < RGBA_STANDIN_MAX; i++)
         if (s_rstandin[i].data && s_rstandin[i].key == key) { e = &s_rstandin[i]; break; }
@@ -5064,73 +5070,118 @@ void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big
             if (s_rstandin[i].used < e->used) e = &s_rstandin[i];
     }
     free(e->data);
-    e->key = key; e->sw = sw; e->sh = sh; e->w = w; e->h = h; e->data = copy; e->hits = 0;
+    free(e->small);
+    e->key = key; e->sw = sw; e->sh = sh; e->w = w; e->h = h; e->data = copy; e->small = scopy; e->hits = 0;
     e->used = ++s_standin_clock;
     s_rstandin_any = 1;
     SDL_AtomicUnlock(&s_rstandin_lock);
 }
 
-/* v310g: a texture the size of an RGBA stand-in's small one going up,
- * whatever way: logged (the first 24), to see what the title made of it */
-static void rgba_standin_seen(const NvGlTexture *t, int dxt)
+/* v310h: where small (sw x sh) is inside px (W x H), by its middle row
+ * and then all of it: 1 and *ox, *oy */
+static int rgba_find(const uint32_t *px, int W, int H, const uint32_t *small, int sw, int sh,
+                     int *ox, int *oy)
 {
-    static int logged;
-    int i;
-    if (logged >= 24)
-        return;
-    for (i = 0; i < RGBA_STANDIN_MAX; i++)
-        if (s_rstandin[i].data && s_rstandin[i].sw == (int)t->width && s_rstandin[i].sh == (int)t->height) {
-            logged++;
-            fprintf(stderr, "[GL] a %ux%u texture: format 0x%02X%s, %s, levels %u%s%s, pitch %u, at 0x%08X\n",
-                    t->width, t->height, t->color, dxt ? " (DXT)" : "", t->normalised ? "0..1" : "texel coordinates",
-                    t->levels, t->cube ? ", cube" : "", t->palette ? ", palette" : "", t->pitch, t->offset);
-            return;
-        }
-    {   /* and the next 40 others, in case the title made it another size */
-        static int others;
-        if (others < 40) {
-            others++;
-            fprintf(stderr, "[GL] another texture after a stand-in: %ux%u format 0x%02X%s, %s, levels %u, at 0x%08X\n",
-                    t->width, t->height, t->color, dxt ? " (DXT)" : "", t->normalised ? "0..1" : "texel coordinates",
-                    t->levels, t->offset);
+    const int r = sh / 2;
+    const uint32_t *need = small + (size_t)r * (size_t)sw;
+    int y, x, j;
+    if (sw > W || sh > H)
+        return 0;
+    for (y = r; y <= H - (sh - r); y++) {
+        const uint32_t *row = px + (size_t)y * (size_t)W;
+        for (x = 0; x <= W - sw; x++) {
+            if (row[x] != need[0] || memcmp(row + x, need, (size_t)sw * 4u))
+                continue;
+            for (j = 0; j < sh; j++)
+                if (memcmp(px + (size_t)(y - r + j) * (size_t)W + (size_t)x,
+                           small + (size_t)j * (size_t)sw, (size_t)sw * 4u))
+                    break;
+            if (j == sh) {
+                *ox = x;
+                *oy = y - r;
+                return 1;
+            }
         }
     }
+    return 0;
 }
 
-/* the decoded texels px of t: a stand-in for them uploaded, 1 */
+/* the decoded texels px of t: a stand-in for them, or a bigger copy of
+ * them with the stand-ins found inside put over their small ones (v310h:
+ * the graffiti select copies its pictures into a bigger texture), uploaded:
+ * 1. Texel coordinates are scaled by the guest's size, so a bigger GL
+ * texture is drawn the same either way. */
+#define RGBA_FOUND_MAX 8
 static int rgba_standin_upload(const NvGlTexture *t, const uint32_t *px)
 {
-    int i, done = 0, same = 0;
+    int i, done = 0, nf = 0, K = 1;
     uint64_t key = 0;
-    static int missed;
-    if (!s_rstandin_any || t->cube || !t->normalised)
+    int fx[RGBA_FOUND_MAX], fy[RGBA_FOUND_MAX];
+    RgbaStandIn *fe[RGBA_FOUND_MAX];
+    const int W = (int)t->width, H = (int)t->height;
+    static int logged;
+    if (!s_rstandin_any || t->cube || W < 8 || H < 8)
         return 0;
     SDL_AtomicLock(&s_rstandin_lock);
     for (i = 0; i < RGBA_STANDIN_MAX; i++) {
         RgbaStandIn *e = &s_rstandin[i];
-        if (!e->data || e->sw != (int)t->width || e->sh != (int)t->height)
+        if (!e->data)
             continue;
-        if (!same) {
-            key = hash_bytes((const uint8_t *)px, (size_t)t->width * t->height * 4u);
-            same = 1;
+        if (e->sw == W && e->sh == H) {
+            if (!key)
+                key = hash_bytes((const uint8_t *)px, (size_t)W * (size_t)H * 4u);
+            if (e->key == key) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
+                             GL_UNSIGNED_INT_8_8_8_8_REV, e->data);
+                e->used = ++s_standin_clock;
+                if (e->hits++ < 2)
+                    fprintf(stderr, "[GL] stand-in %dx%d used for texture %ux%u format 0x%02X at 0x%08X\n",
+                            e->w, e->h, t->width, t->height, t->color, t->offset);
+                done = 1;
+                break;
+            }
+        } else if (nf < RGBA_FOUND_MAX && e->small && rgba_find(px, W, H, e->small, e->sw, e->sh, &fx[nf], &fy[nf])) {
+            int k = e->w / e->sw;
+            if ((size_t)W * (size_t)k * (size_t)H * (size_t)k <= (size_t)8192 * 8192) {
+                fe[nf++] = e;
+                if (k > K) K = k;
+            }
         }
-        if (e->key == key) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
-                         GL_UNSIGNED_INT_8_8_8_8_REV, e->data);
-            e->used = ++s_standin_clock;
-            if (e->hits++ < 2)
-                fprintf(stderr, "[GL] stand-in %dx%d used for texture %ux%u format 0x%02X at 0x%08X\n",
-                        e->w, e->h, t->width, t->height, t->color, t->offset);
+    }
+    if (!done && nf) {
+        size_t BW = (size_t)W * (size_t)K, BH = (size_t)H * (size_t)K;
+        uint32_t *big = (uint32_t *)malloc(BW * BH * 4u);
+        if (big) {
+            size_t x, y;
+            int n;
+            for (y = 0; y < BH; y++) {                      /* the texture, each texel K x K */
+                const uint32_t *src = px + (y / (size_t)K) * (size_t)W;
+                uint32_t *dst = big + y * BW;
+                for (x = 0; x < BW; x++) dst[x] = src[x / (size_t)K];
+            }
+            for (n = 0; n < nf; n++) {                      /* the big pictures over them */
+                const RgbaStandIn *e = fe[n];
+                int f = K / (e->w / e->sw);                 /* 1 when this one is the biggest */
+                size_t pw = (size_t)e->w * (size_t)f, ph = (size_t)e->h * (size_t)f;
+                for (y = 0; y < ph; y++) {
+                    uint32_t *dst = big + ((size_t)fy[n] * (size_t)K + y) * BW + (size_t)fx[n] * (size_t)K;
+                    const uint32_t *src = e->data + (y / (size_t)f) * (size_t)e->w;
+                    for (x = 0; x < pw; x++) dst[x] = src[x / (size_t)f];
+                }
+                fe[n]->used = ++s_standin_clock;
+            }
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)BW, (GLsizei)BH, 0, GL_BGRA,
+                         GL_UNSIGNED_INT_8_8_8_8_REV, big);
+            free(big);
             done = 1;
-            break;
+            if (logged < 24) {
+                logged++;
+                fprintf(stderr, "[GL] texture %ux%u format 0x%02X at 0x%08X made %zux%zu: %d bigger picture(s), the first at %d,%d\n",
+                        t->width, t->height, t->color, t->offset, BW, BH, nf, fx[0], fy[0]);
+            }
         }
     }
     SDL_AtomicUnlock(&s_rstandin_lock);
-    if (same && !done && missed < 24) {
-        missed++;
-        fprintf(stderr, "[GL] stand-in not matched: texture %ux%u format 0x%02X at 0x%08X, texels %08X %08X\n",
-                t->width, t->height, t->color, t->offset, px[0], px[(size_t)t->width * t->height / 2 + t->width / 2]);
-    }
     return done;
 }
 
@@ -5447,8 +5498,6 @@ static void bind_texture(int stage, const NvGlTexture *t)
             }
             if (s_standin_any)
                 standin_miss(t, h);
-            if (s_rstandin_any)
-                rgba_standin_seen(t, cfmt != 0);
             if (cfmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT && s_dxt_ok && !t->cube && !t->palette
                     && !(t->width & 3) && !(t->height & 3)
                     && (e->nlev = standin_upload(t, mem, h, cfmt, block)) > 0) {
