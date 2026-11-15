@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -52,7 +53,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m17"
+#define MODTOOL_VERSION "m20"
 
 /* ---- the files ---- */
 
@@ -548,28 +549,118 @@ static void export_texture(int k)
 }
 
 /* rgba w x h to tw x th, bilinear */
+/* m20: Lanczos (a = 3) resampling, Miggas's pick, rows then columns, the
+ * filter widened by the scale when shrinking; colours weighted by their
+ * alpha (premultiplied) so transparent pixels don't darken the edges */
+static double lanczos3(double x)
+{
+    if (x < 0) x = -x;
+    if (x < 1e-9) return 1.0;
+    if (x >= 3.0) return 0.0;
+    {
+        const double PI = 3.14159265358979323846, px = PI * x;
+        return 3.0 * sin(px) * sin(px / 3.0) / (px * px);
+    }
+}
+
+/* one pass: n source samples of stride ss into tn of stride ds, cnt lines
+ * (line stride sl / dl), 4 floats a sample */
+static void lanczos_pass(const float *src, int n, size_t ss, size_t sl, float *dst, int tn, size_t ds,
+                         size_t dl, int cnt)
+{
+    const double scale = (double)n / tn, sup = 3.0 * (scale > 1 ? scale : 1);
+    const double fs = scale > 1 ? 1.0 / scale : 1.0;
+    int i, j, l, c;
+    for (i = 0; i < tn; i++) {
+        double center = (i + 0.5) * scale - 0.5, wsum = 0, wt[512];
+        int lo = (int)floor(center - sup) + 1, hi = (int)floor(center + sup), m = 0;
+        if (hi - lo + 1 > 512) hi = lo + 511;
+        for (j = lo; j <= hi; j++, m++) {
+            wt[m] = lanczos3((j - center) * fs);
+            wsum += wt[m];
+        }
+        if (wsum == 0) wsum = 1;
+        for (l = 0; l < cnt; l++) {
+            double acc[4] = {0, 0, 0, 0};
+            const float *ln = src + (size_t)l * sl;
+            for (j = lo, m = 0; j <= hi; j++, m++) {
+                int q = j < 0 ? 0 : j >= n ? n - 1 : j;
+                const float *p = ln + (size_t)q * ss;
+                for (c = 0; c < 4; c++) acc[c] += wt[m] * p[c];
+            }
+            for (c = 0; c < 4; c++) dst[(size_t)l * dl + (size_t)i * ds + c] = (float)(acc[c] / wsum);
+        }
+    }
+}
+
 static uint8_t *resize(const uint8_t *src, int w, int h, int tw, int th)
 {
+    float *a = (float *)malloc((size_t)w * h * 4 * sizeof(float));
+    float *b = (float *)malloc((size_t)tw * h * 4 * sizeof(float));
+    float *o = (float *)malloc((size_t)tw * th * 4 * sizeof(float));
     uint8_t *d = (uint8_t *)malloc((size_t)tw * th * 4);
-    int x, y, c;
-    for (y = 0; y < th; y++)
-        for (x = 0; x < tw; x++) {
-            float fx = ((float)x + 0.5f) * w / tw - 0.5f, fy = ((float)y + 0.5f) * h / th - 0.5f;
-            int x0 = (int)fx, y0 = (int)fy, x1, y1;
-            float ax, ay;
-            if (fx < 0) fx = 0, x0 = 0;
-            if (fy < 0) fy = 0, y0 = 0;
-            x1 = x0 + 1 < w ? x0 + 1 : x0;
-            y1 = y0 + 1 < h ? y0 + 1 : y0;
-            ax = fx - x0;
-            ay = fy - y0;
-            for (c = 0; c < 4; c++) {
-                float a = src[((size_t)y0 * w + x0) * 4 + c] * (1 - ax) + src[((size_t)y0 * w + x1) * 4 + c] * ax;
-                float b = src[((size_t)y1 * w + x0) * 4 + c] * (1 - ax) + src[((size_t)y1 * w + x1) * 4 + c] * ax;
-                d[((size_t)y * tw + x) * 4 + c] = (uint8_t)(a * (1 - ay) + b * ay + 0.5f);
-            }
+    size_t i;
+    if (!a || !b || !o || !d) {
+        free(a); free(b); free(o); free(d);
+        return NULL;
+    }
+    for (i = 0; i < (size_t)w * h; i++) {          /* premultiplied */
+        float al = src[i * 4 + 3] / 255.0f;
+        a[i * 4] = src[i * 4] * al; a[i * 4 + 1] = src[i * 4 + 1] * al;
+        a[i * 4 + 2] = src[i * 4 + 2] * al; a[i * 4 + 3] = src[i * 4 + 3];
+    }
+    lanczos_pass(a, w, 4, (size_t)w * 4, b, tw, 4, (size_t)tw * 4, h);               /* rows */
+    lanczos_pass(b, h, (size_t)tw * 4, 4, o, th, (size_t)tw * 4, 4, tw);              /* columns */
+    for (i = 0; i < (size_t)tw * th; i++) {
+        float al = o[i * 4 + 3];
+        int c;
+        al = al < 0 ? 0 : al > 255 ? 255 : al;
+        for (c = 0; c < 3; c++) {
+            float v = al > 0.5f ? o[i * 4 + c] * 255.0f / al : 0;
+            d[i * 4 + c] = (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v + 0.5f);
         }
+        d[i * 4 + 3] = (uint8_t)(al + 0.5f);
+    }
+    free(a); free(b); free(o);
     return d;
+}
+
+/* m20: an image for graffiti texture k (Miggas): the size its original
+ * times 1, 2 or 4, the biggest the image fits in without being enlarged
+ * (the original when none), the image fitted in by Lanczos, its shape kept,
+ * centred, transparent around it. *tw, *th the size; NULL failed */
+static uint8_t *graffiti_fit(const uint8_t *px, int w, int h, int k, int *tw, int *th, char *note, size_t nn)
+{
+    int mw, mh, ow, oh, m, best = 1, fw, fh, x, y;
+    double sc;
+    uint8_t *fit, *o;
+    if (jt_raw_max(&s_cur, k, &mw, &mh)) return NULL;
+    ow = mw / 4; oh = mh / 4;
+    for (m = 4; m >= 2; m /= 2) {                 /* the biggest it fits in without enlarging */
+        double s2 = (double)ow * m / w < (double)oh * m / h ? (double)ow * m / w : (double)oh * m / h;
+        if (s2 <= 1.0) { best = m; break; }
+    }
+    *tw = ow * best; *th = oh * best;
+    sc = (double)*tw / w < (double)*th / h ? (double)*tw / w : (double)*th / h;
+    fw = (int)(w * sc + 0.5); fh = (int)(h * sc + 0.5);
+    if (fw < 1) fw = 1;
+    if (fh < 1) fh = 1;
+    if (fw > *tw) fw = *tw;
+    if (fh > *th) fh = *th;
+    fit = (fw == w && fh == h) ? NULL : resize(px, w, h, fw, fh);
+    if (!fit && !(fw == w && fh == h)) return NULL;
+    o = (uint8_t *)calloc((size_t)*tw * *th, 4);
+    if (!o) { free(fit); return NULL; }
+    for (y = 0; y < fh; y++) {
+        const uint8_t *src = (fit ? fit : px) + (size_t)y * fw * 4;
+        x = (*tw - fw) / 2;
+        memcpy(o + ((size_t)(y + (*th - fh) / 2) * *tw + x) * 4, src, (size_t)fw * 4);
+    }
+    free(fit);
+    if (fw != w || fh != h || fw != *tw || fh != *th)
+        snprintf(note, nn, " (%dx%d made %dx%d%s)", w, h, *tw, *th,
+                 fw != *tw || fh != *th ? ", centred" : "");
+    return o;
 }
 
 /* rgba (the texture's size) into texture k, the file written in place
@@ -1190,22 +1281,35 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
     free(b);
     if (!px) { snprintf(s_msg, sizeof s_msg, "%s isn't a PNG or TGA image.", in); return; }
     /* m2: a bigger texture (Miggas): square, 512, 1024, 2048 or 4096, in a
-     * .dat. m16: graffiti too, 2, 4 or 8 times as wide and tall; m17: up to
-     * 4 times their original size (the JSRF recomp shows them, v310) */
-    if (!t->box && t->hdr == (size_t)-1 && w > t->w && w % t->w == 0 && h % t->h == 0
-        && w / t->w == h / t->h && (w / t->w == 2 || w / t->w == 4 || w / t->w == 8) && w <= 4096 && h <= 4096
-        && !jt_raw_max(&s_cur, k, &mw, &mh) && w <= mw && h <= mh) {
-        int ow = t->w, oh = t->h;
-        if (jt_grow_raw(&s_cur, k, w / t->w)) {
-            stbi_image_free(px);
-            snprintf(s_msg, sizeof s_msg, "Couldn't make room for a %dx%d graffiti: nothing changed.", w, h);
+     * .dat. m16: graffiti too; m17: up to 4 times their original size (the
+     * JSRF recomp shows them, v310); m20: any image, fitted */
+    if (!t->box && t->hdr == (size_t)-1 && !jt_raw_max(&s_cur, k, &mw, &mh)) {
+        /* m20: a graffiti takes any image: fitted (Lanczos) to its original
+         * size times 1, 2 or 4, the biggest the image fits in without being
+         * enlarged, centred; the file made that size */
+        int tw, th, ow = t->w, oh = t->h;
+        char fn[96] = "";
+        uint8_t *g = graffiti_fit(px, w, h, k, &tw, &th, fn, sizeof fn);
+        stbi_image_free(px);
+        if (!g) {
+            snprintf(s_msg, sizeof s_msg, "Not enough memory for the image: nothing changed.");
+            return;
+        }
+        px = g;
+        if ((tw != t->w || th != t->h) && jt_resize_raw(&s_cur, k, tw, th)) {
+            free(px);
+            snprintf(s_msg, sizeof s_msg, "Couldn't make the graffiti %dx%d: nothing changed.", tw, th);
             open_file(s_sel_file);
             show_texture(ren, k);
             return;
         }
-        t = &s_cur.tex[k];
-        grown = 1;
-        snprintf(note, sizeof note, " (now %dx%d, was %dx%d)", w, h, ow, oh);
+        if (tw != ow || th != oh) {
+            t = &s_cur.tex[k];
+            grown = 1;
+        }
+        snprintf(note, sizeof note, "%s", fn);
+        if (grown)
+            snprintf(note + strlen(note), sizeof note - strlen(note), " (now %dx%d, was %dx%d)", tw, th, ow, oh);
     } else if ((w != t->w || h != t->h) && w == h && t->box && w > t->w
         && (w == 512 || w == 1024 || w == 2048 || w == 4096)) {
         int ow = t->w;
@@ -1223,10 +1327,7 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
         uint8_t *r = resize(px, w, h, t->w, t->h);
         stbi_image_free(px);
         px = r;
-        if (!t->box)
-            snprintf(note, sizeof note, " (resized from %dx%d: a bigger graffiti must be 2 or 4 times"
-                     " its size, up to %dx%d)", w, h, mw, mh);
-        else if (w != h || w > 4096 || (w != 512 && w != 1024 && w != 2048 && w != 4096) || w < t->w)
+        if (w != h || w > 4096 || (w != 512 && w != 1024 && w != 2048 && w != 4096) || w < t->w)
             snprintf(note, sizeof note, " (resized from %dx%d: a bigger texture must be square, "
                      "512, 1024, 2048 or 4096)", w, h);
         else

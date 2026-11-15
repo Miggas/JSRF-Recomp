@@ -534,20 +534,31 @@ int jt_raw_max(const JFile *f, int k, int *mw, int *mh)
  * header aside), so this is an experiment (Idea by Miggas). 0 done */
 int jt_grow_raw(JFile *f, int k, int factor)
 {
+    if (k < 0 || k >= f->ntex || factor < 2) return -1;
+    return jt_resize_raw(f, k, f->tex[k].w * factor, f->tex[k].h * factor);
+}
+
+/* m20: a graffiti made nw x nh, bigger or smaller (its original size times
+ * 1, 2 or 4); the pixels left as zeros, to be encoded after */
+int jt_resize_raw(JFile *f, int k, int nw, int nh)
+{
     JTex t;
     size_t old_px, new_px, tail, nsize;
     uint8_t *nb;
     char path[1024];
-    if (k < 0 || k >= f->ntex || factor < 2) return -1;
+    if (k < 0 || k >= f->ntex) return -1;
     t = f->tex[k];
     if (t.hdr != (size_t)-1 || t.box) return -1;
-    if (t.w * factor > 4096 || t.h * factor > 4096) return -1;
-    {   /* m17: no more than 4 times the original */
+    if (nw == t.w && nh == t.h) return 0;
+    if (nw > 4096 || nh > 4096 || nw < 4 || nh < 4) return -1;
+    {   /* m17: no more than 4 times the original; m20: not under it either */
         int mw, mh;
-        if (jt_raw_max(f, k, &mw, &mh) || t.w * factor > mw || t.h * factor > mh) return -1;
+        if (jt_raw_max(f, k, &mw, &mh) || nw > mw || nh > mh || nw < mw / 4 || nh < mh / 4
+            || nw * mh != nh * mw || (nw != mw && nw != mw / 2 && nw != mw / 4))
+            return -1;
     }
     old_px = jt_level_size(t.fmt, t.w, t.h);
-    new_px = jt_level_size(t.fmt, t.w * factor, t.h * factor);
+    new_px = jt_level_size(t.fmt, nw, nh);
     if (t.data + old_px > f->size) return -1;
     tail = f->size - (t.data + old_px);          /* a TGA's footer, kept */
     nsize = t.data + new_px + tail;
@@ -556,14 +567,14 @@ int jt_grow_raw(JFile *f, int k, int factor)
     memcpy(nb, f->buf, t.data);
     memcpy(nb + t.data + new_px, f->buf + t.data + old_px, tail);
     if (t.fmt == JT_TGA) {                       /* the TGA's width and height */
-        nb[12] = (uint8_t)(t.w * factor); nb[13] = (uint8_t)((t.w * factor) >> 8);
-        nb[14] = (uint8_t)(t.h * factor); nb[15] = (uint8_t)((t.h * factor) >> 8);
+        nb[12] = (uint8_t)nw; nb[13] = (uint8_t)(nw >> 8);
+        nb[14] = (uint8_t)nh; nb[15] = (uint8_t)(nh >> 8);
     }
     snprintf(path, sizeof path, "%s", f->path);
     f->path[0] = 0;
     jf_free(f);
-    s_raw_hint_w = t.w * factor;                 /* the parse can't tell a .prs's size by itself */
-    s_raw_hint_h = t.h * factor;
+    s_raw_hint_w = nw;                           /* the parse can't tell a .prs's size by itself */
+    s_raw_hint_h = nh;
     {
         int r = jf_parse(f, path, nb, nsize);
         s_raw_hint_w = s_raw_hint_h = 0;
