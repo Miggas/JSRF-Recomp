@@ -37,6 +37,10 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_ONLY_TGA
+#define STBI_ONLY_JPEG   /* m21: JPG, BMP, GIF (its first frame), PSD (the merged image) */
+#define STBI_ONLY_BMP
+#define STBI_ONLY_GIF
+#define STBI_ONLY_PSD
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -53,7 +57,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m20"
+#define MODTOOL_VERSION "m21"
 
 /* ---- the files ---- */
 
@@ -1276,10 +1280,10 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
     if (png) snprintf(in, sizeof in, "%s", png);
     else edit_path(in, s_files[s_sel_file].rel, k);
     b = read_file(in, &n);
-    if (!b) { snprintf(s_msg, sizeof s_msg, "No %s: Export it first, or drop a PNG on the window.", in); return; }
+    if (!b) { snprintf(s_msg, sizeof s_msg, "No %s: Export it first, or drop an image on the window.", in); return; }
     px = stbi_load_from_memory((const stbi_uc *)b, (int)n, &w, &h, &c, 4);
     free(b);
-    if (!px) { snprintf(s_msg, sizeof s_msg, "%s isn't a PNG or TGA image.", in); return; }
+    if (!px) { snprintf(s_msg, sizeof s_msg, "%s isn't an image the tool reads (PNG, TGA, JPG, BMP, GIF or PSD).", in); return; }
     /* m2: a bigger texture (Miggas): square, 512, 1024, 2048 or 4096, in a
      * .dat. m16: graffiti too; m17: up to 4 times their original size (the
      * JSRF recomp shows them, v310); m20: any image, fitted */
@@ -1550,7 +1554,7 @@ static int cmp_view(const void *a, const void *b)
     return SDL_strcasecmp(x->label, y->label);
 }
 
-static char *s_dropped;                  /* a PNG dropped on the window */
+static char *s_dropped;                  /* a file dropped on the window */
 
 /* m5: narrower lists, the texture, the 3D view on the right (Miggas) */
 #define LW_FILES 240.0f
@@ -1890,7 +1894,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 if (nk_button_label(ctx, "Undo all (file)")) revert_file(ren);
             } else nk_spacing(ctx, 1);
             nk_layout_row_dynamic(ctx, row - 8, 1);
-            nk_label_colored(ctx, "Import: the exported PNG, or drop one here.", NK_TEXT_LEFT,
+            nk_label_colored(ctx, "Import: the exported PNG, or drop an image here.", NK_TEXT_LEFT,
                              nk_rgb(150, 150, 160));
             if (s_preview && sz > 32) {
                 /* m1d: its own shape (graffiti aren't all square, Miggas), at most 2x */

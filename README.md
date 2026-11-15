@@ -10,7 +10,7 @@ An edited file is changed in place in the game folder. Before its first change, 
 2. Pick a file, then one of its textures.
 3. **Export PNG** saves it to `texture_edits/` in the game folder (**Open edits folder** opens it).
 4. Edit the PNG in any image editor and save it under the same name. Transparency is kept.
-5. **Import PNG** puts it back. You can also drop any PNG or TGA on the window to import it into the picked texture.
+5. **Import PNG** puts it back. You can also drop an image on the window to import it into the picked texture: PNG, TGA, JPG, BMP, GIF (its first frame) or PSD (the merged image).
 
 **Paint** opens the picked texture in the painter: Brush, Eraser (back to the original), Picker (a colour from the texture) and Fill, with size, hardness, opacity and fill tolerance, and the colour chooser. The mouse wheel zooms, a right drag moves the view, Undo / Redo (Ctrl+Z / Ctrl+Y) go back and forth. **Resize** makes the painting 2, 4 or 8 times bigger by integer scaling (each pixel a block, nothing blurred), so you can add finer detail; a size over 4096 (for graffiti, over 4 times the original) is greyed out. You paint on a full-quality copy: **Save** compresses it into the game file once, the same way an import does.
 
