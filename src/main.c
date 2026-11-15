@@ -57,7 +57,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m22b"
+#define MODTOOL_VERSION "m23"
 
 /* ---- the files ---- */
 
@@ -1604,6 +1604,28 @@ static void revert_file(SDL_Renderer *ren)
         }
         remove_file(bak);
         snprintf(s_msg, sizeof s_msg, "Back to the original: %s", p);
+        thumb_drop(s_files[s_sel_file].rel);           /* m23 */
+        {   /* m23: a graffiti's .prs follows its .grf (m22): back too */
+            const char *rel = s_files[s_sel_file].rel;
+            size_t L = strlen(rel);
+            if (L > 4 && !SDL_strcasecmp(rel + L - 4, ".grf") && SDL_strcasestr(rel, "Mark/TEX/")) {
+                char pr[512], pb[LPATH], pp[LPATH], pc[LPATH];
+                snprintf(pr, sizeof pr, "%.*s.prs", (int)(L - 4), rel);
+                backup_path(pb, pr);
+                game_path(pp, pr);
+                if (is_file(pb) && copy_file(pb, pp)) {
+                    cache_path(pc, pr);
+                    if (is_file(pc)) {
+                        size_t n = 0;
+                        char *b = read_file(pb, &n);
+                        if (b) write_cache(pc, (const uint8_t *)b, n);
+                        free(b);
+                    }
+                    remove_file(pb);
+                    snprintf(s_msg + strlen(s_msg), sizeof s_msg - strlen(s_msg), " (its .prs too)");
+                }
+            }
+        }
     } else snprintf(s_msg, sizeof s_msg, "Couldn't put the original back from %s", bak);
     {
         int sk = s_sel_snd;
@@ -1867,11 +1889,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     /* its textures */
     if (nk_begin(ctx, s_cur.ntex || !s_snd.n ? "Textures" : "Sounds", nk_rect(LW_FILES, top, LW_TEX, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         nk_layout_row_dynamic(ctx, row - 6, 1);
-        if (s_sel_file >= 0) {                      /* m13 */
-            nk_bool rw = (nk_bool)s_raw;
-            nk_checkbox_label(ctx, "Raw items", &rw);
-            if ((int)rw != s_raw && may_leave_paint()) s_raw = rw;
-        }
+        /* m23: no Raw items checkbox (Miggas: not needed); the view stays for tests (MT_RAW) */
         for (i = 0; i < s_cur.ntex; i++) {
             const JTex *t = &s_cur.tex[i];
             int sel = i == s_sel_tex;
@@ -1937,7 +1955,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 open_folder(d);
             }
             if (s_cur_modded) {
-                if (nk_button_label(ctx, "Undo all (file)")) revert_file(ren);
+                if (nk_button_label(ctx, "Restore original")) revert_file(ren);
             } else nk_spacing(ctx, 1);
             nk_layout_row_dynamic(ctx, row - 8, 1);
             nk_label_colored(ctx, "Import: the exported WAV, or drop one here.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
@@ -2040,7 +2058,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 open_folder(d);
             }
             if (s_cur_modded) {
-                if (nk_button_label(ctx, "Undo all (file)")) revert_file(ren);
+                if (nk_button_label(ctx, "Restore original")) revert_file(ren);
             } else nk_spacing(ctx, 1);
             nk_layout_row_dynamic(ctx, row - 8, 1);
             nk_label_colored(ctx, "Import: the exported PNG, or drop an image here.", NK_TEXT_LEFT,

@@ -2,7 +2,7 @@
 
 Edits Jet Set Radio Future's game files for the [JSRF recomp](https://github.com/Miggas/JSRF-Recomp): textures (export, import, paint on them or on the 3D model), models (export to and import from Blender), materials and sounds. Windows and Linux (Steam Deck included).
 
-An edited file is changed in place in the game folder. Before its first change, the original is kept in `mod_backups/` at the game's own path (`mod_backups/Media/Player/Beat.dat`), and **Undo all (file)** puts it back. The game keeps copies of most of its files in its cache (`savegame/Cache` in the game folder) and reads those after the first time: the tool changes that copy too when there is one. Nothing is needed from the recomp.
+An edited file is changed in place in the game folder. Before its first change, the original is kept in `mod_backups/` at the game's own path (`mod_backups/Media/Player/Beat.dat`), and **Restore original** puts it back (for a graffiti, its `.prs` too). The game keeps copies of most of its files in its cache (`savegame/Cache` in the game folder) and reads those after the first time: the tool changes that copy too when there is one. Nothing is needed from the recomp.
 
 ## Use
 
@@ -29,7 +29,6 @@ An edited file is changed in place in the game folder. Before its first change, 
 
 **Bounds**, under the 3D view: the sphere the game draws the model within (its "draw distance"). A model made bigger than its bounds can pop out of view early: **Bigger** doubles them, **Fit** makes them fit the model again (Import does that by itself).
 
-**Raw items** (the checkbox above a file's textures) lists every item in the file by group, with what it looks like (texture, model, sound, material list, empty, data) and its size, and shows its first bytes. **Extract** saves one as it is into `item_exports/`; **Replace** puts it back from there (or drop any file on the window), whatever its new size; **Copy** and **Paste** copy an item over another, in the same file or another one; **Empty** leaves it with nothing. The original is in `mod_backups/` as for every edit.
 
 **Restore all** (top right) puts back the original of every modded file in `mod_backups/`, and the game's cached copies, after asking once more.
 
