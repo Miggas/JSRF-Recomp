@@ -57,7 +57,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m22"
+#define MODTOOL_VERSION "m22b"
 
 /* ---- the files ---- */
 
@@ -1831,20 +1831,23 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                     char lb[160];
                     int sel = view[q] == s_sel_file;
                     const Thumb *th = e->cat == CAT_GRAF && e->sec <= 4 ? thumb_get(ren, e->rel) : NULL;
-                    if (e->cat == CAT_GRAF && e->sec <= 4) {      /* m22: a thumbnail, then its number */
-                        float tw = th && th->tx ? (float)th->w : (float)THUMB_H;
-                        nk_layout_row_begin(ctx, NK_STATIC, (float)THUMB_H + 2, 2);
-                        nk_layout_row_push(ctx, tw);
-                        if (th && th->tx) nk_image(ctx, nk_image_ptr(th->tx));
-                        else nk_spacing(ctx, 1);
-                        nk_layout_row_push(ctx, LW_FILES - tw - 60);
+                    struct nk_rect tb = nk_rect(0, 0, 0, 0);
+                    if (e->cat == CAT_GRAF && e->sec <= 4) {      /* m22: its number, its thumbnail inside the box at the right */
+                        nk_layout_row_dynamic(ctx, (float)THUMB_H + 6, 1);
+                        tb = nk_widget_bounds(ctx);
                         snprintf(lb, sizeof lb, "%s", e->label);
                     } else {
                         nk_layout_row_dynamic(ctx, row - 6, 1);
                         snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex ? e->ntex : e->nsnd);
                     }
-                    if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) + (e->cat == CAT_GRAF && e->sec <= 4 ? (nk_layout_row_end(ctx), 0) : 0)
-                        && sel && !busy && may_leave_paint()) {
+                    int clicked = nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel);
+                    if (th && th->tx && tb.w > 0) {
+                        struct nk_image im = nk_image_ptr(th->tx);
+                        struct nk_rect r = nk_rect(tb.x + tb.w - (float)th->w - 3, tb.y + (tb.h - (float)th->h) / 2,
+                                                   (float)th->w, (float)th->h);
+                        nk_draw_image(nk_window_get_canvas(ctx), r, &im, nk_rgb(255, 255, 255));
+                    }
+                    if (clicked && sel && !busy && may_leave_paint()) {
                         open_file(view[q]);
                         if (s_cur.ntex) show_texture(ren, getenv("MT_TEX") && atoi(getenv("MT_TEX")) < s_cur.ntex ? atoi(getenv("MT_TEX")) : 0);
                         else if (s_snd.n) show_sound(getenv("MT_SND") && atoi(getenv("MT_SND")) < s_snd.n ? atoi(getenv("MT_SND")) : 0);   /* m7 */
