@@ -21,6 +21,8 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 
 ### Developer
 - `[GRAFFITI]` and `[GL] stand-in` log lines.
+- v310c (diagnostic): what each graffiti slot got, and whether the bigger
+  sheet reached the GPU.
 
 ## v309 — 2026-11-14
 

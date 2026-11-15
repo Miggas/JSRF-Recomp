@@ -4913,6 +4913,7 @@ typedef struct {
     uint8_t *lev[STANDIN_LEV];
     size_t lsz[STANDIN_LEV];
     uint32_t used;      /* for throwing out the oldest */
+    int hits;
 } StandIn;
 static StandIn s_standin[STANDIN_MAX];
 static SDL_SpinLock s_standin_lock;
@@ -5000,11 +5001,32 @@ static int standin_upload(const NvGlTexture *t, const uint8_t *mem, uint64_t h, 
                 hh = hh > 1 ? hh >> 1 : 1;
             }
             e->used = ++s_standin_clock;
+            if (e->hits++ < 3)
+                fprintf(stderr, "[GL] stand-in %dx%d used for texture %ux%u at 0x%08X (%016llX), %d levels\n",
+                        e->w, e->h, t->width, t->height, t->offset, (unsigned long long)h, n);
             break;
         }
     }
     SDL_AtomicUnlock(&s_standin_lock);
     return n;
+}
+
+/* v310c: a texture the size of a stand-in's that it didn't match, logged
+ * (the first 24): what to look at when a bigger graffiti doesn't show */
+static void standin_miss(const NvGlTexture *t, uint64_t h)
+{
+    static int logged;
+    int i, same_size = 0;
+    if (!s_standin_any || logged >= 24)
+        return;
+    for (i = 0; i < STANDIN_MAX; i++)
+        if (s_standin[i].nlev && s_standin[i].n == t->bytes && s_standin[i].key != h) same_size = 1;
+        else if (s_standin[i].nlev && s_standin[i].key == h) return;
+    if (!same_size)
+        return;
+    logged++;
+    fprintf(stderr, "[GL] stand-in not matched: texture %ux%u format 0x%02X levels %u at 0x%08X (%016llX)\n",
+            t->width, t->height, t->color, t->levels, t->offset, (unsigned long long)h);
 }
 
 static uint64_t tex_hash(const NvGlTexture *t, const uint8_t *mem)
@@ -5318,6 +5340,8 @@ static void bind_texture(int stage, const NvGlTexture *t)
                 fprintf(stderr, "[GL] DXT textures uploaded %s\n",
                         s_dxt_ok ? "compressed (S3TC)" : "decoded on the CPU");
             }
+            if (s_standin_any)
+                standin_miss(t, h);
             if (cfmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT && s_dxt_ok && !t->cube && !t->palette
                     && !(t->width & 3) && !(t->height & 3)
                     && (e->nlev = standin_upload(t, mem, h, cfmt, block)) > 0) {

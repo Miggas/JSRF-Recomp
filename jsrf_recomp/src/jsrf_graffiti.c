@@ -145,6 +145,15 @@ void sub_0002DA70(void)
     buf = MEM32(mgr + 0x1888u);
     have = MEM32(mgr + 0x17Cu);
     need = sw * sh;                             /* DXT3: a byte a pixel */
+    {
+        /* v310c: what each slot got, the first 64 */
+        static int logged;
+        if (logged < 64) {
+            logged++;
+            fprintf(stderr, "[GRAFFITI] slot size %u band %u: %ux%u at %u,%u, file %u bytes (the slot's: %u), buffer 0x%08X\n",
+                    size, band, sw, sh, sx, sy, have, need, buf);
+        }
+    }
     if (!buf || !need || sx + sw > SHEET_PX || sy + sh > SHEET_PX || have <= need) {
         sub_0002DA70_gen();
         return;
@@ -207,8 +216,8 @@ void sub_0002D8D0(void)
             }
             nv2a_gl_tex_standin(g, SHEET_BYTES, SHEET_PX * k, SHEET_PX * k, big,
                                 pitch * (size_t)(SHEET_PX * k / 4));
-            fprintf(stderr, "[GRAFFITI] sheet %u: %d bigger graffiti, %dx%d\n",
-                    MEM32(g_ecx + 0x1890u), s_np, SHEET_PX * k, SHEET_PX * k);
+            fprintf(stderr, "[GRAFFITI] sheet %u: %d bigger graffiti, %dx%d (the game's at 0x%08X)\n",
+                    MEM32(g_ecx + 0x1890u), s_np, SHEET_PX * k, SHEET_PX * k, sheet);
             free(big);
         }
     }
