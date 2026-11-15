@@ -38,12 +38,6 @@
 #endif
 #include "gen/recomp_types.h"
 
-/* v310i: the lossless picture beside a .prs */
-#define STBI_ONLY_PNG
-#define STBI_NO_STDIO
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 
 void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size);
 void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);
@@ -87,7 +81,7 @@ typedef struct {
     int x, y, w, h;     /* the slot, in pixels of the game's sheet */
     int k;              /* how much bigger */
     uint8_t *dxt;       /* (w * k) x (h * k), DXT3, or NULL */
-    uint8_t *bgra;      /* v310i: or as well, from the .png beside the .prs: B8G8R8A8 */
+    uint8_t *bgra;      /* v310i: or as well, from the .grf beside the .prs (v310j): B8G8R8A8 */
 } Piece;
 static Piece s_p[MAXP];
 static int s_np;
@@ -163,18 +157,20 @@ static uint32_t slot_number(uint32_t mgr)
     return r;
 }
 
-/* v310i: the .png beside .prs number num (the mod tool writes it with a
- * bigger graffiti: the picture before DXT3), if it is 2, 4 or 8 times
- * sw x sh. B8G8R8A8, its times in *k. */
-static uint8_t *prs_png(uint32_t num, uint32_t sw, uint32_t sh, int *k)
+/* v310j: the .grf beside .prs number num (the same graffiti, as the
+ * graffiti select's picture: a TGA, 32 bits a pixel, nothing lost), if it
+ * is 2, 4 or 8 times sw x sh. B8G8R8A8 rows top first, its times in *k.
+ * (v310i read a .png the mod tool wrote there instead.) */
+static uint8_t *prs_grf(uint32_t num, uint32_t sw, uint32_t sh, int *k)
 {
     char xp[160];
     uint32_t name = num < 4096u ? MEM32(PRS_NAMES + num * 4u) : 0u;
-    int i, n, w, h, c;
+    int i, n;
     char *dot;
     FILE *f = NULL;
-    uint8_t *file, *px;
-    long sz;
+    uint8_t hd[18], *o;
+    uint32_t w, h, y;
+    size_t row;
     if (!name)
         return NULL;
     for (i = 0; i < (int)sizeof xp - 5; i++) {
@@ -185,7 +181,7 @@ static uint8_t *prs_png(uint32_t num, uint32_t sw, uint32_t sh, int *k)
     dot = strrchr(xp, '.');
     if (!dot || (dot[1] | 32) != 'p' || (dot[2] | 32) != 'r' || (dot[3] | 32) != 's' || dot[4])
         return NULL;
-    strcpy(dot, ".png");
+    strcpy(dot, ".grf");
     {
 #if defined(_WIN32)
         WCHAR hp[1024];
@@ -197,39 +193,36 @@ static uint8_t *prs_png(uint32_t num, uint32_t sw, uint32_t sh, int *k)
     }
     if (!f)
         return NULL;
-    fseek(f, 0, SEEK_END);
-    sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    file = sz > 0 && sz < (64L << 20) ? (uint8_t *)malloc((size_t)sz) : NULL;
-    if (!file || fread(file, 1, (size_t)sz, f) != (size_t)sz) {
-        free(file);
+    if (fread(hd, 1, 18, f) != 18 || hd[2] != 2 || hd[16] != 32) {
         fclose(f);
         return NULL;
     }
-    fclose(f);
-    px = stbi_load_from_memory(file, (int)sz, &w, &h, &c, 4);
-    free(file);
-    if (!px)
-        return NULL;
+    w = (uint32_t)(hd[12] | hd[13] << 8);
+    h = (uint32_t)(hd[14] | hd[15] << 8);
     for (n = 2; n <= 8; n *= 2)
-        if ((uint32_t)w == sw * (uint32_t)n && (uint32_t)h == sh * (uint32_t)n) break;
-    if (n > 8) {
-        fprintf(stderr, "[GRAFFITI] %s is %dx%d, not 2, 4 or 8 times %ux%u: not used\n", xp, w, h, sw, sh);
-        stbi_image_free(px);
+        if (w == sw * (uint32_t)n && h == sh * (uint32_t)n) break;
+    if (n > 8) {                        /* its own size (or another): nothing to add */
+        fclose(f);
         return NULL;
     }
-    {
-        uint8_t *o = (uint8_t *)malloc((size_t)w * (size_t)h * 4u);
-        size_t j;
-        if (o)
-            for (j = 0; j < (size_t)w * (size_t)h; j++) {
-                o[j * 4] = px[j * 4 + 2]; o[j * 4 + 1] = px[j * 4 + 1];
-                o[j * 4 + 2] = px[j * 4]; o[j * 4 + 3] = px[j * 4 + 3];
-            }
-        stbi_image_free(px);
-        *k = n;
-        return o;
+    row = (size_t)w * 4u;
+    o = (uint8_t *)malloc(row * h);
+    if (!o || fseek(f, 18L + hd[0], SEEK_SET)) {
+        free(o);
+        fclose(f);
+        return NULL;
     }
+    for (y = 0; y < h; y++) {           /* TGA rows go bottom up unless bit 5 says not */
+        uint32_t dy = (hd[17] & 0x20) ? y : h - 1u - y;
+        if (fread(o + (size_t)dy * row, 1, row, f) != row) {
+            free(o);
+            fclose(f);
+            return NULL;
+        }
+    }
+    fclose(f);
+    *k = n;
+    return o;
 }
 
 /* sub_0002DA70(size, band): thiscall on the manager, ret 8 */
@@ -268,7 +261,7 @@ void sub_0002DA70(void)
         if (have == need * (uint32_t)(k * k)) break;
     {
         int pk = 0;
-        uint8_t *png = prs_png(slot_number(mgr), sw, sh, &pk);
+        uint8_t *pic = prs_grf(slot_number(mgr), sw, sh, &pk);
         uint8_t *big = NULL;
         if (k <= 8) {
             /* keep the big one; the game's copy made small, in place */
@@ -284,16 +277,16 @@ void sub_0002DA70(void)
             }
             free(small);
         }
-        if (big || png) {
+        if (big || pic) {
             Piece *p = &s_p[s_np++];
             p->x = (int)sx; p->y = (int)sy; p->w = (int)sw; p->h = (int)sh;
-            p->dxt = big && (!png || pk == k) ? big : NULL;
+            p->dxt = big && (!pic || pk == k) ? big : NULL;
             if (big && !p->dxt) free(big);
-            p->bgra = png;
-            p->k = png ? pk : k;
+            p->bgra = pic;
+            p->k = pic ? pk : k;
             fprintf(stderr, "[GRAFFITI] a %ux%u graffiti for the %ux%u slot at %u,%u (x%d%s)\n",
                     sw * (uint32_t)p->k, sh * (uint32_t)p->k, sw, sh, sx, sy, p->k,
-                    png ? ", lossless from its .png" : "");
+                    pic ? ", lossless from its .grf" : "");
         }
     }
     sub_0002DA70_gen();
@@ -326,8 +319,8 @@ static void sheet_dxt(const uint8_t *g, int k)
     free(big);
 }
 
-/* v310i: the big sheet uncompressed, when a piece has its .png: the game's
- * sheet decoded and spread out, the pieces over it (their .png, else their
+/* v310i: the big sheet uncompressed, when a piece has its .grf: the game's
+ * sheet decoded and spread out, the pieces over it (their .grf, else their
  * DXT3 decoded) */
 static void sheet_bgra(const uint8_t *g, int k)
 {

@@ -16,8 +16,8 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 ### Added
 - Bigger graffiti: a graffiti's `.prs` and `.grf` can be 2, 4 or 8 times as
   wide and tall (the mod tool makes them), and the stages and the graffiti
-  select show it at that detail. With the `.png` the mod tool writes beside
-  a bigger `.prs`, stages show it without compression.
+  select show it at that detail. Stages take it from the `.grf`, without
+  compression.
   `RECOMP_HIRES_GRAFFITI=0` turns it off.
 
 ### Developer
