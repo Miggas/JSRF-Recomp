@@ -4694,7 +4694,7 @@
     "name": "sub_00039570",
     "type": "function",
     "section": ".text",
-    "confidence": 0.88
+    "confidence": 0.95
   },
   {
     "address": "0x00039610",

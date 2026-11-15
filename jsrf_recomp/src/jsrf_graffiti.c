@@ -43,6 +43,7 @@ void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);
 
 #define SLOTS       0x001EE5A0u       /* 16 bytes a graffiti size */
 #define SHEET_PTR   0x00230DBCu       /* the sheet being packed */
+#define GRF_NAMES   0x001EF988u       /* the graffiti select's .grf files, by number */
 #define CUSTOM_OBJ  0x001EFFB0u       /* sub_0003A870's this: is this slot the player's own */
 #define RET_MARK    0x0007BDD0u       /* return address our own guest calls push */
 #define SHEET_PX    1024
@@ -51,6 +52,7 @@ void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);
 extern void sub_0002DA70_gen(void);
 extern void sub_0002D8D0_gen(void);
 extern void sub_0003A870(void);
+extern void sub_00038DF0_gen(void);
 
 static int on(void)
 {
@@ -223,4 +225,84 @@ void sub_0002D8D0(void)
     }
     pieces_clear();
     sub_0002D8D0_gen();
+}
+
+/* v310d: the graffiti select's pictures. sub_00038DF0 (a method of the
+ * menu's loader, thiscall, no arguments) reads .grf number +0x187C of the
+ * names at GRF_NAMES (A:\Media\Mark\TEX\grf_<size>_<nn>.grf and the like)
+ * into a buffer (+0x1874, file size +0x17C), state +0x1880 0 -> 1 -> 2.
+ * The .grf is a TGA (32 bits a pixel, uncompressed) of its slot's size,
+ * which the menu takes for granted: a bigger one came out scrambled, in the
+ * menu and on its wall. Now, once read, a .grf 2, 4 or 8 times its slot is
+ * made that size again (k x k boxes averaged), its header and size with it.
+ * (The menu only shows it small: no stand-in there.) */
+static int grf_size_class(uint32_t name_va)
+{
+    char nm[96];
+    const char *b, *u;
+    int i, c;
+    for (i = 0; i < (int)sizeof nm - 1; i++) {
+        nm[i] = (char)MEM8(name_va + (uint32_t)i);
+        if (!nm[i]) break;
+    }
+    nm[i] = 0;
+    b = strrchr(nm, '\\');
+    b = b ? b + 1 : nm;
+    u = strchr(b, '_');                         /* grf_0_01, rpolice_04_31 */
+    if (!u || u[1] < '0' || u[1] > '9') return -1;
+    c = atoi(u + 1);
+    return c >= 0 && c <= 7 ? c : -1;
+}
+
+void sub_00038DF0(void)
+{
+    const uint32_t obj = g_ecx;
+    const uint32_t before = MEM32(obj + 0x1880u);
+    uint32_t num, buf, have, sw, sh, w, h, idl, px, tail, nsz, x, y;
+    int c, k;
+    uint8_t *p;
+    sub_00038DF0_gen();
+    if (!on() || before != 1u || MEM32(obj + 0x1880u) != 2u)
+        return;
+    num = MEM32(obj + 0x187Cu);
+    buf = MEM32(obj + 0x1874u);
+    have = MEM32(obj + 0x17Cu);
+    if (num >= 175u || !buf || have < 18u)
+        return;
+    c = grf_size_class(MEM32(GRF_NAMES + num * 4u));
+    if (c < 0)
+        return;
+    p = (uint8_t *)XBOX_PTR(buf);
+    if (p[2] != 2 || p[16] != 32)               /* not a plain 32-bit TGA */
+        return;
+    idl = p[0];
+    w = (uint32_t)(p[12] | p[13] << 8);
+    h = (uint32_t)(p[14] | p[15] << 8);
+    sw = MEM32(SLOTS + (uint32_t)c * 16u + 8u) * 128u;
+    sh = MEM32(SLOTS + (uint32_t)c * 16u + 12u) * 128u;
+    if (!sw || !sh || w <= sw)
+        return;
+    for (k = 2; k <= 8; k *= 2)
+        if (w == sw * (uint32_t)k && h == sh * (uint32_t)k) break;
+    if (k > 8 || 18u + idl + w * h * 4u > have)
+        return;
+    px = 18u + idl;
+    tail = have - px - w * h * 4u;              /* a TGA footer, kept */
+    for (y = 0; y < sh; y++)                    /* in place: row y only reads rows >= y*k */
+        for (x = 0; x < sw; x++) {
+            uint32_t sum[4] = {0, 0, 0, 0}, i, j, q;
+            for (j = 0; j < (uint32_t)k; j++)
+                for (i = 0; i < (uint32_t)k; i++) {
+                    const uint8_t *s = p + px + ((size_t)(y * k + j) * w + (x * k + i)) * 4u;
+                    for (q = 0; q < 4; q++) sum[q] += s[q];
+                }
+            for (q = 0; q < 4; q++)
+                p[px + ((size_t)y * sw + x) * 4u + q] = (uint8_t)((sum[q] + (uint32_t)(k * k) / 2u) / (uint32_t)(k * k));
+        }
+    memmove(p + px + sw * sh * 4u, p + px + w * h * 4u, tail);
+    nsz = px + sw * sh * 4u + tail;
+    p[12] = (uint8_t)sw; p[13] = (uint8_t)(sw >> 8);
+    p[14] = (uint8_t)sh; p[15] = (uint8_t)(sh >> 8);
+    MEM32(obj + 0x17Cu) = nsz;
+    fprintf(stderr, "[GRAFFITI] menu picture %u: %ux%u made %ux%u (x%d)\n", num, w, h, sw, sh, k);
 }

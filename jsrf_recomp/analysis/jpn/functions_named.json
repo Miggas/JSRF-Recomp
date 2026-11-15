@@ -15054,9 +15054,9 @@
   "size": 160,
   "name": "sub_00038DF0",
   "section": ".text",
-  "confidence": 0.88,
-  "detection_method": "tail_jump_alias",
-  "num_instructions": 54,
+  "confidence": 0.95,
+  "detection_method": "seed_vtable_thunk",
+  "num_instructions": 42,
   "has_prologue": false,
   "calls_to": [
    "0x00025400",
