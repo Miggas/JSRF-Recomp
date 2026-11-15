@@ -490,6 +490,44 @@ int jt_encode(JFile *f, const JTex *t, const uint8_t *rgba)
 
 static void put32(uint8_t *b, uint32_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); b[2] = (uint8_t)(v >> 16); b[3] = (uint8_t)(v >> 24); }
 
+/* m17: how big a graffiti may be made: 4 times its original size, wide and
+ * tall (Miggas: what the recomp shows best). The original is the game's
+ * slot for its size, by the file name (grf_<size>_.., rpolice_<size>_..;
+ * size 0 and 1 128x128, 2 384x256, 3 512x256, 4 1024x256), else the
+ * biggest slot the texture's size is 1, 2 or 4 times of; a .JTX sheet is
+ * 1024 square. 0 known */
+#define RAW_MAX_TIMES 4
+int jt_raw_max(const JFile *f, int k, int *mw, int *mh)
+{
+    static const int SW[5] = { 128, 128, 384, 512, 1024 }, SH[5] = { 128, 128, 256, 256, 256 };
+    const char *b, *u;
+    int c = -1, m, i, ow = 0, oh = 0;
+    const JTex *t;
+    if (k < 0 || k >= f->ntex) return -1;
+    t = &f->tex[k];
+    b = strrchr(f->path, '/');
+    u = strrchr(f->path, '\\');
+    if (u > b) b = u;
+    b = b ? b + 1 : f->path;
+    if (ends_with(f->path, ".jtx")) {
+        ow = oh = 1024;
+    } else {
+        u = strchr(b, '_');
+        if (u && u[1] >= '0' && u[1] <= '9') c = atoi(u + 1);
+        if (c >= 0 && c <= 4) {
+            ow = SW[c]; oh = SH[c];
+        } else {
+            for (i = 4; i >= 0 && !ow; i--)
+                for (m = 1; m <= RAW_MAX_TIMES; m *= 2)
+                    if (t->w == SW[i] * m && t->h == SH[i] * m) { ow = SW[i]; oh = SH[i]; break; }
+        }
+    }
+    if (!ow) return -1;
+    *mw = ow * RAW_MAX_TIMES;
+    *mh = oh * RAW_MAX_TIMES;
+    return 0;
+}
+
 /* m16: a graffiti file (no header: .prs, .JTX; or a .grf's TGA) made
  * factor times wider and taller, its pixels left blank for jt_encode. The
  * game may not read it: graffiti files don't say their size (the .grf's TGA
@@ -504,6 +542,10 @@ int jt_grow_raw(JFile *f, int k, int factor)
     t = f->tex[k];
     if (t.hdr != (size_t)-1 || t.box) return -1;
     if (t.w * factor > 4096 || t.h * factor > 4096) return -1;
+    {   /* m17: no more than 4 times the original */
+        int mw, mh;
+        if (jt_raw_max(f, k, &mw, &mh) || t.w * factor > mw || t.h * factor > mh) return -1;
+    }
     old_px = jt_level_size(t.fmt, t.w, t.h);
     new_px = jt_level_size(t.fmt, t.w * factor, t.h * factor);
     if (t.data + old_px > f->size) return -1;

@@ -52,7 +52,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m16"
+#define MODTOOL_VERSION "m17"
 
 /* ---- the files ---- */
 
@@ -1178,7 +1178,7 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
 {
     char in[LPATH], note[200] = "";
     const JTex *t = &s_cur.tex[k];
-    int w, h, c, grown = 0;
+    int w, h, c, grown = 0, mw = 0, mh = 0;
     uint8_t *px;
     size_t n;
     char *b;
@@ -1190,11 +1190,11 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
     free(b);
     if (!px) { snprintf(s_msg, sizeof s_msg, "%s isn't a PNG or TGA image.", in); return; }
     /* m2: a bigger texture (Miggas): square, 512, 1024, 2048 or 4096, in a
-     * .dat. m16: graffiti too, 2, 4 or 8 times as wide and tall (an
-     * experiment: their files don't say their size, the game may not read
-     * the bigger one) */
+     * .dat. m16: graffiti too, 2, 4 or 8 times as wide and tall; m17: up to
+     * 4 times their original size (the JSRF recomp shows them, v310) */
     if (!t->box && t->hdr == (size_t)-1 && w > t->w && w % t->w == 0 && h % t->h == 0
-        && w / t->w == h / t->h && (w / t->w == 2 || w / t->w == 4 || w / t->w == 8) && w <= 4096 && h <= 4096) {
+        && w / t->w == h / t->h && (w / t->w == 2 || w / t->w == 4 || w / t->w == 8) && w <= 4096 && h <= 4096
+        && !jt_raw_max(&s_cur, k, &mw, &mh) && w <= mw && h <= mh) {
         int ow = t->w, oh = t->h;
         if (jt_grow_raw(&s_cur, k, w / t->w)) {
             stbi_image_free(px);
@@ -1205,7 +1205,7 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
         }
         t = &s_cur.tex[k];
         grown = 1;
-        snprintf(note, sizeof note, " (now %dx%d, was %dx%d: experimental)", w, h, ow, oh);
+        snprintf(note, sizeof note, " (now %dx%d, was %dx%d)", w, h, ow, oh);
     } else if ((w != t->w || h != t->h) && w == h && t->box && w > t->w
         && (w == 512 || w == 1024 || w == 2048 || w == 4096)) {
         int ow = t->w;
@@ -1224,8 +1224,8 @@ static void import_texture(SDL_Renderer *ren, int k, const char *png)
         stbi_image_free(px);
         px = r;
         if (!t->box)
-            snprintf(note, sizeof note, " (resized from %dx%d: a bigger graffiti must be 2, 4 or 8 times"
-                     " its size, up to 4096)", w, h);
+            snprintf(note, sizeof note, " (resized from %dx%d: a bigger graffiti must be 2 or 4 times"
+                     " its size, up to %dx%d)", w, h, mw, mh);
         else if (w != h || w > 4096 || (w != 512 && w != 1024 && w != 2048 && w != 4096) || w < t->w)
             snprintf(note, sizeof note, " (resized from %dx%d: a bigger texture must be square, "
                      "512, 1024, 2048 or 4096)", w, h);
@@ -1245,8 +1245,14 @@ static void start_paint(SDL_Renderer *ren)
     if (!px || jt_decode(&s_cur, t, px) || paint_start(ren, px, t->w, t->h))
         snprintf(s_msg, sizeof s_msg, "Couldn't open the texture for painting.");
     else
-        paint_allow_resize((t->box && t->w == t->h) || (!t->box && t->hdr == (size_t)-1)
-                           ? 4096 : 0);   /* m4c: a .dat's (square) textures can grow; m16: graffiti too */
+    {
+        int mw = 0, mh = 0;
+        if (t->box && t->w == t->h)                  /* m4c: a .dat's (square) textures can grow */
+            mw = mh = 4096;
+        else if (!t->box && t->hdr == (size_t)-1 && jt_raw_max(&s_cur, s_sel_tex, &mw, &mh))
+            mw = mh = 0;                             /* m16: graffiti too; m17: up to 4 times */
+        paint_allow_resize(mw, mh);
+    }
     free(px);
 }
 
@@ -1265,8 +1271,7 @@ static void save_paint(SDL_Renderer *ren)
             pw = -1;
         } else {
             grown = 1;
-            snprintf(note, sizeof note, " (painted, now %dx%d, was %dx%d%s)", pw, ph, ow, oh,
-                     raw ? ": experimental" : "");
+            snprintf(note, sizeof note, " (painted, now %dx%d, was %dx%d)", pw, ph, ow, oh);
         }
     }
     if (pw > 0 && !store_texture(s_sel_tex, paint_image(), note)) {

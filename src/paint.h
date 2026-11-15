@@ -24,7 +24,7 @@ const uint8_t *paint_image(void);
 void paint_size(int *w, int *h);
 unsigned paint_serial(void);   /* m5: changes whenever the pixels do */
 /* m4c: the largest size Resize may make (0: none, as for graffiti) */
-void paint_allow_resize(int max);
+void paint_allow_resize(int max_w, int max_h);
 /* m4c: k times bigger (2, 4, 8), integer scaling; 0 done */
 int paint_resize(int k);
 /* the tools and the canvas, in the current Nuklear window, the canvas

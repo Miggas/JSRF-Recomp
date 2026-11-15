@@ -67,6 +67,8 @@ int jt_grow(JFile *f, int k, int size);
  * pixels left blank for jt_encode; the file parsed again. An experiment:
  * the game may not read it. 0 done */
 int jt_grow_raw(JFile *f, int k, int factor);
+/* m17: the biggest a graffiti may be made (4 times its original), 0 known */
+int jt_raw_max(const JFile *f, int k, int *mw, int *mh);
 
 /* bytes of one level of w x h in fmt */
 size_t jt_level_size(int fmt, int w, int h);

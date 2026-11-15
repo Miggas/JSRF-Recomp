@@ -82,7 +82,11 @@ int main(int argc, char **argv)
         raw = !f.tex[n].box && f.tex[n].hdr == (size_t)-1;      /* m16: a graffiti: SIZE its new width */
         th = raw ? f.tex[n].h * (sz / f.tex[n].w) : sz;
         if (raw ? (sz % f.tex[n].w || jt_grow_raw(&f, n, sz / f.tex[n].w)) : jt_grow(&f, n, sz)) {
-            fprintf(stderr, "can't grow\n");
+            int mw, mh;
+            if (raw && !jt_raw_max(&f, n, &mw, &mh))
+                fprintf(stderr, "can't grow: a graffiti can be up to %dx%d (4 times its original), 2 or 4 times its size\n", mw, mh);
+            else
+                fprintf(stderr, "can't grow\n");
             return 1;
         }
         px = stbi_load(argv[5], &w, &h, &c, 4);

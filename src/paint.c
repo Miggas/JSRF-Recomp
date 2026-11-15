@@ -37,7 +37,7 @@ static struct {
     Patch undo[UNDO_MAX], redo[UNDO_MAX];
     int nundo, nredo;
     char status[160];
-    int resize_max;                         /* m4c */
+    int resize_max, resize_mh;              /* m4c; m17: the height's own */
     unsigned serial;                        /* m5: changes with the pixels */
     void (*overlay)(struct nk_command_buffer *, float, float, float, float);   /* m5b */
     int ext;                                /* m6: the stroke comes from the 3D view */
@@ -170,7 +170,7 @@ int paint_start(SDL_Renderer *ren, const uint8_t *rgba, int w, int h)
     P.on = 1;
     P.dirty = 0;
     P.status[0] = 0;
-    P.resize_max = 4096;
+    P.resize_max = P.resize_mh = 4096;
     return 0;
 }
 
@@ -190,7 +190,7 @@ int paint_dirty(void) { return P.on && P.dirty; }
 void paint_saved(void) { P.dirty = 0; }
 const uint8_t *paint_image(void) { return P.img; }
 void paint_size(int *w, int *h) { *w = P.w; *h = P.h; }
-void paint_allow_resize(int max) { P.resize_max = max; }
+void paint_allow_resize(int max_w, int max_h) { P.resize_max = max_w; P.resize_mh = max_h; }
 unsigned paint_serial(void) { return P.serial; }
 
 /* m4c: the picture k times bigger, each pixel a k x k block (integer
@@ -212,7 +212,7 @@ int paint_resize(int k)
     int w = P.w * k, h = P.h * k;
     uint8_t *img, *orig, *before, *mask;
     SDL_Texture *tex;
-    if (w > P.resize_max || h > P.resize_max) return -1;
+    if (w > P.resize_max || h > P.resize_mh) return -1;
     img = scale_up(P.img, P.w, P.h, k);
     orig = scale_up(P.orig, P.w, P.h, k);
     before = (uint8_t *)malloc((size_t)w * h * 4);
@@ -590,7 +590,8 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
     nk_label_colored(ctx, P.status, NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     nk_labelf(ctx, NK_TEXT_RIGHT, "%d x %d, %d%%", P.w, P.h, (int)(P.zoom * 100 + 0.5f));
     nk_layout_row_dynamic(ctx, row, 3);
-    {   /* m4c: integer scaling, x2 x4 x8, greyed past 4096 (m16: graffiti too) */
+    {   /* m4c: integer scaling, x2 x4 x8, greyed past 4096 (m16: graffiti too;
+                 * m17: theirs past 4 times the original) */
         struct nk_rect r = nk_widget_bounds(ctx);
         if (!P.resize_max) nk_widget_disable_begin(ctx);
         if (nk_combo_begin_label(ctx, "Resize", nk_vec2(200, 4 * row + 10))) {
@@ -598,7 +599,7 @@ int paint_panel(struct nk_context *ctx, float row, float canvas_h)
             nk_layout_row_dynamic(ctx, row - 4, 1);
             for (i = 0; i < 3; i++) {
                 char t[48];
-                int w = P.w * ks[i], h = P.h * ks[i], ok = w <= P.resize_max && h <= P.resize_max;
+                int w = P.w * ks[i], h = P.h * ks[i], ok = w <= P.resize_max && h <= P.resize_mh;
                 snprintf(t, sizeof t, "x%d   %d x %d", ks[i], w, h);
                 if (!ok) nk_widget_disable_begin(ctx);
                 if (nk_combo_item_label(ctx, t, NK_TEXT_LEFT) && ok) {
