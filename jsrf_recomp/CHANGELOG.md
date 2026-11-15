@@ -11,6 +11,17 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 
 ---
 
+## v310 — 2026-11-15
+
+### Added
+- Bigger graffiti: a graffiti's `.prs` can be 2, 4 or 8 times as wide and
+  tall (the mod tool's m16 makes them), and walls and menus show it at that
+  detail. Keep the `.grf` files their own size. `RECOMP_HIRES_GRAFFITI=0`
+  turns it off.
+
+### Developer
+- `[GRAFFITI]` and `[GL] stand-in` log lines.
+
 ## v309 — 2026-11-14
 
 ### Fixed

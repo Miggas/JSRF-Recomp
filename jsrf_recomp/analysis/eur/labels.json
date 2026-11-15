@@ -3574,7 +3574,7 @@
     "name": "sub_0002DEC0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0002DF40",
@@ -3595,7 +3595,7 @@
     "name": "sub_0002E060",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0002E1D0",
@@ -5163,7 +5163,7 @@
     "name": "sub_0003AFB0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003AFD0",

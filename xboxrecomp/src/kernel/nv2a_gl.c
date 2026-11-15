@@ -4808,6 +4808,205 @@ static uint64_t tex_sparse(const NvGlTexture *t, const uint8_t *mem)
     return h;
 }
 
+/* ---- v310: bigger stand-ins for DXT textures (nv2a_gl.h) ---- */
+
+/* DXT3 blocks: 8 bytes of alpha (4 bits a pixel), two RGB565 colours, 2-bit
+ * indices. Decoded to 16 RGBA pixels, and back. */
+static void dxt3_dec(const uint8_t *b, uint8_t px[16][4])
+{
+    uint8_t c[4][3];
+    int i;
+    for (i = 0; i < 2; i++) {
+        unsigned v = b[8 + i * 2] | b[9 + i * 2] << 8;
+        c[i][0] = (uint8_t)(((v >> 11) & 31) * 255 / 31);
+        c[i][1] = (uint8_t)(((v >> 5) & 63) * 255 / 63);
+        c[i][2] = (uint8_t)((v & 31) * 255 / 31);
+    }
+    for (i = 0; i < 3; i++) {
+        c[2][i] = (uint8_t)((2 * c[0][i] + c[1][i]) / 3);
+        c[3][i] = (uint8_t)((c[0][i] + 2 * c[1][i]) / 3);
+    }
+    for (i = 0; i < 16; i++) {
+        int ix = (b[12 + i / 4] >> ((i & 3) * 2)) & 3;
+        px[i][0] = c[ix][0]; px[i][1] = c[ix][1]; px[i][2] = c[ix][2];
+        px[i][3] = (uint8_t)(((b[i >> 1] >> ((i & 1) * 4)) & 15) * 17);
+    }
+}
+
+static unsigned rgb565(int r, int g, int b)
+{
+    return (unsigned)((r * 31 + 127) / 255) << 11 | (unsigned)((g * 63 + 127) / 255) << 5
+         | (unsigned)((b * 31 + 127) / 255);
+}
+
+static void dxt3_enc(uint8_t px[16][4], uint8_t *b)
+{
+    int lo[3] = {255, 255, 255}, hi[3] = {0, 0, 0}, i, j, c[4][3];
+    unsigned c0, c1;
+    memset(b, 0, 16);
+    for (i = 0; i < 16; i++) {
+        b[i >> 1] |= (uint8_t)(((px[i][3] * 15 + 127) / 255) << ((i & 1) * 4));
+        for (j = 0; j < 3; j++) {
+            if (px[i][j] < lo[j]) lo[j] = px[i][j];
+            if (px[i][j] > hi[j]) hi[j] = px[i][j];
+        }
+    }
+    c0 = rgb565(hi[0], hi[1], hi[2]);
+    c1 = rgb565(lo[0], lo[1], lo[2]);
+    b[8] = (uint8_t)c0; b[9] = (uint8_t)(c0 >> 8);
+    b[10] = (uint8_t)c1; b[11] = (uint8_t)(c1 >> 8);
+    for (i = 0; i < 2; i++) {
+        unsigned v = i ? c1 : c0;
+        c[i][0] = (int)((v >> 11) & 31) * 255 / 31;
+        c[i][1] = (int)((v >> 5) & 63) * 255 / 63;
+        c[i][2] = (int)(v & 31) * 255 / 31;
+    }
+    for (j = 0; j < 3; j++) {
+        c[2][j] = (2 * c[0][j] + c[1][j]) / 3;
+        c[3][j] = (c[0][j] + 2 * c[1][j]) / 3;
+    }
+    for (i = 0; i < 16; i++) {
+        int best = 0, bd = 1 << 30, k;
+        for (k = 0; k < 4; k++) {
+            int dr = px[i][0] - c[k][0], dg = px[i][1] - c[k][1], db = px[i][2] - c[k][2];
+            int d = dr * dr * 2 + dg * dg * 4 + db * db;
+            if (d < bd) { bd = d; best = k; }
+        }
+        b[12 + i / 4] |= (uint8_t)(best << ((i & 3) * 2));
+    }
+}
+
+void nv2a_gl_dxt3_shrink(const void *src_, int w, int h, int k, void *dst_)
+{
+    const uint8_t *src = (const uint8_t *)src_;
+    uint8_t *dst = (uint8_t *)dst_;
+    int sbw = w / 4, nbw = w / k / 4, nbh = h / k / 4, bx, by;
+    uint8_t tmp[16][4], out[16][4];
+    for (by = 0; by < nbh; by++)
+        for (bx = 0; bx < nbw; bx++) {
+            unsigned sum[16][4];
+            int i, j, x, y;
+            memset(sum, 0, sizeof sum);
+            /* the k x k source blocks behind this one */
+            for (j = 0; j < k; j++)
+                for (i = 0; i < k; i++) {
+                    dxt3_dec(src + ((size_t)(by * k + j) * (size_t)sbw + (size_t)(bx * k + i)) * 16, tmp);
+                    for (y = 0; y < 4; y++)
+                        for (x = 0; x < 4; x++) {
+                            int q = ((j * 4 + y) / k) * 4 + (i * 4 + x) / k, c;
+                            for (c = 0; c < 4; c++) sum[q][c] += tmp[y * 4 + x][c];
+                        }
+                }
+            for (i = 0; i < 16; i++)
+                for (j = 0; j < 4; j++)
+                    out[i][j] = (uint8_t)((sum[i][j] + (unsigned)(k * k) / 2) / (unsigned)(k * k));
+            dxt3_enc(out, dst + ((size_t)by * (size_t)nbw + (size_t)bx) * 16);
+        }
+}
+
+#define STANDIN_MAX 8
+#define STANDIN_LEV 4   /* the levels above the guest's own: up to 8 times */
+typedef struct {
+    uint64_t key;       /* hash_bytes of the guest's level 0 */
+    size_t n;           /* its size */
+    int w, h, nlev;     /* the biggest level; how many levels above the guest's */
+    uint8_t *lev[STANDIN_LEV];
+    size_t lsz[STANDIN_LEV];
+    uint32_t used;      /* for throwing out the oldest */
+} StandIn;
+static StandIn s_standin[STANDIN_MAX];
+static SDL_SpinLock s_standin_lock;
+static uint32_t s_standin_clock;
+static int s_standin_any;
+
+static void standin_free(StandIn *e)
+{
+    int i;
+    for (i = 0; i < e->nlev; i++) free(e->lev[i]);
+    e->nlev = 0;
+}
+
+void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size)
+{
+    uint64_t key = hash_bytes((const uint8_t *)guest, n);
+    StandIn ne, *e = NULL;
+    int i;
+    memset(&ne, 0, sizeof ne);
+    ne.key = key; ne.n = n; ne.w = w; ne.h = h;
+    /* the given level, then each half of it until the guest's size (n bytes) */
+    while (ne.nlev < STANDIN_LEV) {
+        size_t sz = ne.nlev ? ne.lsz[ne.nlev - 1] / 4 : size;
+        int lw = w >> ne.nlev, lh = h >> ne.nlev;
+        if (sz <= n || lw < 8 || lh < 8)
+            break;
+        ne.lev[ne.nlev] = (uint8_t *)malloc(sz);
+        if (!ne.lev[ne.nlev])
+            break;
+        if (ne.nlev)
+            nv2a_gl_dxt3_shrink(ne.lev[ne.nlev - 1], lw * 2, lh * 2, 2, ne.lev[ne.nlev]);
+        else
+            memcpy(ne.lev[0], data, size);
+        ne.lsz[ne.nlev++] = sz;
+    }
+    if (!ne.nlev)
+        return;
+    SDL_AtomicLock(&s_standin_lock);
+    for (i = 0; i < STANDIN_MAX; i++)
+        if (s_standin[i].nlev && s_standin[i].key == key && s_standin[i].n == n) { e = &s_standin[i]; break; }
+    for (i = 0; !e && i < STANDIN_MAX; i++)        /* a free one */
+        if (!s_standin[i].nlev) e = &s_standin[i];
+    if (!e) {                                       /* else the oldest */
+        e = &s_standin[0];
+        for (i = 1; i < STANDIN_MAX; i++)
+            if (s_standin[i].used < e->used) e = &s_standin[i];
+    }
+    standin_free(e);
+    *e = ne;
+    e->used = ++s_standin_clock;
+    s_standin_any = 1;
+    SDL_AtomicUnlock(&s_standin_lock);
+    fprintf(stderr, "[GL] stand-in %dx%d (%d levels) for a %u-byte texture (%016llX)\n", w, h,
+            ne.nlev, (unsigned)n, (unsigned long long)key);
+}
+
+/* The stand-in for t (its level 0's hash h): its own levels, then the
+ * guest's chain from mem. How many levels went up, or 0. */
+static int standin_upload(const NvGlTexture *t, const uint8_t *mem, uint64_t h, GLenum cfmt,
+                          uint32_t block)
+{
+    int i, n = 0;
+    if (!s_standin_any)
+        return 0;
+    SDL_AtomicLock(&s_standin_lock);
+    for (i = 0; i < STANDIN_MAX; i++) {
+        StandIn *e = &s_standin[i];
+        if (e->nlev && e->key == h && e->n == t->bytes) {
+            uint32_t lv, levels = t->levels ? t->levels : 1, w = t->width, hh = t->height;
+            uint32_t off = t->offset, limit = t->offset + 2u * t->bytes;
+            for (n = 0; n < e->nlev; n++)
+                glCompressedTexImage2D(GL_TEXTURE_2D, n, cfmt, (GLsizei)(e->w >> n),
+                                       (GLsizei)(e->h >> n), 0, (GLsizei)e->lsz[n], e->lev[n]);
+            for (lv = 0; lv < levels && n < 16; lv++) {
+                uint32_t bw = (w + 3) / 4, bh = (hh + 3) / 4;
+                uint32_t sz = (bw ? bw : 1) * (bh ? bh : 1) * block;
+                if (off + sz > limit)
+                    break;
+                glCompressedTexImage2D(GL_TEXTURE_2D, n++, cfmt, (GLsizei)w, (GLsizei)hh, 0,
+                                       (GLsizei)sz, mem + off);
+                off += sz;
+                if (w == 1 && hh == 1)
+                    break;
+                w = w > 1 ? w >> 1 : 1;
+                hh = hh > 1 ? hh >> 1 : 1;
+            }
+            e->used = ++s_standin_clock;
+            break;
+        }
+    }
+    SDL_AtomicUnlock(&s_standin_lock);
+    return n;
+}
+
 static uint64_t tex_hash(const NvGlTexture *t, const uint8_t *mem)
 {
     uint64_t h = hash_bytes(mem + t->offset, t->bytes);
@@ -5118,6 +5317,20 @@ static void bind_texture(int stage, const NvGlTexture *t)
                            && !(ev && ev[0] == '0');
                 fprintf(stderr, "[GL] DXT textures uploaded %s\n",
                         s_dxt_ok ? "compressed (S3TC)" : "decoded on the CPU");
+            }
+            if (cfmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT && s_dxt_ok && !t->cube && !t->palette
+                    && !(t->width & 3) && !(t->height & 3)
+                    && (e->nlev = standin_upload(t, mem, h, cfmt, block)) > 0) {
+                /* v310: a bigger stand-in (nv2a_gl_tex_standin) */
+                e->comp = 1;
+                e->hash = h;
+                e->mips = -1;
+                e->alloc = 1;
+                e->from_gpu = 0;
+                s_n_texup++;
+                s_n_texcomp++;
+                s_tm[3] += TM_NOW() - t0;
+                goto uploaded;
             }
             if (cfmt && s_dxt_ok && !t->cube && !t->palette
                     && !(t->width & 3) && !(t->height & 3)) {
