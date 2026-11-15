@@ -11,6 +11,20 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 
 ---
 
+## v310 — 2026-11-15
+
+### Added
+- Bigger graffiti: a graffiti's `.prs` and `.grf` can be 2, 4 or 8 times as
+  wide and tall (the mod tool makes them), and the stages and the graffiti
+  select show it at that detail. Stages take it from the `.grf`, without
+  compression.
+  `RECOMP_HIRES_GRAFFITI=0` turns it off.
+
+### Developer
+- `[GRAFFITI]` and `[GL] stand-in` log lines.
+- v310c and v310g (diagnostic): what each graffiti slot got, whether the
+  bigger sheet reached the GPU, and the textures the graffiti select makes.
+
 ## v309 — 2026-11-14
 
 ### Fixed

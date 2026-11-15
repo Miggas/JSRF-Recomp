@@ -231,6 +231,26 @@ void nv2a_gl_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind
 /* Accumulated time: [0] draw calls (state, upload, draw), [1] readbacks,
  * [2] texture change checks, [3] texture uploads, in *freq ticks a second. */
 void nv2a_gl_times(uint64_t t[4], uint64_t *freq);
+/* v310: a bigger stand-in for a DXT texture, by its contents: when a texture
+ * whose bytes are `guest` (n of them, level 0 only) is uploaded, `data` (a
+ * DXT image w x h in the same format, size bytes) goes to the GPU instead.
+ * The game only ever sees its own texture; texture coordinates are 0..1, so
+ * the bigger one just shows more detail. DXT3 only; copied, with mips down
+ * to the guest's size (the guest's own chain below that); the oldest of a
+ * few goes. */
+void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size);
+/* v310e: the same for a texture uploaded decoded (any format but DXT):
+ * when its texels, decoded to A8R8G8B8 row 0 first, are `small` (sw x sh),
+ * `big` (w x h, the same layout) goes to the GPU instead; when `small` is
+ * found inside a bigger texture, that texture goes up as many times bigger
+ * with `big` over it (v310h). Copied. */
+void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big, int w, int h);
+/* v310i: the same, the stand-in uncompressed (w x h B8G8R8A8, mips made
+ * from it); and DXT3 (w x h) decoded to B8G8R8A8. */
+void nv2a_gl_tex_standin_bgra(const void *guest, size_t n, int w, int h, const void *bgra);
+void nv2a_gl_dxt3_decode(const void *src, int w, int h, void *bgra);
+/* src (w x h, DXT3) made k times smaller (k x k boxes averaged) into dst. */
+void nv2a_gl_dxt3_shrink(const void *src, int w, int h, int k, void *dst);
 
 /* Provided by nv2a_pb_exec.c: decode texture stage `stage` face `face` to
  * width*height A8R8G8B8 texels, row 0 first. Returns 0 on failure. */

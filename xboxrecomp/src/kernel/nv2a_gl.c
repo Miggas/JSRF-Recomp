@@ -4735,6 +4735,7 @@ typedef struct {
     uint32_t src_draws;  /* ...as of this many draws into it */
     int      comp;       /* v80: uploaded as S3TC with the guest's mip chain */
     int      nlev;       /* ...this many levels of it */
+    int      standin;    /* v310i: a bigger stand-in went up: mips whatever the filter */
     GLint    p_maxlev;   /* GL_TEXTURE_MAX_LEVEL last set (GL default 1000) */
     XboxGwMark wm, wmp;  /* v117: write-watch over its bytes and its palette */
     uint32_t w_dirty_frame, w_ban;   /* ...last frame it reported a write; off until */
@@ -4806,6 +4807,437 @@ static uint64_t tex_sparse(const NvGlTexture *t, const uint8_t *mem)
     if (t->palette)
         h ^= hash_bytes(mem + t->palette, 1024) * 31u;
     return h;
+}
+
+/* ---- v310: bigger stand-ins for DXT textures (nv2a_gl.h) ---- */
+
+/* DXT3 blocks: 8 bytes of alpha (4 bits a pixel), two RGB565 colours, 2-bit
+ * indices. Decoded to 16 RGBA pixels, and back. */
+static void dxt3_dec(const uint8_t *b, uint8_t px[16][4])
+{
+    uint8_t c[4][3];
+    int i;
+    for (i = 0; i < 2; i++) {
+        unsigned v = b[8 + i * 2] | b[9 + i * 2] << 8;
+        c[i][0] = (uint8_t)(((v >> 11) & 31) * 255 / 31);
+        c[i][1] = (uint8_t)(((v >> 5) & 63) * 255 / 63);
+        c[i][2] = (uint8_t)((v & 31) * 255 / 31);
+    }
+    for (i = 0; i < 3; i++) {
+        c[2][i] = (uint8_t)((2 * c[0][i] + c[1][i]) / 3);
+        c[3][i] = (uint8_t)((c[0][i] + 2 * c[1][i]) / 3);
+    }
+    for (i = 0; i < 16; i++) {
+        int ix = (b[12 + i / 4] >> ((i & 3) * 2)) & 3;
+        px[i][0] = c[ix][0]; px[i][1] = c[ix][1]; px[i][2] = c[ix][2];
+        px[i][3] = (uint8_t)(((b[i >> 1] >> ((i & 1) * 4)) & 15) * 17);
+    }
+}
+
+static unsigned rgb565(int r, int g, int b)
+{
+    return (unsigned)((r * 31 + 127) / 255) << 11 | (unsigned)((g * 63 + 127) / 255) << 5
+         | (unsigned)((b * 31 + 127) / 255);
+}
+
+static void dxt3_enc(uint8_t px[16][4], uint8_t *b)
+{
+    int lo[3] = {255, 255, 255}, hi[3] = {0, 0, 0}, i, j, c[4][3];
+    unsigned c0, c1;
+    memset(b, 0, 16);
+    for (i = 0; i < 16; i++) {
+        b[i >> 1] |= (uint8_t)(((px[i][3] * 15 + 127) / 255) << ((i & 1) * 4));
+        for (j = 0; j < 3; j++) {
+            if (px[i][j] < lo[j]) lo[j] = px[i][j];
+            if (px[i][j] > hi[j]) hi[j] = px[i][j];
+        }
+    }
+    c0 = rgb565(hi[0], hi[1], hi[2]);
+    c1 = rgb565(lo[0], lo[1], lo[2]);
+    b[8] = (uint8_t)c0; b[9] = (uint8_t)(c0 >> 8);
+    b[10] = (uint8_t)c1; b[11] = (uint8_t)(c1 >> 8);
+    for (i = 0; i < 2; i++) {
+        unsigned v = i ? c1 : c0;
+        c[i][0] = (int)((v >> 11) & 31) * 255 / 31;
+        c[i][1] = (int)((v >> 5) & 63) * 255 / 63;
+        c[i][2] = (int)(v & 31) * 255 / 31;
+    }
+    for (j = 0; j < 3; j++) {
+        c[2][j] = (2 * c[0][j] + c[1][j]) / 3;
+        c[3][j] = (c[0][j] + 2 * c[1][j]) / 3;
+    }
+    for (i = 0; i < 16; i++) {
+        int best = 0, bd = 1 << 30, k;
+        for (k = 0; k < 4; k++) {
+            int dr = px[i][0] - c[k][0], dg = px[i][1] - c[k][1], db = px[i][2] - c[k][2];
+            int d = dr * dr * 2 + dg * dg * 4 + db * db;
+            if (d < bd) { bd = d; best = k; }
+        }
+        b[12 + i / 4] |= (uint8_t)(best << ((i & 3) * 2));
+    }
+}
+
+void nv2a_gl_dxt3_shrink(const void *src_, int w, int h, int k, void *dst_)
+{
+    const uint8_t *src = (const uint8_t *)src_;
+    uint8_t *dst = (uint8_t *)dst_;
+    int sbw = w / 4, nbw = w / k / 4, nbh = h / k / 4, bx, by;
+    uint8_t tmp[16][4], out[16][4];
+    for (by = 0; by < nbh; by++)
+        for (bx = 0; bx < nbw; bx++) {
+            unsigned sum[16][4];
+            int i, j, x, y;
+            memset(sum, 0, sizeof sum);
+            /* the k x k source blocks behind this one */
+            for (j = 0; j < k; j++)
+                for (i = 0; i < k; i++) {
+                    dxt3_dec(src + ((size_t)(by * k + j) * (size_t)sbw + (size_t)(bx * k + i)) * 16, tmp);
+                    for (y = 0; y < 4; y++)
+                        for (x = 0; x < 4; x++) {
+                            int q = ((j * 4 + y) / k) * 4 + (i * 4 + x) / k, c;
+                            for (c = 0; c < 4; c++) sum[q][c] += tmp[y * 4 + x][c];
+                        }
+                }
+            for (i = 0; i < 16; i++)
+                for (j = 0; j < 4; j++)
+                    out[i][j] = (uint8_t)((sum[i][j] + (unsigned)(k * k) / 2) / (unsigned)(k * k));
+            dxt3_enc(out, dst + ((size_t)by * (size_t)nbw + (size_t)bx) * 16);
+        }
+}
+
+#define STANDIN_MAX 8
+#define STANDIN_LEV 4   /* the levels above the guest's own: up to 8 times */
+typedef struct {
+    uint64_t key;       /* hash_bytes of the guest's level 0 */
+    size_t n;           /* its size */
+    int w, h, nlev;     /* the biggest level; how many levels above the guest's */
+    uint8_t *lev[STANDIN_LEV];
+    size_t lsz[STANDIN_LEV];
+    int rgba;           /* v310i: lev[0] is w x h B8G8R8A8, nothing compressed */
+    uint32_t used;      /* for throwing out the oldest */
+    int hits;
+} StandIn;
+static StandIn s_standin[STANDIN_MAX];
+static SDL_SpinLock s_standin_lock;
+static uint32_t s_standin_clock;
+static int s_standin_any;
+
+static void standin_free(StandIn *e)
+{
+    int i;
+    for (i = 0; i < e->nlev; i++) free(e->lev[i]);
+    e->nlev = 0;
+}
+
+static void standin_put(StandIn *ne);
+
+void nv2a_gl_tex_standin(const void *guest, size_t n, int w, int h, const void *data, size_t size)
+{
+    uint64_t key = hash_bytes((const uint8_t *)guest, n);
+    StandIn ne, *e = NULL;
+    int i;
+    memset(&ne, 0, sizeof ne);
+    ne.key = key; ne.n = n; ne.w = w; ne.h = h;
+    /* the given level, then each half of it until the guest's size (n bytes) */
+    while (ne.nlev < STANDIN_LEV) {
+        size_t sz = ne.nlev ? ne.lsz[ne.nlev - 1] / 4 : size;
+        int lw = w >> ne.nlev, lh = h >> ne.nlev;
+        if (sz <= n || lw < 8 || lh < 8)
+            break;
+        ne.lev[ne.nlev] = (uint8_t *)malloc(sz);
+        if (!ne.lev[ne.nlev])
+            break;
+        if (ne.nlev)
+            nv2a_gl_dxt3_shrink(ne.lev[ne.nlev - 1], lw * 2, lh * 2, 2, ne.lev[ne.nlev]);
+        else
+            memcpy(ne.lev[0], data, size);
+        ne.lsz[ne.nlev++] = sz;
+    }
+    if (!ne.nlev)
+        return;
+    standin_put(&ne);
+}
+
+static void standin_put(StandIn *ne_)
+{
+    StandIn ne = *ne_, *e = NULL;
+    uint64_t key = ne.key;
+    size_t n = ne.n;
+    int i, w = ne.w, h = ne.h;
+    SDL_AtomicLock(&s_standin_lock);
+    for (i = 0; i < STANDIN_MAX; i++)
+        if (s_standin[i].nlev && s_standin[i].key == key && s_standin[i].n == n) { e = &s_standin[i]; break; }
+    for (i = 0; !e && i < STANDIN_MAX; i++)        /* a free one */
+        if (!s_standin[i].nlev) e = &s_standin[i];
+    if (!e) {                                       /* else the oldest */
+        e = &s_standin[0];
+        for (i = 1; i < STANDIN_MAX; i++)
+            if (s_standin[i].used < e->used) e = &s_standin[i];
+    }
+    standin_free(e);
+    *e = ne;
+    e->used = ++s_standin_clock;
+    s_standin_any = 1;
+    SDL_AtomicUnlock(&s_standin_lock);
+    fprintf(stderr, "[GL] stand-in %dx%d (%s) for a %u-byte texture (%016llX)\n", w, h,
+            ne.rgba ? "uncompressed" : ne.nlev > 1 ? "with mips" : "one level", (unsigned)n,
+            (unsigned long long)key);
+}
+
+void nv2a_gl_tex_standin_bgra(const void *guest, size_t n, int w, int h, const void *bgra)
+{
+    StandIn ne;
+    memset(&ne, 0, sizeof ne);
+    ne.key = hash_bytes((const uint8_t *)guest, n);
+    ne.n = n; ne.w = w; ne.h = h; ne.rgba = 1;
+    ne.lsz[0] = (size_t)w * (size_t)h * 4u;
+    ne.lev[0] = (uint8_t *)malloc(ne.lsz[0]);
+    if (!ne.lev[0])
+        return;
+    memcpy(ne.lev[0], bgra, ne.lsz[0]);
+    ne.nlev = 1;
+    standin_put(&ne);
+}
+
+void nv2a_gl_dxt3_decode(const void *src, int w, int h, void *bgra)
+{
+    const uint8_t *b = (const uint8_t *)src;
+    uint8_t *o = (uint8_t *)bgra, px[16][4];
+    int bx, by, i;
+    for (by = 0; by < h / 4; by++)
+        for (bx = 0; bx < w / 4; bx++, b += 16) {
+            dxt3_dec(b, px);
+            for (i = 0; i < 16; i++) {
+                uint8_t *q = o + ((size_t)(by * 4 + i / 4) * (size_t)w + (size_t)(bx * 4 + (i & 3))) * 4u;
+                q[0] = px[i][2]; q[1] = px[i][1]; q[2] = px[i][0]; q[3] = px[i][3];
+            }
+        }
+}
+
+/* The stand-in for t (its level 0's hash h): its own levels, then the
+ * guest's chain from mem. How many levels went up, or 0; -1 for one
+ * uncompressed level (v310i). */
+static int standin_upload(const NvGlTexture *t, const uint8_t *mem, uint64_t h, GLenum cfmt,
+                          uint32_t block)
+{
+    int i, n = 0;
+    if (!s_standin_any)
+        return 0;
+    SDL_AtomicLock(&s_standin_lock);
+    for (i = 0; i < STANDIN_MAX; i++) {
+        StandIn *e = &s_standin[i];
+        if (e->nlev && e->key == h && e->n == t->bytes && e->rgba) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
+                         GL_UNSIGNED_INT_8_8_8_8_REV, e->lev[0]);
+            e->used = ++s_standin_clock;
+            if (e->hits++ < 3)
+                fprintf(stderr, "[GL] stand-in %dx%d (uncompressed) used for texture %ux%u at 0x%08X\n",
+                        e->w, e->h, t->width, t->height, t->offset);
+            n = -1;
+            break;
+        }
+        if (e->nlev && e->key == h && e->n == t->bytes) {
+            uint32_t lv, levels = t->levels ? t->levels : 1, w = t->width, hh = t->height;
+            uint32_t off = t->offset, limit = t->offset + 2u * t->bytes;
+            for (n = 0; n < e->nlev; n++)
+                glCompressedTexImage2D(GL_TEXTURE_2D, n, cfmt, (GLsizei)(e->w >> n),
+                                       (GLsizei)(e->h >> n), 0, (GLsizei)e->lsz[n], e->lev[n]);
+            for (lv = 0; lv < levels && n < 16; lv++) {
+                uint32_t bw = (w + 3) / 4, bh = (hh + 3) / 4;
+                uint32_t sz = (bw ? bw : 1) * (bh ? bh : 1) * block;
+                if (off + sz > limit)
+                    break;
+                glCompressedTexImage2D(GL_TEXTURE_2D, n++, cfmt, (GLsizei)w, (GLsizei)hh, 0,
+                                       (GLsizei)sz, mem + off);
+                off += sz;
+                if (w == 1 && hh == 1)
+                    break;
+                w = w > 1 ? w >> 1 : 1;
+                hh = hh > 1 ? hh >> 1 : 1;
+            }
+            e->used = ++s_standin_clock;
+            if (e->hits++ < 3)
+                fprintf(stderr, "[GL] stand-in %dx%d used for texture %ux%u at 0x%08X (%016llX), %d levels\n",
+                        e->w, e->h, t->width, t->height, t->offset, (unsigned long long)h, n);
+            break;
+        }
+    }
+    SDL_AtomicUnlock(&s_standin_lock);
+    return n;
+}
+
+/* v310c: a texture the size of a stand-in's that it didn't match, logged
+ * (the first 24): what to look at when a bigger graffiti doesn't show */
+static void standin_miss(const NvGlTexture *t, uint64_t h)
+{
+    static int logged;
+    int i, same_size = 0;
+    if (!s_standin_any || logged >= 24)
+        return;
+    for (i = 0; i < STANDIN_MAX; i++)
+        if (s_standin[i].nlev && s_standin[i].n == t->bytes && s_standin[i].key != h) same_size = 1;
+        else if (s_standin[i].nlev && s_standin[i].key == h) return;
+    if (!same_size)
+        return;
+    logged++;
+    fprintf(stderr, "[GL] stand-in not matched: texture %ux%u format 0x%02X levels %u at 0x%08X (%016llX)\n",
+            t->width, t->height, t->color, t->levels, t->offset, (unsigned long long)h);
+}
+
+/* v310e: bigger stand-ins for textures uploaded decoded (any format but
+ * DXT), matched by the decoded texels (A8R8G8B8, row 0 first): the same
+ * pixels whatever format and swizzle the title made of them. */
+#define RGBA_STANDIN_MAX 16
+typedef struct {
+    uint64_t key;       /* hash_bytes of the small texels */
+    int sw, sh, w, h;
+    uint32_t *data;     /* w x h */
+    uint32_t *small;    /* sw x sh: v310h, looked for inside bigger textures */
+    uint32_t used;
+    int hits;
+} RgbaStandIn;
+static RgbaStandIn s_rstandin[RGBA_STANDIN_MAX];
+static SDL_SpinLock s_rstandin_lock;
+static int s_rstandin_any;
+
+void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big, int w, int h)
+{
+    uint64_t key = hash_bytes((const uint8_t *)small, (size_t)sw * (size_t)sh * 4u);
+    uint32_t *copy = (uint32_t *)malloc((size_t)w * (size_t)h * 4u);
+    uint32_t *scopy = (uint32_t *)malloc((size_t)sw * (size_t)sh * 4u);
+    RgbaStandIn *e = NULL;
+    int i;
+    if (!copy || !scopy || sw < 8 || sh < 8 || w % sw || h % sh || w / sw != h / sh) {
+        free(copy);
+        free(scopy);
+        return;
+    }
+    memcpy(copy, big, (size_t)w * (size_t)h * 4u);
+    memcpy(scopy, small, (size_t)sw * (size_t)sh * 4u);
+    SDL_AtomicLock(&s_rstandin_lock);
+    for (i = 0; i < RGBA_STANDIN_MAX; i++)
+        if (s_rstandin[i].data && s_rstandin[i].key == key) { e = &s_rstandin[i]; break; }
+    for (i = 0; !e && i < RGBA_STANDIN_MAX; i++)
+        if (!s_rstandin[i].data) e = &s_rstandin[i];
+    if (!e) {
+        e = &s_rstandin[0];
+        for (i = 1; i < RGBA_STANDIN_MAX; i++)
+            if (s_rstandin[i].used < e->used) e = &s_rstandin[i];
+    }
+    free(e->data);
+    free(e->small);
+    e->key = key; e->sw = sw; e->sh = sh; e->w = w; e->h = h; e->data = copy; e->small = scopy; e->hits = 0;
+    e->used = ++s_standin_clock;
+    s_rstandin_any = 1;
+    SDL_AtomicUnlock(&s_rstandin_lock);
+}
+
+/* v310h: where small (sw x sh) is inside px (W x H), by its middle row
+ * and then all of it: 1 and *ox, *oy */
+static int rgba_find(const uint32_t *px, int W, int H, const uint32_t *small, int sw, int sh,
+                     int *ox, int *oy)
+{
+    const int r = sh / 2;
+    const uint32_t *need = small + (size_t)r * (size_t)sw;
+    int y, x, j;
+    if (sw > W || sh > H)
+        return 0;
+    for (y = r; y <= H - (sh - r); y++) {
+        const uint32_t *row = px + (size_t)y * (size_t)W;
+        for (x = 0; x <= W - sw; x++) {
+            if (row[x] != need[0] || memcmp(row + x, need, (size_t)sw * 4u))
+                continue;
+            for (j = 0; j < sh; j++)
+                if (memcmp(px + (size_t)(y - r + j) * (size_t)W + (size_t)x,
+                           small + (size_t)j * (size_t)sw, (size_t)sw * 4u))
+                    break;
+            if (j == sh) {
+                *ox = x;
+                *oy = y - r;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* the decoded texels px of t: a stand-in for them, or a bigger copy of
+ * them with the stand-ins found inside put over their small ones (v310h:
+ * the graffiti select copies its pictures into a bigger texture), uploaded:
+ * 1. Texel coordinates are scaled by the guest's size, so a bigger GL
+ * texture is drawn the same either way. */
+#define RGBA_FOUND_MAX 8
+static int rgba_standin_upload(const NvGlTexture *t, const uint32_t *px)
+{
+    int i, done = 0, nf = 0, K = 1;
+    uint64_t key = 0;
+    int fx[RGBA_FOUND_MAX], fy[RGBA_FOUND_MAX];
+    RgbaStandIn *fe[RGBA_FOUND_MAX];
+    const int W = (int)t->width, H = (int)t->height;
+    static int logged;
+    if (!s_rstandin_any || t->cube || W < 8 || H < 8)
+        return 0;
+    SDL_AtomicLock(&s_rstandin_lock);
+    for (i = 0; i < RGBA_STANDIN_MAX; i++) {
+        RgbaStandIn *e = &s_rstandin[i];
+        if (!e->data)
+            continue;
+        if (e->sw == W && e->sh == H) {
+            if (!key)
+                key = hash_bytes((const uint8_t *)px, (size_t)W * (size_t)H * 4u);
+            if (e->key == key) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
+                             GL_UNSIGNED_INT_8_8_8_8_REV, e->data);
+                e->used = ++s_standin_clock;
+                if (e->hits++ < 2)
+                    fprintf(stderr, "[GL] stand-in %dx%d used for texture %ux%u format 0x%02X at 0x%08X\n",
+                            e->w, e->h, t->width, t->height, t->color, t->offset);
+                done = 1;
+                break;
+            }
+        } else if (nf < RGBA_FOUND_MAX && e->small && rgba_find(px, W, H, e->small, e->sw, e->sh, &fx[nf], &fy[nf])) {
+            int k = e->w / e->sw;
+            if ((size_t)W * (size_t)k * (size_t)H * (size_t)k <= (size_t)8192 * 8192) {
+                fe[nf++] = e;
+                if (k > K) K = k;
+            }
+        }
+    }
+    if (!done && nf) {
+        size_t BW = (size_t)W * (size_t)K, BH = (size_t)H * (size_t)K;
+        uint32_t *big = (uint32_t *)malloc(BW * BH * 4u);
+        if (big) {
+            size_t x, y;
+            int n;
+            for (y = 0; y < BH; y++) {                      /* the texture, each texel K x K */
+                const uint32_t *src = px + (y / (size_t)K) * (size_t)W;
+                uint32_t *dst = big + y * BW;
+                for (x = 0; x < BW; x++) dst[x] = src[x / (size_t)K];
+            }
+            for (n = 0; n < nf; n++) {                      /* the big pictures over them */
+                const RgbaStandIn *e = fe[n];
+                int f = K / (e->w / e->sw);                 /* 1 when this one is the biggest */
+                size_t pw = (size_t)e->w * (size_t)f, ph = (size_t)e->h * (size_t)f;
+                for (y = 0; y < ph; y++) {
+                    uint32_t *dst = big + ((size_t)fy[n] * (size_t)K + y) * BW + (size_t)fx[n] * (size_t)K;
+                    const uint32_t *src = e->data + (y / (size_t)f) * (size_t)e->w;
+                    for (x = 0; x < pw; x++) dst[x] = src[x / (size_t)f];
+                }
+                fe[n]->used = ++s_standin_clock;
+            }
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)BW, (GLsizei)BH, 0, GL_BGRA,
+                         GL_UNSIGNED_INT_8_8_8_8_REV, big);
+            free(big);
+            done = 1;
+            if (logged < 24) {
+                logged++;
+                fprintf(stderr, "[GL] texture %ux%u format 0x%02X at 0x%08X made %zux%zu: %d bigger picture(s), the first at %d,%d\n",
+                        t->width, t->height, t->color, t->offset, BW, BH, nf, fx[0], fy[0]);
+            }
+        }
+    }
+    SDL_AtomicUnlock(&s_rstandin_lock);
+    return done;
 }
 
 static uint64_t tex_hash(const NvGlTexture *t, const uint8_t *mem)
@@ -4964,7 +5396,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
         e->pitch = t->pitch; e->bytes = t->bytes;
         e->hash = 0; e->checked_frame = 0; e->mips = -1; e->rewritten = 0;
         e->alloc = 0; e->from_gpu = 0; e->src_fbo = 0; e->src_draws = 0;
-        e->comp = 0; e->nlev = 0;
+        e->comp = 0; e->nlev = 0; e->standin = 0;
         e->wm.ok = e->wmp.ok = 0; e->w_streak = 0; e->w_ban = 0;
     }
     s_tex_hint[hk] = (uint16_t)(e - s_tex + 1);
@@ -5119,6 +5551,26 @@ static void bind_texture(int stage, const NvGlTexture *t)
                 fprintf(stderr, "[GL] DXT textures uploaded %s\n",
                         s_dxt_ok ? "compressed (S3TC)" : "decoded on the CPU");
             }
+            e->standin = 0;
+            if (s_standin_any)
+                standin_miss(t, h);
+            if (cfmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT && s_dxt_ok && !t->cube && !t->palette
+                    && !(t->width & 3) && !(t->height & 3)
+                    && (e->nlev = standin_upload(t, mem, h, cfmt, block)) != 0) {
+                /* v310: a bigger stand-in (nv2a_gl_tex_standin); v310i: an
+                 * uncompressed one gets mips from level 0, as any other */
+                e->comp = e->nlev > 0;
+                if (e->nlev < 0) e->nlev = 0;
+                e->standin = 1;
+                e->hash = h;
+                e->mips = -1;
+                e->alloc = 1;
+                e->from_gpu = 0;
+                s_n_texup++;
+                s_n_texcomp += e->comp;
+                s_tm[3] += TM_NOW() - t0;
+                goto uploaded;
+            }
             if (cfmt && s_dxt_ok && !t->cube && !t->palette
                     && !(t->width & 3) && !(t->height & 3)) {
                 uint32_t lv, levels = t->levels ? t->levels : 1, n = 0;
@@ -5166,6 +5618,8 @@ static void bind_texture(int stage, const NvGlTexture *t)
                 for (f = 0; f < faces; f++) {
                     if (!nv2a_exec_decode_texture(stage, f, px))
                         memset(px, 0xFF, (size_t)t->width * t->height * 4);
+                    else if (!f && s_rstandin_any && rgba_standin_upload(t, px))
+                        continue;           /* v310e: a bigger one went up */
                     glTexImage2D(t->cube ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + f
                                          : GL_TEXTURE_2D,
                                  0, GL_RGBA8, (GLsizei)t->width,
@@ -5189,6 +5643,12 @@ uploaded:
     linear = (mag == 2 || min == 2 || min == 4 || min == 6);
     mips = (min >= 3 && min <= 6) && !(t->width & (t->width - 1))
         && !(t->height & (t->height - 1)) && t->normalised;
+    if (e->standin && min == 2 && t->normalised) {
+        /* v310i: a stand-in is bigger than the guest's texture, so the
+         * game's plain linear filter would shimmer: trilinear over its mips */
+        mips = 1;
+        min = 6;
+    }
     if (e->comp) {
         /* the guest's chain: only as many levels as it has, and with one
          * level no mip filter at all (what the NV2A does: LOD clamps to the
