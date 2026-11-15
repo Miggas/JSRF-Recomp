@@ -234,6 +234,8 @@ int jf_parse(JFile *f, const char *path, uint8_t *buf, size_t size)
             int k;
             for (k = 2; k <= 32; k *= 2)
                 if ((size_t)w * k * h * k == f->size) { w *= k; h *= k; break; }
+            for (k = 2; k <= 8 && (size_t)w * h != f->size; k *= 2)   /* m22: its .grf the bigger one */
+                if (!(w % k) && !(h % k) && (size_t)(w / k) * (h / k) == f->size) { w /= k; h /= k; break; }
         }
         if (w <= 0 || h <= 0 || (size_t)w * h != f->size) {          /* no .grf: square, or 512 wide */
             w = 4;

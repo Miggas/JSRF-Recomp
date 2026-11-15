@@ -57,7 +57,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m21"
+#define MODTOOL_VERSION "m22"
 
 /* ---- the files ---- */
 
@@ -98,13 +98,15 @@ static const char *char_name(const char *file)
     return NULL;
 }
 
+static void game_path(char *out, const char *rel);
+
 static void classify(Entry *e)
 {
     static const struct { const char *dir; int cat, sec; const char *name; } m[] = {
         { "Player", CAT_CHAR, 0, "Characters" },
-        { "Mark/PRESS", CAT_GRAF, 10, "Graffiti sheets" },
+        { "Mark/PRESS", CAT_OTHER, 10, "Graffiti sheets" },   /* m22: not listed (Miggas) */
         { "Mark/DEFAULT", CAT_GRAF, 11, "Default graffiti" },
-        { "Mark", CAT_GRAF, 12, "Graffiti editor" },
+        { "Mark", CAT_UI, 8, "Graffiti editor" },             /* m22: a menu's (Miggas) */
         { "Stage/Custom", CAT_STAGE, 1, "Custom" },
         { "Stage", CAT_STAGE, 0, "Areas" },
         { "StgObj", CAT_OBJ, 0, "Street objects" }, { "People", CAT_OBJ, 1, "Pedestrians" },
@@ -150,6 +152,19 @@ static void classify(Entry *e)
         if (!SDL_strncasecmp(base, "grf_", 4) && base[4] >= '0' && base[4] <= '4' && base[5] == '_') {
             e->sec = base[4] - '0';
             snprintf(e->secname, sizeof e->secname, "%s", graf[e->sec]);
+            /* m22: one entry a graffiti, its .grf (its .prs follows it),
+             * shown by its number (Miggas) */
+            {
+                const char *dot = strrchr(base, '.');
+                int nl = dot ? (int)(dot - (base + 6)) : (int)strlen(base + 6);
+                if (dot && !SDL_strcasecmp(dot, ".prs")) {
+                    char g[LPATH], gr[512];
+                    snprintf(gr, sizeof gr, "%.*s.grf", (int)(dot - e->rel), e->rel);
+                    game_path(g, gr);
+                    if (is_file(g)) e->cat = CAT_OTHER;
+                }
+                snprintf(e->label, sizeof e->label, "#%.*s", nl, base + 6);
+            }
         } else {
             e->sec = 9;
             snprintf(e->secname, sizeof e->secname, "Other graffiti");
@@ -699,15 +714,132 @@ static int store_file(const char *done)
     return 0;
 }
 
+/* ---- m22: graffiti thumbnails in the file list (Miggas), made as they're
+ * shown (a few a frame), dropped when the file changes ---- */
+#define THUMB_H 32
+typedef struct { char rel[512]; SDL_Texture *tx; int w, h; } Thumb;
+static Thumb s_thumbs[512];
+static int s_nthumbs, s_thumbs_made;
+
+static void thumbs_new_frame(void) { s_thumbs_made = 0; }
+
+static const Thumb *thumb_get(SDL_Renderer *ren, const char *rel)
+{
+    int i, w, h, c, tw;
+    char p[LPATH];
+    size_t n;
+    char *b;
+    uint8_t *px, *sm;
+    Thumb *t;
+    for (i = 0; i < s_nthumbs; i++)
+        if (!strcmp(s_thumbs[i].rel, rel)) return &s_thumbs[i];
+    if (s_nthumbs >= (int)(sizeof s_thumbs / sizeof s_thumbs[0])) return NULL;
+    if (s_thumbs_made >= 4) return NULL;            /* the rest in the next frames */
+    s_thumbs_made++;
+    t = &s_thumbs[s_nthumbs++];
+    memset(t, 0, sizeof *t);
+    snprintf(t->rel, sizeof t->rel, "%s", rel);
+    game_path(p, rel);
+    b = read_file(p, &n);
+    if (!b) return t;
+    px = stbi_load_from_memory((const stbi_uc *)b, (int)n, &w, &h, &c, 4);
+    free(b);
+    if (!px || w < 1 || h < 1) { if (px) stbi_image_free(px); return t; }
+    tw = (int)((long)THUMB_H * w / h);
+    if (tw > THUMB_H * 4) tw = THUMB_H * 4;
+    if (tw < 1) tw = 1;
+    sm = resize(px, w, h, tw, THUMB_H);
+    stbi_image_free(px);
+    if (!sm) return t;
+    t->tx = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, tw, THUMB_H);
+    if (t->tx) {
+        SDL_UpdateTexture(t->tx, NULL, sm, tw * 4);
+        SDL_SetTextureBlendMode(t->tx, SDL_BLENDMODE_BLEND);
+        t->w = tw;
+        t->h = THUMB_H;
+    }
+    free(sm);
+    return t;
+}
+
+static void thumb_drop(const char *rel)
+{
+    int i;
+    for (i = 0; i < s_nthumbs; i++)
+        if (!strcmp(s_thumbs[i].rel, rel)) {
+            if (s_thumbs[i].tx) SDL_DestroyTexture(s_thumbs[i].tx);
+            s_thumbs[i] = s_thumbs[--s_nthumbs];
+            return;
+        }
+}
+
+/* m22: a file other than the picked one written over the game's (the
+ * original kept first, once) and its cached copy; 0 done */
+static int store_rel(const char *rel, const uint8_t *buf, size_t size)
+{
+    char out[LPATH], dir[LPATH], bak[LPATH], cp[LPATH], *s;
+    game_path(out, rel);
+    backup_path(bak, rel);
+    snprintf(dir, sizeof dir, "%s", bak);
+    if ((s = strrchr(dir, SEP[0]))) { *s = 0; make_dirs(dir); }
+    if (!is_file(bak) && !copy_file(out, bak)) return -1;
+    if (!write_file(out, buf, size)) return -1;
+    cache_path(cp, rel);
+    if (is_file(cp)) write_cache(cp, buf, size);
+    return 0;
+}
+
+/* m22: a graffiti's .grf just saved with px (its w x h): the same picture
+ * into its .prs, at the .prs's own size (the game's copy; the JSRF recomp
+ * shows the .grf), so the two are one graffiti (Miggas). 0 done, 1 none */
+static int sync_prs(const char *grf_rel, const uint8_t *px, int w, int h)
+{
+    char rel[512], p[LPATH];
+    size_t n, L = strlen(grf_rel);
+    char *b;
+    JFile f;
+    int mw, mh, ow, oh, r = -1;
+    uint8_t *img = NULL;
+    if (L < 4 || SDL_strcasecmp(grf_rel + L - 4, ".grf") || !SDL_strcasestr(grf_rel, "Mark/TEX/")) return 1;
+    snprintf(rel, sizeof rel, "%.*s.prs", (int)(L - 4), grf_rel);
+    game_path(p, rel);
+    b = read_file(p, &n);
+    if (!b) return 1;
+    memset(&f, 0, sizeof f);
+    if (jf_parse(&f, p, (uint8_t *)b, n) || f.ntex < 1 || jt_raw_max(&f, 0, &mw, &mh)) {
+        jf_free(&f);
+        return -1;
+    }
+    ow = mw / 4; oh = mh / 4;
+    if ((f.tex[0].w != ow || f.tex[0].h != oh) && jt_resize_raw(&f, 0, ow, oh)) { jf_free(&f); return -1; }
+    img = (w == ow && h == oh) ? NULL : resize(px, w, h, ow, oh);
+    if ((img || (w == ow && h == oh)) && !jt_encode(&f, &f.tex[0], img ? img : px))
+        r = store_rel(rel, f.buf, f.size);
+    free(img);
+    jf_free(&f);
+    return r;
+}
+
 static int store_texture(int k, const uint8_t *px, const char *note)
 {
     char done[300];
+    int r;
     if (jt_encode(&s_cur, &s_cur.tex[k], px)) {
         snprintf(s_msg, sizeof s_msg, "Couldn't encode the texture.");
         return -1;
     }
     snprintf(done, sizeof done, "Texture %d replaced%s", k, note);
-    return store_file(done);
+    r = store_file(done);
+    if (r >= 0) {
+        int q;
+        thumb_drop(s_files[s_sel_file].rel);                /* m22 */
+        q = sync_prs(s_files[s_sel_file].rel, px, s_cur.tex[k].w, s_cur.tex[k].h);
+        if (q == 0)
+            snprintf(s_msg + strlen(s_msg), sizeof s_msg - strlen(s_msg), "; its .prs too, at the game's size");
+        else if (q < 0)
+            snprintf(s_msg + strlen(s_msg), sizeof s_msg - strlen(s_msg), "; its .prs couldn't be written");
+    }
+    return r;
 }
 
 /* ---- m8: a model for Blender: .obj, .mtl and its texture as a PNG, in
@@ -1658,6 +1790,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     nk_end(ctx);
 
     /* the files: the tab's, in collapsible sections */
+    thumbs_new_frame();                              /* m22 */
     if (nk_begin(ctx, "Files", nk_rect(0, top, LW_FILES, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         static int *view;
         static int capview;
@@ -1682,23 +1815,36 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             int n = 0;
             for (k = i; k < nview && s_files[view[k]].cat == e0->cat && s_files[view[k]].sec == e0->sec
                         && !strcmp(s_files[view[k]].secname, e0->secname); k++) n++;
-            if (e0->cat == CAT_GRAF && e0->sec <= 4)
-                snprintf(head, sizeof head, "%s, %d x %d (%d)", e0->secname, e0->w, e0->h, n);
+            if (e0->cat == CAT_GRAF && e0->sec <= 4) {   /* m22: the game's size of each (some may be bigger) */
+                static const int GW[5] = { 128, 128, 384, 512, 1024 }, GH[5] = { 128, 128, 256, 256, 256 };
+                snprintf(head, sizeof head, "%s, %d x %d (%d)", e0->secname, GW[e0->sec], GH[e0->sec], n);
+            }
             else
                 snprintf(head, sizeof head, "%s (%d)", e0->secname, n);
             snprintf(hash, sizeof hash, "%d/%d/%s", s_tab, e0->cat, e0->secname);
-            /* open at first, but graffiti and All's (many files) closed */
-            if (nk_tree_push_hashed(ctx, NK_TREE_TAB, head,
-                                    s_tab == CAT_GRAF ? NK_MINIMIZED : NK_MAXIMIZED,
-                                    hash, (int)strlen(hash), 0)) {
+            /* m22: every section closed at first (Miggas) */
+            if (nk_tree_push_hashed(ctx, NK_TREE_TAB, head, getenv("MT_OPEN") ? NK_MAXIMIZED : NK_MINIMIZED,
+                                    hash, (int)strlen(hash), 0)) {   /* (MT_OPEN: tests) */
                 int q;
                 for (q = i; q < k; q++) {
                     const Entry *e = &s_files[view[q]];
                     char lb[160];
                     int sel = view[q] == s_sel_file;
-                    nk_layout_row_dynamic(ctx, row - 6, 1);
-                    snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex ? e->ntex : e->nsnd);
-                    if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && sel && !busy && may_leave_paint()) {
+                    const Thumb *th = e->cat == CAT_GRAF && e->sec <= 4 ? thumb_get(ren, e->rel) : NULL;
+                    if (e->cat == CAT_GRAF && e->sec <= 4) {      /* m22: a thumbnail, then its number */
+                        float tw = th && th->tx ? (float)th->w : (float)THUMB_H;
+                        nk_layout_row_begin(ctx, NK_STATIC, (float)THUMB_H + 2, 2);
+                        nk_layout_row_push(ctx, tw);
+                        if (th && th->tx) nk_image(ctx, nk_image_ptr(th->tx));
+                        else nk_spacing(ctx, 1);
+                        nk_layout_row_push(ctx, LW_FILES - tw - 60);
+                        snprintf(lb, sizeof lb, "%s", e->label);
+                    } else {
+                        nk_layout_row_dynamic(ctx, row - 6, 1);
+                        snprintf(lb, sizeof lb, "%s  (%d)", e->label, e->ntex ? e->ntex : e->nsnd);
+                    }
+                    if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) + (e->cat == CAT_GRAF && e->sec <= 4 ? (nk_layout_row_end(ctx), 0) : 0)
+                        && sel && !busy && may_leave_paint()) {
                         open_file(view[q]);
                         if (s_cur.ntex) show_texture(ren, getenv("MT_TEX") && atoi(getenv("MT_TEX")) < s_cur.ntex ? atoi(getenv("MT_TEX")) : 0);
                         else if (s_snd.n) show_sound(getenv("MT_SND") && atoi(getenv("MT_SND")) < s_snd.n ? atoi(getenv("MT_SND")) : 0);   /* m7 */
