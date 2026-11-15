@@ -182,6 +182,9 @@ static uint8_t *prs_grf(uint32_t num, uint32_t sw, uint32_t sh, int *k)
     if (!dot || (dot[1] | 32) != 'p' || (dot[2] | 32) != 'r' || (dot[3] | 32) != 's' || dot[4])
         return NULL;
     strcpy(dot, ".grf");
+    /* v310k: the names say A:, which the game reads from the disc (D:) */
+    if ((xp[0] | 32) == 'a' && xp[1] == ':')
+        xp[0] = 'D';
     {
 #if defined(_WIN32)
         WCHAR hp[1024];
@@ -191,9 +194,12 @@ static uint8_t *prs_grf(uint32_t num, uint32_t sw, uint32_t sh, int *k)
         if (xbox_translate_path(xp, hp, (DWORD)sizeof hp)) f = fopen(hp, "rb");
 #endif
     }
-    if (!f)
+    if (!f) {
+        fprintf(stderr, "[GRAFFITI] %s (graffiti %u): not opened\n", xp, num);
         return NULL;
+    }
     if (fread(hd, 1, 18, f) != 18 || hd[2] != 2 || hd[16] != 32) {
+        fprintf(stderr, "[GRAFFITI] %s: not a 32-bit TGA\n", xp);
         fclose(f);
         return NULL;
     }
@@ -202,6 +208,8 @@ static uint8_t *prs_grf(uint32_t num, uint32_t sw, uint32_t sh, int *k)
     for (n = 2; n <= 8; n *= 2)
         if (w == sw * (uint32_t)n && h == sh * (uint32_t)n) break;
     if (n > 8) {                        /* its own size (or another): nothing to add */
+        if (w != sw || h != sh)
+            fprintf(stderr, "[GRAFFITI] %s is %ux%u, not 2, 4 or 8 times %ux%u: not used\n", xp, w, h, sw, sh);
         fclose(f);
         return NULL;
     }
