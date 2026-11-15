@@ -5070,6 +5070,33 @@ void nv2a_gl_tex_standin_rgba(const void *small, int sw, int sh, const void *big
     SDL_AtomicUnlock(&s_rstandin_lock);
 }
 
+/* v310g: a texture the size of an RGBA stand-in's small one going up,
+ * whatever way: logged (the first 24), to see what the title made of it */
+static void rgba_standin_seen(const NvGlTexture *t, int dxt)
+{
+    static int logged;
+    int i;
+    if (logged >= 24)
+        return;
+    for (i = 0; i < RGBA_STANDIN_MAX; i++)
+        if (s_rstandin[i].data && s_rstandin[i].sw == (int)t->width && s_rstandin[i].sh == (int)t->height) {
+            logged++;
+            fprintf(stderr, "[GL] a %ux%u texture: format 0x%02X%s, %s, levels %u%s%s, pitch %u, at 0x%08X\n",
+                    t->width, t->height, t->color, dxt ? " (DXT)" : "", t->normalised ? "0..1" : "texel coordinates",
+                    t->levels, t->cube ? ", cube" : "", t->palette ? ", palette" : "", t->pitch, t->offset);
+            return;
+        }
+    {   /* and the next 40 others, in case the title made it another size */
+        static int others;
+        if (others < 40) {
+            others++;
+            fprintf(stderr, "[GL] another texture after a stand-in: %ux%u format 0x%02X%s, %s, levels %u, at 0x%08X\n",
+                    t->width, t->height, t->color, dxt ? " (DXT)" : "", t->normalised ? "0..1" : "texel coordinates",
+                    t->levels, t->offset);
+        }
+    }
+}
+
 /* the decoded texels px of t: a stand-in for them uploaded, 1 */
 static int rgba_standin_upload(const NvGlTexture *t, const uint32_t *px)
 {
@@ -5420,6 +5447,8 @@ static void bind_texture(int stage, const NvGlTexture *t)
             }
             if (s_standin_any)
                 standin_miss(t, h);
+            if (s_rstandin_any)
+                rgba_standin_seen(t, cfmt != 0);
             if (cfmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT && s_dxt_ok && !t->cube && !t->palette
                     && !(t->width & 3) && !(t->height & 3)
                     && (e->nlev = standin_upload(t, mem, h, cfmt, block)) > 0) {
