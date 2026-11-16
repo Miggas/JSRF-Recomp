@@ -11,6 +11,25 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 
 ---
 
+## v311 — 2026-11-16
+
+### Added
+- Early Test Runs: Roboy's Test Run menu opens before the end of the story.
+  A test run needs its area's graffiti souls and: 99th Street, chapter 2
+  finished; the Tokyo Underground Sewage Facility and its bottom point,
+  chapter 3; Sky Dinosaurian Square, chapter 6; Dogenzaka Hill, the
+  Skyscraper District and Pharaoh Park, and Hikage Street, chapter 7 and
+  their area's battle won. The other areas wait for the end of the story.
+  Character rewards from test runs work the same way.
+  Off by default: `RECOMP_EARLY_TESTRUNS=story` for this, `souls` for every
+  test run once its souls are collected, any chapter (launcher: Gameplay →
+  Test Runs).
+
+### Developer
+- `RECOMP_TESTRUNS_LOG=1`, `RECOMP_TESTRUNS_ALL=1` and
+  `RECOMP_TESTRUNS_RULES` (v311, diagnostic, to map the test runs to their
+  areas).
+
 ## v310 — 2026-11-15
 
 ### Added

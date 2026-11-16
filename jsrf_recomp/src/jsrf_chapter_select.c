@@ -1081,6 +1081,29 @@ static int flag_holds(uint32_t w)
     if (l > 3u || i >= 0x200u) return 0;
     return ((MEM32(SAVE + base[l] + (i >> 5) * 4u) >> (i & 31u)) & 1u) == v;
 }
+/* v311: for jsrf_testruns.c: every flag word mission id's scripts write
+ * (its 4 lists), to cb with the command's opcode and list; and whether a
+ * flag word holds now. 0: the mission's file wasn't opened */
+typedef void (*cs_word_fn)(uint32_t w, uint32_t op, int list, void *ctx);
+struct cs_fwd { cs_word_fn fn; void *ctx; int list; };
+static void cs_fwd_word(uint32_t w, uint32_t op, const uint8_t *cmd, void *ctx)
+{
+    struct cs_fwd *q = (struct cs_fwd *)ctx;
+    (void)cmd;
+    q->fn(w, op, q->list, q->ctx);
+}
+int cs_mission_writes(unsigned id, cs_word_fn fn, void *ctx)
+{
+    FILE *f = mm_open(id);
+    struct cs_fwd q;
+    if (!f) return 0;
+    q.fn = fn; q.ctx = ctx;
+    for (q.list = 0; q.list < 4; q.list++) mm_walk(f, q.list, 1, cs_fwd_word, &q);
+    fclose(f);
+    return 1;
+}
+int cs_flag_holds(uint32_t w) { return flag_holds(w); }
+
 static void cleared_tick(uint32_t o)
 {
     uint32_t sc, c, m, cmds, n, i, k;

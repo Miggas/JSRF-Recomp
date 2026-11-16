@@ -718,7 +718,7 @@
     "name": "sub_000149A0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x000149B0",
@@ -4995,14 +4995,14 @@
     "name": "sub_0003A7E0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003A870",
     "name": "sub_0003A870",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0003A9F0",
@@ -11904,7 +11904,7 @@
     "name": "sub_00075F50",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x000762A0",
@@ -31581,7 +31581,7 @@
     "name": "sub_0011B280",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0011B5F0",
