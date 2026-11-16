@@ -132,7 +132,7 @@ the game drops frames while it waits. To avoid that:
 2. Back in Gaming Mode, open the Quick Access menu (**…**), go to Decky's
    store and install **PowerTools**.
 3. While JSRF is running, open PowerTools and set the CPU governor to
-   **performance**. Turn on its per-game profile so this only applies to
+   **performance**. Turn on its persistent profile so this only applies to
    JSRF.
 
 ---
