@@ -11,6 +11,17 @@ details of each, with the how and the why, are in `README_JSRF.md`.
 
 ---
 
+## v311 — 2026-11-16 — (diagnostic)
+
+### Added
+- Early Test Runs, first step: Roboy's Test Run menu can open before the end
+  of the story, each test run waiting for its area's chapter and souls.
+  `RECOMP_EARLY_TESTRUNS=0` turns it off.
+
+### Developer
+- `RECOMP_TESTRUNS_LOG=1`, `RECOMP_TESTRUNS_ALL=1` and
+  `RECOMP_TESTRUNS_RULES` to map the test runs to their areas.
+
 ## v310 — 2026-11-15
 
 ### Added
