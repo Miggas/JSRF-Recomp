@@ -489,6 +489,20 @@ static void tab_play(struct nk_context *ctx)
     }
     if (req_line(ctx, "Game files", xbe, xbe_ok, "default.xbe not found here: choose the game folder"))
         choose_game_folder();
+    /* v2y: Verify files (Miggas): the release's Media files all there */
+    if (xbe) {
+        static char vmsg[256];
+        static int vres = -2;
+        static char vdir[LPATH];
+        if (strcmp(vdir, g_paths.game)) { vres = -2; vmsg[0] = 0; snprintf(vdir, sizeof vdir, "%s", g_paths.game); }
+        nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
+        nk_layout_row_push(ctx, 0.22f);
+        if (button(ctx, "Verify files", !job_busy())) vres = verify_media(vmsg, sizeof vmsg);
+        nk_layout_row_push(ctx, 0.78f);
+        if (vres == -2) nk_label_colored(ctx, "Checks that none of the game's files is missing.", NK_TEXT_LEFT, C_DIM);
+        else nk_label_colored(ctx, vmsg, NK_TEXT_LEFT, vres == 0 ? C_OK : C_BAD);
+        nk_layout_row_end(ctx);
+    }
     if (req_line(ctx, "Project source", g_paths.have_source, "downloaded", "not downloaded yet: go to Update"))
         s_tab = TAB_UPDATE;
     if (req_line(ctx, "Build tools", tools, "ready", "not downloaded yet: go to Build (about 150 MB)"))

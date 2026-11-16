@@ -1400,3 +1400,112 @@ bool play(void)
     if (!is_file(exe)) return false;
     return launch(exe, g_paths.game);
 }
+
+/* ======================================================================
+ * v2y: Play > Verify files (Miggas): every file of the game's Media folder
+ * the game's release has (media_list.h) is there. Only that they exist:
+ * modded files may have other sizes. Names compared ignoring case (Linux).
+ * ==================================================================== */
+#include "media_list.h"
+
+typedef struct { char **v; int n, cap; char root[LPATH]; } MediaWalk;
+
+static void mw_lower(char *s) { for (; *s; s++) *s = (char)tolower((unsigned char)*s); }
+
+static void mw_dir(MediaWalk *w, const char *rel);
+typedef struct { MediaWalk *w; const char *rel; } MwCtx;
+static void mw_cb(const char *name, bool isdir, void *u)
+{
+    MwCtx *c = u;
+    char r[LPATH];
+    snprintf(r, sizeof r, "%s%s%s", c->rel, *c->rel ? "/" : "", name);
+    if (isdir) { mw_dir(c->w, r); return; }
+    if (c->w->n == c->w->cap) {
+        c->w->cap = c->w->cap ? c->w->cap * 2 : 4096;
+        c->w->v = realloc(c->w->v, sizeof(char *) * (size_t)c->w->cap);
+    }
+    mw_lower(r);
+    c->w->v[c->w->n++] = strdup(r);
+}
+static void mw_dir(MediaWalk *w, const char *rel)
+{
+    char p[LPATH];
+    MwCtx c = { w, rel };
+    if (*rel) pjoin(p, w->root, rel); else snprintf(p, sizeof p, "%s", w->root);
+    list_dir(p, mw_cb, &c);
+}
+static int mw_cmp(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
+
+/* the game folder's Media folder, whatever its case */
+static void mw_media_name(const char *name, bool isdir, void *u)
+{
+    char *found = u;
+    if (isdir && !*found && strlen(name) == 5) {
+        char l[8];
+        snprintf(l, sizeof l, "%s", name);
+        mw_lower(l);
+        if (!strcmp(l, "media")) snprintf(found, 64, "%s", name);
+    }
+}
+
+static int mw_check(MediaWalk *w, const char *list, int *missing, int *shown)
+{
+    int n = 0;
+    const char *s = list;
+    while (*s) {
+        const char *e = strchr(s, '\n');
+        char rel[LPATH], low[LPATH], *key = low;
+        size_t len = e ? (size_t)(e - s) : strlen(s);
+        if (len >= sizeof rel) len = sizeof rel - 1;
+        memcpy(rel, s, len); rel[len] = 0;
+        snprintf(low, sizeof low, "%s", rel);
+        mw_lower(low);
+        if (!bsearch(&key, w->v, (size_t)w->n, sizeof(char *), mw_cmp)) {
+            (*missing)++;
+            if ((*shown)++ < 200) logf_("  missing: Media/%s", rel);
+        }
+        n++;
+        s = e ? e + 1 : s + len;
+    }
+    return n;
+}
+
+int verify_media(char *msg, size_t cap)
+{
+    uint32_t id, rg, ver;
+    const char *tag;
+    char media[64] = "";
+    MediaWalk w;
+    int missing = 0, shown = 0, total;
+    bool pal;
+    if (!have_xbe() || !xbe_facts_v(&id, NULL, &rg, &ver) || !(tag = title_tag(id, rg, ver))) {
+        snprintf(msg, cap, "Choose a game folder with a release the project knows first.");
+        return -1;
+    }
+    pal = !strcmp(tag, "eur");
+    list_dir(g_paths.game, mw_media_name, media);
+    if (!*media) {
+        snprintf(msg, cap, "No Media folder next to %s: copy the whole game here.", game_xbe_name());
+        logf_("Verify files: no Media folder in %s", g_paths.game);
+        return -1;
+    }
+    memset(&w, 0, sizeof w);
+    pjoin(w.root, g_paths.game, media);
+    mw_dir(&w, "");
+    qsort(w.v, (size_t)w.n, sizeof(char *), mw_cmp);
+    logf_("Verify files: %s, %d files found in %s", xbe_release(), w.n, w.root);
+    total = mw_check(&w, MEDIA_NTSC, &missing, &shown);
+    if (pal) total += mw_check(&w, MEDIA_PAL_EXTRA, &missing, &shown);
+    for (int i = 0; i < w.n; i++) free(w.v[i]);
+    free(w.v);
+    if (missing) {
+        if (shown > 200) logf_("  ... and %d more", shown - 200);
+        snprintf(msg, cap, "%d of the game's %d files missing (listed in launcher_log.txt): copy the whole game again.",
+                 missing, total);
+        logf_("Verify files: %d of %d missing", missing, total);
+    } else {
+        snprintf(msg, cap, "All %d of the game's files are there.", total);
+        logf_("Verify files: all %d there", total);
+    }
+    return missing;
+}
