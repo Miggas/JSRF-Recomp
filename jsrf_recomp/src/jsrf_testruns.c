@@ -23,8 +23,8 @@
  * A test run's results give its character rewards only in chapter 9 too
  * (sub_0011A8B0): told 9 the same way, the rewards' own checks kept.
  *
- * RECOMP_EARLY_TESTRUNS: story (the default), souls (souls only, any
- * chapter), off. RECOMP_TESTRUNS_LOG=1 logs the
+ * RECOMP_EARLY_TESTRUNS: story, souls (souls only, any chapter), off (the
+ * default). RECOMP_TESTRUNS_LOG=1 logs the
  * menu's rows and every area's souls; RECOMP_TESTRUNS_ALL=1 makes every row
  * available (to read their names in the menu); RECOMP_TESTRUNS_RULES=
  * "area:chapter[:flagword],..." replaces the built-in rules (area: 0-13,
@@ -64,18 +64,18 @@ static int env_on(const char *name, int def)
     return e && e[0] ? e[0] != '0' : def;
 }
 
-/* v311d: RECOMP_EARLY_TESTRUNS (Miggas): story (the default: the rules
- * below), souls (every test run once its souls are collected, any chapter),
- * off (or 0: as the game, the end of the story first) */
+/* v311d: RECOMP_EARLY_TESTRUNS (Miggas): story (the rules below), souls
+ * (every test run once its souls are collected, any chapter), off (the
+ * default since v311e, or 0: as the game, the end of the story first) */
 enum { TR_OFF, TR_STORY, TR_SOULS };
 static int tr_mode(void)
 {
     static int m = -1;
     if (m < 0) {
         const char *e = getenv("RECOMP_EARLY_TESTRUNS");
-        if (!e || !*e || !strcmp(e, "1") || !strcmp(e, "story")) m = TR_STORY;
-        else if (!strcmp(e, "souls")) m = TR_SOULS;
-        else m = TR_OFF;
+        if (e && (!strcmp(e, "1") || !strcmp(e, "story"))) m = TR_STORY;
+        else if (e && !strcmp(e, "souls")) m = TR_SOULS;
+        else m = TR_OFF;                       /* v311e: off by default (Miggas) */
         fprintf(stderr, "[TESTRUNS] early test runs: %s (RECOMP_EARLY_TESTRUNS)\n",
                 m == TR_STORY ? "story (by chapter, battles and souls)" : m == TR_SOULS ? "souls only" : "off");
     }
