@@ -233,6 +233,15 @@ void sub_000756E0(void)
         sub_000756E0_gen();
         return;
     }
+    /* v311f: Roboy's menu entries the build may turn on, as they were: the
+     * game only ever sets them, and other buttons share the table (Miggas:
+     * written as 0, they locked every button but Change BGM) */
+    uint32_t before[5] = { 0, 0, 0, 0, 0 };
+    marks = MEM32(menu + 0xB4u);
+    if (marks) {
+        for (l = 0; l < 4; l++) before[l] = MEM32(marks + 8u + 0x10u * (uint32_t)l);
+        before[4] = MEM32(marks + 0x58u);
+    }
     s_say9 = 1;
     sub_000756E0_gen();
     s_say9 = 0;
@@ -259,10 +268,11 @@ void sub_000756E0(void)
                         souls ? "all" : "not all", *av ? "open" : "locked");
             open |= *av != 0;
         }
-        MEM32(marks + 8u + 0x10u * (uint32_t)l) = (uint32_t)open;
+        /* on if a row is open, else as it was before the build */
+        MEM32(marks + 8u + 0x10u * (uint32_t)l) = open ? 1u : before[l];
         any |= open;
     }
-    MEM32(marks + 0x58u) = (uint32_t)any;
+    MEM32(marks + 0x58u) = any ? 1u : before[4];
     if (logit)
         fprintf(stderr, "[TESTRUNS] chapter %u: the Test Run menu %s\n", ch, any ? "open" : "locked");
 }
