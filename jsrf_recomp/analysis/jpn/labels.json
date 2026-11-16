@@ -32351,7 +32351,7 @@
     "name": "sub_0011A8B0",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0011AC20",

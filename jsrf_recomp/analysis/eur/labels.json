@@ -31581,7 +31581,7 @@
     "name": "sub_0011B280",
     "type": "function",
     "section": ".text",
-    "confidence": 0.9
+    "confidence": 0.95
   },
   {
     "address": "0x0011B5F0",

@@ -20,13 +20,15 @@
  * won (a save flag). Areas with no rule wait for the end of the story as
  * before. The lists' and the menu's marks follow.
  *
+ * A test run's results give its character rewards only in chapter 9 too
+ * (sub_0011A8B0): told 9 the same way, the rewards' own checks kept.
+ *
  * RECOMP_EARLY_TESTRUNS=0 turns it off. RECOMP_TESTRUNS_LOG=1 logs the
  * menu's rows and every area's souls; RECOMP_TESTRUNS_ALL=1 makes every row
  * available (to read their names in the menu); RECOMP_TESTRUNS_RULES=
  * "area:chapter[:flagword],..." replaces the built-in rules (area: 0-13,
  * chapter: the one that must be finished, flagword: a save flag word, hex,
- * that must hold). (v311, diagnostic: the rules are to come from Miggas's
- * log.)
+ * that must hold).
  */
 
 #include <stdio.h>
@@ -47,6 +49,7 @@
 
 extern void sub_000756E0_gen(void);
 extern void sub_000149D0_gen(void);
+extern void sub_0011A8B0_gen(void);
 extern void sub_0003A0A0(void);
 extern void sub_0003A130(void);
 
@@ -67,10 +70,39 @@ typedef struct { int area; int chapter; uint32_t flag; } Rule;
 static Rule s_rules[MAX_RULES];
 static int s_nrules = -1;
 
+/* a save flag word of the global set, its value 1 (scope 2 in bits 0-2, the
+ * index in 3-18, the value in 19), built from its parts so the release
+ * translator doesn't take it for an address */
+#define GLOBAL_SET(i) ((1u << 19) | ((uint32_t)(i) << 3) | 2u)
+
+/* v311c: Miggas's rules, by the areas' order (v311's log and the menu):
+ * 0 Shibuya Terminal, 1 Chuo Street, 2 Dogenzaka Hill, 3 Hikage Street,
+ * 4 Rokkaku-dai Heights, 5 Tokyo Underground Sewage Facility, 6 Kibogaoka
+ * Hill, 7 The Bottom Point of the Sewage Facility, 8 The Fortified
+ * Residential Zone, 9 99th Street, 10 Sky Dinosaurian Square, 11 (no test
+ * runs), 12 Highway Zero, 13 The Skyscraper District and Pharaoh Park.
+ * The chapter 7 battles' clears (opcode 0xE5) set global[15] (0721,
+ * Dogenzaka Hill), [16] (0726, Hikage Street) and [17] (0756, the
+ * Skyscraper District), flags the save keeps. */
+static const Rule BUILTIN[] = {
+    { 9, 2, 0 },                    /* 99th Street: Rapid 99, chapter 2 */
+    { 5, 3, 0 },                    /* the sewage facility: chapter 3 */
+    { 7, 3, 0 },                    /* its bottom point: chapter 3 */
+    { 10, 6, 0 },                   /* Sky Dinosaurian Square: chapter 6 */
+    { 2, 7, GLOBAL_SET(15) },       /* Dogenzaka Hill: chapter 7, 0721 won */
+    { 13, 7, GLOBAL_SET(17) },      /* the Skyscraper District: chapter 7, 0756 won */
+    { 3, 7, GLOBAL_SET(16) },       /* Hikage Street: chapter 7, 0726 won */
+};
+
 static void rules_load(void)
 {
     const char *e = getenv("RECOMP_TESTRUNS_RULES");
     s_nrules = 0;
+    if (!e || !*e) {
+        s_nrules = (int)(sizeof BUILTIN / sizeof BUILTIN[0]);
+        memcpy(s_rules, BUILTIN, sizeof BUILTIN);
+        return;
+    }
     while (e && *e && s_nrules < MAX_RULES) {
         Rule r = { -1, 9, 0 };
         char *end;
@@ -194,7 +226,9 @@ void sub_000756E0(void)
         if (!rows) continue;
         for (r = 0; r < LIST_N[l]; r++) {
             const uint32_t src = data + LIST_SRC[l] + 0x10u * (uint32_t)r;
-            const int area = (int)MEM32(src + 4u);
+            /* v311c: the first list keeps the area at +4, the others at +0
+             * (as the game's own soul test reads them) */
+            const int area = (int)MEM32(src + (l ? 0u : 4u));
             uint32_t *av = (uint32_t *)XBOX_PTR(rows + 0x10u * (uint32_t)r + 8u);
             const int souls = *av != 0;
             if (all) *av = 1;
@@ -211,4 +245,19 @@ void sub_000756E0(void)
     MEM32(marks + 0x58u) = (uint32_t)any;
     if (logit)
         fprintf(stderr, "[TESTRUNS] chapter %u: the Test Run menu %s\n", ch, any ? "open" : "locked");
+}
+
+/* v311c: a test run's results (sub_0011A8B0, made only by the Test Run
+ * menu's code, sub_00075057) give its character rewards (sub_0011A6F0:
+ * rank, area, not yet had) only in chapter 9: before it, it is told 9 too,
+ * the rewards' own checks kept */
+void sub_0011A8B0(void)
+{
+    if (env_on("RECOMP_EARLY_TESTRUNS", 1) && real_chapter() < 9u) {
+        s_say9 = 1;
+        sub_0011A8B0_gen();
+        s_say9 = 0;
+        return;
+    }
+    sub_0011A8B0_gen();
 }
