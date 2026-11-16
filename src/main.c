@@ -656,17 +656,17 @@ static void panel_gameplay(struct nk_context *ctx, float w)
     }
     /* v2w: Early Test Runs (the game's v311, Idea by Miggas) */
     {
-        static const char *const items[] = { "Story", "Souls only", "Off" };
-        static const char *const vals[] = { "", "souls", "off" };
+        static const char *const items[] = { "Off", "Story", "Souls only" };
+        static const char *const vals[] = { "", "story", "souls" };
         const char *v = get_or("RECOMP_EARLY_TESTRUNS", "");
-        int cur = !strcmp(v, "0") ? 2 : find(vals, 3, v);
+        int cur = !strcmp(v, "1") ? 1 : find(vals, 3, v);
         if (cur < 0) cur = 0;
         int sel = combo(ctx, "Test Runs", items, 3, cur);
         if (sel != cur) { if (sel) put("RECOMP_EARLY_TESTRUNS", vals[sel], "game"); else off("RECOMP_EARLY_TESTRUNS"); }
-        desc(ctx, w, "When Roboy's Test Runs open. Story: during the story, each area's once its chapter is "
-                     "finished (and, for some, its rival beaten) and its graffiti souls are collected. Souls only: "
-                     "each area's once its souls are collected, at any point. Off: as the original game, "
-                     "after the end of the story. Needs the game's v311 or newer.", C_DIM);
+        desc(ctx, w, "When Roboy's Test Runs open. Off: as the original game, after the end of the story. "
+                     "Story: during the story, each area's once its chapter is finished (and, for some, its rival "
+                     "beaten) and its graffiti souls are collected. Souls only: each area's once its souls are "
+                     "collected, at any point. Needs the game's v311e or newer.", C_DIM);
     }
     /* v2a: the game's language (the game's v271) */
     {
