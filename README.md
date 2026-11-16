@@ -123,6 +123,18 @@ The Linux version runs natively on the Deck.
 
 The provided `jsrf.ini` already suits the Deck (`RECOMP_GL_SCALE=2`).
 
+**For a steady 60 fps, Decky Loader and PowerTools are still needed.** The
+Deck lowers its CPU clock when it can and takes a moment to raise it again, and
+the game drops frames while it waits. To avoid that:
+
+1. Install [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)
+   (in Desktop Mode, follow its instructions).
+2. Back in Gaming Mode, open the Quick Access menu (**…**), go to Decky's
+   store and install **PowerTools**.
+3. While JSRF is running, open PowerTools and keep the CPU clock from dropping
+   (raise its minimum frequency). Turn on its per-game profile so this only
+   applies to JSRF.
+
 ---
 
 ## 4. The launcher
