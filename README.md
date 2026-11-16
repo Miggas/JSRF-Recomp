@@ -141,7 +141,7 @@ the game drops frames while it waits. To avoid that:
 
 | Tab | What it does |
 |---|---|
-| **Play** | The game folder, **Verify files** (none of the game's files missing), what is ready (✓ / ✗, click one to fix it), **Build** and **PLAY**. |
+| **Play** | The game folder; what is ready (✓ / ! / ✗, click one to fix it), the launcher's and the project's updates among them; **PLAY**, **Build** (when something is out of date), **Launch ModTool** (when `jsrf_modtool` is in the launcher's folder) and **Verify game files** (none of the game's files missing). |
 | **Settings** | `jsrf.ini` in tabs: Gameplay, Video, Input, Audio, Debug. |
 | **Build** | **Generate code** and **Build** separately; each skips what is up to date. |
 | **Update** | Gets the newest version of the project and of the launcher. |
