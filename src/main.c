@@ -1214,18 +1214,13 @@ static void tab_update(struct nk_context *ctx, float h)
                          NK_TEXT_LEFT, C_DIM);
     used += 2 * (s_row + 4);
     bool busy = job_busy();
-    nk_layout_row_dynamic(ctx, s_row * 1.4f, 3);
-    if (button(ctx, "Check for updates", !busy)) job_start(JOB_CHECK, false);
-    if (button(ctx, g_paths.have_source ? "Update" : "Download", !busy)) job_start(JOB_UPDATE, false);
-    if (button(ctx, "Cancel", busy)) job_cancel();
-    used += s_row * 1.4f + 4;
-    used += progress_bar(ctx);
     {
-        /* v1r: the launcher itself */
+        /* v3: the launcher's line, then the three buttons side by side as
+         * on Play (Miggas). Update Project is grey when the project is known
+         * to be up to date; no Cancel (Miggas). */
         const char *ln = launcher_newer();
         char lt[160];
-        nk_layout_row_begin(ctx, NK_DYNAMIC, s_row * 1.4f, 2);
-        nk_layout_row_push(ctx, 0.66f);
+        nk_layout_row_dynamic(ctx, s_row, 1);
         if (*ln) {
             snprintf(lt, sizeof lt, "Launcher %s is available (this one is %s).", ln + 9, LAUNCHER_VERSION);
             nk_label_colored(ctx, lt, NK_TEXT_LEFT, C_HEAD);
@@ -1233,11 +1228,17 @@ static void tab_update(struct nk_context *ctx, float h)
             snprintf(lt, sizeof lt, "Launcher %s. Check for updates also looks for a newer launcher.", LAUNCHER_VERSION);
             nk_label_colored(ctx, lt, NK_TEXT_LEFT, C_DIM);
         }
-        nk_layout_row_push(ctx, 0.34f);
-        if (button(ctx, "Update launcher", *ln && !busy)) job_start(JOB_SELF, false);
-        nk_layout_row_end(ctx);
-        used += s_row * 1.4f + 4;
+        used += s_row + 4;
+        bool proj_new = !g_paths.have_source || !*r || strcmp(r, id);
+        spacer(ctx, 6);
+        nk_layout_row_dynamic(ctx, s_row * 1.8f, 3);
+        if (button(ctx, "Check for updates", !busy)) job_start(JOB_CHECK, false);
+        if (button(ctx, g_paths.have_source ? "Update Project" : "Download Project", proj_new && !busy))
+            job_start(JOB_UPDATE, false);
+        if (button(ctx, "Update Launcher", *ln && !busy)) job_start(JOB_SELF, false);
+        used += 6 + s_row * 1.8f + 4;
     }
+    used += progress_bar(ctx);
     used += failed_hint(ctx);
     log_view(ctx, h - used - 8, true);
 }
