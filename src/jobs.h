@@ -70,4 +70,6 @@ bool launcher_restart_wanted(void);       /* v1r: JOB_SELF put a new launcher in
 void launcher_cleanup_old(void);          /* v1r: at start, the file a self-update left */
 
 bool play(void);
+bool have_modtool(void);                 /* v2z: jsrf_modtool(.exe) in the launcher's folder */
+bool launch_modtool(void);
 bool play_watchdog(int secs);             /* the game stops after secs, with a dump */

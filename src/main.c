@@ -62,6 +62,7 @@ static const struct nk_color C_OK   = { 120, 220, 120, 255 };
 static const struct nk_color C_BAD  = { 240, 130, 110, 255 };
 static const struct nk_color C_DIM  = { 165, 165, 175, 255 };
 static const struct nk_color C_HEAD = { 255, 205, 60, 255 };
+static const struct nk_color C_WARN = { 240, 200, 80, 255 };     /* v2z: an update available */
 
 static void load_game_ini(void)
 {
@@ -96,8 +97,9 @@ static void dropped(const char *p)
 }
 
 /* ---------------------------------------------------------------------- */
-/* a green check, a red X, or a small spinner while it is being made */
-enum { M_NO, M_OK, M_WORKING };
+/* a green check, a red X, a small spinner while it is being made, or (v2z)
+ * a yellow ! for an update available */
+enum { M_NO, M_OK, M_WORKING, M_WARN };
 static void mark(struct nk_context *ctx, int m)
 {
     struct nk_rect r;
@@ -107,6 +109,9 @@ static void mark(struct nk_context *ctx, int m)
     if (m == M_WORKING) {
         float a = (float)(SDL_GetTicks() % 1000) / 1000.0f * 6.2831853f;
         nk_stroke_arc(cb, cx, cy, sz * 0.45f, a, a + 4.2f, 3.0f, C_HEAD);
+    } else if (m == M_WARN) {
+        nk_stroke_line(cb, cx, cy - sz * 0.5f, cx, cy + sz * 0.15f, 3.0f, C_WARN);
+        nk_fill_circle(cb, nk_rect(cx - 2.0f, cy + sz * 0.32f, 4.0f, 4.0f), C_WARN);
     } else if (m == M_OK) {
         nk_stroke_line(cb, cx - sz * 0.45f, cy, cx - sz * 0.1f, cy + sz * 0.35f, 3.0f, C_OK);
         nk_stroke_line(cb, cx - sz * 0.1f, cy + sz * 0.35f, cx + sz * 0.5f, cy - sz * 0.4f, 3.0f, C_OK);
@@ -127,7 +132,7 @@ static bool req_line(struct nk_context *ctx, const char *what, bool ok, const ch
 /* m: M_OK shows yes, M_NO no as a link, M_WORKING yes in yellow */
 static bool req_line_m(struct nk_context *ctx, const char *what, int m, const char *yes, const char *no)
 {
-    bool ok = m != M_NO;
+    bool ok = m == M_OK || m == M_WORKING;   /* v2z: M_WARN is a link, in yellow */
     /* the whole line is the link: the X, the name and the text */
     bool clicked = false;
     nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
@@ -145,7 +150,7 @@ static bool req_line_m(struct nk_context *ctx, const char *what, int m, const ch
         if (nk_widget_is_mouse_clicked(ctx, NK_BUTTON_LEFT)) clicked = true;
         char t[300];
         snprintf(t, sizeof t, "%s  >", no);
-        nk_label_colored(ctx, t, NK_TEXT_LEFT, hover ? C_HEAD : C_BAD);
+        nk_label_colored(ctx, t, NK_TEXT_LEFT, hover ? C_HEAD : m == M_WARN ? C_WARN : C_BAD);
     }
     nk_layout_row_end(ctx);
     return clicked;
@@ -489,23 +494,30 @@ static void tab_play(struct nk_context *ctx)
     }
     if (req_line(ctx, "Game files", xbe, xbe_ok, "default.xbe not found here: choose the game folder"))
         choose_game_folder();
-    /* v2y: Verify files (Miggas): the release's Media files all there */
-    if (xbe) {
-        static char vmsg[256];
-        static int vres = -2;
-        static char vdir[LPATH];
-        if (strcmp(vdir, g_paths.game)) { vres = -2; vmsg[0] = 0; snprintf(vdir, sizeof vdir, "%s", g_paths.game); }
-        nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 2);
-        nk_layout_row_push(ctx, 0.22f);
-        if (button(ctx, "Verify files", !job_busy())) vres = verify_media(vmsg, sizeof vmsg);
-        nk_layout_row_push(ctx, 0.78f);
-        if (vres == -2) nk_label_colored(ctx, "Checks that none of the game's files is missing.", NK_TEXT_LEFT, C_DIM);
-        else nk_label_colored(ctx, vmsg, NK_TEXT_LEFT, vres == 0 ? C_OK : C_BAD);
-        nk_layout_row_end(ctx);
+    /* v2z: the launcher's and the project's updates as lines (Miggas; the
+     * "Update available" button is gone) */
+    {
+        const char *r = update_remote(), *ln = launcher_newer();
+        bool checking = job_current() == JOB_CHECK, known = s_checked_start && *r;
+        char t[160];
+        if (*ln) {
+            snprintf(t, sizeof t, "%s available: go to Update", ln + 9);
+            if (req_line_m(ctx, "Launcher", M_WARN, "", t)) s_tab = TAB_UPDATE;
+        } else {
+            snprintf(t, sizeof t, "%s%s", checking ? "checking for updates... " : known ? "up to date, " : "",
+                     LAUNCHER_VERSION);
+            req_line_m(ctx, "Launcher", checking ? M_WORKING : M_OK, t, "");
+        }
+        if (!g_paths.have_source) {
+            if (req_line_m(ctx, "Project source", M_NO, "", "not downloaded yet: go to Update")) s_tab = TAB_UPDATE;
+        } else if (*r && strcmp(r, source_id())) {
+            if (req_line_m(ctx, "Project source", M_WARN, "", "update available: go to Update")) s_tab = TAB_UPDATE;
+        } else {
+            req_line_m(ctx, "Project source", checking ? M_WORKING : M_OK,
+                       checking ? "checking for updates..." : known ? "up to date" : "downloaded", "");
+        }
     }
-    if (req_line(ctx, "Project source", g_paths.have_source, "downloaded", "not downloaded yet: go to Update"))
-        s_tab = TAB_UPDATE;
-    if (req_line(ctx, "Build tools", tools, "ready", "not downloaded yet: go to Build (about 150 MB)"))
+    if (req_line(ctx, "Build tools", tools, "downloaded", "not downloaded yet: go to Build (about 150 MB)"))
         s_tab = TAB_BUILD;
     {
         /* from the last check (req_refresh), or what the running job is doing */
@@ -532,37 +544,15 @@ static void tab_play(struct nk_context *ctx)
         spacer(ctx, 4);
         progress_bar(ctx);
     }
-    {
-        /* v1w: what the check at start found (or is finding); the line is a
-         * button to the Update tab */
-        const char *r = update_remote(), *ln = launcher_newer();
-        bool game_new = g_paths.have_source && *r && strcmp(r, source_id());
-        bool checking = job_current() == JOB_CHECK;
-        spacer(ctx, 6);
-        nk_layout_row_dynamic(ctx, s_row * 1.2f, 1);
-        if (game_new || *ln) {
-            char t[160];
-            if (game_new && *ln) snprintf(t, sizeof t, "Updates available: the game and launcher %s  >", ln + 9);
-            else if (*ln) snprintf(t, sizeof t, "Update available: launcher %s  >", ln + 9);
-            else snprintf(t, sizeof t, "Update available: the game  >");
-            struct nk_style_button keep = ctx->style.button;
-            ctx->style.button.text_normal = C_HEAD;
-            ctx->style.button.text_hover = C_HEAD;
-            ctx->style.button.border_color = C_HEAD;
-            ctx->style.button.border = 2.0f;
-            if (nk_button_label(ctx, t)) s_tab = TAB_UPDATE;
-            ctx->style.button = keep;
-        } else if (checking) {
-            nk_label_colored(ctx, "Checking for updates...", NK_TEXT_LEFT, C_DIM);
-        } else if (s_checked_start && g_paths.have_source && *r) {
-            nk_label_colored(ctx, "The game and the launcher are up to date.", NK_TEXT_LEFT, C_DIM);
-        } else {
-            nk_spacing(ctx, 1);
-        }
-    }
-
+    /* v2z: Play, Build (only when there is something to build), Launch
+     * ModTool (when it is in the launcher's folder) and Verify game files,
+     * side by side (Miggas) */
+    static char vdir[LPATH];
+    static int vres = -2;                       /* -2: not checked; -1: couldn't; else missing */
+    if (strcmp(vdir, g_paths.game)) { vres = -2; snprintf(vdir, sizeof vdir, "%s", g_paths.game); }
+    bool need_build = !exe || req_gen() != 2 || req_build() != 2;
     spacer(ctx, 10);
-    nk_layout_row_dynamic(ctx, s_row * 1.8f, 2);
+    nk_layout_row_dynamic(ctx, s_row * 1.8f, 4);
     if (button(ctx, "PLAY", exe && free_or_checking()) || (s_pad_play && exe && free_or_checking())) {
         if (!play()) snprintf(s_message, sizeof s_message, "Could not start the game.");
         else {
@@ -571,9 +561,30 @@ static void tab_play(struct nk_context *ctx)
             s_quit_after_play = close_on_play_pref();
         }
     }
-    if (button(ctx, exe ? "Build again" : "Build", xbe && g_paths.have_source && free_or_checking())) {
+    if (button(ctx, "Build", need_build && xbe && g_paths.have_source && free_or_checking())) {
         stop_check();
         start_build();
+    }
+    if (button(ctx, "Launch ModTool", have_modtool())) {
+        if (launch_modtool()) snprintf(s_message, sizeof s_message, "Mod tool started.");
+        else snprintf(s_message, sizeof s_message, "Could not start the mod tool.");
+    }
+    {
+        /* no border until it has checked; then green (all there) or red */
+        struct nk_style_button keep = ctx->style.button;
+        const char *lb = vres == -2 ? "Verify game files" : vres == 0 ? "All files detected" : "Missing files";
+        if (vres == -2) {
+            ctx->style.button.border = 0.0f;
+        } else {
+            ctx->style.button.border = 2.0f;
+            ctx->style.button.border_color = vres == 0 ? C_OK : C_BAD;
+        }
+        if (button(ctx, lb, xbe && !job_busy())) {
+            char m[256];
+            vres = verify_media(m, sizeof m);
+            snprintf(s_message, sizeof s_message, "%s", m);
+        }
+        ctx->style.button = keep;
     }
 }
 

@@ -1393,6 +1393,23 @@ bool play_watchdog(int secs)
     return ok;
 }
 
+/* v2z: the mod tool, in the launcher's folder (Miggas) */
+static void modtool_path(char *out)
+{
+#ifdef _WIN32
+    pjoin(out, g_paths.base, "jsrf_modtool.exe");
+#else
+    pjoin(out, g_paths.base, "jsrf_modtool");
+#endif
+}
+bool have_modtool(void) { char p[LPATH]; modtool_path(p); return is_file(p); }
+bool launch_modtool(void)
+{
+    char p[LPATH];
+    modtool_path(p);
+    return is_file(p) && launch(p, g_paths.base);
+}
+
 bool play(void)
 {
     char exe[LPATH];
