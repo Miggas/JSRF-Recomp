@@ -10,8 +10,9 @@
  * row's availability (+8) 1 when the graffiti souls of its area (row +4, an
  * index into the 14 area IDs at 0x21C098) are all collected
  * (sub_0003A0A0 / sub_0003A130, total and collected, on the save object),
- * and marks each list and the menu itself available ([this+0xB4] +8, +0x18,
- * +0x28, +0x38 and +0x58).
+ * and marks each kind of test run available in the Test Run menu
+ * ([this+0xCC] +8, +0x18, +0x28, +0x38) and the Test Run button among
+ * Roboy's ([this+0xB4] +0x58).
  *
  * Now, before chapter 9, the menu is built as if it were chapter 9 (the
  * chapter getter says 9 to it alone), then each test run stays available
@@ -220,7 +221,7 @@ static const int LIST_N[4] = { 13, 13, 6, 7 };
 void sub_000756E0(void)
 {
     const uint32_t menu = g_ecx;
-    uint32_t ch, data, marks;
+    uint32_t ch, data, marks, kinds;
     int l, r, any = 0, logit = env_on("RECOMP_TESTRUNS_LOG", 0), all = env_on("RECOMP_TESTRUNS_ALL", 0);
     if (tr_mode() == TR_OFF || !menu || !MEM32(menu + 0xCCu)) {
         sub_000756E0_gen();
@@ -233,21 +234,24 @@ void sub_000756E0(void)
         sub_000756E0_gen();
         return;
     }
-    /* v311f: Roboy's menu entries the build may turn on, as they were: the
-     * game only ever sets them, and other buttons share the table (Miggas:
-     * written as 0, they locked every button but Change BGM) */
-    uint32_t before[5] = { 0, 0, 0, 0, 0 };
+    /* v311g: Roboy's buttons ([this+0xB4], 16 bytes each, +8 on): the Test
+     * Run button is the sixth (+0x58), which the build only ever sets; as
+     * it was before, unless a test run is open. The four kinds of test
+     * run (Jet Graffiti, Jet Tech, Jet Dash, Jet Flag) are the Test Run
+     * menu's own entries ([this+0xCC] +8, +0x18, +0x28, +0x38), which the
+     * build clears first and sets from the souls: each now from its open
+     * rows (Miggas: Jet Dash, none of it open, chosen froze the game).
+     * (v311 to v311f wrote the four into Roboy's buttons instead.) */
+    uint32_t tr_before = 0;
     marks = MEM32(menu + 0xB4u);
-    if (marks) {
-        for (l = 0; l < 4; l++) before[l] = MEM32(marks + 8u + 0x10u * (uint32_t)l);
-        before[4] = MEM32(marks + 0x58u);
-    }
+    if (marks) tr_before = MEM32(marks + 0x58u);
     s_say9 = 1;
     sub_000756E0_gen();
     s_say9 = 0;
     data = MEM32(menu + 0xF8u);
     marks = MEM32(menu + 0xB4u);
-    if (!data || !marks) return;
+    kinds = MEM32(menu + 0xCCu);
+    if (!data || !marks || !kinds) return;
     for (l = 0; l < 4; l++) {
         const uint32_t rows = MEM32(menu + 0xD4u + 4u * (uint32_t)l);
         int open = 0;
@@ -268,11 +272,10 @@ void sub_000756E0(void)
                         souls ? "all" : "not all", *av ? "open" : "locked");
             open |= *av != 0;
         }
-        /* on if a row is open, else as it was before the build */
-        MEM32(marks + 8u + 0x10u * (uint32_t)l) = open ? 1u : before[l];
+        MEM32(kinds + 8u + 0x10u * (uint32_t)l) = (uint32_t)open;
         any |= open;
     }
-    MEM32(marks + 0x58u) = any ? 1u : before[4];
+    MEM32(marks + 0x58u) = any ? 1u : tr_before;
     if (logit)
         fprintf(stderr, "[TESTRUNS] chapter %u: the Test Run menu %s\n", ch, any ? "open" : "locked");
 }
