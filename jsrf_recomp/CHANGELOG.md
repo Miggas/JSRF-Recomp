@@ -21,7 +21,9 @@ details of each, with the how and the why, are in `README_JSRF.md`.
   Skyscraper District and Pharaoh Park, and Hikage Street, chapter 7 and
   their area's battle won. The other areas wait for the end of the story.
   Character rewards from test runs work the same way.
-  `RECOMP_EARLY_TESTRUNS=0` turns it off.
+  `RECOMP_EARLY_TESTRUNS`: `story` (this, the default), `souls` (every test
+  run once its souls are collected, any chapter) or `off` (launcher:
+  Gameplay → Test Runs).
 
 ### Developer
 - `RECOMP_TESTRUNS_LOG=1`, `RECOMP_TESTRUNS_ALL=1` and

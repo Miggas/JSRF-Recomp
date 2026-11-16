@@ -23,7 +23,8 @@
  * A test run's results give its character rewards only in chapter 9 too
  * (sub_0011A8B0): told 9 the same way, the rewards' own checks kept.
  *
- * RECOMP_EARLY_TESTRUNS=0 turns it off. RECOMP_TESTRUNS_LOG=1 logs the
+ * RECOMP_EARLY_TESTRUNS: story (the default), souls (souls only, any
+ * chapter), off. RECOMP_TESTRUNS_LOG=1 logs the
  * menu's rows and every area's souls; RECOMP_TESTRUNS_ALL=1 makes every row
  * available (to read their names in the menu); RECOMP_TESTRUNS_RULES=
  * "area:chapter[:flagword],..." replaces the built-in rules (area: 0-13,
@@ -61,6 +62,24 @@ static int env_on(const char *name, int def)
 {
     const char *e = getenv(name);
     return e && e[0] ? e[0] != '0' : def;
+}
+
+/* v311d: RECOMP_EARLY_TESTRUNS (Miggas): story (the default: the rules
+ * below), souls (every test run once its souls are collected, any chapter),
+ * off (or 0: as the game, the end of the story first) */
+enum { TR_OFF, TR_STORY, TR_SOULS };
+static int tr_mode(void)
+{
+    static int m = -1;
+    if (m < 0) {
+        const char *e = getenv("RECOMP_EARLY_TESTRUNS");
+        if (!e || !*e || !strcmp(e, "1") || !strcmp(e, "story")) m = TR_STORY;
+        else if (!strcmp(e, "souls")) m = TR_SOULS;
+        else m = TR_OFF;
+        fprintf(stderr, "[TESTRUNS] early test runs: %s (RECOMP_EARLY_TESTRUNS)\n",
+                m == TR_STORY ? "story (by chapter, battles and souls)" : m == TR_SOULS ? "souls only" : "off");
+    }
+    return m;
 }
 
 /* ---- the rules: an area's test runs need its chapter finished and, for
@@ -203,7 +222,7 @@ void sub_000756E0(void)
     const uint32_t menu = g_ecx;
     uint32_t ch, data, marks;
     int l, r, any = 0, logit = env_on("RECOMP_TESTRUNS_LOG", 0), all = env_on("RECOMP_TESTRUNS_ALL", 0);
-    if (!env_on("RECOMP_EARLY_TESTRUNS", 1) || !menu || !MEM32(menu + 0xCCu)) {
+    if (tr_mode() == TR_OFF || !menu || !MEM32(menu + 0xCCu)) {
         sub_000756E0_gen();
         return;
     }
@@ -232,7 +251,8 @@ void sub_000756E0(void)
             uint32_t *av = (uint32_t *)XBOX_PTR(rows + 0x10u * (uint32_t)r + 8u);
             const int souls = *av != 0;
             if (all) *av = 1;
-            else if (*av && (area < 0 || area >= 14 || (ch < 9u && !area_open(area, ch)))) *av = 0;
+            else if (*av && (area < 0 || area >= 14
+                             || (ch < 9u && tr_mode() == TR_STORY && !area_open(area, ch)))) *av = 0;
             if (logit)
                 fprintf(stderr, "[TESTRUNS] list %d row %2d: area %2d, data %08X %08X %08X %08X, souls %s -> %s\n",
                         l, r, area, MEM32(src), MEM32(src + 4u), MEM32(src + 8u), MEM32(src + 12u),
@@ -253,7 +273,7 @@ void sub_000756E0(void)
  * the rewards' own checks kept */
 void sub_0011A8B0(void)
 {
-    if (env_on("RECOMP_EARLY_TESTRUNS", 1) && real_chapter() < 9u) {
+    if (tr_mode() != TR_OFF && real_chapter() < 9u) {
         s_say9 = 1;
         sub_0011A8B0_gen();
         s_say9 = 0;
