@@ -143,11 +143,19 @@ static int host_buffer(VkDeviceSize size, VkBufferUsageFlags use, int cached,
     return 1;
 }
 
+static void batch_begin(void);
+
+/* destroyed once the GPU is done with it: kept with the batch being
+ * recorded (opened if none is), whose fence comes after every batch
+ * submitted before -- never with a batch not yet begun, whose start would
+ * free it at once while an earlier one may still be reading it */
 static void junk(int kind, uint64_t h, VkDeviceMemory m)
 {
-    Batch *b = &G.b[G.cur];
+    Batch *b;
     if (!h && !m)
         return;
+    batch_begin();
+    b = &G.b[G.cur];
     if (b->njunk == b->cjunk) {
         int n = b->cjunk ? b->cjunk * 2 : 64;
         Junk *j = (Junk *)realloc(b->junk, (size_t)n * sizeof *j);
