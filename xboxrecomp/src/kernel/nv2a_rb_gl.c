@@ -2045,3 +2045,60 @@ void rb_attr_const4fv(uint32_t loc, const float *v) { glVertexAttrib4fv(loc, v);
 void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w) { glVertexAttrib4f(loc, x, y, z, w); }
 void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base) { glDrawElementsBaseVertex(mode, count, type, off, base); }
 void rb_draw_arrays(uint32_t mode, int first, int count) { glDrawArrays(mode, first, count); }
+
+/* ── clearing ──────────────────────────────────────────────────────────── */
+/* The bound target, within the scissor: colour (every channel; alpha only
+ * when `alpha`), depth, stencil, each when asked. Leaves the masks changed
+ * (rb_fixed_lost). */
+void rb_clear(int color, const float rgba[4], int alpha, int depth, double zval, int stencil, int sval)
+{
+    GLbitfield bits = 0;
+    if (color) {
+        glClearColor(rgba[0], rgba[1], rgba[2], rgba[3]);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, alpha ? GL_TRUE : GL_FALSE);
+        bits |= GL_COLOR_BUFFER_BIT;
+    }
+    if (depth) {
+        glDepthMask(GL_TRUE);
+        glClearDepth(zval);
+        bits |= GL_DEPTH_BUFFER_BIT;
+    }
+    if (stencil) {
+        glStencilMask(0xFF);
+        glClearStencil((GLint)sval);
+        bits |= GL_STENCIL_BUFFER_BIT;
+    }
+    if (bits)
+        glClear(bits);
+    rb_fixed_lost();                 /* masks changed above */
+}
+
+/* ── occlusion queries (samples passed) ───────────────────────────────── */
+void rb_query_new(int n, uint32_t *ids) { glGenQueries(n, ids); }
+void rb_query_begin(uint32_t id) { glBeginQuery(GL_SAMPLES_PASSED, id); }
+void rb_query_end(void) { glEndQuery(GL_SAMPLES_PASSED); }
+void rb_query_result(uint32_t id, uint32_t *v) { glGetQueryObjectuiv(id, GL_QUERY_RESULT, v); }   /* waits */
+
+/* ── reading pixels ────────────────────────────────────────────────────── */
+/* a target's image (w x h, BGRA, rows bottom-up) into a buffer, read later
+ * through rb_buf_map (asynchronous) */
+void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf)
+{
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    rb_buf_bind(GL_PIXEL_PACK_BUFFER, buf);
+    glReadPixels(0, 0, (GLsizei)w, (GLsizei)h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, (void *)0);
+    rb_buf_bind(GL_PIXEL_PACK_BUFFER, 0);
+}
+/* one pixel of a target (GL rows), BGRA (debug probes) */
+void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c)
+{
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    glReadPixels(x, y, 1, 1, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, c);
+}
+/* its depth there (0..1): 0 when it can't be read */
+int rb_read_depth(uint32_t fbo, int x, int y, float *z)
+{
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, z);
+    return glGetError() == GL_NO_ERROR;
+}

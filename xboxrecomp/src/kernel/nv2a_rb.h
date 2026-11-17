@@ -173,4 +173,18 @@ void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w);
 void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base);
 void rb_draw_arrays(uint32_t mode, int first, int count);
 
+/* ── clearing ── */
+void rb_clear(int color, const float rgba[4], int alpha, int depth, double zval, int stencil, int sval);
+
+/* ── occlusion queries ── */
+void rb_query_new(int n, uint32_t *ids);
+void rb_query_begin(uint32_t id);
+void rb_query_end(void);
+void rb_query_result(uint32_t id, uint32_t *v);
+
+/* ── reading pixels ── */
+void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf);
+void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c);
+int  rb_read_depth(uint32_t fbo, int x, int y, float *z);
+
 #endif

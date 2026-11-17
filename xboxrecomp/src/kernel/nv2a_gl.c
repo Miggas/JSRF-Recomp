@@ -3010,13 +3010,9 @@ static void start_present_read(GlSurf *s, int win)
         /* the window takes the full-size frame; guest memory its own size */
         if (s_msaa > 1)
             surf_resolve(s);            /* glReadPixels can't read multisamples */
-        glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                win ? (s_msaa > 1 ? s_resolve_fbo : s->fbo)
-                    : guest_res_fbo(s_msaa > 1 ? s_resolve_fbo : s->fbo, s->w, s->h));
-        rb_buf_bind(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
-        glReadPixels(0, 0, (GLsizei)pw, (GLsizei)ph, GL_BGRA,
-                     GL_UNSIGNED_INT_8_8_8_8_REV, (void *)0);
-        rb_buf_bind(GL_PIXEL_PACK_BUFFER, 0);
+        rb_read_pixels_buf(win ? (s_msaa > 1 ? s_resolve_fbo : s->fbo)
+                               : guest_res_fbo(s_msaa > 1 ? s_resolve_fbo : s->fbo, s->w, s->h),
+                           (int)pw, (int)ph, s_pend.pbo);
         s_pend.surf = s;
         s_pend.draws = s->draws;
         s_pend.win = win;
@@ -4345,7 +4341,7 @@ static void vq_close(void)
 {
     if (s_vq_open < 0)
         return;
-    glEndQuery(GL_SAMPLES_PASSED);
+    rb_query_end();
     if (s_vq_npend < NV_GL_VQ)
         s_vq_pend[s_vq_npend++] = s_vq_open;
     s_vq_open = -1;
@@ -4356,7 +4352,7 @@ static void vq_collect(void)
     int i;
     for (i = 0; i < s_vq_npend; i++) {
         GLuint v = 0;
-        glGetQueryObjectuiv(s_vq[s_vq_pend[i]], GL_QUERY_RESULT, &v);
+        rb_query_result(s_vq[s_vq_pend[i]], &v);
         s_vq_sum += v;
     }
     s_vq_npend = 0;
@@ -4367,13 +4363,13 @@ void nv2a_gl_vis_enable(int on)
     if (!vis_on())
         return;
     if (!s_vq[0])
-        glGenQueries(NV_GL_VQ, s_vq);
+        rb_query_new(NV_GL_VQ, s_vq);
     if (on && s_vq_open < 0) {
         if (s_vq_npend >= NV_GL_VQ - 1)
             vq_collect();
         s_vq_open = s_vq_next;
         s_vq_next = (s_vq_next + 1) % NV_GL_VQ;
-        glBeginQuery(GL_SAMPLES_PASSED, s_vq[s_vq_open]);
+        rb_query_begin(s_vq[s_vq_open]);
     } else if (!on) {
         vq_close();
     }
@@ -4423,7 +4419,7 @@ void nv2a_gl_trace_frame(int on)
     if (s_state != 1)
         return;
     if (on && !s_tq_ids[0])
-        glGenQueries(NV_GL_TQ, s_tq_ids);
+        rb_query_new(NV_GL_TQ, s_tq_ids);
     s_tq_on = on;
     s_tq_n = 0;
     s_tq_cur = 0;
@@ -4449,8 +4445,8 @@ static int fx_begin(const NvGlState *st, uint32_t tris)
     if (s_fx_on < 0) {
         s_fx_on = getenv("RECOMP_GL_EFFECTLOG") != NULL;
         if (s_fx_on) {
-            glGenQueries(NV_GL_FXQ, s_fx_q[0]);
-            glGenQueries(NV_GL_FXQ, s_fx_q[1]);
+            rb_query_new(NV_GL_FXQ, s_fx_q[0]);
+            rb_query_new(NV_GL_FXQ, s_fx_q[1]);
         }
     }
     if (!s_fx_on || !st->blend_enable || st->blend_dfactor != GL_ONE || s_tq_on
@@ -4462,7 +4458,7 @@ static int fx_begin(const NvGlState *st, uint32_t tris)
         return 0;
     s_fx_tex[b][i] = st->tex[0].valid ? st->tex[0].offset : 0;
     s_fx_tris[b][i] = tris;
-    glBeginQuery(GL_SAMPLES_PASSED, s_fx_q[b][i]);
+    rb_query_begin(s_fx_q[b][i]);
     return 1;
 }
 
@@ -4470,7 +4466,7 @@ static void fx_end(int began)
 {
     if (!began)
         return;
-    glEndQuery(GL_SAMPLES_PASSED);
+    rb_query_end();
     s_fx_n[s_fx_cur]++;
 }
 
@@ -4485,7 +4481,7 @@ static void fx_frame(void)
         fprintf(stderr, "[FX] t=%llu ms:", (unsigned long long)s_fx_ms[prev]);
         for (i = 0; i < s_fx_n[prev]; i++) {
             GLuint v = 0;
-            glGetQueryObjectuiv(s_fx_q[prev][i], GL_QUERY_RESULT, &v);
+            rb_query_result(s_fx_q[prev][i], &v);
             fprintf(stderr, " %08X %u tris %u px%s", s_fx_tex[prev][i], s_fx_tris[prev][i],
                     v / (GLuint)(s_scale * s_scale), i + 1 < s_fx_n[prev] ? " |" : "");
         }
@@ -4504,7 +4500,7 @@ static int tq_begin(void)
 {
     if (!s_tq_on || !s_tq_cur || s_tq_n >= NV_GL_TQ || s_vq_open >= 0)
         return 0;
-    glBeginQuery(GL_SAMPLES_PASSED, s_tq_ids[s_tq_n]);
+    rb_query_begin(s_tq_ids[s_tq_n]);
     return 1;
 }
 
@@ -4512,7 +4508,7 @@ static void tq_end(int began)
 {
     if (!began)
         return;
-    glEndQuery(GL_SAMPLES_PASSED);
+    rb_query_end();
     s_tq_draw[s_tq_n++] = s_tq_cur;
     s_tq_cur = 0;
 }
@@ -4526,7 +4522,7 @@ void nv2a_gl_trace_report(void)
             s_scale * s_scale);
     for (i = 0; i < s_tq_n; i++) {
         GLuint v = 0;
-        glGetQueryObjectuiv(s_tq_ids[i], GL_QUERY_RESULT, &v);
+        rb_query_result(s_tq_ids[i], &v);
         if (col++ % 12 == 0)
             fprintf(stderr, "\n[FTRACE]   ");
         fprintf(stderr, " %d:%u", s_tq_draw[i], v);
@@ -5381,31 +5377,27 @@ void nv2a_gl_clear(const NvGlState *st, uint32_t param, uint32_t argb,
         if (x0 != sc[0] || y0b != sc[1] || x1 - x0 != sc[2] || y1b - y0b != sc[3])
             rb_scissor_once(x0, y0b, x1 - x0, y1b - y0b);
     }
-    if (param & 0xF0) {
-        unpack(argb, c);
-        glClearColor(c[0], c[1], c[2], s->alpha ? c[3] : 1.0f);
+    {
         /* The software clear writes every channel whenever any colour bit is
-         * set; match it. */
-        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, s->alpha ? GL_TRUE : GL_FALSE);
-        bits |= GL_COLOR_BUFFER_BIT;
-    }
-    if (param & 0x01) {
-        glDepthMask(GL_TRUE);
-        {
-            double d = st->zmax > 0.0f ? zclear / st->zmax : 1.0;
-            glClearDepth(wdepth() ? (d >= 0.999999 ? 0.0 : st->bg_far == 2 ? 1.0 - d   /* v207b */
-                                                               : 1.0 - 0.5 * d) : d);
+         * set; match it (alpha only on a surface that has it). */
+        double zd = 1.0;
+        if (param & 0xF0) {
+            unpack(argb, c);
+            if (!s->alpha) c[3] = 1.0f;
+            bits |= GL_COLOR_BUFFER_BIT;
         }
-        bits |= GL_DEPTH_BUFFER_BIT;
+        if (param & 0x01) {
+            double d = st->zmax > 0.0f ? zclear / st->zmax : 1.0;
+            zd = wdepth() ? (d >= 0.999999 ? 0.0 : st->bg_far == 2 ? 1.0 - d   /* v207b */
+                                                    : 1.0 - 0.5 * d) : d;
+            bits |= GL_DEPTH_BUFFER_BIT;
+        }
+        if (param & 0x02)
+            bits |= GL_STENCIL_BUFFER_BIT;
+        if (bits)
+            rb_clear((param & 0xF0) != 0, c, s->alpha, (param & 0x01) != 0, zd,
+                     (param & 0x02) != 0, (int)(sclear & 0xFF));
     }
-    if (param & 0x02) {
-        glStencilMask(0xFF);
-        glClearStencil((GLint)(sclear & 0xFF));
-        bits |= GL_STENCIL_BUFFER_BIT;
-    }
-    if (bits)
-        glClear(bits);
-    rb_fixed_lost();                 /* masks changed above */
     if (bits & GL_COLOR_BUFFER_BIT) {
         s->dirty = 1;
         s->draws++;
@@ -5432,14 +5424,12 @@ void nv2a_gl_probe_top(uint32_t out[5])
         return;
     if (s_msaa > 1)
         surf_resolve(s_cur);        /* glReadPixels can't read multisamples */
-    glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                      s_msaa > 1 ? s_resolve_fbo : s_cur->fbo);
+    uint32_t probe_fbo = s_msaa > 1 ? s_resolve_fbo : s_cur->fbo;
     for (i = 0; i < 5; i++) {
         uint32_t c = 0;
         int x = px[i] < (int)s_cur->w ? px[i] : (int)s_cur->w - 1;
         int y = py[i] < (int)s_cur->h ? py[i] : (int)s_cur->h - 1;
-        glReadPixels(SC(x), SC((int)s_cur->h - 1 - y), 1, 1, GL_BGRA,
-                     GL_UNSIGNED_INT_8_8_8_8_REV, &c);
+        rb_read_pixel(probe_fbo, SC(x), SC((int)s_cur->h - 1 - y), &c);
         out[i] = c & 0xFFFFFFu;
     }
 }
@@ -5458,21 +5448,17 @@ void nv2a_gl_probe_at(const int *x, const int *y, int n, uint32_t *out)
         return;
     if (s_msaa > 1)
         surf_resolve(s_cur);        /* glReadPixels can't read multisamples */
-    glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                      s_msaa > 1 ? s_resolve_fbo : s_cur->fbo);
+    uint32_t probe_fbo = s_msaa > 1 ? s_resolve_fbo : s_cur->fbo;
     for (i = 0; i < n; i++) {
         uint32_t c = 0;
         int xx = x[i] < 0 ? 0 : x[i] < (int)s_cur->w ? x[i] : (int)s_cur->w - 1;
         int yy = y[i] < 0 ? 0 : y[i] < (int)s_cur->h ? y[i] : (int)s_cur->h - 1;
-        glReadPixels(SC(xx), SC((int)s_cur->h - 1 - yy), 1, 1, GL_BGRA,
-                     GL_UNSIGNED_INT_8_8_8_8_REV, &c);
+        rb_read_pixel(probe_fbo, SC(xx), SC((int)s_cur->h - 1 - yy), &c);
         out[i] = c & 0xFFFFFFu;
         /* the resolve target has no depth: MSAA traces stay at -1 */
         if (i < 16 && s_msaa <= 1) {
             float z = -1.0f;
-            glReadPixels(SC(xx), SC((int)s_cur->h - 1 - yy), 1, 1, GL_DEPTH_COMPONENT,
-                         GL_FLOAT, &z);
-            if (glGetError() == GL_NO_ERROR)
+            if (rb_read_depth(probe_fbo, SC(xx), SC((int)s_cur->h - 1 - yy), &z))
                 s_probe_z[i] = z;
         }
     }
