@@ -50,8 +50,6 @@ static int s_state = -1;              /* -1 untried, 0 failed/off, 1 active */
 static int s_scale = 1;               /* v87: internal resolution, see SC() */
 static int s_msaa  = 1;               /* multisampled colour/depth (1 = off) */
 static GLuint s_resolve_fbo;
-static SDL_Window *s_win;
-static SDL_GLContext s_ctx;
 static GLuint s_vao, s_vbo, s_ebo, s_white2d, s_whitecube;
 static uint64_t s_n_draws, s_n_tris, s_n_uploads, s_n_readbacks, s_n_texup;
 static uint64_t s_n_gpucopy, s_n_present_reads, s_n_cpu_taken;
@@ -1290,9 +1288,7 @@ static int build_program(void)
     get_locs(&s_p_old);
     s_p_old.vsrc = VS_OLD;
     if (!getenv("RECOMP_GL_CPU_VERTEX")) {
-        GLint comps = 0;
-        glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &comps);
-        if (comps >= 1536) {
+        if (rb_caps()->vs_uniform_comps >= 1536) {
             s_p_ff.id = link_with(ff_source(3));      /* the general one */
             if (s_p_ff.id) {
                 get_locs(&s_p_ff);
@@ -1300,7 +1296,7 @@ static int build_program(void)
             }
         } else {
             fprintf(stderr, "[GL] only %d vertex uniform components; vertices stay on"
-                    " the CPU\n", comps);
+                    " the CPU\n", rb_caps()->vs_uniform_comps);
         }
         s_gpu_vs = s_p_ff.id != 0;
         if (s_gpu_vs) {
@@ -2102,58 +2098,24 @@ static int init_gl(void)
 
     if (r && (!strcmp(r, "sw") || !strcmp(r, "software")))
         return 0;
-    SDL_SetMainReady();
-    if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "[GL] SDL video init failed: %s -- software renderer\n",
-                SDL_GetError());
+    if (!rb_init())
         return 0;
-    }
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    /* v88: double-buffered, so the context can present into the game's
-     * window with SwapBuffers (gl_window_present); rendering itself still
-     * goes to framebuffer objects. */
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    /* Rendering goes to framebuffer objects, so the window is only there to
-     * own the context and never needs to be seen. */
-    s_win = SDL_CreateWindow("JSRF GL", 0, 0, 16, 16,
-                             SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
-    if (!s_win) {
-        fprintf(stderr, "[GL] no window for a context: %s -- software renderer\n",
-                SDL_GetError());
-        return 0;
-    }
-    s_ctx = SDL_GL_CreateContext(s_win);
-    if (!s_ctx) {
-        fprintf(stderr, "[GL] OpenGL 3.3 core context failed: %s -- software renderer\n",
-                SDL_GetError());
-        return 0;
-    }
-    if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
-        fprintf(stderr, "[GL] could not load GL functions -- software renderer\n");
-        return 0;
-    }
     rb_shader_options(shader_defs, shader_salt);
-    rb_set_window(s_win);
     {
         void present_overlay_f_fwd(int cw, int ch, int flip);
         rb_set_overlay(present_overlay_f_fwd);
     }
     fprintf(stderr, "[GL] %s on %s (%s) -- triangles are drawn on the GPU"
             " (RECOMP_RENDERER=sw for the software rasteriser)\n",
-            (const char *)glGetString(GL_VERSION),
-            (const char *)glGetString(GL_RENDERER),
-            (const char *)glGetString(GL_VENDOR));
+            rb_caps()->version, rb_caps()->renderer, rb_caps()->vendor);
     if (!build_program())
         return 0;
     {
         const char *e = getenv("RECOMP_GL_SCALE");
-        GLint mx = 0;
+        int mx = rb_caps()->max_target;
         s_scale = e ? atoi(e) : 1;
         if (s_scale < 1) s_scale = 1;
         if (s_scale > 8) s_scale = 8;
-        glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &mx);
         while (s_scale > 1 && 1024 * s_scale > mx) s_scale--;
         if (s_scale > 1)
             fprintf(stderr, "[GL] internal resolution x%d (640x480 renders at %dx%d)"
@@ -2161,10 +2123,9 @@ static int init_gl(void)
     }
     {
         const char *e = getenv("RECOMP_GL_MSAA");
-        GLint mx = 0;
+        int mx = rb_caps()->max_samples;
         s_msaa = e ? atoi(e) : 1;
         if (s_msaa < 1) s_msaa = 1;
-        glGetIntegerv(GL_MAX_SAMPLES, &mx);
         if (mx > 0 && s_msaa > mx) s_msaa = mx;
         if (s_msaa < 2) s_msaa = 1;
         if (s_msaa > 1)
@@ -2175,8 +2136,7 @@ static int init_gl(void)
     rb_va_bind(s_vao); s_cur_attr_ok = 0;
     {
         const char *pe = getenv("RECOMP_GL_PERSIST");
-        s_persist = GLAD_GL_ARB_buffer_storage
-                    && glad_glBufferStorage && !(pe && pe[0] == '0');
+        s_persist = rb_caps()->persistent_buffers && !(pe && pe[0] == '0');
     }
     rb_buf_new(1, &s_vbo);
     rb_buf_new(1, &s_ebo);
@@ -2190,7 +2150,7 @@ static int init_gl(void)
             rb_buf_new(1, &s_vbo);
             rb_buf_new(1, &s_ebo);
             s_persist = 0;
-            while (glGetError() != GL_NO_ERROR) {}
+            rb_errors_drain();
         }
     }
     if (!s_persist) {
@@ -2223,13 +2183,13 @@ static int init_gl(void)
     /* Stand-ins for a stage whose texture is unusable: the software sampler
      * reads such a stage as white, and so does this. */
     rb_tex_new(&s_white2d);
-    glBindTexture(GL_TEXTURE_2D, s_white2d);
+    rb_tex_bind_raw(GL_TEXTURE_2D, s_white2d);
     rb_tex_image(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_BGRA,
                  GL_UNSIGNED_INT_8_8_8_8_REV, &white);
     rb_tex_param(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     rb_tex_param(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     rb_tex_new(&s_whitecube);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, s_whitecube);
+    rb_tex_bind_raw(GL_TEXTURE_CUBE_MAP, s_whitecube);
     for (i = 0; i < 6; i++)
         rb_tex_image(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8, 1, 1, 0,
                      GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, &white);
@@ -2247,7 +2207,7 @@ static int init_gl(void)
                 /* the other two rings stay; this one goes through SubData */
                 rb_buf_delete(1, &s_vbo2); rb_vbuf_lost();
                 rb_buf_new(1, &s_vbo2);
-                while (glGetError() != GL_NO_ERROR) {}
+                rb_errors_drain();
             }
             rb_bind_vbuf(s_vbo2);
             rb_buf_data(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
@@ -2259,15 +2219,7 @@ static int init_gl(void)
         for (i = 0; i < 16; i++)
             rb_attr_const4f((GLuint)i, 0.0f, 0.0f, 0.0f, 1.0f); s_cur_attr_ok = 0;
     }
-    glEnable(GL_DEPTH_CLAMP);
-    if (old_clip() && !no_zcull()) {
-        int ci;
-        for (ci = 0; ci < 3; ci++)
-            glEnable(GL_CLIP_DISTANCE0 + ci);   /* v103: the depth-range cull */
-    }
-    glEnable(GL_SCISSOR_TEST);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    rb_init_state(old_clip() && !no_zcull() ? 3 : 0);   /* v103: the depth-range cull */
     use_prog(&s_p_old);
     rb_va_bind(s_vao); s_cur_attr_ok = 0;
     {
@@ -2275,7 +2227,7 @@ static int init_gl(void)
          * (not with the opt-in DXGI presentation, which stays as it was) */
         const char *pm = getenv("RECOMP_GL_PRESENT");
         if (!(pm && !strcmp(pm, "dxgi")))
-            gt_start(s_win, s_ctx);
+            rb_thread_start();
     }
     return 1;
 }
@@ -3845,7 +3797,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
              * RECOMP_GL_DXT=0 restores the CPU decode. */
             if (s_dxt_ok < 0) {
                 const char *ev = getenv("RECOMP_GL_DXT");
-                s_dxt_ok = GLAD_GL_EXT_texture_compression_s3tc
+                s_dxt_ok = rb_caps()->dxt
                            && !(ev && ev[0] == '0');
                 fprintf(stderr, "[GL] DXT textures uploaded %s\n",
                         s_dxt_ok ? "compressed (S3TC)" : "decoded on the CPU");
@@ -3994,8 +3946,7 @@ uploaded:
             if (aniso < 0) {
                 const char *ev = getenv("RECOMP_GL_ANISO");
                 aniso = ev ? atoi(ev) : 1;
-                if (aniso > 1 && (GLAD_GL_ARB_texture_filter_anisotropic
-                                  || GLAD_GL_EXT_texture_filter_anisotropic)) {
+                if (aniso > 1 && rb_caps()->aniso) {
                     /* v187x: through the calls the GL thread forwards
                      * (glGetIntegerv, glTexParameteri): with GL calls on a
                      * thread of their own, glGetFloatv / glTexParameterf
@@ -4087,8 +4038,7 @@ void nv2a_gl_end_frame(void)
     gt_frame_end();            /* v172: at most RECOMP_GL_THREAD_LAG frames queued */
     if (++s_frame == 0)
         s_frame = 1;
-    if (s_win)
-        SDL_PumpEvents();
+    rb_pump();
 }
 
 /* ── state ────────────────────────────────────────────────────────────── */
@@ -4683,7 +4633,7 @@ drawn:
     {
         static int checks;
         if (checks < 8) {
-            GLenum e = glGetError();
+            uint32_t e = rb_error();
             checks++;
             if (e != GL_NO_ERROR)
                 fprintf(stderr, "[GL] error 0x%X after draw %llu\n", e,
@@ -4949,8 +4899,7 @@ static int nat_vao_bind(uint32_t k, uint32_t en)
     int idx;
     if (s_vaoc_on < 0) {
         const char *ev = getenv("RECOMP_GL_VAO_CACHE");
-        s_vaoc_on = !(ev && ev[0] == '0') && GLAD_GL_ARB_vertex_attrib_binding && GLAD_GL_ARB_multi_bind
-                    && glad_glBindVertexBuffers && glad_glVertexAttribFormat && glad_glVertexAttribBinding;
+        s_vaoc_on = !(ev && ev[0] == '0') && rb_caps()->attrib_binding;
         fprintf(stderr, "[GL] vertex layouts: %s\n", s_vaoc_on
                 ? "one vertex array object each (RECOMP_GL_VAO_CACHE=0 for one shared)" : "one shared vertex array object");
     }
@@ -5163,8 +5112,7 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
         int use_vab = 0;
         if (vab < 0) {
             const char *e = getenv("RECOMP_GL_VAB");
-            vab = !(e && e[0] == '0') && GLAD_GL_ARB_vertex_attrib_binding && GLAD_GL_ARB_multi_bind
-                  && glad_glBindVertexBuffers && glad_glVertexAttribFormat && glad_glVertexAttribBinding;
+            vab = !(e && e[0] == '0') && rb_caps()->attrib_binding;
             fprintf(stderr, "[GL] several vertex streams: %s\n",
                     vab ? "attribute binding (RECOMP_GL_VAB=0 for pointers)" : "attribute pointers");
         }
@@ -5297,7 +5245,7 @@ arrays_set:
     {
         static int checks;
         if (checks < 8) {
-            GLenum e = glGetError();
+            uint32_t e = rb_error();
             checks++;
             if (e != GL_NO_ERROR)
                 fprintf(stderr, "[GL] error 0x%X after GPU-vertex draw %llu\n", e,

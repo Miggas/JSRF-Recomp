@@ -974,7 +974,6 @@ static SDL_Window *s_rb_win;                               /* Linux: the GL cont
 void xbox_PresentFit(int cw, int ch, int *dw, int *dh);    /* fb_present.c */
 int xbox_PresentEdgeBars(void);
 void rb_set_overlay(void (*fn)(int cw, int ch, int flip)) { s_rb_overlay = fn; }
-void rb_set_window(void *sdl_window) { s_rb_win = (SDL_Window *)sdl_window; }
 
 /* v213: the bars' colour: black, or (edge bars) the colour of the picture's
  * own left edge (one pixel of the read framebuffer, halfway down) */
@@ -2102,3 +2101,78 @@ int rb_read_depth(uint32_t fbo, int x, int y, float *z)
     glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, z);
     return glGetError() == GL_NO_ERROR;
 }
+
+/* ── start-up (moved from nv2a_gl.c's init_gl) ─────────────────────────── */
+
+static SDL_GLContext s_rb_ctx;
+static RbCaps s_rb_caps;
+
+int rb_init(void)
+{
+    GLint v;
+    SDL_SetMainReady();
+    if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
+        fprintf(stderr, "[GL] SDL video init failed: %s -- software renderer\n",
+                SDL_GetError());
+        return 0;
+    }
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    /* v88: double-buffered, so the context can present into the game's
+     * window with SwapBuffers (rb_window_present); rendering itself still
+     * goes to framebuffer objects. */
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    /* Rendering goes to framebuffer objects, so the window is only there to
+     * own the context and never needs to be seen. */
+    s_rb_win = SDL_CreateWindow("JSRF GL", 0, 0, 16, 16,
+                                SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+    if (!s_rb_win) {
+        fprintf(stderr, "[GL] no window for a context: %s -- software renderer\n",
+                SDL_GetError());
+        return 0;
+    }
+    s_rb_ctx = SDL_GL_CreateContext(s_rb_win);
+    if (!s_rb_ctx) {
+        fprintf(stderr, "[GL] OpenGL 3.3 core context failed: %s -- software renderer\n",
+                SDL_GetError());
+        return 0;
+    }
+    if (!gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress)) {
+        fprintf(stderr, "[GL] could not load GL functions -- software renderer\n");
+        return 0;
+    }
+    s_rb_caps.version  = (const char *)glGetString(GL_VERSION);
+    s_rb_caps.renderer = (const char *)glGetString(GL_RENDERER);
+    s_rb_caps.vendor   = (const char *)glGetString(GL_VENDOR);
+    v = 0; glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &v);          s_rb_caps.max_target = v;
+    v = 0; glGetIntegerv(GL_MAX_SAMPLES, &v);                    s_rb_caps.max_samples = v;
+    v = 0; glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &v);  s_rb_caps.vs_uniform_comps = v;
+    s_rb_caps.persistent_buffers = GLAD_GL_ARB_buffer_storage && glad_glBufferStorage;
+    s_rb_caps.dxt = GLAD_GL_EXT_texture_compression_s3tc;
+    s_rb_caps.aniso = GLAD_GL_ARB_texture_filter_anisotropic
+                      || GLAD_GL_EXT_texture_filter_anisotropic;
+    s_rb_caps.attrib_binding = GLAD_GL_ARB_vertex_attrib_binding && GLAD_GL_ARB_multi_bind
+                               && glad_glBindVertexBuffers && glad_glVertexAttribFormat
+                               && glad_glVertexAttribBinding;
+    return 1;
+}
+
+const RbCaps *rb_caps(void) { return &s_rb_caps; }
+
+void rb_init_state(int clip_planes)
+{
+    int ci;
+    glEnable(GL_DEPTH_CLAMP);
+    for (ci = 0; ci < clip_planes; ci++)
+        glEnable(GL_CLIP_DISTANCE0 + ci);
+    glEnable(GL_SCISSOR_TEST);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+}
+
+void rb_thread_start(void) { gt_start(s_rb_win, s_rb_ctx); }
+void rb_pump(void) { if (s_rb_win) SDL_PumpEvents(); }
+void rb_tex_bind_raw(uint32_t target, uint32_t id) { glBindTexture(target, id); }
+void rb_errors_drain(void) { while (glGetError() != GL_NO_ERROR) {} }
+uint32_t rb_error(void) { return glGetError(); }

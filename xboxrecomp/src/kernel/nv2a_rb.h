@@ -119,7 +119,6 @@ int  rb_window_present(const RbFrame *f);
 /* drawn over each shown frame: our menus (flip: rows top-down, DXGI) */
 void rb_set_overlay(void (*fn)(int cw, int ch, int flip));
 /* Linux: the SDL window the GL context was made with */
-void rb_set_window(void *sdl_window);
 /* v101: the GPU-side spacing of shown frames, for the log; 0 = nothing yet */
 int  rb_gpu_frame_stats(char *buf, size_t n);
 
@@ -186,5 +185,34 @@ void rb_query_result(uint32_t id, uint32_t *v);
 void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf);
 void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c);
 int  rb_read_depth(uint32_t fbo, int x, int y, float *z);
+
+
+/* ── start-up ─────────────────────────────────────────────────────────── */
+typedef struct {
+    const char *version, *renderer, *vendor;   /* for the log */
+    int max_target;            /* largest render target side */
+    int max_samples;           /* MSAA */
+    int vs_uniform_comps;      /* vertex-stage uniform components */
+    int persistent_buffers;    /* mapped rings possible (GL: ARB_buffer_storage) */
+    int dxt;                   /* S3TC textures */
+    int aniso;                 /* anisotropic filtering */
+    int attrib_binding;        /* vertex formats apart from buffers (GL: VAB + multi_bind) */
+} RbCaps;
+/* The device (GL: an SDL window and a 3.3 core context, its functions
+ * loaded). 0 when there is none; the log says why. */
+int  rb_init(void);
+const RbCaps *rb_caps(void);
+/* the state every draw starts from: depth clamp, scissor on, `clip_planes`
+ * clip distances (the depth-range cull), tight pixel rows */
+void rb_init_state(int clip_planes);
+/* from here on the backend's calls run on its thread (GL: when it is on) */
+void rb_thread_start(void);
+/* the window's events, once a frame */
+void rb_pump(void);
+/* a texture onto the active unit, past the binding caches (start-up only) */
+void rb_tex_bind_raw(uint32_t target, uint32_t id);
+/* errors: all dropped; the next one (0 for none) */
+void rb_errors_drain(void);
+uint32_t rb_error(void);
 
 #endif
