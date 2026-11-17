@@ -1729,6 +1729,7 @@ static void API gv_Uniform1i(GLint l, GLint a) { uni_set(l, 1, 1, 1, &a, 0); }
 static void API gv_Uniform1ui(GLint l, GLuint a) { uni_set(l, 1, 1, 0, &a, 0); }
 static void API gv_Uniform1f(GLint l, GLfloat a) { uni_set(l, 1, 1, 2, &a, 0); }
 static void API gv_Uniform2f(GLint l, GLfloat a, GLfloat b) { float v[2] = { a, b }; uni_set(l, 1, 2, 2, v, 0); }
+static void API gv_Uniform3f(GLint l, GLfloat a, GLfloat b, GLfloat c) { float v[3] = { a, b, c }; uni_set(l, 1, 3, 2, v, 0); }
 static void API gv_Uniform4f(GLint l, GLfloat a, GLfloat b, GLfloat c, GLfloat d) { float v[4] = { a, b, c, d }; uni_set(l, 1, 4, 2, v, 0); }
 static void API gv_Uniform1iv(GLint l, GLsizei n, const GLint *v) { uni_set(l, n, 1, 1, v, 0); }
 static void API gv_Uniform1uiv(GLint l, GLsizei n, const GLuint *v) { uni_set(l, n, 1, 0, v, 0); }
@@ -2697,7 +2698,7 @@ static const Proc s_procs[] = {
     P(RenderbufferStorage), P(SamplerParameteri), P(Scissor), P(ShaderSource), P(StencilFunc),
     P(StencilMask), P(StencilOp), P(TexImage2D), P(TexImage2DMultisample), P(TexParameteri),
     P(TexSubImage2D), P(Uniform1f), P(Uniform1fv), P(Uniform1i), P(Uniform1iv), P(Uniform1ui),
-    P(Uniform1uiv), P(Uniform2f), P(Uniform2fv), P(Uniform3fv), P(Uniform4f), P(Uniform4fv),
+    P(Uniform1uiv), P(Uniform2f), P(Uniform2fv), P(Uniform3f), P(Uniform3fv), P(Uniform4f), P(Uniform4fv),
     P(UniformMatrix4fv), P(UnmapBuffer), P(UseProgram), P(VertexAttrib4f), P(VertexAttrib4fv),
     P(VertexAttribPointer), P(Viewport),
 };

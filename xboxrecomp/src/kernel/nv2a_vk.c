@@ -102,6 +102,10 @@ static glslang_shader_t *gl_shader(glslang_stage_t stage, const char *src, glsla
                                | GLSLANG_SHADER_AUTO_MAP_LOCATIONS
                                | GLSLANG_SHADER_VULKAN_RULES_RELAXED);
     glslang_shader_set_default_uniform_block_set_and_binding(sh, 0, 0);
+    /* textures from binding 1 on: a stage without loose uniforms would
+     * otherwise give its first texture binding 0, the other stage's block */
+    glslang_shader_shift_binding(sh, GLSLANG_RESOURCE_TYPE_TEXTURE, 1);
+    glslang_shader_shift_binding(sh, GLSLANG_RESOURCE_TYPE_SAMPLER, 1);
     if (!glslang_shader_preprocess(sh, in) || !glslang_shader_parse(sh, in)) {
         snprintf(s_glsl_err, sizeof s_glsl_err, "%s shader: %s",
                  stage == GLSLANG_STAGE_VERTEX ? "vertex" : "fragment",
@@ -887,7 +891,7 @@ static void mirror_cache_save(Mirror *m)
  * a 64-bit hash of both stages' GLSL (the #defines in it) and of the
  * compiler's settings below, so a change to either just makes new files.
  * The file: "XRSV", the version, the two lengths in words, the words. */
-#define SPV_TAG "glslang-vk1.0-spv1.0-relaxed-1"
+#define SPV_TAG "glslang-vk1.0-spv1.0-relaxed-2"
 
 static uint64_t spv_hash(const char *s, uint64_t h)
 {
