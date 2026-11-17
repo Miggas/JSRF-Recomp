@@ -26,6 +26,8 @@
 #include "nv2a_gl_thread_rt.h"   /* v172: the GL thread (and the GL call counts of v169) */
 #include "nv2a_gl_thread.h"      /* generated: tools/gen_glthread.py */
 #include "nv2a_gl_thread_rt2.h"
+#include "nv2a_rb.h"
+#include "nv2a_rb_gl.c"           /* the OpenGL backend; its own file at the end of step 1 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -2658,7 +2660,6 @@ static GLuint s_unit2d[16], s_unitcube[16];
 static int    s_active_unit = -1;
 static GLuint s_bound_fbo = (GLuint)-1;
 static int    s_bound_vp[2] = {-1, -1}, s_bound_sc[4] = {-1, -1, -1, -1};
-static int    s_ap_valid;        /* apply_state's cache is usable */
 
 /* v87: internal resolution scale. Every render target, its depth buffer, the
  * viewport and the scissor are RECOMP_GL_SCALE times the guest's size; the
@@ -2694,7 +2695,7 @@ static void blit_fb(GLuint src, int sw, int sh, GLuint dst, int dw, int dh, GLen
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glBlitFramebuffer(0, 0, sw, sh, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, filter);
     glEnable(GL_SCISSOR_TEST);
-    s_ap_valid = 0;
+    rb_fixed_lost();
     bind_draw_fbo(prev == (GLuint)-1 ? 0 : prev);
 }
 
@@ -2911,7 +2912,7 @@ static void surf_resolve(GlSurf *s)
     glBlitFramebuffer(0, 0, SC(s->w), SC(s->h), 0, 0, SC(s->w), SC(s->h),
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glEnable(GL_SCISSOR_TEST);
-    s_ap_valid = 0;
+    rb_fixed_lost();
     bind_draw_fbo(prev_draw == (GLuint)-1 ? 0 : prev_draw);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read);
     s_bound_fbo = (prev_draw == (GLuint)-1 ? 0 : prev_draw);
@@ -2987,7 +2988,7 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
         glEnable(GL_SCISSOR_TEST);
         bind_draw_fbo(0);
         glDeleteFramebuffers(1, &tmp);
-        s_ap_valid = 0;             /* depth and stencil masks changed */
+        rb_fixed_lost();             /* depth and stencil masks changed */
     }
     return s_zeta[lru].rb;
 }
@@ -4148,7 +4149,7 @@ static void ms_up_run(void *p)
         s_bound_fbo = (GLuint)dfbo;
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfbo);
-    s_ap_valid = 0;
+    rb_fixed_lost();
 }
 
 #if defined(_WIN32)
@@ -4201,7 +4202,7 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
     s_bound_fbo = (GLuint)-1;
     s_bound_vp[0] = s_bound_vp[1] = -1;
     s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
-    s_ap_valid = 0;
+    rb_fixed_lost();
     return 1;
 }
 
@@ -4360,7 +4361,7 @@ static int gl_window_present_impl(GlSurf *s)
     s_bound_fbo = (GLuint)-1;
     s_bound_vp[0] = s_bound_vp[1] = -1;
     s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
-    s_ap_valid = 0;
+    rb_fixed_lost();
     return 1;
 }
 
@@ -4432,7 +4433,7 @@ static int gl_window_present(GlSurf *s)
             s_bound_fbo = (GLuint)-1;
             s_bound_vp[0] = s_bound_vp[1] = -1;
             s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
-            s_ap_valid = 0;
+            rb_fixed_lost();
             return 1;
         }
         {
@@ -4519,7 +4520,7 @@ static int gl_window_present(GlSurf *s)
     s_bound_fbo = (GLuint)-1;
     s_bound_vp[0] = s_bound_vp[1] = -1;
     s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
-    s_ap_valid = 0;
+    rb_fixed_lost();
     return 1;
 }
 #endif
@@ -5312,7 +5313,7 @@ static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
                       0, SC(t->height), SC(t->width), 0,
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glEnable(GL_SCISSOR_TEST);
-    s_ap_valid = 0;
+    rb_fixed_lost();
     bind_draw_fbo(prev == (GLuint)-1 ? 0 : prev);
     e->from_gpu = 1;
     e->src_fbo = g->fbo;
@@ -5803,100 +5804,73 @@ static void unpack(uint32_t c, float o[4])
     o[3] = (float)( c >> 24        ) / 255.0f;
 }
 
-static NvGlState s_ap;            /* what apply_state last set */
-static int s_ap_alpha;
 
 #define RANGE_SAME(a, b, first, end) \
     (!memcmp(&(a)->first, &(b)->first, offsetof(NvGlState, end) - offsetof(NvGlState, first)))
 
 static void apply_state(const NvGlState *st, const GlSurf *s)
 {
-    int i, all = !s_ap_valid;
+    int i, all;
     float f0[8][4], f1[8][4], c[4];
     GLint isc[4], tv[4];
     float tsc[4][2];
 
-    /* Fixed-function state, each group only when it changed (v152: the
-     * whole set used to go whenever any of it changed -- ~15 GL calls, each
-     * a crossing into the Linux driver under Proton). Anything else that
-     * touches this GL state clears s_ap_valid, as before. */
-#define FF_CH(first, end) (all || !RANGE_SAME(st, &s_ap, first, end))
-    if (FF_CH(depth_test, stencil_test)) {
-        if (st->depth_test) {
-            glEnable(GL_DEPTH_TEST);
-            glDepthFunc(wdepth_func(st->depth_func ? st->depth_func : GL_LESS));
-        } else {
-            glDisable(GL_DEPTH_TEST);
-        }
-        glDepthMask(st->depth_mask ? GL_TRUE : GL_FALSE);
-    }
-    if (FF_CH(stencil_test, blend_enable)) {
-        if (st->stencil_test) {
-            glEnable(GL_STENCIL_TEST);
-            glStencilFunc(st->stencil_func ? st->stencil_func : GL_ALWAYS,
-                          (GLint)(st->stencil_ref & 0xFF), st->stencil_mask & 0xFF);
-            /* 0 is GL_ZERO for the ops, a real op, so they pass as they are. */
-            glStencilOp(st->stencil_fail, st->stencil_zfail, st->stencil_zpass);
-        } else {
-            glDisable(GL_STENCIL_TEST);
-        }
-        glStencilMask(st->stencil_wmask & 0xFF);
-    }
-    if (FF_CH(blend_enable, color_mask)) {
-        if (st->blend_enable) {
-            glEnable(GL_BLEND);
-            glBlendFunc(st->blend_sfactor, st->blend_dfactor);
-            glBlendEquation(st->blend_equation ? st->blend_equation : GL_FUNC_ADD);
-            unpack(st->blend_color, c);
-            glBlendColor(c[0], c[1], c[2], c[3]);
-        } else {
-            glDisable(GL_BLEND);
-        }
-    }
-    if (FF_CH(color_mask, cull_enable) || s_ap_alpha != s->alpha)
-        glColorMask((st->color_mask & 0x00010000u) != 0, (st->color_mask & 0x00000100u) != 0,
-                    (st->color_mask & 0x00000001u) != 0,
-                    (st->color_mask & 0x01000000u) != 0 && s->alpha);
-
-    /* Depth bias. The NV2A's units are depth-buffer units, as GL's are
-     * (the smallest resolvable step), so the values pass through. Depth is
-     * written by the fragment shader straight from the title's depth-buffer
-     * value (u_zdirect, run 63); the polygon offset then has to be applied
-     * in the shader too, GL's own does not touch gl_FragDepth.
-     * RECOMP_GL_FRAGDEPTH=0 goes back to GL's depth. Not for a batch with a
-     * vertex behind the eye (zdirect_off): GL clips those triangles, and
-     * JSRF's shadow volumes are extruded that far (run 64). */
-    if (FF_CH(poly_offset, screen_space)) {
+    /* Fixed-function state, through the backend, which sends only what
+     * changed (v152: the whole set used to go whenever any of it changed). */
+    {
         static int direct = -1;
-        int use;
+        RbFixed f;
+        memset(&f, 0, sizeof f);
+        f.depth_test = st->depth_test != 0;
+        f.depth_func = st->depth_test ? wdepth_func(st->depth_func ? st->depth_func : GL_LESS) : 0;
+        f.depth_mask = st->depth_mask != 0;
+        f.stencil_test = st->stencil_test != 0;
+        if (st->stencil_test) {
+            f.stencil_func = st->stencil_func ? st->stencil_func : GL_ALWAYS;
+            f.stencil_ref = st->stencil_ref & 0xFF;
+            f.stencil_mask = st->stencil_mask & 0xFF;
+            /* 0 is GL_ZERO for the ops, a real op, so they pass as they are. */
+            f.stencil_fail = st->stencil_fail;
+            f.stencil_zfail = st->stencil_zfail;
+            f.stencil_zpass = st->stencil_zpass;
+        }
+        f.stencil_wmask = st->stencil_wmask & 0xFF;
+        f.blend = st->blend_enable != 0;
+        if (st->blend_enable) {
+            f.blend_src = st->blend_sfactor;
+            f.blend_dst = st->blend_dfactor;
+            f.blend_eq = st->blend_equation ? st->blend_equation : GL_FUNC_ADD;
+            unpack(st->blend_color, f.blend_color);
+        }
+        f.cmask = (uint8_t)(((st->color_mask & 0x00010000u) ? 1 : 0) | ((st->color_mask & 0x00000100u) ? 2 : 0)
+                  | ((st->color_mask & 0x00000001u) ? 4 : 0)
+                  | (((st->color_mask & 0x01000000u) && s->alpha) ? 8 : 0));
+        /* Depth bias. The NV2A's units are depth-buffer units, as GL's are
+         * (the smallest resolvable step), so the values pass through. Depth
+         * is written by the fragment shader straight from the title's
+         * depth-buffer value (u_zdirect, run 63); the polygon offset then has
+         * to be applied in the shader too, GL's own does not touch
+         * gl_FragDepth. RECOMP_GL_FRAGDEPTH=0 goes back to GL's depth. Not
+         * for a batch with a vertex behind the eye (zdirect_off): GL clips
+         * those triangles, and JSRF's shadow volumes are extruded that far
+         * (run 64). */
         if (direct < 0) {
             const char *e = getenv("RECOMP_GL_FRAGDEPTH");
             direct = !(e && !strcmp(e, "0"));
         }
-        use = direct && !st->zdirect_off;
-        if (use) {
-            glDisable(GL_POLYGON_OFFSET_FILL);
-        } else if (st->poly_offset) {
-            glEnable(GL_POLYGON_OFFSET_FILL);
-            glPolygonOffset(st->poly_factor, st->poly_units);
-        } else {
-            glDisable(GL_POLYGON_OFFSET_FILL);
+        if (!(direct && !st->zdirect_off) && st->poly_offset) {
+            f.poly_offset = 1;
+            f.poly_factor = st->poly_factor;
+            f.poly_units = st->poly_units;
         }
-    }
-    if (FF_CH(cull_enable, poly_offset)) {
+        f.cull = st->cull_enable != 0;
         if (st->cull_enable) {
-            glEnable(GL_CULL_FACE);
-            glCullFace(st->cull_face ? st->cull_face : GL_BACK);
-            glFrontFace(st->front_face ? st->front_face : GL_CCW);
-        } else {
-            glDisable(GL_CULL_FACE);
+            f.cull_face = st->cull_face ? st->cull_face : GL_BACK;
+            f.front_face = st->front_face ? st->front_face : GL_CCW;
         }
+        rb_fixed(&f);
     }
-#undef FF_CH
 
-    memcpy(&s_ap, st, sizeof s_ap);
-    s_ap_alpha = s->alpha;
-    s_ap_valid = 1;
 
     /* v78: the uniforms, against what this program last had (each program
      * keeps its own values). */
@@ -7131,7 +7105,7 @@ void nv2a_gl_clear(const NvGlState *st, uint32_t param, uint32_t argb,
     }
     if (bits)
         glClear(bits);
-    s_ap_valid = 0;                 /* masks changed above */
+    rb_fixed_lost();                 /* masks changed above */
     if (bits & GL_COLOR_BUFFER_BIT) {
         s->dirty = 1;
         s->draws++;

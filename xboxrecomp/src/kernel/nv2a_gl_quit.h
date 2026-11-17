@@ -11,7 +11,7 @@
  * and if that fails, stb_easy_font, which makes each letter a few
  * rectangles. One tiny shader draws coloured or font-textured triangles. The program, vertex array and buffer bound before are put back
  * (the renderer keeps them cached); blend and depth are re-applied by the
- * renderer after every present (s_ap_valid = 0). Included by nv2a_gl.c. */
+ * renderer after every present (rb_fixed_lost). Included by nv2a_gl.c. */
 #ifndef NV2A_GL_QUIT_H
 #define NV2A_GL_QUIT_H
 

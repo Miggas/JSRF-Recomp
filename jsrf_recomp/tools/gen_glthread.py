@@ -2,7 +2,10 @@
 """v172: generate nv2a_gl_thread.h -- every GL call nv2a_gl.c makes, recorded
 into the GL thread's queue (nv2a_gl_thread_rt.h) or made directly.
 
-  python3 gen_glthread.py <nv2a_gl.c> <glad gl.h> <out nv2a_gl_thread.h>
+  python3 gen_glthread.py <nv2a_gl.c> [<more .c / .h with GL calls> ...] <glad gl.h> <out nv2a_gl_thread.h>
+
+(renderer backends plan, step 1: the GL calls move into nv2a_rb_gl.c; give
+every file that makes them, nv2a_gl_quit.h included)
 
 Each glX(...) in nv2a_gl.c becomes
   (s_glc[i]++, t_gt_mode == 1 ? gtr_glX(...) : glad_glX(...))
@@ -21,9 +24,9 @@ Kinds:
 """
 import re, sys
 
-src = open(sys.argv[1]).read()
-hdr = open(sys.argv[2]).read()
-out = sys.argv[3]
+src = '\n'.join(open(f).read() for f in sys.argv[1:-2])
+hdr = open(sys.argv[-2]).read()
+out = sys.argv[-1]
 
 s = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
 s = re.sub(r'//[^\n]*', '', s)
