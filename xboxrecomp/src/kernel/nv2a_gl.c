@@ -27,7 +27,6 @@
 #include "nv2a_gl_thread.h"      /* generated: tools/gen_glthread.py */
 #include "nv2a_gl_thread_rt2.h"
 #include "nv2a_rb.h"
-#include "nv2a_rb_gl.c"           /* the OpenGL backend; its own file at the end of step 1 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,6 +88,8 @@ static inline uint64_t tm_now_fast(void)
 }
 #define TM_NOW() tm_now_fast()
 #endif
+
+#include "nv2a_rb_gl.c"           /* the OpenGL backend; its own file at the end of step 1 */
 
 /* v169: GL_ARRAY_BUFFER is context state (not the VAO's) and the GPU-vertex
  * draw bound it again on every draw: one driver call each. */
@@ -267,7 +268,7 @@ static int s_cur_vao = 1;
 static void use_prog(GlProg *p)
 {
     if (P != p) {
-        glUseProgram(p->id);
+        rb_use_program(p->id);
         P = p;
     }
 }
@@ -1164,173 +1165,48 @@ static int fog_vertex(void)
     return v;
 }
 
-static GLuint compile(GLenum type, const char *src)
+/* The lines put after a shader's #version (RECOMP_GL_* switches that change
+ * the shaders), or NULL for none; asked for at each compile, as before.
+ * Renderer backends plan: the backend compiles, the renderer says what. */
+static const char *shader_defs(void)
 {
-    GLuint sh = glCreateShader(type);
-    GLint ok = 0;
-    const char *srcs[3];
-    const char *nl = strchr(src, '\n');
-    if ((old_clip() || no_zcull() || no_zcheck() || simple_fs() || bump_old() || fog_vertex() || wdepth()) && nl && !strncmp(src, "#version", 8)) {
-        /* after the #version line, which has to come first */
-        static char ver[64];
-        size_t n = (size_t)(nl - src) + 1;
-        if (n >= sizeof ver) n = sizeof ver - 1;
-        memcpy(ver, src, n); ver[n] = 0;
-        srcs[0] = ver;
-        {
-            static char defs[192];
-            static char wd[64];
-            if (wdepth()) snprintf(wd, sizeof wd, "#define WDEPTH 1\n#define WDEPTH_NEAR %.6f\n", wdepth_near());
-            else wd[0] = 0;
-            snprintf(defs, sizeof defs, "%s%s%s%s%s%s%s", wd,
-                     old_clip() ? "#define OLD_CLIP 1\n" : "",
-                     no_zcull() ? "#define NO_ZCULL 1\n" : "",
-                     no_zcheck() ? "#define ZTOL 1.0e30\n" : "",
-                     simple_fs() ? "#define SIMPLE_FS 1\n" : "",
-                     bump_old() ? "#define BUMP_OLD_LOD 1\n" : "",
-                     fog_vertex() ? "#define FOG_PER_VERTEX 1\n" : "");
-            srcs[1] = defs;
-        }
-        srcs[2] = nl + 1;
-        glShaderSource(sh, 3, srcs, NULL);
-    } else {
-        glShaderSource(sh, 1, &src, NULL);
+    if (old_clip() || no_zcull() || no_zcheck() || simple_fs() || bump_old() || fog_vertex() || wdepth()) {
+        static char defs[192];
+        static char wd[64];
+        if (wdepth()) snprintf(wd, sizeof wd, "#define WDEPTH 1\n#define WDEPTH_NEAR %.6f\n", wdepth_near());
+        else wd[0] = 0;
+        snprintf(defs, sizeof defs, "%s%s%s%s%s%s%s", wd,
+                 old_clip() ? "#define OLD_CLIP 1\n" : "",
+                 no_zcull() ? "#define NO_ZCULL 1\n" : "",
+                 no_zcheck() ? "#define ZTOL 1.0e30\n" : "",
+                 simple_fs() ? "#define SIMPLE_FS 1\n" : "",
+                 bump_old() ? "#define BUMP_OLD_LOD 1\n" : "",
+                 fog_vertex() ? "#define FOG_PER_VERTEX 1\n" : "");
+        return defs;
     }
-    glCompileShader(sh);
-    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[4096];
-        glGetShaderInfoLog(sh, sizeof log, NULL, log);
-        fprintf(stderr, "[GL] %s shader failed to compile:\n%s\n",
-                type == GL_VERTEX_SHADER ? "vertex" : "fragment", log);
-        glDeleteShader(sh);
-        return 0;
-    }
-    return sh;
+    return NULL;
 }
 
-/* v79: linked programs saved to disk (shader_cache\, next to the game) and
- * loaded back with glProgramBinary. Compiling a shader takes the AMD driver
- * tens to hundreds of milliseconds, part of it at the first draw, and every
- * new vertex program the game uses meant one such hitch (run 78: the big
- * one-off stutters). With the cache, a program compiled once is loaded in
- * about a millisecond on every later run. Keyed by the GL renderer and
- * version and both shader sources, so a driver update just rebuilds.
- * RECOMP_GL_NO_SHADER_CACHE=1 turns it off. */
-static unsigned s_cache_hits, s_cache_misses;
-static uint64_t s_tm_compile;          /* ticks spent compiling and linking */
-
-static int shader_cache_on(void)
+/* What else a cached program depends on, beyond its sources: one string
+ * after another (in this order: the shader cache's file names) */
+static int shader_salt(const char **out, int max)
 {
-    static int on = -1;
-    if (on < 0) {
-        GLint nf = 0;
-        on = 0;
-        if (!getenv("RECOMP_GL_NO_SHADER_CACHE") && glad_glProgramBinary && glad_glGetProgramBinary
-                && glad_glProgramParameteri) {
-            glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &nf);
-            on = nf > 0;
-        }
-#if defined(_WIN32)
-        if (on) CreateDirectoryA("shader_cache", NULL);
-#else
-        if (on) mkdir("shader_cache", 0755);
-#endif
-        fprintf(stderr, "[GL] shader cache %s\n", on ? "on (shader_cache)" :
-                "off (no program binaries, or RECOMP_GL_NO_SHADER_CACHE)");
-    }
-    return on;
-}
-
-static uint64_t fnv64(uint64_t h, const char *p)
-{
-    while (*p)
-        h = (h ^ (uint8_t)*p++) * 0x100000001B3ull;
-    return h;
-}
-
-static void cache_path(char *b, size_t n, const char *vsrc, const char *fsrc)
-{
-    uint64_t h = 0xCBF29CE484222325ull;
-    h = fnv64(h, (const char *)glGetString(GL_RENDERER));
-    h = fnv64(h, (const char *)glGetString(GL_VERSION));
-    h = fnv64(h, vsrc);
-    h = fnv64(h, fsrc);
-    if (old_clip())
-        h = fnv64(h, "OLD_CLIP");
-    if (no_zcull())
-        h = fnv64(h, "NO_ZCULL");
-    if (no_zcheck())
-        h = fnv64(h, "NO_ZCHECK");
-    if (simple_fs())
-        h = fnv64(h, "SIMPLE_FS");
-    if (bump_old())
-        h = fnv64(h, "BUMP_OLD_LOD");
-    if (fog_vertex())
-        h = fnv64(h, "FOG_PER_VERTEX");
-    if (wdepth()) {
-        char wd[48];
+    static char wd[48];
+    int n = 0;
+    if (old_clip() && n < max) out[n++] = "OLD_CLIP";
+    if (no_zcull() && n < max) out[n++] = "NO_ZCULL";
+    if (no_zcheck() && n < max) out[n++] = "NO_ZCHECK";
+    if (simple_fs() && n < max) out[n++] = "SIMPLE_FS";
+    if (bump_old() && n < max) out[n++] = "BUMP_OLD_LOD";
+    if (fog_vertex() && n < max) out[n++] = "FOG_PER_VERTEX";
+    if (wdepth() && n < max) {
         snprintf(wd, sizeof wd, "WDEPTH%.6f", wdepth_near());
-        h = fnv64(h, wd);
+        out[n++] = wd;
     }
-#if defined(_WIN32)
-    snprintf(b, n, "shader_cache\\%016llx.bin", (unsigned long long)h);
-#else
-    snprintf(b, n, "shader_cache/%016llx.bin", (unsigned long long)h);
-#endif
+    return n;
 }
 
-static GLuint cache_load(const char *path)
-{
-    FILE *f = fopen(path, "rb");
-    uint32_t hdr[2];
-    void *data;
-    GLuint pr;
-    GLint ok = 0;
-    if (!f)
-        return 0;
-    if (fread(hdr, 4, 2, f) != 2 || !hdr[1] || hdr[1] > (64u << 20)
-            || !(data = malloc(hdr[1]))) {
-        fclose(f);
-        return 0;
-    }
-    if (fread(data, 1, hdr[1], f) != hdr[1]) {
-        free(data);
-        fclose(f);
-        return 0;
-    }
-    fclose(f);
-    pr = glCreateProgram();
-    glProgramBinary(pr, (GLenum)hdr[0], data, (GLsizei)hdr[1]);
-    free(data);
-    glGetProgramiv(pr, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        glDeleteProgram(pr);
-        return 0;                     /* stale (driver changed): rebuild */
-    }
-    return pr;
-}
-
-static void cache_save(const char *path, GLuint pr)
-{
-    GLint len = 0;
-    GLenum fmt = 0;
-    void *data;
-    FILE *f;
-    glGetProgramiv(pr, GL_PROGRAM_BINARY_LENGTH, &len);
-    if (len <= 0 || !(data = malloc((size_t)len)))
-        return;
-    glGetProgramBinary(pr, len, NULL, &fmt, data);
-    f = fopen(path, "wb");
-    if (f) {
-        uint32_t hdr[2];
-        hdr[0] = (uint32_t)fmt; hdr[1] = (uint32_t)len;
-        fwrite(hdr, 4, 2, f);
-        fwrite(data, 1, (size_t)len, f);
-        fclose(f);
-    }
-    free(data);
-}
+static GLuint compile(GLenum type, const char *src) { return rb_shader_compile(type == GL_VERTEX_SHADER, src); }
 
 static GLuint link_with2(const char *vsrc, const char *fsrc);
 static GlProg *zvar(GlProg *p, const NvGlState *st);
@@ -1359,53 +1235,14 @@ static const char *fs_nz(void)
     return src;
 }
 
-static GLuint link_with2(const char *vsrc, const char *fsrc)
-{
-    GLuint vs, fs, pr;
-    GLint ok = 0;
-    char path[64];
-    int cache = shader_cache_on();
-    if (cache) {
-        cache_path(path, sizeof path, vsrc, fsrc);
-        pr = cache_load(path);
-        if (pr) {
-            s_cache_hits++;
-            return pr;
-        }
-        s_cache_misses++;
-    }
-    uint64_t t0 = TM_NOW();
-    vs = compile(GL_VERTEX_SHADER, vsrc);
-    fs = compile(GL_FRAGMENT_SHADER, fsrc);
-    if (!vs || !fs)
-        return 0;
-    pr = glCreateProgram();
-    glAttachShader(pr, vs);
-    glAttachShader(pr, fs);
-    if (cache)
-        glProgramParameteri(pr, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
-    glLinkProgram(pr);
-    glGetProgramiv(pr, GL_LINK_STATUS, &ok);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    if (!ok) {
-        char log[4096];
-        glGetProgramInfoLog(pr, sizeof log, NULL, log);
-        fprintf(stderr, "[GL] shader program failed to link:\n%s\n", log);
-        glDeleteProgram(pr);
-        return 0;
-    }
-    if (cache)
-        cache_save(path, pr);
-    s_tm_compile += TM_NOW() - t0;
-    return pr;
-}
+static GLuint link_with2(const char *vsrc, const char *fsrc) { return rb_program_build(vsrc, fsrc); }
 
 void nv2a_gl_frame_stats(uint64_t *compiles, uint64_t *compile_ticks, uint64_t *texups,
                          uint64_t *texup_ticks, uint64_t *wait_ticks, uint64_t *freq)
 {
-    *compiles = s_cache_misses;
-    *compile_ticks = s_tm_compile;
+    unsigned hits, misses;
+    rb_program_stats(&hits, &misses, compile_ticks);
+    *compiles = misses;
     *texups = s_n_texup;
     *texup_ticks = s_tm[3];
     *wait_ticks = s_tm[1];
@@ -1418,8 +1255,8 @@ static void get_locs(GlProg *p)
     GLuint id = p->id;
     int i;
     GlProg *was = P;
-    glUseProgram(id);
-#define U(v) p->L_##v = glGetUniformLocation(id, "u_" #v)
+    rb_use_program(id);
+#define U(v) p->L_##v = rb_uniform_loc(id, "u_" #v)
     U(bmat); U(bls); U(osi);
     U(zbase); U(zfr);
     U(scr); U(bgfar); U(wsk); U(wsc); U(ws2d); U(wsedge); U(vp); U(zs); U(zs2); U(zdirect); U(poff); U(rc_on); U(cicw); U(aicw); U(cocw);
@@ -1433,39 +1270,16 @@ static void get_locs(GlProg *p)
     for (i = 0; i < 4; i++) {
         char n[16];
         snprintf(n, sizeof n, "u_s%d", i);
-        p->L_s2d[i] = glGetUniformLocation(id, n);
+        p->L_s2d[i] = rb_uniform_loc(id, n);
         snprintf(n, sizeof n, "u_c%d", i);
-        p->L_scube[i] = glGetUniformLocation(id, n);
-        glUniform1i(p->L_s2d[i], i);        /* 2D on units 0-3 */
-        glUniform1i(p->L_scube[i], 4 + i);  /* cube on units 4-7 */
+        p->L_scube[i] = rb_uniform_loc(id, n);
+        rb_u1i(p->L_s2d[i], i);        /* 2D on units 0-3 */
+        rb_u1i(p->L_scube[i], 4 + i);  /* cube on units 4-7 */
     }
     /* v117: how much of u_c[] is live, and whether its elements' locations
      * run on from u_c[0], so a changed range can be sent by itself. A range
      * past the live size would land on whatever uniform comes next. */
-    p->c_n = 0;
-    if (p->L_c >= 0) {
-        GLint nu = 0, k;
-        glGetProgramiv(id, GL_ACTIVE_UNIFORMS, &nu);
-        for (k = 0; k < nu; k++) {
-            char nm[64];
-            GLint sz = 0;
-            GLenum ty = 0;
-            nm[0] = 0;
-            glGetActiveUniform(id, (GLuint)k, sizeof nm, NULL, &sz, &ty, nm);
-            if (!strcmp(nm, "u_c[0]") || !strcmp(nm, "u_c")) {
-                p->c_n = ty == GL_FLOAT_VEC4 ? sz : -1;
-                break;
-            }
-        }
-        if (p->c_n > 1) {
-            char b[16];
-            GLint l1 = glGetUniformLocation(id, "u_c[1]"), lz;
-            snprintf(b, sizeof b, "u_c[%d]", p->c_n - 1);
-            lz = glGetUniformLocation(id, b);
-            if (l1 != p->L_c + 1 || lz != p->L_c + p->c_n - 1)
-                p->c_n = -1;
-        }
-    }
+    p->c_n = p->L_c >= 0 ? rb_uniform_vec4_len(id, "u_c", p->L_c) : 0;
     p->ap_valid = 0;
     p->vs_const_gen = 0;
     p->vs_present = 0xFFFFFFFFu;
@@ -1474,9 +1288,9 @@ static void get_locs(GlProg *p)
     p->vs_fog[0] = p->vs_fog[1] = -1;
     p->vs_fogp[0] = p->vs_fogp[1] = -1e30f;
     if (was)
-        glUseProgram(was->id);
+        rb_use_program(was->id);
     else
-        glUseProgram(id);
+        rb_use_program(id);
 }
 
 /* v78: fixed-function variants -- bit 0 lighting, bit 1 texgen -- so a batch
@@ -1692,11 +1506,14 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
         GlProg *p = &s_p_vsh[victim];
         char *src = gen_vsh(prog, n);
         GLuint id;
-        uint64_t c0 = s_tm_compile;            /* v190: how long the driver took */
+        unsigned ch, cm;
+        uint64_t c0, c1;                       /* v190: how long the driver took */
+        rb_program_stats(&ch, &cm, &c0);
         if (!src)
             return NULL;
         id = link_with(src);
-        c0 = s_tm_compile - c0;
+        rb_program_stats(&ch, &cm, &c1);
+        c0 = c1 - c0;
         if (!id) {
             if (fails++ < 4) {
                 fprintf(stderr, "[GL] vertex program (%d instructions) did not build;"
@@ -1706,11 +1523,11 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
             return NULL;
         }
         if (p->id) {
-            if (P == p || (p->nz && P == p->nz)) { glUseProgram(s_p_old.id); P = &s_p_old; }
-            glDeleteProgram(p->id);
+            if (P == p || (p->nz && P == p->nz)) { rb_use_program(s_p_old.id); P = &s_p_old; }
+            rb_program_delete(p->id);
             free(p->key);
             if (p->nz && p->nz != p) {
-                glDeleteProgram(p->nz->id);
+                rb_program_delete(p->nz->id);
                 free(p->nz);
             }
             spec_purge(p);
@@ -1734,8 +1551,7 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
             if (built++ < 64)
                 fprintf(stderr, "[GL] vertex program %u ready (%d instructions, %.0f ms; shader cache"
                         " %u loaded, %u compiled so far, %.0f ms compiling in all)\n", built, n,
-                        (double)c0 * 1000.0 / f, s_cache_hits, s_cache_misses,
-                        (double)s_tm_compile * 1000.0 / f);
+                        (double)c0 * 1000.0 / f, ch, cm, (double)c1 * 1000.0 / f);
         }
         return p;
     }
@@ -1915,8 +1731,8 @@ static void spec_purge(GlProg *base)
     for (i = 0; i < SPEC_N; i++)
         if (s_spec[i].live && s_spec[i].base == base) {
             if (s_spec[i].prog) {
-                if (P == s_spec[i].prog) { glUseProgram(s_p_old.id); P = &s_p_old; }
-                glDeleteProgram(s_spec[i].prog->id);
+                if (P == s_spec[i].prog) { rb_use_program(s_p_old.id); P = &s_p_old; }
+                rb_program_delete(s_spec[i].prog->id);
                 free(s_spec[i].prog);
             }
             s_spec[i].live = 0;
@@ -1954,8 +1770,8 @@ static GlProg *pick_prog(GlProg *p, const NvGlState *st)
         char *src;
         GlProg *q;
         if (e->live && e->prog) {
-            if (P == e->prog) { glUseProgram(s_p_old.id); P = &s_p_old; }
-            glDeleteProgram(e->prog->id);
+            if (P == e->prog) { rb_use_program(s_p_old.id); P = &s_p_old; }
+            rb_program_delete(e->prog->id);
             free(e->prog);
         }
         if (e->live) s_spec_evicted++; else s_spec_live++;
@@ -2181,7 +1997,7 @@ static int rcp_build2(const Recipe *r, int check_only)
     else {
         GLuint id = link_with2(vsrc, fsrc);
         if (id) {
-            glDeleteProgram(id);
+            rb_program_delete(id);
             s_rcp_built++;
         }
     }
@@ -2362,6 +2178,7 @@ static int init_gl(void)
         fprintf(stderr, "[GL] could not load GL functions -- software renderer\n");
         return 0;
     }
+    rb_shader_options(shader_defs, shader_salt);
     fprintf(stderr, "[GL] %s on %s (%s) -- triangles are drawn on the GPU"
             " (RECOMP_RENDERER=sw for the software rasteriser)\n",
             (const char *)glGetString(GL_VERSION),
@@ -5886,86 +5703,86 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
         use = direct && !st->zdirect_off;
         po[0] = st->poly_offset ? 1.0f : 0.0f; po[1] = st->poly_factor; po[2] = st->poly_units;
         if (all || use != P->ap_zdirect) {
-            glUniform1i(u_zdirect, use);
+            rb_u1i(u_zdirect, use);
             P->ap_zdirect = use;
         }
         if (use && (all || memcmp(po, P->ap_poff, sizeof po))) {
-            glUniform3fv(u_poff, 1, po);
+            rb_u3fv(u_poff, 1, po);
             memcpy(P->ap_poff, po, sizeof po);
         }
     }
     if (all || P->ap_bgfar != (int)st->bg_far) {             /* v200d */
-        glUniform1i(P->L_bgfar, (GLint)st->bg_far);
+        rb_u1i(P->L_bgfar, (GLint)st->bg_far);
         P->ap_bgfar = (int)st->bg_far;
     }
     if (all || P->ap_scr != (int)st->screen_space) {
-        glUniform1i(u_scr, (GLint)st->screen_space);
+        rb_u1i(u_scr, (GLint)st->screen_space);
         P->ap_scr = (int)st->screen_space;
     }
     {
         float k = st->ws_k > 0.0f ? st->ws_k : 1.0f;     /* v187 */
         int d = k != 1.0f && st->ws_2d;
         if (all || P->ap_wsk != k) {
-            glUniform1f(u_wsk, k);
+            rb_u1f(u_wsk, k);
             P->ap_wsk = k;
         }
         if (all || P->ap_wsc != st->ws_c) {
-            glUniform1f(u_wsc, st->ws_c);
+            rb_u1f(u_wsc, st->ws_c);
             P->ap_wsc = st->ws_c;
         }
         if (all || P->ap_ws2d != d) {
-            glUniform1i(u_ws2d, d);
+            rb_u1i(u_ws2d, d);
             P->ap_ws2d = d;
         }
         if (all || P->ap_wsedge != (int)st->ws_edge) {    /* v191 */
-            glUniform1i(u_wsedge, (GLint)st->ws_edge);
+            rb_u1i(u_wsedge, (GLint)st->ws_edge);
             P->ap_wsedge = (int)st->ws_edge;
         }
     }
     if (all || P->ap_w != (int)s->w || P->ap_h != (int)s->h || P->ap.zmax != st->zmax) {
-        glUniform2f(u_vp, (float)s->w, (float)s->h);
-        glUniform1f(u_zs, st->zmax > 0.0f ? 1.0f / st->zmax : 1.0f / 16777215.0f);
+        rb_u2f(u_vp, (float)s->w, (float)s->h);
+        rb_u1f(u_zs, st->zmax > 0.0f ? 1.0f / st->zmax : 1.0f / 16777215.0f);
         {   /* v207d: the base for the menus' exact depth: 0.999 of the range,
              * an integer, so pos.z - base is exact for the title's z there */
             float zm = st->zmax > 0.0f ? st->zmax : 16777215.0f;
             float base = floorf(zm * 0.999f);
-            glUniform1f(u_zbase, base);
-            glUniform1f(u_zfr, zm - base);
+            rb_u1f(u_zbase, base);
+            rb_u1f(u_zfr, zm - base);
         }
-        glUniform1f(u_zs2, st->zmax > 0.0f ? 1.0f / st->zmax : 1.0f / 16777215.0f);
+        rb_u1f(u_zs2, st->zmax > 0.0f ? 1.0f / st->zmax : 1.0f / 16777215.0f);
     }
     /* Combiners, fog and alpha test: alpha_test through fog_color, each
      * uniform only when its own value changed for this program (v152: all
      * ~23 went whenever any of them changed -- a constant colour, usually). */
     if (all || !RANGE_SAME(st, &P->ap, alpha_test, tex)) {
 #define RC_CH(f) (all || memcmp(&st->f, &P->ap.f, sizeof st->f))
-        if (RC_CH(rc_seen)) glUniform1i(u_rc_on, st->rc_seen);
-        if (RC_CH(rc.color_icw)) glUniform1uiv(u_cicw, 8, st->rc.color_icw);
-        if (RC_CH(rc.alpha_icw)) glUniform1uiv(u_aicw, 8, st->rc.alpha_icw);
-        if (RC_CH(rc.color_ocw)) glUniform1uiv(u_cocw, 8, st->rc.color_ocw);
-        if (RC_CH(rc.alpha_ocw)) glUniform1uiv(u_aocw, 8, st->rc.alpha_ocw);
+        if (RC_CH(rc_seen)) rb_u1i(u_rc_on, st->rc_seen);
+        if (RC_CH(rc.color_icw)) rb_u1uiv(u_cicw, 8, st->rc.color_icw);
+        if (RC_CH(rc.alpha_icw)) rb_u1uiv(u_aicw, 8, st->rc.alpha_icw);
+        if (RC_CH(rc.color_ocw)) rb_u1uiv(u_cocw, 8, st->rc.color_ocw);
+        if (RC_CH(rc.alpha_ocw)) rb_u1uiv(u_aocw, 8, st->rc.alpha_ocw);
         if (RC_CH(rc.factor0)) {
             for (i = 0; i < 8; i++) unpack(st->rc.factor0[i], f0[i]);
-            glUniform4fv(u_f0, 8, &f0[0][0]);
+            rb_u4fv(u_f0, 8, &f0[0][0]);
         }
         if (RC_CH(rc.factor1)) {
             for (i = 0; i < 8; i++) unpack(st->rc.factor1[i], f1[i]);
-            glUniform4fv(u_f1, 8, &f1[0][0]);
+            rb_u4fv(u_f1, 8, &f1[0][0]);
         }
-        if (RC_CH(rc.final0)) glUniform1ui(u_final0, st->rc.final0);
-        if (RC_CH(rc.final1)) glUniform1ui(u_final1, st->rc.final1);
-        if (RC_CH(rc.final_c0)) { unpack(st->rc.final_c0, c); glUniform4fv(u_fc0, 1, c); }
-        if (RC_CH(rc.final_c1)) { unpack(st->rc.final_c1, c); glUniform4fv(u_fc1, 1, c); }
-        if (RC_CH(rc.control)) glUniform1ui(u_control, st->rc.control);
-        if (RC_CH(rc.stage_program)) glUniform1ui(u_sp, st->rc.stage_program);
-        if (RC_CH(rc.bump_mat)) glUniform4fv(u_bmat, 4, &st->rc.bump_mat[0][0]);
-        if (RC_CH(rc.bump_ls)) glUniform2fv(u_bls, 4, &st->rc.bump_ls[0][0]);
-        if (RC_CH(rc.other_input)) glUniform1ui(u_osi, st->rc.other_input);
-        if (RC_CH(clip_plane_mode)) glUniform1ui(u_clipmode, st->clip_plane_mode);
-        if (RC_CH(fog_color)) glUniform4fv(u_fogc, 1, st->fog_color);
-        if (RC_CH(alpha_test)) glUniform1i(u_atest, st->alpha_test ? 1 : 0);
-        if (RC_CH(alpha_func)) glUniform1ui(u_afunc, st->alpha_func);
-        if (RC_CH(alpha_ref)) glUniform1i(u_aref, (GLint)(st->alpha_ref & 0xFF));
+        if (RC_CH(rc.final0)) rb_u1ui(u_final0, st->rc.final0);
+        if (RC_CH(rc.final1)) rb_u1ui(u_final1, st->rc.final1);
+        if (RC_CH(rc.final_c0)) { unpack(st->rc.final_c0, c); rb_u4fv(u_fc0, 1, c); }
+        if (RC_CH(rc.final_c1)) { unpack(st->rc.final_c1, c); rb_u4fv(u_fc1, 1, c); }
+        if (RC_CH(rc.control)) rb_u1ui(u_control, st->rc.control);
+        if (RC_CH(rc.stage_program)) rb_u1ui(u_sp, st->rc.stage_program);
+        if (RC_CH(rc.bump_mat)) rb_u4fv(u_bmat, 4, &st->rc.bump_mat[0][0]);
+        if (RC_CH(rc.bump_ls)) rb_u2fv(u_bls, 4, &st->rc.bump_ls[0][0]);
+        if (RC_CH(rc.other_input)) rb_u1ui(u_osi, st->rc.other_input);
+        if (RC_CH(clip_plane_mode)) rb_u1ui(u_clipmode, st->clip_plane_mode);
+        if (RC_CH(fog_color)) rb_u4fv(u_fogc, 1, st->fog_color);
+        if (RC_CH(alpha_test)) rb_u1i(u_atest, st->alpha_test ? 1 : 0);
+        if (RC_CH(alpha_func)) rb_u1ui(u_afunc, st->alpha_func);
+        if (RC_CH(alpha_ref)) rb_u1i(u_aref, (GLint)(st->alpha_ref & 0xFF));
 #undef RC_CH
     }
 
@@ -5994,15 +5811,15 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
     }
     {
         if (all || memcmp(P->ap_isc, isc, sizeof isc)) {
-            glUniform1iv(u_iscube, 4, isc);
+            rb_u1iv(u_iscube, 4, isc);
             memcpy(P->ap_isc, isc, sizeof isc);
         }
         if (all || memcmp(P->ap_tv, tv, sizeof tv)) {
-            glUniform1iv(u_tvalid, 4, tv);
+            rb_u1iv(u_tvalid, 4, tv);
             memcpy(P->ap_tv, tv, sizeof tv);
         }
         if (all || memcmp(P->ap_tsc, tsc, sizeof tsc)) {
-            glUniform2fv(u_tscale, 4, &tsc[0][0]);
+            rb_u2fv(u_tscale, 4, &tsc[0][0]);
             memcpy(P->ap_tsc, tsc, sizeof tsc);
         }
     }
@@ -6532,7 +6349,7 @@ static void upload_vs(const NvGlVsState *vs)
         s_full_consts = getenv("RECOMP_GL_FULL_CONSTS") != NULL;
     }
     if (vs->mode == NV_GL_VS_FF && vs->present != P->vs_present) {
-        glUniform1ui(u_present, vs->present);
+        rb_u1ui(u_present, vs->present);
         P->vs_present = vs->present;
     }
     if (vs->consts && vs->const_gen != P->vs_const_gen) {
@@ -6541,7 +6358,7 @@ static void upload_vs(const NvGlVsState *vs)
          * 2^30 changes gets them all, so the generations cannot wrap past it. */
         uint32_t lo = 0, hi = NV2A_VSH_CONSTANTS;
         if (P->c_n <= 0 || s_full_consts) {
-            glUniform4fv(u_c, NV2A_VSH_CONSTANTS, vs->consts);
+            rb_u4fv(u_c, NV2A_VSH_CONSTANTS, vs->consts);
         } else {
             if (P->vs_const_gen && (uint32_t)(vs->const_gen - P->vs_const_gen) < (1u << 30)) {
                 if (!nv2a_vsh_constants_changed(P->vs_const_gen, &lo, &hi))
@@ -6550,7 +6367,7 @@ static void upload_vs(const NvGlVsState *vs)
             if (hi > (uint32_t)P->c_n)
                 hi = (uint32_t)P->c_n;
             if (hi > lo)
-                glUniform4fv(u_c + (GLint)lo, (GLsizei)(hi - lo), vs->consts + (size_t)lo * 4);
+                rb_u4fv(u_c + (GLint)lo, (GLsizei)(hi - lo), vs->consts + (size_t)lo * 4);
             else
                 hi = lo;
         }
@@ -6566,15 +6383,15 @@ static void upload_vs(const NvGlVsState *vs)
              * nine went every time, each a call into the driver) */
             int all = !P->vs_ff_valid;
 #define FFCH(f) (all || memcmp(&vs->ff.f, &P->vs_ff.f, sizeof vs->ff.f))
-            if (FFCH(composite)) glUniformMatrix4fv(u_comp, 1, GL_TRUE, vs->ff.composite);
-            if (FFCH(mv))        glUniformMatrix4fv(u_mv, 4, GL_TRUE, &vs->ff.mv[0][0]);
-            if (FFCH(inv_mv0))   glUniformMatrix4fv(u_imv0, 1, GL_TRUE, vs->ff.inv_mv0);
-            if (FFCH(texmat))    glUniformMatrix4fv(u_texm, 4, GL_TRUE, &vs->ff.texmat[0][0]);
-            if (FFCH(texplane))  glUniform4fv(u_texpl, 16, &vs->ff.texplane[0][0][0]);
-            if (FFCH(skin_mode)) glUniform1i(u_skin, vs->ff.skin_mode);
-            if (FFCH(lighting))  glUniform1i(u_light, vs->ff.lighting);
-            if (FFCH(texmat_on)) glUniform1iv(u_texm_on, 4, vs->ff.texmat_on);
-            if (FFCH(texgen))    glUniform1iv(u_texgen, 16, &vs->ff.texgen[0][0]);
+            if (FFCH(composite)) rb_umat4(u_comp, 1, GL_TRUE, vs->ff.composite);
+            if (FFCH(mv))        rb_umat4(u_mv, 4, GL_TRUE, &vs->ff.mv[0][0]);
+            if (FFCH(inv_mv0))   rb_umat4(u_imv0, 1, GL_TRUE, vs->ff.inv_mv0);
+            if (FFCH(texmat))    rb_umat4(u_texm, 4, GL_TRUE, &vs->ff.texmat[0][0]);
+            if (FFCH(texplane))  rb_u4fv(u_texpl, 16, &vs->ff.texplane[0][0][0]);
+            if (FFCH(skin_mode)) rb_u1i(u_skin, vs->ff.skin_mode);
+            if (FFCH(lighting))  rb_u1i(u_light, vs->ff.lighting);
+            if (FFCH(texmat_on)) rb_u1iv(u_texm_on, 4, vs->ff.texmat_on);
+            if (FFCH(texgen))    rb_u1iv(u_texgen, 16, &vs->ff.texgen[0][0]);
 #undef FFCH
             memcpy(&P->vs_ff, &vs->ff, split);
             if (!P->vs_ff_valid)
@@ -6585,20 +6402,20 @@ static void upload_vs(const NvGlVsState *vs)
                           sizeof(FF) - split))) {
             int all = P->vs_ff_valid < 2;          /* v167: per group, as above */
 #define FFCH(f) (all || memcmp(&vs->ff.f, &P->vs_ff.f, sizeof vs->ff.f))
-            if (FFCH(scene_ambient))  glUniform3fv(u_samb, 1, vs->ff.scene_ambient);
-            if (FFCH(emission))       glUniform3fv(u_emis, 1, vs->ff.emission);
-            if (FFCH(mat_alpha))      glUniform1f(u_malpha, vs->ff.mat_alpha);
-            if (FFCH(color_material)) glUniform1ui(u_cmat, vs->ff.color_material);
-            if (FFCH(light_enable))   glUniform1ui(u_lmask, vs->ff.light_enable);
-            if (FFCH(specular_on))    glUniform1i(u_spec, (int)vs->ff.specular_on);
-            if (FFCH(l_amb))          glUniform3fv(u_lamb, 8, &vs->ff.l_amb[0][0]);
-            if (FFCH(l_dif))          glUniform3fv(u_ldif, 8, &vs->ff.l_dif[0][0]);
-            if (FFCH(l_spc))          glUniform3fv(u_lspc, 8, &vs->ff.l_spc[0][0]);
-            if (FFCH(l_half))         glUniform3fv(u_lhalf, 8, &vs->ff.l_half[0][0]);
-            if (FFCH(l_dir))          glUniform3fv(u_ldir, 8, &vs->ff.l_dir[0][0]);
-            if (FFCH(l_pos))          glUniform3fv(u_lpos, 8, &vs->ff.l_pos[0][0]);
-            if (FFCH(l_att))          glUniform3fv(u_latt, 8, &vs->ff.l_att[0][0]);
-            if (FFCH(l_range))        glUniform1fv(u_lrange, 8, vs->ff.l_range);
+            if (FFCH(scene_ambient))  rb_u3fv(u_samb, 1, vs->ff.scene_ambient);
+            if (FFCH(emission))       rb_u3fv(u_emis, 1, vs->ff.emission);
+            if (FFCH(mat_alpha))      rb_u1f(u_malpha, vs->ff.mat_alpha);
+            if (FFCH(color_material)) rb_u1ui(u_cmat, vs->ff.color_material);
+            if (FFCH(light_enable))   rb_u1ui(u_lmask, vs->ff.light_enable);
+            if (FFCH(specular_on))    rb_u1i(u_spec, (int)vs->ff.specular_on);
+            if (FFCH(l_amb))          rb_u3fv(u_lamb, 8, &vs->ff.l_amb[0][0]);
+            if (FFCH(l_dif))          rb_u3fv(u_ldif, 8, &vs->ff.l_dif[0][0]);
+            if (FFCH(l_spc))          rb_u3fv(u_lspc, 8, &vs->ff.l_spc[0][0]);
+            if (FFCH(l_half))         rb_u3fv(u_lhalf, 8, &vs->ff.l_half[0][0]);
+            if (FFCH(l_dir))          rb_u3fv(u_ldir, 8, &vs->ff.l_dir[0][0]);
+            if (FFCH(l_pos))          rb_u3fv(u_lpos, 8, &vs->ff.l_pos[0][0]);
+            if (FFCH(l_att))          rb_u3fv(u_latt, 8, &vs->ff.l_att[0][0]);
+            if (FFCH(l_range))        rb_u1fv(u_lrange, 8, vs->ff.l_range);
 #undef FFCH
             memcpy((char *)&P->vs_ff + split, (const char *)&vs->ff + split, sizeof(FF) - split);
             P->vs_ff_valid = 2;
@@ -6609,13 +6426,13 @@ static void upload_vs(const NvGlVsState *vs)
          * shader takes the absolute value of per pixel */
         int fe = vs->fog_enable ? (vs->mode == NV_GL_VS_FF ? 2 : 1) : 0;
         if (fe != P->vs_fog[0] || (int32_t)vs->fog_mode != P->vs_fog[1]) {
-            glUniform1i(u_fog_en, fe);
-            glUniform1ui(u_fog_mode, vs->fog_mode);
+            rb_u1i(u_fog_en, fe);
+            rb_u1ui(u_fog_mode, vs->fog_mode);
             P->vs_fog[0] = fe; P->vs_fog[1] = (int32_t)vs->fog_mode;
         }
     }
     if (vs->fog_param[0] != P->vs_fogp[0] || vs->fog_param[1] != P->vs_fogp[1]) {
-        glUniform2f(u_fogp, vs->fog_param[0], vs->fog_param[1]);
+        rb_u2f(u_fogp, vs->fog_param[0], vs->fog_param[1]);
         P->vs_fogp[0] = vs->fog_param[0]; P->vs_fogp[1] = vs->fog_param[1];
     }
 }
