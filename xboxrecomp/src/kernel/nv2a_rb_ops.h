@@ -119,4 +119,8 @@ typedef struct RbOps {
 /* the backend the rb_* calls go to from now on (before rb_init) */
 void rb_select(const RbOps *ops);
 extern const RbOps *g_rb;
+/* RECOMP_RB_PROFILE: every rb_* call counted and timed (nv2a_rb_dispatch.c) */
+void rb_prof_on(int on);
+int  rb_prof_enabled(void);
+int  rb_prof_report(char *buf, size_t n, uint64_t draws);
 #endif

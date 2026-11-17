@@ -278,6 +278,8 @@
  * the uniforms' place or a texture or sampler changed. All of it is
  * forgotten with a new command buffer. The pictures are the same. */
 
+int rb_prof_enabled(void);
+#define rb_prof_enabled_fwd rb_prof_enabled
 #define VKD_NII 160
 static struct {
     VkCommandBuffer cmd; uint64_t serial;      /* the command buffer this is about */
@@ -302,6 +304,12 @@ static struct {
     uint32_t wb[40], wc[40], nw;
 } D;
 static uint64_t s_vkd_draws, s_vkd_pipe_hash, s_vkd_vb, s_vkd_dyn, s_vkd_push;
+/* RECOMP_RB_PROFILE=1: where a draw's time goes (ticks): 0 rendering begun,
+ * 1 vertex inputs and key, 2 pipeline, 3 vertex buffers, 4 dynamic state,
+ * 5 uniforms copied, 6 descriptors, 7 the draw command; and uniform bytes */
+static uint64_t s_vkd_t[8], s_vkd_ubytes;
+static int s_vkd_prof = -1;
+#define VKD_T(i) do { if (s_vkd_prof) { uint64_t t_ = TM_NOW(); s_vkd_t[i] += t_ - tp_; tp_ = t_; } } while (0)
 
 static int vkd_same_cmd(void)
 {
@@ -326,6 +334,9 @@ static int vkd_setup(void)
     VkBuffer vbufs[NATTR];
     VkDeviceSize voffs[NATTR];
     int i;
+    uint64_t tp_ = 0;
+    if (s_vkd_prof < 0) s_vkd_prof = rb_prof_enabled_fwd();
+    if (s_vkd_prof) tp_ = TM_NOW();
     if (!g || !g->linked || !v)
         return 0;
     if (S.vp[2] <= 0 || S.vp[3] <= 0)
@@ -333,6 +344,7 @@ static int vkd_setup(void)
     if (!rendering_begin())
         return 0;
     vkd_same_cmd();
+    VKD_T(0);
     fbo_tex(S.draw_fbo, &col, &ds, &ci, &di);
     if (col && col->bc) col = NULL;
     if (R.ds == 0) ds = NULL;
@@ -381,6 +393,7 @@ static int vkd_setup(void)
             }
         }
     }
+    VKD_T(1);
     if (D.kp && D.g == g && !memcmp(&D.k, &k, sizeof k))
         p = D.kp;                             /* the same pipeline as the last draw */
     else {
@@ -395,6 +408,7 @@ static int vkd_setup(void)
         vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
         R.pipe = p;
     }
+    VKD_T(2);
     /* vertex buffers: the inputs' bindings, in runs, where they moved */
     {
         uint32_t m = g->inputs & ((1u << NATTR) - 1);
@@ -415,6 +429,7 @@ static int vkd_setup(void)
             s_vkd_vb++;
         }
     }
+    VKD_T(3);
     /* dynamic state, where it differs */
     {
         VkViewport vp;
@@ -493,6 +508,7 @@ static int vkd_setup(void)
         D.dyn_ok = 1;
         s_vkd_dyn += (uint64_t)n;
     }
+    VKD_T(4);
     /* the uniforms and textures, pushed when something in them changed */
     {
         VkWriteDescriptorSet w[40];
@@ -511,7 +527,9 @@ static int vkd_setup(void)
                 g->ubo_buf = r->b;
                 g->ubo_serial = G.b[G.cur].serial;
                 g->dirty = 0;
+                s_vkd_ubytes += g->ubo_size;
             }
+            VKD_T(5);
             bi.buffer = g->ubo_buf;
             bi.offset = g->ubo_off;
             bi.range = g->ubo_size ? g->ubo_size : 16;
@@ -579,6 +597,7 @@ static int vkd_setup(void)
             s_vkd_push++;
         }
     }
+    VKD_T(6);
     s_n_draws++;
     s_vkd_draws++;
     return 1;
@@ -586,8 +605,11 @@ static int vkd_setup(void)
 
 static void API vkd_DrawArrays(GLenum mode, GLint first, GLsizei count)
 {
+    uint64_t tp_;
     if (mode != GL_TRIANGLES || count <= 0 || !vkd_setup()) return;
+    tp_ = s_vkd_prof ? TM_NOW() : 0;
     vkCmdDraw(G.b[G.cur].cmd, (uint32_t)count, 1, (uint32_t)first, 0);
+    VKD_T(7);
 }
 
 static void API vkd_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type,
@@ -597,13 +619,16 @@ static void API vkd_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum ty
     GBuf *e = v ? buf_of(v->ebo) : NULL;
     VkIndexType it = type == GL_UNSIGNED_SHORT ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
     if (mode != GL_TRIANGLES || count <= 0 || !e || !e->b) return;
+    uint64_t tp_;
     if (!vkd_setup()) return;
+    tp_ = s_vkd_prof ? TM_NOW() : 0;
     if (D.ib != e->b || D.it != it) {
         vkCmdBindIndexBuffer(G.b[G.cur].cmd, e->b, 0, it);
         D.ib = e->b; D.it = it;
     }
     vkCmdDrawIndexed(G.b[G.cur].cmd, (uint32_t)count, 1,
                      (uint32_t)((uintptr_t)off / (type == GL_UNSIGNED_SHORT ? 2 : 4)), base, 0);
+    VKD_T(7);
 }
 
 
@@ -1693,6 +1718,16 @@ int rb_window_present(const RbFrame *f)
                     (unsigned long long)s_vkd_draws, 100.0 * (double)s_vkd_pipe_hash / (double)s_vkd_draws,
                     100.0 * (double)s_vkd_vb / (double)s_vkd_draws, (double)s_vkd_dyn / (double)s_vkd_draws,
                     100.0 * (double)s_vkd_push / (double)s_vkd_draws);
+            if (s_vkd_prof > 0) {
+                double us = 1e6 / (double)SDL_GetPerformanceFrequency() / (double)s_vkd_draws;
+                fprintf(stderr, "[VK]   a draw's time (us): begin %.2f, inputs %.2f, pipeline %.2f,"
+                        " vertex buffers %.2f, dynamic %.2f, uniforms %.2f (%.0f bytes), descriptors %.2f,"
+                        " draw %.2f\n", s_vkd_t[0] * us, s_vkd_t[1] * us, s_vkd_t[2] * us, s_vkd_t[3] * us,
+                        s_vkd_t[4] * us, s_vkd_t[5] * us, (double)s_vkd_ubytes / (double)s_vkd_draws,
+                        s_vkd_t[6] * us, s_vkd_t[7] * us);
+                memset(s_vkd_t, 0, sizeof s_vkd_t);
+                s_vkd_ubytes = 0;
+            }
             s_vkd_draws = s_vkd_pipe_hash = s_vkd_vb = s_vkd_dyn = s_vkd_push = 0;
         }
     }

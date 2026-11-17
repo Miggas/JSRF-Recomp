@@ -2090,6 +2090,10 @@ static int init_gl(void)
 
     if (r && (!strcmp(r, "sw") || !strcmp(r, "software")))
         return 0;
+    {   /* step 2: each backend call counted and timed, for [PERF] */
+        const char *e = getenv("RECOMP_RB_PROFILE");
+        rb_prof_on(e && e[0] == '1');
+    }
 #ifdef XBOXRECOMP_HAVE_VK
     if (nv2a_vk_native()) {             /* step 2b: the Vulkan backend */
         extern const RbOps rbvk_ops;
@@ -5450,6 +5454,13 @@ int nv2a_gl_call_stats(char *buf, size_t n)
 {
     if (s_state != 1 || !buf || !n)
         return 0;
+    if (rb_prof_enabled()) {             /* RECOMP_RB_PROFILE=1 */
+        static char pb[2048];
+        static uint64_t l_d;
+        if (rb_prof_report(pb, sizeof pb, s_n_draws - l_d))
+            fprintf(stderr, "[PERF]   backend calls: %s\n", pb);
+        l_d = s_n_draws;
+    }
     return rb_call_stats(buf, n, s_n_draws, s_vaoc_miss);
 }
 
