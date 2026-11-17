@@ -10,12 +10,27 @@
 #ifndef NV2A_VK_H
 #define NV2A_VK_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* 1 when RECOMP_RENDERER=vulkan (or RECOMP_VK_PROBE=1) asks for Vulkan */
+/* 1 when RECOMP_RENDERER=vkmirror (or RECOMP_VK_PROBE=1) asks for steps
+ * 1-3: OpenGL draws, the probe and the shader mirror run beside it */
 int nv2a_vk_wanted(void);
+/* step 4: 1 when RECOMP_RENDERER=vulkan (or vk) -- no OpenGL; the window
+ * is presented through a Vulkan swapchain. Until the draws are ported the
+ * software rasteriser draws the frames. */
+int nv2a_vk_renderer(void);
+/* a frame into the window: px (w x h, 32-bit B,G,R,X bytes, rows top-down)
+ * fitted into dw x dh at dx,dy of the cw x ch window, the rest black. win:
+ * the HWND (Windows) or the SDL_Window made with SDL_WINDOW_VULKAN (Linux).
+ * Brings Vulkan up on the first call. Returns 1 when shown (or nothing to
+ * show: minimised), 0 when Vulkan can't present here -- for good. Always
+ * called from the same thread. */
+int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
+                          int cw, int ch, int dx, int dy, int dw, int dh);
 /* the probe on a thread of its own; its results go to the log as [VK] */
 void nv2a_vk_probe_async(void);
 /* the probe on the calling thread: 0 when the triangle came out right */

@@ -2089,6 +2089,19 @@ static int init_gl(void)
 
     if (r && (!strcmp(r, "sw") || !strcmp(r, "software")))
         return 0;
+#ifdef XBOXRECOMP_HAVE_VK
+    if (nv2a_vk_renderer()) {
+        /* vulkan-test, step 4: no OpenGL; the window is Vulkan's (fb_present.c
+         * hands it the frames), which the software rasteriser draws for now */
+        extern int (*xbox_fb_vk_frame)(void *, const uint32_t *, uint32_t, uint32_t,
+                                       int, int, int, int, int, int);
+        xbox_fb_vk_frame = nv2a_vk_present_frame;
+        fprintf(stderr, "[VK] RECOMP_RENDERER=vulkan: the window is presented through Vulkan;"
+                " until the renderer is ported the software rasteriser draws the frames"
+                " (slow). RECOMP_RENDERER=vkmirror: OpenGL with the shader mirror.\n");
+        return 0;
+    }
+#endif
     if (!rb_init())
         return 0;
     rb_shader_options(shader_defs, shader_salt);
@@ -2215,7 +2228,7 @@ static int init_gl(void)
     rb_va_bind(s_vao); s_cur_attr_ok = 0;
     {
 #ifdef XBOXRECOMP_HAVE_VK
-        /* vulkan-test: RECOMP_RENDERER=vulkan -- the probe, on a thread of
+        /* vulkan-test: RECOMP_RENDERER=vkmirror -- the probe, on a thread of
          * its own; the game draws with OpenGL meanwhile (nv2a_vk.h) */
         if (nv2a_vk_wanted())
             nv2a_vk_probe_async();

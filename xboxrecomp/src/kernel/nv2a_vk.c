@@ -40,7 +40,7 @@ int nv2a_vk_wanted(void)
     static int w = -1;
     if (w < 0) {
         const char *r = getenv("RECOMP_RENDERER"), *p = getenv("RECOMP_VK_PROBE");
-        w = (r && (!strcmp(r, "vulkan") || !strcmp(r, "vk"))) || (p && p[0] == '1');
+        w = (r && !strcmp(r, "vkmirror")) || (p && p[0] == '1');
     }
     return w;
 }
@@ -1157,10 +1157,653 @@ void nv2a_vk_probe_async(void)
     SDL_Thread *t;
     if (started++)
         return;
-    VK_LOG("RECOMP_RENDERER=vulkan: the Vulkan renderer is being built on the vulkan-test"
+    VK_LOG("RECOMP_RENDERER=vkmirror: the Vulkan renderer is being built on the vulkan-test"
            " branch; for now the game draws with OpenGL, a probe tests Vulkan on this"
            " computer and every shader OpenGL builds is built on Vulkan too, timed\n");
     t = SDL_CreateThread(probe_thread, "vk_probe", NULL);
     if (t)
         SDL_DetachThread(t);
+}
+
+/* ── step 4: the window, through a Vulkan swapchain ──────────────────────
+ *
+ * RECOMP_RENDERER=vulkan: no OpenGL context at all. For now the frames are
+ * the software rasteriser's (guest memory), handed over by fb_present.c the
+ * way it hands them to GDI; each one is copied into an image and blitted
+ * into the swapchain, fitted to the window (4:3 or widescreen, black bars).
+ * The renderer's own GPU frames will come through the same blit. Called on
+ * one thread only: the window's (Windows) or the executor's (Linux). */
+
+#if !defined(_WIN32)
+#include <SDL_vulkan.h>
+#endif
+
+#define VP_FRAMES 2          /* frames in flight */
+#define VP_MAXIMG 8
+
+typedef struct {
+    int state;                       /* 0 not tried, 1 up, -1 failed */
+    VkInstance inst;
+    VkSurfaceKHR surf;
+    VkPhysicalDevice pd;
+    VkDevice dev;
+    VkQueue q;
+    uint32_t qfam;
+    VkCommandPool pool;
+    VkCommandBuffer cmd[VP_FRAMES];
+    VkFence fence[VP_FRAMES];
+    VkSemaphore acq[VP_FRAMES];
+    VkBuffer stg[VP_FRAMES];
+    VkDeviceMemory stg_mem[VP_FRAMES];
+    void *stg_map[VP_FRAMES];
+    VkDeviceSize stg_size[VP_FRAMES];
+    uint32_t f;                      /* frame slot */
+    /* the swapchain */
+    VkSwapchainKHR sc;
+    VkFormat fmt;
+    VkPresentModeKHR mode;
+    VkExtent2D ext;
+    uint32_t nimg;
+    VkImage img[VP_MAXIMG];
+    VkSemaphore done[VP_MAXIMG];
+    int stale;                       /* out of date: build it again */
+    /* the frame's image */
+    VkImage src;
+    VkDeviceMemory src_mem;
+    uint32_t src_w, src_h;
+    VkFormat src_fmt;
+    int req_w, req_h;                /* the window size it was made for */
+    uint64_t frames;
+    int logged_sc;
+} VkPresenter;
+
+static VkPresenter s_vp;
+
+static const char *vp_mode_name(VkPresentModeKHR m)
+{
+    switch (m) {
+    case VK_PRESENT_MODE_IMMEDIATE_KHR: return "immediate";
+    case VK_PRESENT_MODE_MAILBOX_KHR: return "mailbox";
+    case VK_PRESENT_MODE_FIFO_KHR: return "fifo (vsync)";
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "fifo relaxed";
+    default: return "other";
+    }
+}
+
+static int vp_mem_type(uint32_t bits, VkMemoryPropertyFlags want)
+{
+    VkPhysicalDeviceMemoryProperties mp;
+    uint32_t i;
+    vkGetPhysicalDeviceMemoryProperties(s_vp.pd, &mp);
+    for (i = 0; i < mp.memoryTypeCount; i++)
+        if ((bits & (1u << i)) && (mp.memoryTypes[i].propertyFlags & want) == want)
+            return (int)i;
+    return -1;
+}
+
+/* the instance, the window's surface, a device that can present to it */
+static int vp_device(void *win)
+{
+    VkPresenter *p = &s_vp;
+    VkApplicationInfo app = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
+    VkInstanceCreateInfo ici = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
+    const char *iext[8];
+    uint32_t niext = 0, n, i, k, best = (uint32_t)-1, best_q = 0;
+    int best_rank = -1;
+    VkPhysicalDevice pds[16];
+    const char *layer = "VK_LAYER_KHRONOS_validation";
+    const char *val = getenv("RECOMP_VK_VALIDATE");
+    static int volk_up;
+
+    if (!volk_up) {
+        if (volkInitialize() != VK_SUCCESS) {
+            VK_LOG("no Vulkan loader (vulkan-1.dll / libvulkan.so.1): Vulkan can't be"
+                   " used here\n");
+            return 0;
+        }
+        volk_up = 1;
+    }
+#if defined(_WIN32)
+    iext[niext++] = VK_KHR_SURFACE_EXTENSION_NAME;
+    iext[niext++] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+#else
+    {
+        unsigned int ne = 0;
+        if (!SDL_Vulkan_GetInstanceExtensions((SDL_Window *)win, &ne, NULL) || ne > 8
+                || !SDL_Vulkan_GetInstanceExtensions((SDL_Window *)win, &ne, iext)) {
+            VK_LOG("the window can't take a Vulkan surface: %s\n", SDL_GetError());
+            return 0;
+        }
+        niext = ne;
+    }
+#endif
+    app.pApplicationName = "Jet Set Radio Future";
+    app.apiVersion = VK_API_VERSION_1_1;
+    ici.pApplicationInfo = &app;
+    ici.enabledExtensionCount = niext;
+    ici.ppEnabledExtensionNames = iext;
+    if (val && val[0] == '1') {
+        ici.enabledLayerCount = 1;
+        ici.ppEnabledLayerNames = &layer;
+    }
+    if (vkCreateInstance(&ici, NULL, &p->inst) != VK_SUCCESS && val) {
+        ici.enabledLayerCount = 0;
+        if (vkCreateInstance(&ici, NULL, &p->inst) != VK_SUCCESS)
+            p->inst = VK_NULL_HANDLE;
+    }
+    if (!p->inst) {
+        VK_LOG("no Vulkan instance with presenting (the driver has no Vulkan, or it is"
+               " too old)\n");
+        return 0;
+    }
+    volkLoadInstance(p->inst);
+#if defined(_WIN32)
+    {
+        VkWin32SurfaceCreateInfoKHR si = { VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR };
+        si.hinstance = GetModuleHandleA(NULL);
+        si.hwnd = (HWND)win;
+        if (vkCreateWin32SurfaceKHR(p->inst, &si, NULL, &p->surf) != VK_SUCCESS) {
+            VK_LOG("no Vulkan surface for the window\n");
+            return 0;
+        }
+    }
+#else
+    if (!SDL_Vulkan_CreateSurface((SDL_Window *)win, p->inst, &p->surf)) {
+        VK_LOG("no Vulkan surface for the window: %s\n", SDL_GetError());
+        return 0;
+    }
+#endif
+    n = 16;
+    if (vkEnumeratePhysicalDevices(p->inst, &n, pds) < 0 || !n) {
+        VK_LOG("no Vulkan device\n");
+        return 0;
+    }
+    /* a discrete card first, then an integrated one, then anything; it has
+     * to have a queue that draws and presents to this window */
+    for (i = 0; i < n; i++) {
+        VkPhysicalDeviceProperties pp;
+        VkQueueFamilyProperties qf[16];
+        uint32_t nq = 16;
+        int rank;
+        vkGetPhysicalDeviceProperties(pds[i], &pp);
+        rank = pp.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? 3
+             : pp.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 2 : 1;
+        vkGetPhysicalDeviceQueueFamilyProperties(pds[i], &nq, qf);
+        for (k = 0; k < nq; k++) {
+            VkBool32 ok = VK_FALSE;
+            if (!(qf[k].queueFlags & VK_QUEUE_GRAPHICS_BIT))
+                continue;
+            if (vkGetPhysicalDeviceSurfaceSupportKHR(pds[i], k, p->surf, &ok) != VK_SUCCESS
+                    || !ok)
+                continue;
+            if (rank > best_rank) { best_rank = rank; best = i; best_q = k; }
+            break;
+        }
+    }
+    if (best == (uint32_t)-1) {
+        VK_LOG("no Vulkan device can present to the window\n");
+        return 0;
+    }
+    p->pd = pds[best];
+    p->qfam = best_q;
+    {
+        VkPhysicalDeviceProperties pp;
+        vkGetPhysicalDeviceProperties(p->pd, &pp);
+        VK_LOG("presenting with %s (%s), Vulkan %u.%u.%u\n", pp.deviceName,
+               vendor_name(pp.vendorID), VK_API_VERSION_MAJOR(pp.apiVersion),
+               VK_API_VERSION_MINOR(pp.apiVersion), VK_API_VERSION_PATCH(pp.apiVersion));
+    }
+    {
+        float prio = 1.0f;
+        const char *dext = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        VkDeviceQueueCreateInfo qi = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
+        VkDeviceCreateInfo dci = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
+        VkCommandPoolCreateInfo cpi = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+        VkCommandBufferAllocateInfo cai = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+        VkFenceCreateInfo fci = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+        VkSemaphoreCreateInfo sci = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        qi.queueFamilyIndex = p->qfam;
+        qi.queueCount = 1;
+        qi.pQueuePriorities = &prio;
+        dci.queueCreateInfoCount = 1;
+        dci.pQueueCreateInfos = &qi;
+        dci.enabledExtensionCount = 1;
+        dci.ppEnabledExtensionNames = &dext;
+        if (vkCreateDevice(p->pd, &dci, NULL, &p->dev) != VK_SUCCESS) {
+            VK_LOG("the device could not be opened for presenting\n");
+            return 0;
+        }
+        volkLoadDevice(p->dev);
+        vkGetDeviceQueue(p->dev, p->qfam, 0, &p->q);
+        cpi.queueFamilyIndex = p->qfam;
+        cpi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        if (vkCreateCommandPool(p->dev, &cpi, NULL, &p->pool) != VK_SUCCESS)
+            return 0;
+        cai.commandPool = p->pool;
+        cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cai.commandBufferCount = VP_FRAMES;
+        if (vkAllocateCommandBuffers(p->dev, &cai, p->cmd) != VK_SUCCESS)
+            return 0;
+        fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        for (i = 0; i < VP_FRAMES; i++)
+            if (vkCreateFence(p->dev, &fci, NULL, &p->fence[i]) != VK_SUCCESS
+                    || vkCreateSemaphore(p->dev, &sci, NULL, &p->acq[i]) != VK_SUCCESS)
+                return 0;
+    }
+    return 1;
+}
+
+static void vp_swapchain_free(VkSwapchainKHR keep_old)
+{
+    VkPresenter *p = &s_vp;
+    uint32_t i;
+    for (i = 0; i < p->nimg; i++)
+        if (p->done[i]) { vkDestroySemaphore(p->dev, p->done[i], NULL); p->done[i] = VK_NULL_HANDLE; }
+    p->nimg = 0;
+    if (p->sc && p->sc != keep_old)
+        vkDestroySwapchainKHR(p->dev, p->sc, NULL);
+    p->sc = VK_NULL_HANDLE;
+}
+
+/* (re)built for a w x h window; 0 when it can't be, -1 when the window has
+ * no area (minimised: nothing to show) */
+static int vp_swapchain(int w, int h)
+{
+    VkPresenter *p = &s_vp;
+    VkSurfaceCapabilitiesKHR caps;
+    VkSurfaceFormatKHR fm[64];
+    VkPresentModeKHR pm[16];
+    uint32_t nf = 64, npm = 16, i;
+    VkSwapchainCreateInfoKHR ci = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
+    VkSwapchainKHR old = p->sc;
+    const char *vs = getenv("RECOMP_GL_VSYNC");
+    int vsync = vs && vs[0] == '1';
+    VkFormatProperties fp;
+
+    vkDeviceWaitIdle(p->dev);
+    if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(p->pd, p->surf, &caps) != VK_SUCCESS)
+        return 0;
+    if (caps.currentExtent.width != 0xFFFFFFFFu) {
+        w = (int)caps.currentExtent.width;
+        h = (int)caps.currentExtent.height;
+    }
+    if (w < (int)caps.minImageExtent.width) w = (int)caps.minImageExtent.width;
+    if (h < (int)caps.minImageExtent.height) h = (int)caps.minImageExtent.height;
+    if (caps.maxImageExtent.width && w > (int)caps.maxImageExtent.width) w = (int)caps.maxImageExtent.width;
+    if (caps.maxImageExtent.height && h > (int)caps.maxImageExtent.height) h = (int)caps.maxImageExtent.height;
+    if (w <= 0 || h <= 0)
+        return -1;
+    if (vkGetPhysicalDeviceSurfaceFormatsKHR(p->pd, p->surf, &nf, fm) < 0 || !nf)
+        return 0;
+    /* 8-bit BGRA or RGBA, plain first: the game's pixels are already
+     * gamma-encoded. With only sRGB on offer, the frame's image is sRGB too,
+     * so the blit's decode and encode cancel out. */
+    p->fmt = VK_FORMAT_UNDEFINED;
+    {
+        static const VkFormat pref[] = { VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+                                         VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+                                         VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB };
+        uint32_t k;
+        for (k = 0; k < sizeof pref / sizeof pref[0] && p->fmt == VK_FORMAT_UNDEFINED; k++)
+            for (i = 0; i < nf; i++)
+                if (fm[i].format == pref[k]) { p->fmt = pref[k]; ci.imageColorSpace = fm[i].colorSpace; break; }
+        if (p->fmt == VK_FORMAT_UNDEFINED && nf == 1 && fm[0].format == VK_FORMAT_UNDEFINED) {
+            p->fmt = VK_FORMAT_B8G8R8A8_UNORM;
+            ci.imageColorSpace = fm[0].colorSpace;
+        }
+        if (p->fmt == VK_FORMAT_UNDEFINED) {
+            VK_LOG("the window offers no 8-bit colour format to present in (%u formats)\n", nf);
+            return 0;
+        }
+    }
+    p->src_fmt = (p->fmt == VK_FORMAT_B8G8R8A8_SRGB || p->fmt == VK_FORMAT_R8G8B8A8_SRGB)
+                 ? VK_FORMAT_B8G8R8A8_SRGB : VK_FORMAT_B8G8R8A8_UNORM;
+    vkGetPhysicalDeviceFormatProperties(p->pd, p->fmt, &fp);
+    if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+        VK_LOG("the window's format can't be blitted into\n");
+        return 0;
+    }
+    if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
+        VK_LOG("the window's images can't be copied into\n");
+        return 0;
+    }
+    /* RECOMP_GL_VSYNC=1: wait for the screen (fifo); else mailbox (no
+     * tearing, no waiting), else immediate, else fifo, which is always there */
+    p->mode = VK_PRESENT_MODE_FIFO_KHR;
+    if (!vsync && vkGetPhysicalDeviceSurfacePresentModesKHR(p->pd, p->surf, &npm, pm) >= 0) {
+        int mb = 0, im = 0;
+        for (i = 0; i < npm; i++) {
+            if (pm[i] == VK_PRESENT_MODE_MAILBOX_KHR) mb = 1;
+            if (pm[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) im = 1;
+        }
+        p->mode = mb ? VK_PRESENT_MODE_MAILBOX_KHR : im ? VK_PRESENT_MODE_IMMEDIATE_KHR
+                                                        : VK_PRESENT_MODE_FIFO_KHR;
+    }
+    ci.surface = p->surf;
+    ci.minImageCount = caps.minImageCount + 1;
+    if (p->mode == VK_PRESENT_MODE_MAILBOX_KHR && ci.minImageCount < 3)
+        ci.minImageCount = 3;
+    if (caps.maxImageCount && ci.minImageCount > caps.maxImageCount)
+        ci.minImageCount = caps.maxImageCount;
+    ci.imageFormat = p->fmt;
+    ci.imageExtent.width = (uint32_t)w;
+    ci.imageExtent.height = (uint32_t)h;
+    ci.imageArrayLayers = 1;
+    ci.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    ci.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+                      ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR : caps.currentTransform;
+    ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    if (!(caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
+        static const VkCompositeAlphaFlagBitsKHR ca[] = {
+            VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR, VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+            VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR };
+        for (i = 0; i < 3; i++)
+            if (caps.supportedCompositeAlpha & ca[i]) { ci.compositeAlpha = ca[i]; break; }
+    }
+    ci.presentMode = p->mode;
+    ci.clipped = VK_TRUE;
+    ci.oldSwapchain = old;
+    p->sc = VK_NULL_HANDLE;
+    vp_swapchain_free(old);          /* the semaphores; the old swapchain stays for now */
+    if (vkCreateSwapchainKHR(p->dev, &ci, NULL, &p->sc) != VK_SUCCESS) {
+        if (old) vkDestroySwapchainKHR(p->dev, old, NULL);
+        p->sc = VK_NULL_HANDLE;
+        VK_LOG("the swapchain could not be made (%dx%d)\n", w, h);
+        return 0;
+    }
+    if (old)
+        vkDestroySwapchainKHR(p->dev, old, NULL);
+    p->nimg = VP_MAXIMG;
+    if (vkGetSwapchainImagesKHR(p->dev, p->sc, &p->nimg, p->img) < 0) {
+        p->nimg = 0;
+        return 0;
+    }
+    for (i = 0; i < p->nimg; i++) {
+        VkSemaphoreCreateInfo sci = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        if (vkCreateSemaphore(p->dev, &sci, NULL, &p->done[i]) != VK_SUCCESS)
+            return 0;
+    }
+    p->ext = ci.imageExtent;
+    p->stale = 0;
+    if (p->logged_sc++ < 8)
+        VK_LOG("swapchain %ux%u, %u images, %s, %s%s\n", p->ext.width, p->ext.height, p->nimg,
+               p->fmt == VK_FORMAT_B8G8R8A8_UNORM ? "BGRA8" : p->fmt == VK_FORMAT_R8G8B8A8_UNORM
+               ? "RGBA8" : "8-bit sRGB", vp_mode_name(p->mode),
+               vsync ? " (RECOMP_GL_VSYNC=1)" : "");
+    return 1;
+}
+
+/* the frame's image, w x h */
+static int vp_src(uint32_t w, uint32_t h)
+{
+    VkPresenter *p = &s_vp;
+    VkImageCreateInfo ii = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+    VkMemoryRequirements mr;
+    VkMemoryAllocateInfo ai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    VkFormatProperties fp;
+    int t;
+    if (p->src && p->src_w == w && p->src_h == h)
+        return 1;
+    vkDeviceWaitIdle(p->dev);
+    if (p->src) { vkDestroyImage(p->dev, p->src, NULL); p->src = VK_NULL_HANDLE; }
+    if (p->src_mem) { vkFreeMemory(p->dev, p->src_mem, NULL); p->src_mem = VK_NULL_HANDLE; }
+    vkGetPhysicalDeviceFormatProperties(p->pd, p->src_fmt, &fp);
+    if ((fp.optimalTilingFeatures & (VK_FORMAT_FEATURE_BLIT_SRC_BIT
+                                     | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
+            != (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+        VK_LOG("BGRA8 images can't be blitted with filtering on this device\n");
+        return 0;
+    }
+    ii.imageType = VK_IMAGE_TYPE_2D;
+    ii.format = p->src_fmt;
+    ii.extent.width = w;
+    ii.extent.height = h;
+    ii.extent.depth = 1;
+    ii.mipLevels = 1;
+    ii.arrayLayers = 1;
+    ii.samples = VK_SAMPLE_COUNT_1_BIT;
+    ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (vkCreateImage(p->dev, &ii, NULL, &p->src) != VK_SUCCESS)
+        return 0;
+    vkGetImageMemoryRequirements(p->dev, p->src, &mr);
+    t = vp_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (t < 0)
+        t = vp_mem_type(mr.memoryTypeBits, 0);
+    ai.allocationSize = mr.size;
+    ai.memoryTypeIndex = (uint32_t)t;
+    if (t < 0 || vkAllocateMemory(p->dev, &ai, NULL, &p->src_mem) != VK_SUCCESS
+            || vkBindImageMemory(p->dev, p->src, p->src_mem, 0) != VK_SUCCESS)
+        return 0;
+    p->src_w = w;
+    p->src_h = h;
+    return 1;
+}
+
+/* the slot's staging buffer, at least `size` bytes, mapped */
+static int vp_staging(uint32_t f, VkDeviceSize size)
+{
+    VkPresenter *p = &s_vp;
+    VkBufferCreateInfo bi = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    VkMemoryRequirements mr;
+    VkMemoryAllocateInfo ai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+    int t;
+    if (p->stg[f] && p->stg_size[f] >= size)
+        return 1;
+    if (p->stg[f]) {
+        vkUnmapMemory(p->dev, p->stg_mem[f]);
+        vkDestroyBuffer(p->dev, p->stg[f], NULL);
+        vkFreeMemory(p->dev, p->stg_mem[f], NULL);
+        p->stg[f] = VK_NULL_HANDLE;
+    }
+    bi.size = size;
+    bi.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(p->dev, &bi, NULL, &p->stg[f]) != VK_SUCCESS)
+        return 0;
+    vkGetBufferMemoryRequirements(p->dev, p->stg[f], &mr);
+    t = vp_mem_type(mr.memoryTypeBits,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    ai.allocationSize = mr.size;
+    ai.memoryTypeIndex = (uint32_t)t;
+    if (t < 0 || vkAllocateMemory(p->dev, &ai, NULL, &p->stg_mem[f]) != VK_SUCCESS
+            || vkBindBufferMemory(p->dev, p->stg[f], p->stg_mem[f], 0) != VK_SUCCESS
+            || vkMapMemory(p->dev, p->stg_mem[f], 0, size, 0, &p->stg_map[f]) != VK_SUCCESS)
+        return 0;
+    p->stg_size[f] = size;
+    return 1;
+}
+
+static void vp_barrier(VkCommandBuffer c, VkImage img, VkImageLayout from, VkImageLayout to,
+                       VkAccessFlags sa, VkAccessFlags da,
+                       VkPipelineStageFlags ss, VkPipelineStageFlags ds)
+{
+    VkImageMemoryBarrier b = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    b.srcAccessMask = sa;
+    b.dstAccessMask = da;
+    b.oldLayout = from;
+    b.newLayout = to;
+    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = img;
+    b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    b.subresourceRange.levelCount = 1;
+    b.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(c, ss, ds, 0, 0, NULL, 0, NULL, 1, &b);
+}
+
+int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
+                          int cw, int ch, int dx, int dy, int dw, int dh)
+{
+    VkPresenter *p = &s_vp;
+    uint32_t f, img = 0;
+    VkCommandBuffer c;
+    VkResult r;
+    int tries;
+
+    if (p->state < 0)
+        return 0;
+    if (p->state == 0) {
+        p->state = -1;
+        if (!vp_device(win))
+            return 0;
+        p->state = 1;
+    }
+    if (!px || !w || !h)
+        return 1;
+    for (tries = 0; tries < 2; tries++) {
+        if (!p->sc || p->stale || p->req_w != cw || p->req_h != ch) {
+            int s = vp_swapchain(cw, ch);
+            if (s < 0)
+                return 1;            /* minimised */
+            if (!s) { p->state = -1; return 0; }
+            p->req_w = cw;
+            p->req_h = ch;
+        }
+        f = p->f;
+        if (vkWaitForFences(p->dev, 1, &p->fence[f], VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+            VK_LOG("presenting: the device was lost\n");
+            p->state = -1;
+            return 0;
+        }
+        r = vkAcquireNextImageKHR(p->dev, p->sc, UINT64_MAX, p->acq[f], VK_NULL_HANDLE, &img);
+        if (r == VK_ERROR_OUT_OF_DATE_KHR) { p->stale = 1; continue; }
+        if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
+            VK_LOG("presenting: no image from the swapchain (%d)\n", (int)r);
+            p->state = -1;
+            return 0;
+        }
+        break;
+    }
+    if (tries == 2)
+        return 1;                    /* the window keeps changing: next frame */
+    if ((int)p->ext.width != cw || (int)p->ext.height != ch) {
+        /* the surface's own size wins: the picture is fitted to it */
+        double kx = (double)p->ext.width / (cw > 0 ? cw : 1);
+        double ky = (double)p->ext.height / (ch > 0 ? ch : 1);
+        dx = (int)(dx * kx); dw = (int)(dw * kx);
+        dy = (int)(dy * ky); dh = (int)(dh * ky);
+        cw = (int)p->ext.width; ch = (int)p->ext.height;
+    }
+    if (!vp_src(w, h) || !vp_staging(f, (VkDeviceSize)w * h * 4)) {
+        p->state = -1;
+        return 0;
+    }
+    vkResetFences(p->dev, 1, &p->fence[f]);
+    memcpy(p->stg_map[f], px, (size_t)w * h * 4);
+
+    c = p->cmd[f];
+    vkResetCommandBuffer(c, 0);
+    {
+        VkCommandBufferBeginInfo bi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+        VkBufferImageCopy cp;
+        VkClearColorValue black;
+        VkImageSubresourceRange all = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        VkImageBlit bl;
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(c, &bi);
+        /* the frame into its image (the last frame's blit read it: wait) */
+        vp_barrier(c, p->src, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        memset(&cp, 0, sizeof cp);
+        cp.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        cp.imageSubresource.layerCount = 1;
+        cp.imageExtent.width = w;
+        cp.imageExtent.height = h;
+        cp.imageExtent.depth = 1;
+        vkCmdCopyBufferToImage(c, p->stg[f], p->src, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
+        vp_barrier(c, p->src, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        /* the window: black, then the picture fitted into it */
+        vp_barrier(c, p->img[img], VK_IMAGE_LAYOUT_UNDEFINED,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        if (dx > 0 || dy > 0 || dw < cw || dh < ch) {
+            memset(&black, 0, sizeof black);
+            black.float32[3] = 1.0f;
+            vkCmdClearColorImage(c, p->img[img], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                 &black, 1, &all);
+            vp_barrier(c, p->img[img], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        }
+        if (dx < 0) dx = 0;
+        if (dy < 0) dy = 0;
+        if (dx + dw > cw) dw = cw - dx;
+        if (dy + dh > ch) dh = ch - dy;
+        if (dw > 0 && dh > 0) {
+            memset(&bl, 0, sizeof bl);
+            bl.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            bl.srcSubresource.layerCount = 1;
+            bl.srcOffsets[1].x = (int32_t)w;
+            bl.srcOffsets[1].y = (int32_t)h;
+            bl.srcOffsets[1].z = 1;
+            bl.dstSubresource = bl.srcSubresource;
+            bl.dstOffsets[0].x = dx;
+            bl.dstOffsets[0].y = dy;
+            bl.dstOffsets[1].x = dx + dw;
+            bl.dstOffsets[1].y = dy + dh;
+            bl.dstOffsets[1].z = 1;
+            vkCmdBlitImage(c, p->src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           p->img[img], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl,
+                           (uint32_t)dw == w && (uint32_t)dh == h ? VK_FILTER_NEAREST
+                                                                  : VK_FILTER_LINEAR);
+        }
+        vp_barrier(c, p->img[img], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+        vkEndCommandBuffer(c);
+    }
+    {
+        VkSubmitInfo si = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+        VkPipelineStageFlags ws = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        VkPresentInfoKHR pi = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+        si.waitSemaphoreCount = 1;
+        si.pWaitSemaphores = &p->acq[f];
+        si.pWaitDstStageMask = &ws;
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &c;
+        si.signalSemaphoreCount = 1;
+        si.pSignalSemaphores = &p->done[img];
+        if (vkQueueSubmit(p->q, 1, &si, p->fence[f]) != VK_SUCCESS) {
+            VK_LOG("presenting: the frame could not be submitted\n");
+            p->state = -1;
+            return 0;
+        }
+        pi.waitSemaphoreCount = 1;
+        pi.pWaitSemaphores = &p->done[img];
+        pi.swapchainCount = 1;
+        pi.pSwapchains = &p->sc;
+        pi.pImageIndices = &img;
+        r = vkQueuePresentKHR(p->q, &pi);
+        if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR)
+            p->stale = 1;
+        else if (r != VK_SUCCESS) {
+            VK_LOG("presenting failed (%d)\n", (int)r);
+            p->state = -1;
+            return 0;
+        }
+    }
+    p->f = (f + 1) % VP_FRAMES;
+    if (p->frames++ == 0)
+        VK_LOG("first frame shown (%ux%u into %dx%d of a %dx%d window)\n",
+               w, h, dw, dh, cw, ch);
+    return 1;
+}
+
+int nv2a_vk_renderer(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *r = getenv("RECOMP_RENDERER");
+        v = r && (!strcmp(r, "vulkan") || !strcmp(r, "vk"));
+    }
+    return v;
 }
