@@ -77,4 +77,23 @@ void rb_u3fv(int l, int n, const float *v);
 void rb_u4fv(int l, int n, const float *v);
 void rb_umat4(int l, int n, int transpose, const float *v);   /* n 4x4 matrices */
 
+/* ── bindings ──────────────────────────────────────────────────────────── */
+/* Targets are framebuffer handles (0: the window). The backend caches what
+ * is bound; rb_bindings_lost / rb_vbuf_lost when something else changed it. */
+void     rb_bind_draw(uint32_t target);
+uint32_t rb_draw_bound(void);                 /* (uint32_t)-1: not known */
+void     rb_draw_bound_set(uint32_t target);
+void     rb_viewport(int w, int h);
+void     rb_scissor(int x, int y, int w, int h);
+void     rb_scissor_get(int sc[4]);
+void     rb_scissor_once(int x, int y, int w, int h);
+void     rb_bindings_lost(void);
+void     rb_active_unit(int u);
+void     rb_unit_bind(int u, uint32_t target_kind, uint32_t tex);   /* GL_TEXTURE_2D / _CUBE_MAP */
+void     rb_bind_vbuf(uint32_t b);
+void     rb_vbuf_lost(void);
+void     rb_vbuf_bound_set(uint32_t b);
+/* a whole image from one target to another, scaled, no scissor or masks */
+void     rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int dh, uint32_t filter);
+
 #endif

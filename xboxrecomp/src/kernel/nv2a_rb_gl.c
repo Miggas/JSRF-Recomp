@@ -340,3 +340,98 @@ void rb_u2fv(int l, int n, const float *v) { glUniform2fv(l, n, v); }
 void rb_u3fv(int l, int n, const float *v) { glUniform3fv(l, n, v); }
 void rb_u4fv(int l, int n, const float *v) { glUniform4fv(l, n, v); }
 void rb_umat4(int l, int n, int transpose, const float *v) { glUniformMatrix4fv(l, n, transpose ? GL_TRUE : GL_FALSE, v); }
+
+/* ── bindings: what GL has bound, cached (moved from nv2a_gl.c) ──────────── */
+
+static GLuint s_bound_ab = (GLuint)-1;
+void rb_bind_vbuf(uint32_t b)
+{
+    if (b != s_bound_ab) {
+        glBindBuffer(GL_ARRAY_BUFFER, b);
+        s_bound_ab = b;
+    }
+}
+static GLuint s_unit2d[16], s_unitcube[16];
+static int    s_active_unit = -1;
+static GLuint s_bound_fbo = (GLuint)-1;
+static int    s_bound_vp[2] = {-1, -1}, s_bound_sc[4] = {-1, -1, -1, -1};
+void rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int dh, GLenum filter)
+{
+    /* v172: no glIsEnabled / glGetBooleanv (each one a wait for the GL
+     * thread): the scissor test is always on outside these copies, and the
+     * colour mask is set again by the next draw */
+    GLuint prev = s_bound_fbo;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, src);
+    rb_bind_draw(dst);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBlitFramebuffer(0, 0, sw, sh, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, filter);
+    glEnable(GL_SCISSOR_TEST);
+    rb_fixed_lost();
+    rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
+}
+void rb_active_unit(int u)
+{
+    if (s_active_unit != u) {
+        glActiveTexture(GL_TEXTURE0 + u);
+        s_active_unit = u;
+    }
+}
+
+void rb_unit_bind(int u, GLenum target, uint32_t id)
+{
+    GLuint *slot = target == GL_TEXTURE_CUBE_MAP ? &s_unitcube[u] : &s_unit2d[u];
+    if (*slot != id) {
+        rb_active_unit(u);
+        glBindTexture(target, id);
+        *slot = id;
+    }
+}
+
+void rb_bind_draw(uint32_t fbo)
+{
+    if (s_bound_fbo != fbo) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+        s_bound_fbo = fbo;
+    }
+}
+
+
+uint32_t rb_draw_bound(void) { return s_bound_fbo; }        /* (GLuint)-1: not known */
+void rb_draw_bound_set(uint32_t fbo) { s_bound_fbo = fbo; }  /* bound by other means */
+void rb_vbuf_lost(void) { s_bound_ab = (GLuint)-1; }
+void rb_vbuf_bound_set(uint32_t b) { s_bound_ab = b; }
+
+/* the viewport at the origin, w x h */
+void rb_viewport(int w, int h)
+{
+    if (s_bound_vp[0] != w || s_bound_vp[1] != h) {
+        glViewport(0, 0, (GLsizei)w, (GLsizei)h);
+        s_bound_vp[0] = w; s_bound_vp[1] = h;
+    }
+}
+
+/* the scissor (GL rows: y from the bottom); rb_scissor_once: for one
+ * operation, the next rb_scissor sends its own again */
+void rb_scissor(int x, int y, int w, int h)
+{
+    if (s_bound_sc[0] != x || s_bound_sc[1] != y || s_bound_sc[2] != w || s_bound_sc[3] != h) {
+        glScissor(x, y, w, h);
+        s_bound_sc[0] = x; s_bound_sc[1] = y; s_bound_sc[2] = w; s_bound_sc[3] = h;
+    }
+}
+void rb_scissor_get(int sc[4]) { memcpy(sc, s_bound_sc, sizeof s_bound_sc); }
+void rb_scissor_once(int x, int y, int w, int h)
+{
+    glScissor(x, y, w, h);
+    s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
+}
+
+/* something bound framebuffers, set the viewport or the scissor behind
+ * these caches' back */
+void rb_bindings_lost(void)
+{
+    s_bound_fbo = (GLuint)-1;
+    s_bound_vp[0] = s_bound_vp[1] = -1;
+    s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
+}

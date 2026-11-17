@@ -93,17 +93,9 @@ static inline uint64_t tm_now_fast(void)
 
 /* v169: GL_ARRAY_BUFFER is context state (not the VAO's) and the GPU-vertex
  * draw bound it again on every draw: one driver call each. */
-static GLuint s_bound_ab = (GLuint)-1;
 /* v169: the generic inputs' current values as last sent (bit set = known) */
 static float s_cur_attr[16][4];
 static uint32_t s_cur_attr_ok;
-static void bind_ab(GLuint b)
-{
-    if (b != s_bound_ab) {
-        glBindBuffer(GL_ARRAY_BUFFER, b);
-        s_bound_ab = b;
-    }
-}
 
 /* Uniform locations, per program (v78: one program per vertex-shader kind).
  * The u_* names below are the current program's. */
@@ -2075,7 +2067,7 @@ static int ring_create(GlRing *r, GLenum target, GLuint buf, size_t size)
     r->seg = r->seg_lo = -1;
     glBindBuffer(target, buf);
     if (target == GL_ARRAY_BUFFER)
-        s_bound_ab = buf;
+        rb_vbuf_bound_set(buf);
     glBufferStorage(target, (GLsizeiptr)size, NULL, f);
     r->map = (uint8_t *)glMapBufferRange(target, 0, (GLsizeiptr)size, f);
     return r->map != NULL;
@@ -2224,7 +2216,7 @@ static int init_gl(void)
         if (!ring_create(&s_rv, GL_ARRAY_BUFFER, s_vbo, NV_GL_VB_BYTES)
                 || !ring_create(&s_ri, GL_ELEMENT_ARRAY_BUFFER, s_ebo, NV_GL_IB_BYTES)) {
             /* storage is immutable now: start over with fresh buffers */
-            glDeleteBuffers(1, &s_vbo); s_bound_ab = (GLuint)-1;
+            glDeleteBuffers(1, &s_vbo); rb_vbuf_lost();
             glDeleteBuffers(1, &s_ebo);
             glGenBuffers(1, &s_vbo);
             glGenBuffers(1, &s_ebo);
@@ -2233,12 +2225,12 @@ static int init_gl(void)
         }
     }
     if (!s_persist) {
-        bind_ab(s_vbo);
+        rb_bind_vbuf(s_vbo);
         glBufferData(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_ebo);   /* part of the VAO */
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, NV_GL_IB_BYTES, NULL, GL_STREAM_DRAW);
     }
-    bind_ab(s_vbo);
+    rb_bind_vbuf(s_vbo);
     fprintf(stderr, "[GL] vertex and index data: %s\n", s_persist
             ? "persistent mapped rings (RECOMP_GL_PERSIST=0 for glBufferSubData)"
             : "glBufferSubData");
@@ -2284,14 +2276,14 @@ static int init_gl(void)
         if (!s_persist || !ring_create(&s_rv2, GL_ARRAY_BUFFER, s_vbo2, NV_GL_VB_BYTES)) {
             if (s_persist) {
                 /* the other two rings stay; this one goes through SubData */
-                glDeleteBuffers(1, &s_vbo2); s_bound_ab = (GLuint)-1;
+                glDeleteBuffers(1, &s_vbo2); rb_vbuf_lost();
                 glGenBuffers(1, &s_vbo2);
                 while (glGetError() != GL_NO_ERROR) {}
             }
-            bind_ab(s_vbo2);
+            rb_bind_vbuf(s_vbo2);
             glBufferData(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
         }
-        bind_ab(s_vbo2);
+        rb_bind_vbuf(s_vbo2);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_ebo);
         glBindVertexArray(s_vao); s_cur_attr_ok = 0;
         /* What an input with no array reads: (0,0,0,1), as fetch_attr gives. */
@@ -2473,10 +2465,6 @@ static uint32_t s_use_clock;
  * Surface uploads and creation bind on unit 15, which the stages never use,
  * so they leave the stage bindings alone. */
 #define NV_GL_SCRATCH_UNIT 15
-static GLuint s_unit2d[16], s_unitcube[16];
-static int    s_active_unit = -1;
-static GLuint s_bound_fbo = (GLuint)-1;
-static int    s_bound_vp[2] = {-1, -1}, s_bound_sc[4] = {-1, -1, -1, -1};
 
 /* v87: internal resolution scale. Every render target, its depth buffer, the
  * viewport and the scissor are RECOMP_GL_SCALE times the guest's size; the
@@ -2499,22 +2487,6 @@ static void surf_resolve(GlSurf *s);
 
 /* Copy a whole surface between two framebuffers with no scissor or masks in
  * the way; restores the draw binding. */
-static void bind_draw_fbo(GLuint fbo);
-static void blit_fb(GLuint src, int sw, int sh, GLuint dst, int dw, int dh, GLenum filter)
-{
-    /* v172: no glIsEnabled / glGetBooleanv (each one a wait for the GL
-     * thread): the scissor test is always on outside these copies, and the
-     * colour mask is set again by the next draw */
-    GLuint prev = s_bound_fbo;
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, src);
-    bind_draw_fbo(dst);
-    glDisable(GL_SCISSOR_TEST);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBlitFramebuffer(0, 0, sw, sh, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, filter);
-    glEnable(GL_SCISSOR_TEST);
-    rb_fixed_lost();
-    bind_draw_fbo(prev == (GLuint)-1 ? 0 : prev);
-}
 
 /* A framebuffer holding `fbo`'s image at w x h (the guest size): `fbo`
  * itself unscaled, else a scaled-down copy. For reading pixels back. */
@@ -2527,43 +2499,17 @@ static GLuint guest_res_fbo(GLuint fbo, uint32_t w, uint32_t h)
         glGenRenderbuffers(1, &s_dn_rb);
     }
     if (s_dn_w != w || s_dn_h != h) {
-        GLuint prev = s_bound_fbo;
+        GLuint prev = rb_draw_bound();
         glBindRenderbuffer(GL_RENDERBUFFER, s_dn_rb);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, (GLsizei)w, (GLsizei)h);
-        bind_draw_fbo(s_dn_fbo);
+        rb_bind_draw(s_dn_fbo);
         glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                   GL_RENDERBUFFER, s_dn_rb);
-        bind_draw_fbo(prev == (GLuint)-1 ? 0 : prev);
+        rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
         s_dn_w = w; s_dn_h = h;
     }
-    blit_fb(fbo, SC(w), SC(h), s_dn_fbo, (int)w, (int)h, GL_LINEAR);
+    rb_copy_target(fbo, SC(w), SC(h), s_dn_fbo, (int)w, (int)h, GL_LINEAR);
     return s_dn_fbo;
-}
-
-static void active_unit(int u)
-{
-    if (s_active_unit != u) {
-        glActiveTexture(GL_TEXTURE0 + u);
-        s_active_unit = u;
-    }
-}
-
-static void unit_bind(int u, GLenum target, GLuint id)
-{
-    GLuint *slot = target == GL_TEXTURE_CUBE_MAP ? &s_unitcube[u] : &s_unit2d[u];
-    if (*slot != id) {
-        active_unit(u);
-        glBindTexture(target, id);
-        *slot = id;
-    }
-}
-
-static void bind_draw_fbo(GLuint fbo)
-{
-    if (s_bound_fbo != fbo) {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-        s_bound_fbo = fbo;
-    }
 }
 
 typedef struct { uint32_t key, w, h; GLuint rb; int is_tex; } GlZeta;
@@ -2612,7 +2558,7 @@ static void surf_upload(GlSurf *s)
         }
     }
     if (s_scale == 1) {
-        unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s->tex); active_unit(NV_GL_SCRATCH_UNIT);
+        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s->tex); rb_active_unit(NV_GL_SCRATCH_UNIT);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)s->w, (GLsizei)s->h,
                         GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
         if (s_msaa > 1) {
@@ -2627,17 +2573,17 @@ static void surf_upload(GlSurf *s)
             glGenFramebuffers(1, &s_up_fbo);
             glGenTextures(1, &s_up_tex);
         }
-        unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s_up_tex); active_unit(NV_GL_SCRATCH_UNIT);
+        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s_up_tex); rb_active_unit(NV_GL_SCRATCH_UNIT);
         if (s_up_w != s->w || s_up_h != s->h) {
-            GLuint prev = s_bound_fbo;
+            GLuint prev = rb_draw_bound();
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)s->w, (GLsizei)s->h, 0,
                          GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            bind_draw_fbo(s_up_fbo);
+            rb_bind_draw(s_up_fbo);
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                    GL_TEXTURE_2D, s_up_tex, 0);
-            bind_draw_fbo(prev == (GLuint)-1 ? 0 : prev);
+            rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
             s_up_w = s->w; s_up_h = s->h;
         } else {
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)s->w, (GLsizei)s->h,
@@ -2648,7 +2594,7 @@ static void surf_upload(GlSurf *s)
             MsUpArgs a = { s_up_tex, s->fbo, SC(s->w), SC(s->h) };
             gt_call_sync(ms_up_run, &a);
         } else {
-            blit_fb(s_up_fbo, (int)s->w, (int)s->h, s->fbo, SC(s->w), SC(s->h), GL_LINEAR);
+            rb_copy_target(s_up_fbo, (int)s->w, (int)s->h, s->fbo, SC(s->w), SC(s->h), GL_LINEAR);
         }
     }
     xbox_gw_mark(s->va, (uint32_t)surf_bytes(s), &s->wm);
@@ -2720,7 +2666,7 @@ static void surf_resolve(GlSurf *s)
         glGenFramebuffers(1, &s_resolve_fbo);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, (GLint *)&prev_draw);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, (GLint *)&prev_read);
-    bind_draw_fbo(s_resolve_fbo);
+    rb_bind_draw(s_resolve_fbo);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, s->tex, 0);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, s->fbo);
@@ -2730,9 +2676,8 @@ static void surf_resolve(GlSurf *s)
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glEnable(GL_SCISSOR_TEST);
     rb_fixed_lost();
-    bind_draw_fbo(prev_draw == (GLuint)-1 ? 0 : prev_draw);
+    rb_bind_draw(prev_draw == (GLuint)-1 ? 0 : prev_draw);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read);
-    s_bound_fbo = (prev_draw == (GLuint)-1 ? 0 : prev_draw);
 }
 
 typedef struct { GLuint tex; GLenum target; GLsizei samples; GLenum internalformat;
@@ -2789,7 +2734,7 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
     {
         GLuint tmp;
         glGenFramebuffers(1, &tmp);
-        bind_draw_fbo(tmp);
+        rb_bind_draw(tmp);
         if (s_zeta[lru].is_tex)
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
                                    GL_TEXTURE_2D_MULTISAMPLE, s_zeta[lru].rb, 0);
@@ -2803,7 +2748,7 @@ static GLuint zeta_rb(uint32_t key, uint32_t w, uint32_t h)
         glClearStencil(0);
         glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         glEnable(GL_SCISSOR_TEST);
-        bind_draw_fbo(0);
+        rb_bind_draw(0);
         glDeleteFramebuffers(1, &tmp);
         rb_fixed_lost();             /* depth and stencil masks changed */
     }
@@ -2843,7 +2788,7 @@ static GlSurf *surf_get(const NvGlState *st)
             glGenTextures(1, &s->tex);
         }
         /* clear any stale attachments */
-        bind_draw_fbo(s->fbo);
+        rb_bind_draw(s->fbo);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                s_msaa > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
@@ -2856,7 +2801,7 @@ static GlSurf *surf_get(const NvGlState *st)
         if (s->ms_tex)
             glDeleteTextures(1, &s->ms_tex);    /* the previous shape's */
         s->ms_tex = 0;
-        unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s->tex); active_unit(NV_GL_SCRATCH_UNIT);
+        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s->tex); rb_active_unit(NV_GL_SCRATCH_UNIT);
         glTexImage2D(GL_TEXTURE_2D, 0, s->alpha ? GL_RGBA8 : GL_RGB8,
                      (GLsizei)SC(s->w), (GLsizei)SC(s->h), 0, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
@@ -2874,7 +2819,7 @@ static GlSurf *surf_get(const NvGlState *st)
             ma.fixed = GL_TRUE;
             gt_call_sync(ms_tex_create_cb, &ma);
         }
-        bind_draw_fbo(s->fbo);
+        rb_bind_draw(s->fbo);
         if (s_msaa > 1) {
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                    GL_TEXTURE_2D_MULTISAMPLE, s->ms_tex, 0);
@@ -2926,7 +2871,7 @@ static GlSurf *bind_surface(const NvGlState *st)
     /* zeta_rb may bind a framebuffer of its own to clear a new buffer, so
      * it goes before this surface's is bound. */
     rb = zeta_rb(st->zeta_key, (uint32_t)SC(s->w), (uint32_t)SC(s->h));
-    bind_draw_fbo(s->fbo);
+    rb_bind_draw(s->fbo);
     if (rb != s->ds) {
         int zi, is_tex = 0;
         for (zi = 0; zi < 8; zi++)
@@ -2948,10 +2893,7 @@ static GlSurf *bind_surface(const NvGlState *st)
             }
         }
     }
-    if (s_bound_vp[0] != SC(s->w) || s_bound_vp[1] != SC(s->h)) {
-        glViewport(0, 0, (GLsizei)SC(s->w), (GLsizei)SC(s->h));
-        s_bound_vp[0] = SC(s->w); s_bound_vp[1] = SC(s->h);
-    }
+    rb_viewport(SC(s->w), SC(s->h));
     {
         int x = (int)st->clip_x, y = (int)st->clip_y;
         int w = (int)st->clip_w, h = (int)st->clip_h;
@@ -2979,11 +2921,7 @@ static GlSurf *bind_surface(const NvGlState *st)
             int x0 = x > a ? x : a, x1 = x + w < b ? x + w : b;
             x = x0; w = x1 > x0 ? x1 - x0 : 0;
         }
-        if (s_bound_sc[0] != x || s_bound_sc[1] != sy || s_bound_sc[2] != w
-                || s_bound_sc[3] != h) {
-            glScissor(x, sy, w, h);
-            s_bound_sc[0] = x; s_bound_sc[1] = sy; s_bound_sc[2] = w; s_bound_sc[3] = h;
-        }
+        rb_scissor(x, sy, w, h);
     }
     return s;
 }
@@ -3938,7 +3876,7 @@ static void ms_up_run(void *p)
     glViewport(0, 0, a->w, a->h);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_FALSE);
-    bind_draw_fbo(a->dst_fbo);
+    rb_bind_draw(a->dst_fbo);
     glBindVertexArray(s_ms_up.vao);
     glUseProgram(s_ms_up.prog);
     glBindSampler(0, s_ms_up.samp);
@@ -3946,7 +3884,7 @@ static void ms_up_run(void *p)
     glBindTexture(GL_TEXTURE_2D, a->src_tex);
     glUniform1i(s_ms_up.l_tex, 0);
     glDrawArrays(GL_TRIANGLES, 0, 3);
-    s_bound_fbo = a->dst_fbo;
+    rb_draw_bound_set(a->dst_fbo);
 
     /* put it all back */
     glBindSampler(0, (GLuint)samp0);
@@ -3963,7 +3901,7 @@ static void ms_up_run(void *p)
         if (en[i]) glEnable(caps[i]);
     if ((GLuint)dfbo != (GLuint)a->dst_fbo) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dfbo);
-        s_bound_fbo = (GLuint)dfbo;
+        rb_draw_bound_set((GLuint)dfbo);
     }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfbo);
     rb_fixed_lost();
@@ -4016,9 +3954,7 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
                             (!s_dx.vsync && s_dx.tearing) ? DXP_PRESENT_TEARING : 0);
     gw_timing_swap();
     glEnable(GL_SCISSOR_TEST);
-    s_bound_fbo = (GLuint)-1;
-    s_bound_vp[0] = s_bound_vp[1] = -1;
-    s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
+    rb_bindings_lost();
     rb_fixed_lost();
     return 1;
 }
@@ -4175,9 +4111,7 @@ static int gl_window_present_impl(GlSurf *s)
     s_gw.make(s_gw.own_hdc, s_gw.ctx);
     /* everything cached about bindings and fixed state is stale now */
     glEnable(GL_SCISSOR_TEST);
-    s_bound_fbo = (GLuint)-1;
-    s_bound_vp[0] = s_bound_vp[1] = -1;
-    s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
+    rb_bindings_lost();
     rb_fixed_lost();
     return 1;
 }
@@ -4247,9 +4181,7 @@ static int gl_window_present(GlSurf *s)
             f.rowk = s_rf_k;
             f.queued = TM_NOW();
             gt_call(gw_present_gl, &f, sizeof f);
-            s_bound_fbo = (GLuint)-1;
-            s_bound_vp[0] = s_bound_vp[1] = -1;
-            s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
+            rb_bindings_lost();
             rb_fixed_lost();
             return 1;
         }
@@ -4334,9 +4266,7 @@ static int gl_window_present(GlSurf *s)
         gt_call(gw_present_sdl, &f, sizeof f);
     else
         gw_present_sdl(&f);
-    s_bound_fbo = (GLuint)-1;
-    s_bound_vp[0] = s_bound_vp[1] = -1;
-    s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
+    rb_bindings_lost();
     rb_fixed_lost();
     return 1;
 }
@@ -5101,13 +5031,13 @@ static GLuint s_copy_fbo;
  * texture's top-down (bind_texture). So the blit flips. */
 static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
 {
-    GLuint prev = s_bound_fbo;
+    GLuint prev = rb_draw_bound();
     if (!s_copy_fbo)
         glGenFramebuffers(1, &s_copy_fbo);
     /* alloc 2: storage at the scaled size (v87); a CPU upload in between
      * re-specified it at the guest size (alloc 1) */
     if (s_scale == 1 ? !e->alloc : e->alloc != 2) {
-        unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, e->id); active_unit(NV_GL_SCRATCH_UNIT);
+        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, e->id); rb_active_unit(NV_GL_SCRATCH_UNIT);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)SC(t->width), (GLsizei)SC(t->height),
                      0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
         if (t->color == 0x1E)
@@ -5120,7 +5050,7 @@ static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
      * would read nothing */
     if (s_msaa > 1)
         surf_resolve(g);
-    bind_draw_fbo(s_copy_fbo);
+    rb_bind_draw(s_copy_fbo);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            e->id, 0);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : g->fbo);
@@ -5131,7 +5061,7 @@ static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glEnable(GL_SCISSOR_TEST);
     rb_fixed_lost();
-    bind_draw_fbo(prev == (GLuint)-1 ? 0 : prev);
+    rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
     e->from_gpu = 1;
     e->src_fbo = g->fbo;
     e->src_draws = g->draws;
@@ -5258,7 +5188,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
         }
     }
 
-    unit_bind(t->cube ? 4 + stage : stage, target, e->id);
+    rb_unit_bind(t->cube ? 4 + stage : stage, target, e->id);
     /* v169: the unit is made active only before a call that needs it (an
      * upload, a parameter change) -- most binds need none, and making it
      * active every time was 1.5 glActiveTexture calls a draw */
@@ -5332,7 +5262,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
     }
     if (need) {
         uint64_t t0 = TM_NOW();
-        active_unit(bt_unit);
+        rb_active_unit(bt_unit);
         uint64_t h;
         int same_frame = e->checked_frame == s_frame;
         if ((int32_t)(e->w_ban - s_frame) <= 0) {
@@ -5475,16 +5405,16 @@ uploaded:
         if (want < 0) want = 0;
         mips = mips && e->nlev > 1;
         if (e->p_maxlev != want) {
-            active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, want);
+            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, want);
             e->p_maxlev = want;
         }
     } else {
         if (e->p_maxlev != 1000) {
-            active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 1000);
+            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 1000);
             e->p_maxlev = 1000;
         }
         if (mips && e->mips != 1) {
-            active_unit(bt_unit); glGenerateMipmap(target);
+            rb_active_unit(bt_unit); glGenerateMipmap(target);
             e->mips = 1;
         }
     }
@@ -5497,11 +5427,11 @@ uploaded:
                               : (linear ? GL_LINEAR : GL_NEAREST);
         GLint ws = (GLint)gl_wrap(t->addr_u), wt = (GLint)gl_wrap(t->addr_v);
         if (e->p_mag != want_mag) {
-            active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAG_FILTER, want_mag);
+            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAG_FILTER, want_mag);
             e->p_mag = want_mag;
         }
         if (e->p_min != want_min) {
-            active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MIN_FILTER, want_min);
+            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MIN_FILTER, want_min);
             e->p_min = want_min;
         }
         {
@@ -5535,17 +5465,17 @@ uploaded:
             }
             want_a = mips ? aniso : 1;
             if (aniso > 1 && e->p_aniso != want_a) {
-                active_unit(bt_unit);
+                rb_active_unit(bt_unit);
                 glTexParameteri(target, GL_TEXTURE_MAX_ANISOTROPY, want_a);
                 e->p_aniso = want_a;
             }
         }
         if (e->p_ws != ws) {
-            active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_WRAP_S, ws);
+            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_WRAP_S, ws);
             e->p_ws = ws;
         }
         if (e->p_wt != wt) {
-            active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_WRAP_T, wt);
+            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_WRAP_T, wt);
             if (t->cube)
                 glTexParameteri(target, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
             e->p_wt = wt;
@@ -5603,7 +5533,7 @@ void nv2a_gl_end_frame(void)
         watch_verify_one();
         fx_frame();
     }
-    s_bound_ab = (GLuint)-1;   /* v169: bound again once a frame, whatever else ran */
+    rb_vbuf_lost();   /* v169: bound again once a frame, whatever else ran */
     gt_frame_end();            /* v172: at most RECOMP_GL_THREAD_LAG frames queued */
     if (++s_frame == 0)
         s_frame = 1;
@@ -5801,12 +5731,12 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
             bind_texture(i, t);
             /* The other binding point of the stage gets the stand-in. */
             if (t->cube)
-                unit_bind(i, GL_TEXTURE_2D, s_white2d);
+                rb_unit_bind(i, GL_TEXTURE_2D, s_white2d);
             else
-                unit_bind(4 + i, GL_TEXTURE_CUBE_MAP, s_whitecube);
+                rb_unit_bind(4 + i, GL_TEXTURE_CUBE_MAP, s_whitecube);
         } else {
-            unit_bind(i, GL_TEXTURE_2D, s_white2d);
-            unit_bind(4 + i, GL_TEXTURE_CUBE_MAP, s_whitecube);
+            rb_unit_bind(i, GL_TEXTURE_2D, s_white2d);
+            rb_unit_bind(4 + i, GL_TEXTURE_CUBE_MAP, s_whitecube);
         }
     }
     {
@@ -6067,7 +5997,7 @@ NvGlVertex *nv2a_gl_map_vertices(uint32_t n)
         return NULL;
     if (s_persist)
         goto staged;                  /* vertices_done copies into the ring */
-    bind_ab(s_vbo);
+    rb_bind_vbuf(s_vbo);
     if (s_vb_off + bytes > NV_GL_VB_BYTES) {
         glBufferData(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
         s_vb_off = 0;
@@ -6121,7 +6051,7 @@ static GLint vertices_done(void)
         s_mapped = 0;
         return (GLint)(off / sizeof(GlVert));
     }
-    bind_ab(s_vbo);
+    rb_bind_vbuf(s_vbo);
     if (s_mapped == 1)
         glUnmapBuffer(GL_ARRAY_BUFFER);
     else if (s_mapped == 2)
@@ -6271,7 +6201,7 @@ float *nv2a_gl_map_raw(uint32_t n, uint32_t k)
         s_raw_direct = 0;
         if (!stage && s_rv2.map) {
             size_t stride = (size_t)k * 16;
-            bind_ab(s_vbo2);
+            rb_bind_vbuf(s_vbo2);
             s_raw_off = ring_alloc(&s_rv2, bytes, stride);
             s_raw_direct = 1;
             return (float *)(s_rv2.map + s_raw_off);
@@ -6619,7 +6549,7 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
     /* Vertices: behind the last batch, at a multiple of this stride so the
      * base vertex lands on them. */
     bytes = (size_t)s_raw_n * stride;
-    bind_ab(s_vbo2);
+    rb_bind_vbuf(s_vbo2);
     if (s_raw_nat) {
         base = s_nat_base;
     } else if (s_raw_direct) {
@@ -6882,8 +6812,10 @@ void nv2a_gl_clear(const NvGlState *st, uint32_t param, uint32_t argb,
      * one, and the other four came out black (run 62). The rectangle is
      * intersected with the clip the scissor already holds. */
     {
-        int x0 = s_bound_sc[0], y0b = s_bound_sc[1];
-        int x1 = x0 + s_bound_sc[2], y1b = y0b + s_bound_sc[3];  /* exclusive, GL y-up */
+        int sc[4], x0, y0b, x1, y1b;
+        rb_scissor_get(sc);
+        x0 = sc[0]; y0b = sc[1];
+        x1 = x0 + sc[2]; y1b = y0b + sc[3];  /* exclusive, GL y-up */
         int rx0 = SC(s_clr_rect[0]), rx1 = SC(s_clr_rect[1] + 1);
         int ry0 = SC((int)s->h - (s_clr_rect[3] + 1)), ry1 = SC((int)s->h - s_clr_rect[2]);
         if (rx0 > x0) x0 = rx0;
@@ -6892,11 +6824,8 @@ void nv2a_gl_clear(const NvGlState *st, uint32_t param, uint32_t argb,
         if (ry1 < y1b) y1b = ry1;
         if (x1 <= x0 || y1b <= y0b)
             return;
-        if (x0 != s_bound_sc[0] || y0b != s_bound_sc[1] || x1 - x0 != s_bound_sc[2]
-                || y1b - y0b != s_bound_sc[3]) {
-            glScissor(x0, y0b, x1 - x0, y1b - y0b);
-            s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
-        }
+        if (x0 != sc[0] || y0b != sc[1] || x1 - x0 != sc[2] || y1b - y0b != sc[3])
+            rb_scissor_once(x0, y0b, x1 - x0, y1b - y0b);
     }
     if (param & 0xF0) {
         unpack(argb, c);
