@@ -774,6 +774,8 @@ typedef struct {
     int n, fails, hits;
     double gl_ms, glsl_ms, pipe_ms, gl_cached_ms, pipe_cached_ms;
     int gl_cached_n, pipe_cached_n;
+    int spv_cached_n;           /* step 3 */
+    double spv_cached_ms;
 } Mirror;
 
 static int mirror_pass(Mirror *m)
@@ -870,6 +872,74 @@ static void mirror_cache_save(Mirror *m)
     free(data);
 }
 
+/* ── step 3: the SPIR-V cache ─────────────────────────────────────────
+ * The 9060 XT's log (v310k-vk2): the pipelines come from the pipeline
+ * cache in 0.1 ms, but glslang takes 7-17 ms a program, every start. So
+ * each program's SPIR-V is kept too: shader_cache/spirv/<key>.spv, the key
+ * a 64-bit hash of both stages' GLSL (the #defines in it) and of the
+ * compiler's settings below, so a change to either just makes new files.
+ * The file: "XRSV", the version, the two lengths in words, the words. */
+#define SPV_TAG "glslang-vk1.0-spv1.0-relaxed-1"
+
+static uint64_t spv_hash(const char *s, uint64_t h)
+{
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= 0x100000001b3ULL; }
+    h ^= 0xFF; h *= 0x100000001b3ULL;          /* the end of this string */
+    return h;
+}
+
+static void spv_path(char *out, size_t n, const char *vs, const char *fs)
+{
+    uint64_t h = spv_hash(fs, spv_hash(vs, spv_hash(SPV_TAG, 0xcbf29ce484222325ULL)));
+#if defined(_WIN32)
+    snprintf(out, n, "shader_cache\\spirv\\%016llx.spv", (unsigned long long)h);
+#else
+    snprintf(out, n, "shader_cache/spirv/%016llx.spv", (unsigned long long)h);
+#endif
+}
+
+static int spv_load(const char *vs, const char *fs, Spirv *v, Spirv *f)
+{
+    char p[96];
+    uint32_t hd[4];
+    FILE *fp;
+    int ok = 0;
+    spv_path(p, sizeof p, vs, fs);
+    if (!(fp = fopen(p, "rb")))
+        return 0;
+    if (fread(hd, 4, 4, fp) == 4 && hd[0] == 0x56535258u /* "XRSV" */ && hd[1] == 1
+            && hd[2] > 5 && hd[2] < (1u << 22) && hd[3] > 5 && hd[3] < (1u << 22)) {
+        v->words = hd[2];
+        f->words = hd[3];
+        v->code = (uint32_t *)malloc(v->words * 4);
+        f->code = (uint32_t *)malloc(f->words * 4);
+        ok = v->code && f->code && fread(v->code, 4, v->words, fp) == v->words
+             && fread(f->code, 4, f->words, fp) == f->words
+             && v->code[0] == 0x07230203u && f->code[0] == 0x07230203u;   /* SPIR-V's magic */
+        if (!ok) { free(v->code); free(f->code); v->code = f->code = NULL; }
+    }
+    fclose(fp);
+    return ok;
+}
+
+static void spv_save(const char *vs, const char *fs, const Spirv *v, const Spirv *f)
+{
+    char p[96], tmp[100];
+    uint32_t hd[4] = { 0x56535258u, 1, (uint32_t)v->words, (uint32_t)f->words };
+    FILE *fp;
+    int ok;
+    spv_path(p, sizeof p, vs, fs);
+    snprintf(tmp, sizeof tmp, "%s.tmp", p);
+    if (!(fp = fopen(tmp, "wb")))
+        return;
+    ok = fwrite(hd, 4, 4, fp) == 4 && fwrite(v->code, 4, v->words, fp) == v->words
+         && fwrite(f->code, 4, f->words, fp) == f->words;
+    ok = !fclose(fp) && ok;
+    remove(p);
+    if (!ok || rename(tmp, p))
+        remove(tmp);
+}
+
 /* one program: GLSL -> SPIR-V, then the pipeline, as the renderer will
  * build it (16 vec4 inputs, colour and depth-stencil, blending and depth
  * on, the rest dynamic) */
@@ -908,16 +978,21 @@ static void mirror_one(Mirror *m, MJob *j)
     Uint64 t0;
     double t_glsl, t_pipe;
     uint32_t i, nb = 0;
-    int no = ++m->n, hit = -1;
+    int no = ++m->n, hit = -1, spv_hit;
     const char *what = "failed";
 
     t0 = SDL_GetPerformanceCounter();
-    if (!glsl_to_spirv(j->vs, j->fs, &v, &f)) {
-        m->fails++;
-        VK_LOG("mirror %d: the GLSL did not become SPIR-V (above)\n", no);
-        return;
+    spv_hit = spv_load(j->vs, j->fs, &v, &f);          /* step 3 */
+    if (!spv_hit) {
+        if (!glsl_to_spirv(j->vs, j->fs, &v, &f)) {
+            m->fails++;
+            VK_LOG("mirror %d: the GLSL did not become SPIR-V (above)\n", no);
+            return;
+        }
+        spv_save(j->vs, j->fs, &v, &f);
     }
     t_glsl = ms_since(t0);
+    if (spv_hit) { m->spv_cached_n++; m->spv_cached_ms += t_glsl; }
     memset(b, 0, sizeof b);
     spirv_bindings(&v, b);
     spirv_bindings(&f, b);
@@ -999,8 +1074,9 @@ static void mirror_one(Mirror *m, MJob *j)
     if (j->gl_cached) { m->gl_cached_n++; m->gl_cached_ms += j->gl_ms; }
     if (hit == 1) { m->hits++; m->pipe_cached_n++; m->pipe_cached_ms += t_pipe; }
     what = hit == 1 ? "from the pipeline cache" : hit == 0 ? "compiled" : "built";
-    VK_LOG("mirror %d: OpenGL %.1f ms (%s) | Vulkan: GLSL -> SPIR-V %.1f ms, pipeline %.1f ms (%s)\n",
-           no, j->gl_ms, j->gl_cached ? "its shader cache" : "compiled", t_glsl, t_pipe, what);
+    VK_LOG("mirror %d: OpenGL %.1f ms (%s) | Vulkan: SPIR-V %.1f ms (%s), pipeline %.1f ms (%s)\n",
+           no, j->gl_ms, j->gl_cached ? "its shader cache" : "compiled", t_glsl,
+           spv_hit ? "its cache" : "from the GLSL", t_pipe, what);
 done:
     if (!pipe) {
         m->fails++;
@@ -1025,8 +1101,10 @@ static void mirror_run(void)
     }
 #if defined(_WIN32)
     CreateDirectoryA("shader_cache", NULL);
+    CreateDirectoryA("shader_cache\\spirv", NULL);
 #else
     mkdir("shader_cache", 0755);
+    mkdir("shader_cache/spirv", 0755);
 #endif
     mirror_cache_load(m);
     glslang_initialize_process();
@@ -1044,10 +1122,11 @@ static void mirror_run(void)
                 mirror_cache_save(m);
                 since_save = 0;
                 VK_LOG("mirror so far: %d program(s) -- OpenGL %.0f ms in all (%d from its cache,"
-                       " %.0f ms); Vulkan %.0f ms in all: GLSL -> SPIR-V %.0f ms, pipelines"
-                       " %.0f ms (%d from the pipeline cache, %.0f ms)%s\n",
+                       " %.0f ms); Vulkan %.0f ms in all: SPIR-V %.0f ms (%d from its cache, %.0f ms),"
+                       " pipelines %.0f ms (%d from the pipeline cache, %.0f ms)%s\n",
                        m->n, m->gl_ms, m->gl_cached_n, m->gl_cached_ms,
-                       m->glsl_ms + m->pipe_ms, m->glsl_ms, m->pipe_ms, m->pipe_cached_n,
+                       m->glsl_ms + m->pipe_ms, m->glsl_ms, m->spv_cached_n, m->spv_cached_ms,
+                       m->pipe_ms, m->pipe_cached_n,
                        m->pipe_cached_ms, m->fails ? " -- some failed, see above" : "");
             }
             if (s_mq_sem)
