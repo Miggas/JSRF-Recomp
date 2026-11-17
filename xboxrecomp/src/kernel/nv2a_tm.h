@@ -7,6 +7,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <SDL.h>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>               /* recomp_fastclock.h: QueryPerformanceCounter */
+#endif
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
