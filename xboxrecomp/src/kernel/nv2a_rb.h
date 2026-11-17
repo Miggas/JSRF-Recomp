@@ -147,4 +147,30 @@ int  rb_no_error(void);
 int  rb_max_aniso(void);
 void rb_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int h, uint32_t src_fbo, int sh);
 
+/* ── vertex data, fences, draws ────────────────────────────────────────── */
+void rb_buf_bind(uint32_t target, uint32_t b);
+void rb_buf_data(uint32_t target, intptr_t size, const void *data, uint32_t usage);
+void rb_buf_sub(uint32_t target, intptr_t off, intptr_t size, const void *data);
+void rb_buf_storage(uint32_t target, intptr_t size, const void *data, uint32_t flags);
+void *rb_buf_map(uint32_t target, intptr_t off, intptr_t len, uint32_t access);
+int rb_buf_unmap(uint32_t target);
+void rb_buf_new(int n, uint32_t *ids);
+void rb_buf_delete(int n, const uint32_t *ids);
+void *rb_fence(uint32_t cond, uint32_t flags);
+uint32_t rb_fence_wait(void *f, uint32_t flags, uint64_t timeout_ns);
+void rb_fence_delete(void *f);
+void rb_finish(void);
+void rb_va_new(int n, uint32_t *ids);
+void rb_va_bind(uint32_t va);
+void rb_attr_on(uint32_t loc);
+void rb_attr_off(uint32_t loc);
+void rb_attr_pointer(uint32_t loc, int size, uint32_t type, int norm, int stride, const void *ptr);
+void rb_attr_format(uint32_t loc, int size, uint32_t type, int norm, uint32_t rel);
+void rb_attr_binding(uint32_t loc, uint32_t stream);
+void rb_vbufs(uint32_t first, int n, const uint32_t *bufs, const intptr_t *offs, const int *strides);
+void rb_attr_const4fv(uint32_t loc, const float *v);
+void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w);
+void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base);
+void rb_draw_arrays(uint32_t mode, int first, int count);
+
 #endif

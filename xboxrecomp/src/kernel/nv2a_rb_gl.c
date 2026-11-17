@@ -2017,3 +2017,31 @@ void rb_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int h, ui
     rb_fixed_lost();
     rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
 }
+
+/* ── vertex data, fences and draws (OpenGL's meaning; the Vulkan backend
+ *    keeps vertex layouts itself) ───────────────────────────────────────── */
+
+void rb_buf_bind(uint32_t target, uint32_t b) { glBindBuffer(target, b); }
+void rb_buf_data(uint32_t target, intptr_t size, const void *data, uint32_t usage) { glBufferData(target, (GLsizeiptr)size, data, usage); }
+void rb_buf_sub(uint32_t target, intptr_t off, intptr_t size, const void *data) { glBufferSubData(target, (GLintptr)off, (GLsizeiptr)size, data); }
+void rb_buf_storage(uint32_t target, intptr_t size, const void *data, uint32_t flags) { glBufferStorage(target, (GLsizeiptr)size, data, flags); }
+void *rb_buf_map(uint32_t target, intptr_t off, intptr_t len, uint32_t access) { return glMapBufferRange(target, (GLintptr)off, (GLsizeiptr)len, access); }
+int rb_buf_unmap(uint32_t target) { return glUnmapBuffer(target); }
+void rb_buf_new(int n, uint32_t *ids) { glGenBuffers(n, ids); }
+void rb_buf_delete(int n, const uint32_t *ids) { glDeleteBuffers(n, ids); }
+void *rb_fence(uint32_t cond, uint32_t flags) { return (void *)glFenceSync(cond, flags); }
+uint32_t rb_fence_wait(void *f, uint32_t flags, uint64_t timeout_ns) { return glClientWaitSync((GLsync)f, flags, timeout_ns); }
+void rb_fence_delete(void *f) { glDeleteSync((GLsync)f); }
+void rb_finish(void) { glFinish(); }
+void rb_va_new(int n, uint32_t *ids) { glGenVertexArrays(n, ids); }
+void rb_va_bind(uint32_t va) { glBindVertexArray(va); }
+void rb_attr_on(uint32_t loc) { glEnableVertexAttribArray(loc); }
+void rb_attr_off(uint32_t loc) { glDisableVertexAttribArray(loc); }
+void rb_attr_pointer(uint32_t loc, int size, uint32_t type, int norm, int stride, const void *ptr) { glVertexAttribPointer(loc, size, type, norm ? GL_TRUE : GL_FALSE, stride, ptr); }
+void rb_attr_format(uint32_t loc, int size, uint32_t type, int norm, uint32_t rel) { glVertexAttribFormat(loc, size, type, norm ? GL_TRUE : GL_FALSE, rel); }
+void rb_attr_binding(uint32_t loc, uint32_t stream) { glVertexAttribBinding(loc, stream); }
+void rb_vbufs(uint32_t first, int n, const uint32_t *bufs, const intptr_t *offs, const int *strides) { glBindVertexBuffers(first, n, bufs, (const GLintptr *)offs, (const GLsizei *)strides); }
+void rb_attr_const4fv(uint32_t loc, const float *v) { glVertexAttrib4fv(loc, v); }
+void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w) { glVertexAttrib4f(loc, x, y, z, w); }
+void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base) { glDrawElementsBaseVertex(mode, count, type, off, base); }
+void rb_draw_arrays(uint32_t mode, int first, int count) { glDrawArrays(mode, first, count); }

@@ -2029,11 +2029,11 @@ static int ring_create(GlRing *r, GLenum target, GLuint buf, size_t size)
     r->buf = buf;
     r->size = size;
     r->seg = r->seg_lo = -1;
-    glBindBuffer(target, buf);
+    rb_buf_bind(target, buf);
     if (target == GL_ARRAY_BUFFER)
         rb_vbuf_bound_set(buf);
-    glBufferStorage(target, (GLsizeiptr)size, NULL, f);
-    r->map = (uint8_t *)glMapBufferRange(target, 0, (GLsizeiptr)size, f);
+    rb_buf_storage(target, (GLsizeiptr)size, NULL, f);
+    r->map = (uint8_t *)rb_buf_map(target, 0, (GLsizeiptr)size, f);
     return r->map != NULL;
 }
 
@@ -2041,11 +2041,11 @@ static void ring_wait(GLsync *f)
 {
     if (!*f)
         return;
-    if (glClientWaitSync(*f, GL_SYNC_FLUSH_COMMANDS_BIT, 0) == GL_TIMEOUT_EXPIRED) {
+    if (rb_fence_wait(*f, GL_SYNC_FLUSH_COMMANDS_BIT, 0) == GL_TIMEOUT_EXPIRED) {
         s_n_ring_waits++;
-        glClientWaitSync(*f, GL_SYNC_FLUSH_COMMANDS_BIT, 2000000000ull);
+        rb_fence_wait(*f, GL_SYNC_FLUSH_COMMANDS_BIT, 2000000000ull);
     }
-    glDeleteSync(*f);
+    rb_fence_delete(*f);
     *f = 0;
 }
 
@@ -2061,9 +2061,9 @@ static size_t ring_alloc(GlRing *r, size_t bytes, size_t align)
     if (bytes + align > seg) {
         /* Bigger than a segment: everything in flight finishes, and the
          * batch goes at the start. */
-        glFinish();
+        rb_finish();
         for (i = 0; i < NV_GL_SEGS; i++)
-            if (r->fence[i]) { glDeleteSync(r->fence[i]); r->fence[i] = 0; }
+            if (r->fence[i]) { rb_fence_delete(r->fence[i]); r->fence[i] = 0; }
         s_n_ring_big++;
         off = 0;
         lo = 0;
@@ -2082,8 +2082,8 @@ static size_t ring_alloc(GlRing *r, size_t bytes, size_t align)
     if (k != r->seg || lo != r->seg_lo) {
         if (r->seg >= 0)
             for (i = r->seg_lo; i <= r->seg; i++) {
-                if (r->fence[i]) glDeleteSync(r->fence[i]);
-                r->fence[i] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+                if (r->fence[i]) rb_fence_delete(r->fence[i]);
+                r->fence[i] = rb_fence(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
             }
         for (i = lo; i <= k; i++)
             ring_wait(&r->fence[i]);
@@ -2171,33 +2171,33 @@ static int init_gl(void)
             fprintf(stderr, "[GL] MSAA %dx (RECOMP_GL_MSAA)\n", s_msaa);
     }
 
-    glGenVertexArrays(1, &s_vao);
-    glBindVertexArray(s_vao); s_cur_attr_ok = 0;
+    rb_va_new(1, &s_vao);
+    rb_va_bind(s_vao); s_cur_attr_ok = 0;
     {
         const char *pe = getenv("RECOMP_GL_PERSIST");
         s_persist = GLAD_GL_ARB_buffer_storage
                     && glad_glBufferStorage && !(pe && pe[0] == '0');
     }
-    glGenBuffers(1, &s_vbo);
-    glGenBuffers(1, &s_ebo);
+    rb_buf_new(1, &s_vbo);
+    rb_buf_new(1, &s_ebo);
     if (s_persist) {
         /* the element buffer is part of the VAO: bound with it current */
         if (!ring_create(&s_rv, GL_ARRAY_BUFFER, s_vbo, NV_GL_VB_BYTES)
                 || !ring_create(&s_ri, GL_ELEMENT_ARRAY_BUFFER, s_ebo, NV_GL_IB_BYTES)) {
             /* storage is immutable now: start over with fresh buffers */
-            glDeleteBuffers(1, &s_vbo); rb_vbuf_lost();
-            glDeleteBuffers(1, &s_ebo);
-            glGenBuffers(1, &s_vbo);
-            glGenBuffers(1, &s_ebo);
+            rb_buf_delete(1, &s_vbo); rb_vbuf_lost();
+            rb_buf_delete(1, &s_ebo);
+            rb_buf_new(1, &s_vbo);
+            rb_buf_new(1, &s_ebo);
             s_persist = 0;
             while (glGetError() != GL_NO_ERROR) {}
         }
     }
     if (!s_persist) {
         rb_bind_vbuf(s_vbo);
-        glBufferData(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_ebo);   /* part of the VAO */
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, NV_GL_IB_BYTES, NULL, GL_STREAM_DRAW);
+        rb_buf_data(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
+        rb_buf_bind(GL_ELEMENT_ARRAY_BUFFER, s_ebo);   /* part of the VAO */
+        rb_buf_data(GL_ELEMENT_ARRAY_BUFFER, NV_GL_IB_BYTES, NULL, GL_STREAM_DRAW);
     }
     rb_bind_vbuf(s_vbo);
     fprintf(stderr, "[GL] vertex and index data: %s\n", s_persist
@@ -2205,19 +2205,19 @@ static int init_gl(void)
             : "glBufferSubData");
     {
         const GLsizei S = (GLsizei)sizeof(GlVert);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, pos));
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, d0));
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, d1));
+        rb_attr_on(0);
+        rb_attr_pointer(0, 4, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, pos));
+        rb_attr_on(1);
+        rb_attr_pointer(1, 4, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, d0));
+        rb_attr_on(2);
+        rb_attr_pointer(2, 4, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, d1));
         for (i = 0; i < 4; i++) {
-            glEnableVertexAttribArray(3 + i);
-            glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, S,
+            rb_attr_on(3 + i);
+            rb_attr_pointer(3 + i, 4, GL_FLOAT, GL_FALSE, S,
                                   (void *)(offsetof(GlVert, t) + (size_t)i * 16));
         }
-        glEnableVertexAttribArray(7);
-        glVertexAttribPointer(7, 1, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, fog));
+        rb_attr_on(7);
+        rb_attr_pointer(7, 1, GL_FLOAT, GL_FALSE, S, (void *)offsetof(GlVert, fog));
     }
 
     /* Stand-ins for a stage whose texture is unusable: the software sampler
@@ -2239,25 +2239,25 @@ static int init_gl(void)
     /* v77: the raw-input VAO for the GPU vertex path. Same index buffer;
      * its attribute arrays are pointed per batch (nv2a_gl_draw_raw). */
     if (s_gpu_vs) {
-        glGenVertexArrays(1, &s_vao2);
-        glBindVertexArray(s_vao2);
-        glGenBuffers(1, &s_vbo2);
+        rb_va_new(1, &s_vao2);
+        rb_va_bind(s_vao2);
+        rb_buf_new(1, &s_vbo2);
         if (!s_persist || !ring_create(&s_rv2, GL_ARRAY_BUFFER, s_vbo2, NV_GL_VB_BYTES)) {
             if (s_persist) {
                 /* the other two rings stay; this one goes through SubData */
-                glDeleteBuffers(1, &s_vbo2); rb_vbuf_lost();
-                glGenBuffers(1, &s_vbo2);
+                rb_buf_delete(1, &s_vbo2); rb_vbuf_lost();
+                rb_buf_new(1, &s_vbo2);
                 while (glGetError() != GL_NO_ERROR) {}
             }
             rb_bind_vbuf(s_vbo2);
-            glBufferData(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
+            rb_buf_data(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
         }
         rb_bind_vbuf(s_vbo2);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_ebo);
-        glBindVertexArray(s_vao); s_cur_attr_ok = 0;
+        rb_buf_bind(GL_ELEMENT_ARRAY_BUFFER, s_ebo);
+        rb_va_bind(s_vao); s_cur_attr_ok = 0;
         /* What an input with no array reads: (0,0,0,1), as fetch_attr gives. */
         for (i = 0; i < 16; i++)
-            glVertexAttrib4f((GLuint)i, 0.0f, 0.0f, 0.0f, 1.0f); s_cur_attr_ok = 0;
+            rb_attr_const4f((GLuint)i, 0.0f, 0.0f, 0.0f, 1.0f); s_cur_attr_ok = 0;
     }
     glEnable(GL_DEPTH_CLAMP);
     if (old_clip() && !no_zcull()) {
@@ -2269,7 +2269,7 @@ static int init_gl(void)
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
     use_prog(&s_p_old);
-    glBindVertexArray(s_vao); s_cur_attr_ok = 0;
+    rb_va_bind(s_vao); s_cur_attr_ok = 0;
     {
         /* v172: from here on the GL calls are made on the GL thread
          * (not with the opt-in DXGI presentation, which stays as it was) */
@@ -2775,8 +2775,8 @@ static void present_collect(void)
         return;
     s_pend.surf = NULL;
     t0 = TM_NOW();
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
-    px = (const uint32_t *)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0,
+    rb_buf_bind(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
+    px = (const uint32_t *)rb_buf_map(GL_PIXEL_PACK_BUFFER, 0,
                                             (GLsizeiptr)((size_t)s_pend.pw * s_pend.ph * 4),
                                             GL_MAP_READ_BIT);
     /* Not if it was read back synchronously after more drawing: guest
@@ -2789,8 +2789,8 @@ static void present_collect(void)
             s->dirty = 0;                 /* nothing drawn since: guest is current */
     }
     if (px)
-        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        rb_buf_unmap(GL_PIXEL_PACK_BUFFER);
+    rb_buf_bind(GL_PIXEL_PACK_BUFFER, 0);
     s_n_present_reads++;
     s_tm[1] += TM_NOW() - t0;
 }
@@ -3001,10 +3001,10 @@ static void start_present_read(GlSurf *s, int win)
         uint32_t pw = win ? (uint32_t)SC(s->w) : s->w, ph = win ? (uint32_t)SC(s->h) : s->h;
         size_t bytes = (size_t)pw * ph * 4;
         if (!s_pend.pbo)
-            glGenBuffers(1, &s_pend.pbo);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
+            rb_buf_new(1, &s_pend.pbo);
+        rb_buf_bind(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
         if (s_pend.bytes < bytes) {
-            glBufferData(GL_PIXEL_PACK_BUFFER, (GLsizeiptr)bytes, NULL, GL_STREAM_READ);
+            rb_buf_data(GL_PIXEL_PACK_BUFFER, (GLsizeiptr)bytes, NULL, GL_STREAM_READ);
             s_pend.bytes = bytes;
         }
         /* the window takes the full-size frame; guest memory its own size */
@@ -3013,10 +3013,10 @@ static void start_present_read(GlSurf *s, int win)
         glBindFramebuffer(GL_READ_FRAMEBUFFER,
                 win ? (s_msaa > 1 ? s_resolve_fbo : s->fbo)
                     : guest_res_fbo(s_msaa > 1 ? s_resolve_fbo : s->fbo, s->w, s->h));
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
+        rb_buf_bind(GL_PIXEL_PACK_BUFFER, s_pend.pbo);
         glReadPixels(0, 0, (GLsizei)pw, (GLsizei)ph, GL_BGRA,
                      GL_UNSIGNED_INT_8_8_8_8_REV, (void *)0);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        rb_buf_bind(GL_PIXEL_PACK_BUFFER, 0);
         s_pend.surf = s;
         s_pend.draws = s->draws;
         s_pend.win = win;
@@ -4553,7 +4553,7 @@ NvGlVertex *nv2a_gl_map_vertices(uint32_t n)
         goto staged;                  /* vertices_done copies into the ring */
     rb_bind_vbuf(s_vbo);
     if (s_vb_off + bytes > NV_GL_VB_BYTES) {
-        glBufferData(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
+        rb_buf_data(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
         s_vb_off = 0;
     }
     /* Staged in CPU memory and sent with one glBufferSubData by default: a
@@ -4564,7 +4564,7 @@ NvGlVertex *nv2a_gl_map_vertices(uint32_t n)
         static int use_map = -1;
         if (use_map < 0)
             use_map = getenv("RECOMP_GL_MAP") != NULL;
-        p = use_map ? glMapBufferRange(GL_ARRAY_BUFFER, (GLintptr)s_vb_off, (GLsizeiptr)bytes,
+        p = use_map ? rb_buf_map(GL_ARRAY_BUFFER, (GLintptr)s_vb_off, (GLsizeiptr)bytes,
                                        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT
                                        | GL_MAP_UNSYNCHRONIZED_BIT)
                     : NULL;
@@ -4607,9 +4607,9 @@ static GLint vertices_done(void)
     }
     rb_bind_vbuf(s_vbo);
     if (s_mapped == 1)
-        glUnmapBuffer(GL_ARRAY_BUFFER);
+        rb_buf_unmap(GL_ARRAY_BUFFER);
     else if (s_mapped == 2)
-        glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)s_vb_off, (GLsizeiptr)bytes, s_vbuf);
+        rb_buf_sub(GL_ARRAY_BUFFER, (GLintptr)s_vb_off, (GLsizeiptr)bytes, s_vbuf);
     s_mapped = 0;
     s_vb_off += bytes;
     return base;
@@ -4632,7 +4632,7 @@ void nv2a_gl_draw_mapped(const NvGlState *st, const uint32_t *idx, uint32_t n_id
     if (s_state != 1 || !s_mapped)
         return;
     if (s_cur_vao != 1) {
-        glBindVertexArray(s_vao); s_cur_attr_ok = 0;
+        rb_va_bind(s_vao); s_cur_attr_ok = 0;
         s_cur_vao = 1;
     }
     use_prog(pick_prog(&s_p_old, st));
@@ -4647,32 +4647,32 @@ void nv2a_gl_draw_mapped(const NvGlState *st, const uint32_t *idx, uint32_t n_id
         size_t ioff = ring_alloc(&s_ri, ib, 4);
         int tq = tq_begin(), fx = fx_begin(st, n_idx / 3);
         memcpy(s_ri.map + ioff, idx, ib);
-        glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
+        rb_draw_elements(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
                                  (void *)(uintptr_t)ioff, base);
         tq_end(tq); fx_end(fx);
         goto drawn;
     }
     if (s_ib_off + ib > NV_GL_IB_BYTES) {
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, NV_GL_IB_BYTES, NULL, GL_STREAM_DRAW);
+        rb_buf_data(GL_ELEMENT_ARRAY_BUFFER, NV_GL_IB_BYTES, NULL, GL_STREAM_DRAW);
         s_ib_off = 0;
     }
     static int ib_map = -1;
     if (ib_map < 0)
         ib_map = getenv("RECOMP_GL_MAP") != NULL;
     p = ib_map
-        ? glMapBufferRange(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)s_ib_off, (GLsizeiptr)ib,
+        ? rb_buf_map(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)s_ib_off, (GLsizeiptr)ib,
                            GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT
                            | GL_MAP_UNSYNCHRONIZED_BIT)
         : NULL;
     if (p) {
         memcpy(p, idx, ib);
-        glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER);
+        rb_buf_unmap(GL_ELEMENT_ARRAY_BUFFER);
     } else {
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)s_ib_off, (GLsizeiptr)ib, idx);
+        rb_buf_sub(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)s_ib_off, (GLsizeiptr)ib, idx);
     }
     {
         int tq = tq_begin(), fx = fx_begin(st, n_idx / 3);
-        glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
+        rb_draw_elements(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
                                  (void *)(uintptr_t)s_ib_off, base);
         tq_end(tq); fx_end(fx);
     }
@@ -4999,26 +4999,26 @@ static int nat_vao_bind(uint32_t k, uint32_t en)
         s_vaoc_miss++;
         old_en = e->vao ? e->en : 0;
         if (!e->vao)
-            glGenVertexArrays(1, &e->vao);
-        glBindVertexArray(e->vao);
+            rb_va_new(1, &e->vao);
+        rb_va_bind(e->vao);
         s_cur_vao = 3 + idx;
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_ebo);
+        rb_buf_bind(GL_ELEMENT_ARRAY_BUFFER, s_ebo);
         for (i = 0; i < k; i++) {
             const NvGlNatAttr *na = &ka[i];
             if (na->type == NV_GL_NAT_CONST)
                 continue;
             switch (na->type) {
-            case 0:  glVertexAttribFormat(na->loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
-            case 2:  glVertexAttribFormat(na->loc, na->size, GL_FLOAT, GL_FALSE, na->rel); break;
-            case 4:  glVertexAttribFormat(na->loc, na->size, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
-            default: glVertexAttribFormat(na->loc, na->size, GL_SHORT, GL_FALSE, na->rel); break;
+            case 0:  rb_attr_format(na->loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
+            case 2:  rb_attr_format(na->loc, na->size, GL_FLOAT, GL_FALSE, na->rel); break;
+            case 4:  rb_attr_format(na->loc, na->size, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
+            default: rb_attr_format(na->loc, na->size, GL_SHORT, GL_FALSE, na->rel); break;
             }
-            glVertexAttribBinding(na->loc, na->stream);
+            rb_attr_binding(na->loc, na->stream);
         }
         for (i = 0; i < 16; i++) {
             uint32_t b = 1u << i;
-            if ((en & b) && !(old_en & b)) glEnableVertexAttribArray(i);
-            else if (!(en & b) && (old_en & b)) glDisableVertexAttribArray(i);
+            if ((en & b) && !(old_en & b)) rb_attr_on(i);
+            else if (!(en & b) && (old_en & b)) rb_attr_off(i);
         }
         e->hash = h; e->k = k; e->ns = ns; e->en = en;
         memcpy(e->a, ka, sizeof e->a);
@@ -5027,7 +5027,7 @@ static int nat_vao_bind(uint32_t k, uint32_t en)
     } else {
         idx = (int)(e - s_vaoc);
         if (s_cur_vao != 3 + idx) {
-            glBindVertexArray(e->vao);
+            rb_va_bind(e->vao);
             s_cur_vao = 3 + idx;
         }
     }
@@ -5042,7 +5042,7 @@ static int nat_vao_bind(uint32_t k, uint32_t en)
             strs[i] = (GLsizei)s_nat_sstr[i];
         }
         if (!e->offs_ok || memcmp(e->off, offs, ns * sizeof *offs)) {
-            glBindVertexBuffers(0, (GLsizei)ns, bufs, offs, strs);
+            rb_vbufs(0, (GLsizei)ns, bufs, offs, strs);
             memcpy(e->off, offs, ns * sizeof *offs);
             e->offs_ok = 1;
         }
@@ -5115,10 +5115,10 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
     } else {
     s_vb2_off = (s_vb2_off + stride - 1) / stride * stride;
     if (s_vb2_off + bytes > NV_GL_VB_BYTES) {
-        glBufferData(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
+        rb_buf_data(GL_ARRAY_BUFFER, NV_GL_VB_BYTES, NULL, GL_STREAM_DRAW);
         s_vb2_off = 0;
     }
-    glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)s_vb2_off, (GLsizeiptr)bytes, s_rbuf);
+    rb_buf_sub(GL_ARRAY_BUFFER, (GLintptr)s_vb2_off, (GLsizeiptr)bytes, s_rbuf);
     base = (GLint)(s_vb2_off / stride);
     s_vb2_off += bytes;
     }
@@ -5136,7 +5136,7 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
                 en &= ~(1u << loc);
                 if (!(s_cur_attr_ok & (1u << loc))
                         || memcmp(s_cur_attr[loc], s_nat_cval[i], sizeof s_cur_attr[loc])) {
-                    glVertexAttrib4fv(s_nat_a[i].loc, s_nat_cval[i]);
+                    rb_attr_const4fv(s_nat_a[i].loc, s_nat_cval[i]);
                     memcpy(s_cur_attr[loc], s_nat_cval[i], sizeof s_cur_attr[loc]);
                     s_cur_attr_ok |= 1u << loc;
                 }
@@ -5150,7 +5150,7 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
         goto arrays_set;
     }
     if (s_cur_vao != 2) {
-        glBindVertexArray(s_vao2);
+        rb_va_bind(s_vao2);
         s_cur_vao = 2;
     }
     if (s_raw_nat) {
@@ -5198,12 +5198,12 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
                     if (na->type == NV_GL_NAT_CONST)
                         continue;
                     switch (na->type) {
-                    case 0:  glVertexAttribFormat(na->loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
-                    case 2:  glVertexAttribFormat(na->loc, na->size, GL_FLOAT, GL_FALSE, na->rel); break;
-                    case 4:  glVertexAttribFormat(na->loc, na->size, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
-                    default: glVertexAttribFormat(na->loc, na->size, GL_SHORT, GL_FALSE, na->rel); break;
+                    case 0:  rb_attr_format(na->loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
+                    case 2:  rb_attr_format(na->loc, na->size, GL_FLOAT, GL_FALSE, na->rel); break;
+                    case 4:  rb_attr_format(na->loc, na->size, GL_UNSIGNED_BYTE, GL_TRUE, na->rel); break;
+                    default: rb_attr_format(na->loc, na->size, GL_SHORT, GL_FALSE, na->rel); break;
                     }
-                    glVertexAttribBinding(na->loc, na->stream);
+                    rb_attr_binding(na->loc, na->stream);
                 }
                 memcpy(b_a, s_nat_a, k * sizeof *b_a);
                 memcpy(b_str, s_nat_sstr, s_nat_ns * sizeof *b_str);
@@ -5217,7 +5217,7 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
                 strs[q] = (GLsizei)s_nat_sstr[q];
             }
             if (!fsame || memcmp(b_off, offs, s_nat_ns * sizeof *offs)) {
-                glBindVertexBuffers(0, (GLsizei)s_nat_ns, bufs, offs, strs);
+                rb_vbufs(0, (GLsizei)s_nat_ns, bufs, offs, strs);
                 memcpy(b_off, offs, s_nat_ns * sizeof *offs);
             }
             l_nk = 0;                  /* the pointer layout is set again next time */
@@ -5234,10 +5234,10 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
                 if (na->type == NV_GL_NAT_CONST)
                     continue;
                 switch (na->type) {
-                case 0:  glVertexAttribPointer(na->loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, st2, ptr); break;
-                case 2:  glVertexAttribPointer(na->loc, na->size, GL_FLOAT, GL_FALSE, st2, ptr); break;
-                case 4:  glVertexAttribPointer(na->loc, na->size, GL_UNSIGNED_BYTE, GL_TRUE, st2, ptr); break;
-                default: glVertexAttribPointer(na->loc, na->size, GL_SHORT, GL_FALSE, st2, ptr); break;
+                case 0:  rb_attr_pointer(na->loc, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, st2, ptr); break;
+                case 2:  rb_attr_pointer(na->loc, na->size, GL_FLOAT, GL_FALSE, st2, ptr); break;
+                case 4:  rb_attr_pointer(na->loc, na->size, GL_UNSIGNED_BYTE, GL_TRUE, st2, ptr); break;
+                default: rb_attr_pointer(na->loc, na->size, GL_SHORT, GL_FALSE, st2, ptr); break;
                 }
             }
             memcpy(l_a, s_nat_a, k * sizeof *l_a);
@@ -5250,7 +5250,7 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
         s_raw_nat = 0;
     } else if (k != l_k || memcmp(slots, l_slots, k)) {
         for (i = 0; i < k; i++)
-            glVertexAttribPointer(slots[i], 4, GL_FLOAT, GL_FALSE, (GLsizei)stride,
+            rb_attr_pointer(slots[i], 4, GL_FLOAT, GL_FALSE, (GLsizei)stride,
                                   (void *)(uintptr_t)(i * 16));
         s_vab_ok = 0;
         memcpy(l_slots, slots, k);
@@ -5261,8 +5261,8 @@ void nv2a_gl_draw_raw(const NvGlState *st, const NvGlVsState *vs,
     if (en != l_enabled) {
         for (i = 0; i < 16; i++) {
             uint32_t b = 1u << i;
-            if ((en & b) && !(l_enabled & b)) glEnableVertexAttribArray(i);
-            else if (!(en & b) && (l_enabled & b)) glDisableVertexAttribArray(i);
+            if ((en & b) && !(l_enabled & b)) rb_attr_on(i);
+            else if (!(en & b) && (l_enabled & b)) rb_attr_off(i);
         }
         l_enabled = en;
     }
@@ -5274,18 +5274,18 @@ arrays_set:
         size_t ioff = ring_alloc(&s_ri, ib, 4);
         int tq = tq_begin(), fx = fx_begin(st, n_idx / 3);
         memcpy(s_ri.map + ioff, idx, ib);
-        glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
+        rb_draw_elements(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
                                  (void *)(uintptr_t)ioff, base);
         tq_end(tq); fx_end(fx);
     } else {
     if (s_ib_off + ib > NV_GL_IB_BYTES) {
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, NV_GL_IB_BYTES, NULL, GL_STREAM_DRAW);
+        rb_buf_data(GL_ELEMENT_ARRAY_BUFFER, NV_GL_IB_BYTES, NULL, GL_STREAM_DRAW);
         s_ib_off = 0;
     }
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)s_ib_off, (GLsizeiptr)ib, idx);
+    rb_buf_sub(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)s_ib_off, (GLsizeiptr)ib, idx);
     {
         int tq = tq_begin(), fx = fx_begin(st, n_idx / 3);
-        glDrawElementsBaseVertex(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
+        rb_draw_elements(GL_TRIANGLES, (GLsizei)n_idx, GL_UNSIGNED_INT,
                                  (void *)(uintptr_t)s_ib_off, base);
         tq_end(tq); fx_end(fx);
     }
