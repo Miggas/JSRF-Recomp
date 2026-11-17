@@ -1,8 +1,13 @@
-/* nv2a_rb_gl.c: the OpenGL backend (nv2a_rb.h): every OpenGL call the
+/* nv2a_rb_gl.c: the OpenGL backend (nv2a_rb.h, rbgl_ops): every OpenGL call the
  * renderer (nv2a_render.c) needs, made here -- through the GL thread when that
  * is on (nv2a_gl_thread*.h, generated from this file by gen_glthread.py). */
 #include "nv2a_gl.h"
+/* this backend's rb_* are rbgl_* (step 2: the renderer reaches them through
+ * nv2a_rb_dispatch.c, rbgl_ops below; calls in here go straight to them) */
+#define RB_BACKEND_PREFIX(n) rbgl_##n
+#include "nv2a_rb_names.h"
 #include "nv2a_rb.h"
+#include "nv2a_rb_ops.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -2541,3 +2546,6 @@ int rb_call_stats(char *buf, size_t n, uint64_t draws, uint64_t layouts_new)
     return 0;
 #endif
 }
+
+/* ── the table (nv2a_rb_ops.h) ─────────────────────────────────────────── */
+const RbOps rbgl_ops = RB_OPS_TABLE("OpenGL");

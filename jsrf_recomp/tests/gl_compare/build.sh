@@ -5,7 +5,7 @@
 T=../../../xboxrecomp/src; G=$T/third_party/glad
 gcc -O1 -g -I$T -I$T/kernel -I$T/../include -I$G/include $(sdl2-config --cflags) test.c \
     $T/kernel/nv2a_pb_exec.c $T/kernel/nv2a_vsh_interp.c $T/kernel/nv2a_combiner.c \
-    $T/kernel/nv2a_render.c $T/kernel/nv2a_rb_gl.c $G/src/gl.c $(sdl2-config --libs) -lm -lpthread -o t || exit 1
+    $T/kernel/nv2a_render.c $T/kernel/nv2a_rb_dispatch.c $T/kernel/nv2a_rb_gl.c $G/src/gl.c $(sdl2-config --libs) -lm -lpthread -o t || exit 1
 RECOMP_RENDERER=sw ./t sw.raw 2>sw.log
 SDL_VIDEODRIVER=offscreen ./t gl.raw 2>gl.log
 python3 cmp.py

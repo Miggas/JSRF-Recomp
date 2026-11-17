@@ -35,7 +35,7 @@ set(KERNEL_SOURCES
 # Windows. -DXBOXRECOMP_GL=OFF builds without it (software rasteriser only).
 option(XBOXRECOMP_GL "Rasterise NV2A batches on the host GPU via OpenGL" ON)
 if(XBOXRECOMP_GL)
-    list(APPEND KERNEL_SOURCES nv2a_render.c nv2a_rb_gl.c ../third_party/glad/src/gl.c)
+    list(APPEND KERNEL_SOURCES nv2a_render.c nv2a_rb_dispatch.c nv2a_rb_gl.c ../third_party/glad/src/gl.c)
 else()
     list(APPEND KERNEL_SOURCES nv2a_gl_stub.c)
 endif()
