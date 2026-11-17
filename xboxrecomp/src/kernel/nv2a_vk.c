@@ -1958,6 +1958,16 @@ int nv2a_vk_renderer(void)
     static int v = -1;
     if (v < 0) {
         const char *r = getenv("RECOMP_RENDERER");
+        v = r && (!strcmp(r, "vulkan") || !strcmp(r, "vk") || !strcmp(r, "glvk"));
+    }
+    return v;
+}
+
+int nv2a_vk_native(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *r = getenv("RECOMP_RENDERER");
         v = r && (!strcmp(r, "vulkan") || !strcmp(r, "vk"));
     }
     return v;

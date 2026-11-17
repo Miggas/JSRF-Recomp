@@ -32,6 +32,7 @@
 #include <SDL.h>
 #include <glad/gl.h>              /* the enums and types only: no GL calls here */
 #include "nv2a_rb.h"
+#include "nv2a_rb_ops.h"           /* rb_select */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -2089,6 +2090,12 @@ static int init_gl(void)
 
     if (r && (!strcmp(r, "sw") || !strcmp(r, "software")))
         return 0;
+#ifdef XBOXRECOMP_HAVE_VK
+    if (nv2a_vk_native()) {             /* step 2b: the Vulkan backend */
+        extern const RbOps rbvk_ops;
+        rb_select(&rbvk_ops);
+    }
+#endif
     if (!rb_init())
         return 0;
     rb_shader_options(shader_defs, shader_salt);
@@ -5432,6 +5439,13 @@ void nv2a_gl_times(uint64_t t[4], uint64_t *freq)
 /* v169: the GL calls made since the last report: per draw, and the ones
  * made most (each is a driver call; under Proton a crossing into Wine's
  * unix side, which the executor profile cannot see into) */
+void nv2a_gl_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max,
+                          uint64_t *behind2, double *iv_max_ms, uint64_t *iv20,
+                          uint64_t *iv34)
+{
+    rb_window_stats(frames, behind_avg, behind_max, behind2, iv_max_ms, iv20, iv34);
+}
+
 int nv2a_gl_call_stats(char *buf, size_t n)
 {
     if (s_state != 1 || !buf || !n)

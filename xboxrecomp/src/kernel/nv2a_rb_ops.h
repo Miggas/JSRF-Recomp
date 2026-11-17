@@ -48,6 +48,7 @@ typedef struct RbOps {
     int (*window_present)(const RbFrame *f);
     void (*set_overlay)(void (*fn)(int cw, int ch, int flip));
     int (*gpu_frame_stats)(char *buf, size_t n);
+    void (*window_stats)(uint64_t *frames, double *behind_avg, uint64_t *behind_max, uint64_t *behind2, double *iv_max_ms, uint64_t *iv20, uint64_t *iv34);
     void (*target_shape)(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples);
     void (*depth_make)(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth);
     uint32_t (*target_depth)(uint32_t fbo, uint32_t buf, int is_tex);

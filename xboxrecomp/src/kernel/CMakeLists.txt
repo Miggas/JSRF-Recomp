@@ -42,7 +42,7 @@ endif()
 
 # vulkan-test: the Vulkan renderer beside OpenGL (cmake/vulkan.cmake)
 if(XBOXRECOMP_GL AND XBOXRECOMP_VULKAN)
-    list(APPEND KERNEL_SOURCES nv2a_vk.c glvk.c)
+    list(APPEND KERNEL_SOURCES nv2a_vk.c glvk.c nv2a_rb_vk.c)
 endif()
 
 add_library(xbox_kernel STATIC ${KERNEL_SOURCES})

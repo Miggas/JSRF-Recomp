@@ -48,6 +48,7 @@ void rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h) { g_rb->
 int rb_window_present(const RbFrame *f) { return g_rb->window_present(f); }
 void rb_set_overlay(void (*fn)(int cw, int ch, int flip)) { g_rb->set_overlay(fn); }
 int rb_gpu_frame_stats(char *buf, size_t n) { return g_rb->gpu_frame_stats(buf, n); }
+void rb_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max, uint64_t *behind2, double *iv_max_ms, uint64_t *iv20, uint64_t *iv34) { g_rb->window_stats(frames, behind_avg, behind_max, behind2, iv_max_ms, iv20, iv34); }
 void rb_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples) { g_rb->target_shape(fbo, tex, ms_tex, w, h, alpha, samples); }
 void rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth) { g_rb->depth_make(buf, is_tex, w, h, samples, depth32f, clear_depth); }
 uint32_t rb_target_depth(uint32_t fbo, uint32_t buf, int is_tex) { return g_rb->target_depth(fbo, buf, is_tex); }

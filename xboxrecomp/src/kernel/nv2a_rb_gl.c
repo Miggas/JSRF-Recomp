@@ -1047,7 +1047,7 @@ extern void *xbox_FramebufferWindowHwnd(void);
 extern void xbox_FramebufferWindowGLOwned(void);
 
 #ifdef XBOXRECOMP_HAVE_VK
-/* vulkan-test, step 5: RECOMP_RENDERER=vulkan -- no OpenGL driver; this
+/* vulkan-test, step 5: RECOMP_RENDERER=glvk -- no OpenGL driver; this
  * file's GL calls are answered by glvk.c on Vulkan (rb_init). The frame goes
  * into the window with the same blits as the OpenGL paths below, into the
  * default framebuffer (sized to the window), which glvk_swap hands to the
@@ -1277,9 +1277,8 @@ int rb_gpu_frame_stats(char *buf, size_t n)
     return 1;
 }
 
-void nv2a_gl_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max,
-                          uint64_t *behind2, double *iv_max_ms, uint64_t *iv20,
-                          uint64_t *iv34)
+void rb_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max,
+                     uint64_t *behind2, double *iv_max_ms, uint64_t *iv20, uint64_t *iv34)
 {
     *frames = s_gwt.frames;
     *behind_avg = s_gwt.frames ? (double)s_gwt.behind_sum / (double)s_gwt.frames : 0.0;

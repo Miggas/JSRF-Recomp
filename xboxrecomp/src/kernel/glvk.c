@@ -2891,7 +2891,9 @@ int glvk_init(void *win)
         if (s_white2d) s_white2d->minf = GL_NEAREST;
         if (s_whitecube) s_whitecube->minf = GL_NEAREST;
     }
+#ifndef GLVK_AS_CORE                    /* nv2a_rb_vk.c says its own */
     GV_LOG("renderer: OpenGL calls on Vulkan (glvk) -- %s\n", G.name);
+#endif
     return 1;
 }
 

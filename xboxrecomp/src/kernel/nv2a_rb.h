@@ -122,6 +122,9 @@ void rb_set_overlay(void (*fn)(int cw, int ch, int flip));
 /* Linux: the SDL window the GL context was made with */
 /* v101: the GPU-side spacing of shown frames, for the log; 0 = nothing yet */
 int  rb_gpu_frame_stats(char *buf, size_t n);
+/* v89: the window's pacing since the last call (nv2a_gl_window_stats) */
+void rb_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max,
+                     uint64_t *behind2, double *iv_max_ms, uint64_t *iv20, uint64_t *iv34);
 
 /* ── render targets ────────────────────────────────────────────────────── */
 void     rb_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples);

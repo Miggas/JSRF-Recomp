@@ -44,6 +44,7 @@
 #define rb_window_present RB_BACKEND_PREFIX(window_present)
 #define rb_set_overlay RB_BACKEND_PREFIX(set_overlay)
 #define rb_gpu_frame_stats RB_BACKEND_PREFIX(gpu_frame_stats)
+#define rb_window_stats RB_BACKEND_PREFIX(window_stats)
 #define rb_target_shape RB_BACKEND_PREFIX(target_shape)
 #define rb_depth_make RB_BACKEND_PREFIX(depth_make)
 #define rb_target_depth RB_BACKEND_PREFIX(target_depth)
@@ -152,6 +153,7 @@
     rb_window_present, \
     rb_set_overlay, \
     rb_gpu_frame_stats, \
+    rb_window_stats, \
     rb_target_shape, \
     rb_depth_make, \
     rb_target_depth, \
