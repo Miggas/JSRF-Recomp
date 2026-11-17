@@ -2481,8 +2481,6 @@ static uint32_t s_dn_w, s_dn_h, s_up_w, s_up_h;
  * single->multi glBlitFramebuffer is invalid, so the frame goes in through
  * a fullscreen triangle with the image as a texture (the LINEAR sampler
  * also does the RECOMP_GL_SCALE upscale). Runs on the GL thread. */
-typedef struct { GLuint src_tex, dst_fbo; int w, h; } MsUpArgs;
-static void ms_up_run(void *p);
 static void surf_resolve(GlSurf *s);
 
 /* Copy a whole surface between two framebuffers with no scissor or masks in
@@ -2564,8 +2562,7 @@ static void surf_upload(GlSurf *s)
         if (s_msaa > 1) {
             /* single -> multi goes through a draw: a single to multi
              * glBlitFramebuffer is invalid */
-            MsUpArgs a = { s->tex, s->fbo, SC(s->w), SC(s->h) };
-            gt_call_sync(ms_up_run, &a);
+            rb_ms_upscale(s->tex, s->fbo, SC(s->w), SC(s->h));
         }
     } else {
         /* guest size into a staging texture, then scaled up into the surface */
@@ -2591,8 +2588,7 @@ static void surf_upload(GlSurf *s)
         }
         if (s_msaa > 1) {
             /* the LINEAR sampler of the upsample draw does the upscale */
-            MsUpArgs a = { s_up_tex, s->fbo, SC(s->w), SC(s->h) };
-            gt_call_sync(ms_up_run, &a);
+            rb_ms_upscale(s_up_tex, s->fbo, SC(s->w), SC(s->h));
         } else {
             rb_copy_target(s_up_fbo, (int)s->w, (int)s->h, s->fbo, SC(s->w), SC(s->h), GL_LINEAR);
         }
@@ -3396,516 +3392,6 @@ static int dxp_init(HWND hwnd, int cw, int ch)
 }
 
 #endif /* _WIN32 (DXGI) */
-/* v238: anti-aliasing on the way to the screen. v238c: RECOMP_GL_AA =
- * fxaa, smaa_low, smaa_medium, smaa_high or smaa_ultra (off when not set).
- * The finished frame (its texture, at the internal resolution) goes through
- * it into a texture of the same size; the presenting blits then read that
- * instead of the frame. Every GL state it touches is read first and put
- * back, so the renderer's caches stay true.
- *
- * SMAA (third_party/smaa, MIT; Jorge Jimenez et al.): edge detection, blend
- * weights and neighbourhood blending, the reference shader built as GLSL
- * 3.30. It is written the Direct3D way up (row 0 at the top), as are its
- * area and search textures: the frame is first copied upside down, every
- * pass works in that layout, and the last one writes the right way up. */
-#include "../third_party/smaa/smaa_glsl.h"
-#include "../third_party/smaa/AreaTex.h"
-#include "../third_party/smaa/SearchTex.h"
-
-static const char *FXAA_VS =
-"#version 330 core\n"
-"out vec2 v_uv;\n"
-"void main() {\n"
-"  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
-"  v_uv = p;\n"
-"  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-"}\n";
-static const char *FXAA_FS =
-"#version 330 core\n"
-"uniform sampler2D u_tex;\n"
-"uniform vec2 u_rcp;\n"
-"in vec2 v_uv;\n"
-"out vec4 o_col;\n"
-"float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }\n"
-"void main() {\n"
-"  vec4 m4 = texture(u_tex, v_uv);\n"
-"  vec3 nw = texture(u_tex, v_uv + vec2(-1.0, -1.0) * u_rcp).rgb;\n"
-"  vec3 ne = texture(u_tex, v_uv + vec2( 1.0, -1.0) * u_rcp).rgb;\n"
-"  vec3 sw = texture(u_tex, v_uv + vec2(-1.0,  1.0) * u_rcp).rgb;\n"
-"  vec3 se = texture(u_tex, v_uv + vec2( 1.0,  1.0) * u_rcp).rgb;\n"
-"  float lnw = luma(nw), lne = luma(ne), lsw = luma(sw), lse = luma(se);\n"
-"  float lm = luma(m4.rgb);\n"
-"  float lmin = min(lm, min(min(lnw, lne), min(lsw, lse)));\n"
-"  float lmax = max(lm, max(max(lnw, lne), max(lsw, lse)));\n"
-"  if (lmax - lmin < max(0.0312, lmax * 0.125)) { o_col = vec4(m4.rgb, 1.0); return; }\n"
-"  vec2 dir = vec2(-((lnw + lne) - (lsw + lse)), (lnw + lsw) - (lne + lse));\n"
-"  float red = max((lnw + lne + lsw + lse) * 0.03125, 1.0 / 128.0);\n"
-"  float rcpmin = 1.0 / (min(abs(dir.x), abs(dir.y)) + red);\n"
-"  dir = clamp(dir * rcpmin, vec2(-8.0), vec2(8.0)) * u_rcp;\n"
-"  vec3 a = 0.5 * (texture(u_tex, v_uv + dir * (1.0 / 3.0 - 0.5)).rgb +\n"
-"                  texture(u_tex, v_uv + dir * (2.0 / 3.0 - 0.5)).rgb);\n"
-"  vec3 b = a * 0.5 + 0.25 * (texture(u_tex, v_uv + dir * -0.5).rgb +\n"
-"                             texture(u_tex, v_uv + dir *  0.5).rgb);\n"
-"  float lb = luma(b);\n"
-"  o_col = vec4((lb < lmin || lb > lmax) ? a : b, 1.0);\n"
-"}\n";
-
-static const char *SMAA_EDGE_VS =
-"out vec2 v_uv;\n"
-"out vec4 v_off[3];\n"
-"void main() {\n"
-"  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
-"  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-"  v_uv = p;\n"
-"  SMAAEdgeDetectionVS(v_uv, v_off);\n"
-"}\n";
-static const char *SMAA_EDGE_FS =
-"uniform sampler2D u_color;\n"
-"in vec2 v_uv;\n"
-"in vec4 v_off[3];\n"
-"out vec4 o_col;\n"
-"void main() {\n"
-"  o_col = vec4(SMAALumaEdgeDetectionPS(v_uv, v_off, u_color), 0.0, 0.0);\n"
-"}\n";
-static const char *SMAA_WGT_VS =
-"out vec2 v_uv;\n"
-"out vec2 v_pix;\n"
-"out vec4 v_off[3];\n"
-"void main() {\n"
-"  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
-"  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-"  v_uv = p;\n"
-"  SMAABlendingWeightCalculationVS(v_uv, v_pix, v_off);\n"
-"}\n";
-static const char *SMAA_WGT_FS =
-"uniform sampler2D u_edges;\n"
-"uniform sampler2D u_area;\n"
-"uniform sampler2D u_search;\n"
-"in vec2 v_uv;\n"
-"in vec2 v_pix;\n"
-"in vec4 v_off[3];\n"
-"out vec4 o_col;\n"
-"void main() {\n"
-"  o_col = SMAABlendingWeightCalculationPS(v_uv, v_pix, v_off, u_edges, u_area, u_search, vec4(0.0));\n"
-"}\n";
-static const char *SMAA_NB_VS =
-"out vec2 v_uv;\n"
-"out vec4 v_off;\n"
-"void main() {\n"
-"  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
-"  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-"  v_uv = vec2(p.x, 1.0 - p.y);\n"
-"  SMAANeighborhoodBlendingVS(v_uv, v_off);\n"
-"}\n";
-static const char *SMAA_NB_FS =
-"uniform sampler2D u_color;\n"
-"uniform sampler2D u_blend;\n"
-"in vec2 v_uv;\n"
-"in vec4 v_off;\n"
-"out vec4 o_col;\n"
-"void main() {\n"
-"  o_col = SMAANeighborhoodBlendingPS(v_uv, v_off, u_color, u_blend);\n"
-"}\n";
-
-static GLuint compile(GLenum type, const char *src);
-static struct {
-    int state;                 /* 0 not tried, 1 ready, -1 off or failed */
-    int mode;                  /* 1 fxaa, 2..5 smaa low..ultra */
-    GLuint prog, vao, samp, fbo, tex;
-    GLint l_tex, l_rcp;
-    int w, h;
-    /* SMAA */
-    GLuint p_edge, p_wgt, p_nb, t_col, t_edge, t_blend, t_area, t_search;
-    GLuint f_col, f_edge, f_blend;
-    GLint le_m, le_col, lw_m, lw_edge, lw_area, lw_search, ln_m, ln_col, ln_blend;
-} s_fx;
-
-/* a program from a vertex and fragment shader made of several pieces */
-static GLuint aa_shader(GLenum type, const char *const *parts, int n)
-{
-    GLuint sh = glCreateShader(type);
-    GLint ok = 0;
-    glShaderSource(sh, n, parts, NULL);
-    glCompileShader(sh);
-    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[2048];
-        glGetShaderInfoLog(sh, sizeof log, NULL, log);
-        fprintf(stderr, "[GL] anti-aliasing shader failed to compile:\n%s\n", log);
-        glDeleteShader(sh);
-        return 0;
-    }
-    return sh;
-}
-static GLuint aa_link(GLuint vs, GLuint fs)
-{
-    GLuint p;
-    GLint ok = 0;
-    if (!vs || !fs) {
-        if (vs) glDeleteShader(vs);
-        if (fs) glDeleteShader(fs);
-        return 0;
-    }
-    p = glCreateProgram();
-    glAttachShader(p, vs);
-    glAttachShader(p, fs);
-    glLinkProgram(p);
-    glGetProgramiv(p, GL_LINK_STATUS, &ok);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    if (!ok) {
-        glDeleteProgram(p);
-        return 0;
-    }
-    return p;
-}
-/* one SMAA pass's program: the defines, the reference code, the wrapper */
-static GLuint smaa_program(const char *preset, const char *vs_main, const char *fs_main)
-{
-    static char head_vs[256], head_fs[256];
-    const char *parts[SMAA_GLSL_LINES + 2];
-    GLuint vs, fs;
-    int i;
-    snprintf(head_vs, sizeof head_vs, "#version 330 core\n#define SMAA_GLSL_3 1\n"
-             "#define SMAA_RT_METRICS u_metrics\n#define SMAA_PRESET_%s 1\n"
-             "#define SMAA_INCLUDE_VS 1\n#define SMAA_INCLUDE_PS 0\nuniform vec4 u_metrics;\n", preset);
-    snprintf(head_fs, sizeof head_fs, "#version 330 core\n#define SMAA_GLSL_3 1\n"
-             "#define SMAA_RT_METRICS u_metrics\n#define SMAA_PRESET_%s 1\n"
-             "#define SMAA_INCLUDE_VS 0\n#define SMAA_INCLUDE_PS 1\nuniform vec4 u_metrics;\n", preset);
-    for (i = 0; i < SMAA_GLSL_LINES; i++)
-        parts[i + 1] = SMAA_GLSL_SRC[i];
-    parts[0] = head_vs;
-    parts[SMAA_GLSL_LINES + 1] = vs_main;
-    vs = aa_shader(GL_VERTEX_SHADER, parts, SMAA_GLSL_LINES + 2);
-    parts[0] = head_fs;
-    parts[SMAA_GLSL_LINES + 1] = fs_main;
-    fs = aa_shader(GL_FRAGMENT_SHADER, parts, SMAA_GLSL_LINES + 2);
-    return aa_link(vs, fs);
-}
-static void aa_target(GLuint *tex, GLuint *fbo, GLenum fmt, GLenum cfmt, int w, int h)
-{
-    if (!*tex) glGenTextures(1, tex);
-    if (!*fbo) glGenFramebuffers(1, fbo);
-    glBindTexture(GL_TEXTURE_2D, *tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, fmt, w, h, 0, cfmt, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, *fbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, *tex, 0);
-}
-static int aa_setup(void)
-{
-    static const char *const names[] = { "", "fxaa", "smaa_low", "smaa_medium", "smaa_high",
-                                         "smaa_ultra" };
-    static const char *const presets[] = { "", "", "LOW", "MEDIUM", "HIGH", "ULTRA" };
-    const char *e = getenv("RECOMP_GL_AA");
-    int i;
-    s_fx.state = -1;
-    if (!e || !*e)
-        return 0;
-    for (i = 1; i < 6; i++)
-        if (!_stricmp(e, names[i]))
-            s_fx.mode = i;
-    if (!_stricmp(e, "smaa"))
-        s_fx.mode = 4;
-    if (!s_fx.mode) {
-        if (_stricmp(e, "off") && strcmp(e, "0"))
-            fprintf(stderr, "[GL] RECOMP_GL_AA=%s: not known (fxaa, smaa_low, smaa_medium,"
-                    " smaa_high, smaa_ultra): off\n", e);
-        return 0;
-    }
-    glGenVertexArrays(1, &s_fx.vao);
-    glGenSamplers(1, &s_fx.samp);
-    glSamplerParameteri(s_fx.samp, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glSamplerParameteri(s_fx.samp, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glSamplerParameteri(s_fx.samp, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glSamplerParameteri(s_fx.samp, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glGenFramebuffers(1, &s_fx.fbo);
-    glGenTextures(1, &s_fx.tex);
-    if (s_fx.mode == 1) {
-        s_fx.prog = aa_link(compile(GL_VERTEX_SHADER, FXAA_VS), compile(GL_FRAGMENT_SHADER, FXAA_FS));
-        if (!s_fx.prog) {
-            fprintf(stderr, "[GL] FXAA shader did not build: anti-aliasing off\n");
-            return 0;
-        }
-        s_fx.l_tex = glGetUniformLocation(s_fx.prog, "u_tex");
-        s_fx.l_rcp = glGetUniformLocation(s_fx.prog, "u_rcp");
-    } else {
-        const char *pr = presets[s_fx.mode];
-        s_fx.p_edge = smaa_program(pr, SMAA_EDGE_VS, SMAA_EDGE_FS);
-        s_fx.p_wgt = smaa_program(pr, SMAA_WGT_VS, SMAA_WGT_FS);
-        s_fx.p_nb = smaa_program(pr, SMAA_NB_VS, SMAA_NB_FS);
-        if (!s_fx.p_edge || !s_fx.p_wgt || !s_fx.p_nb) {
-            fprintf(stderr, "[GL] SMAA shaders did not build: anti-aliasing off\n");
-            return 0;
-        }
-        s_fx.le_m = glGetUniformLocation(s_fx.p_edge, "u_metrics");
-        s_fx.le_col = glGetUniformLocation(s_fx.p_edge, "u_color");
-        s_fx.lw_m = glGetUniformLocation(s_fx.p_wgt, "u_metrics");
-        s_fx.lw_edge = glGetUniformLocation(s_fx.p_wgt, "u_edges");
-        s_fx.lw_area = glGetUniformLocation(s_fx.p_wgt, "u_area");
-        s_fx.lw_search = glGetUniformLocation(s_fx.p_wgt, "u_search");
-        s_fx.ln_m = glGetUniformLocation(s_fx.p_nb, "u_metrics");
-        s_fx.ln_col = glGetUniformLocation(s_fx.p_nb, "u_color");
-        s_fx.ln_blend = glGetUniformLocation(s_fx.p_nb, "u_blend");
-        /* the two lookup textures, uploaded as stored (row 0 first) */
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glGenTextures(1, &s_fx.t_area);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_area);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, AREATEX_WIDTH, AREATEX_HEIGHT, 0, GL_RG,
-                     GL_UNSIGNED_BYTE, areaTexBytes);
-        glGenTextures(1, &s_fx.t_search);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_search);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, 0, GL_RED,
-                     GL_UNSIGNED_BYTE, searchTexBytes);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    }
-    s_fx.state = 1;
-    fprintf(stderr, "[GL] anti-aliasing: %s (RECOMP_GL_AA)\n", names[s_fx.mode]);
-    return 1;
-}
-
-/* the frame in `src` / `src_fbo` (w x h) through the anti-aliasing; returns
- * the framebuffer to read the result from, or 0 (off, or not possible: read
- * the frame itself) */
-static GLuint present_aa(GLuint src, GLuint src_fbo, int w, int h)
-{
-    GLint prog, vao, unit, tex0, tex1, tex2, samp0, samp1, samp2, dfbo, rfbo, vp[4], align;
-    GLfloat cc[4];
-    GLboolean cm[4], dm, en[9];
-    static const GLenum caps[9] = { GL_DEPTH_TEST, GL_BLEND, GL_CULL_FACE, GL_STENCIL_TEST,
-                                    GL_SCISSOR_TEST, GL_POLYGON_OFFSET_FILL,
-                                    GL_CLIP_DISTANCE0, GL_CLIP_DISTANCE1, GL_CLIP_DISTANCE2 };
-    int i;
-    if (s_fx.state < 0 || !src || w <= 0 || h <= 0)
-        return 0;
-    /* what is bound now, to put back */
-    glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &unit);
-    glGetIntegerv(GL_UNPACK_ALIGNMENT, &align);
-    glActiveTexture(GL_TEXTURE2);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex2);
-    glGetIntegerv(GL_SAMPLER_BINDING, &samp2);
-    glActiveTexture(GL_TEXTURE1);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex1);
-    glGetIntegerv(GL_SAMPLER_BINDING, &samp1);
-    glActiveTexture(GL_TEXTURE0);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
-    glGetIntegerv(GL_SAMPLER_BINDING, &samp0);
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dfbo);
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfbo);
-    glGetIntegerv(GL_VIEWPORT, vp);
-    glGetFloatv(GL_COLOR_CLEAR_VALUE, cc);
-    glGetBooleanv(GL_COLOR_WRITEMASK, cm);
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &dm);
-    if (s_fx.state == 0 && !aa_setup()) {
-        glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
-        glActiveTexture((GLenum)unit);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, align);
-        return 0;
-    }
-    for (i = 0; i < 9; i++) {
-        en[i] = glIsEnabled(caps[i]);
-        if (en[i]) glDisable(caps[i]);
-    }
-    if (w != s_fx.w || h != s_fx.h) {
-        aa_target(&s_fx.tex, &s_fx.fbo, GL_RGBA8, GL_RGBA, w, h);
-        if (s_fx.mode >= 2) {
-            aa_target(&s_fx.t_col, &s_fx.f_col, GL_RGBA8, GL_RGBA, w, h);
-            aa_target(&s_fx.t_edge, &s_fx.f_edge, GL_RG8, GL_RG, w, h);
-            aa_target(&s_fx.t_blend, &s_fx.f_blend, GL_RGBA8, GL_RGBA, w, h);
-        }
-        s_fx.w = w; s_fx.h = h;
-    }
-    glViewport(0, 0, w, h);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glDepthMask(GL_FALSE);
-    glBindVertexArray(s_fx.vao);
-    glBindSampler(0, s_fx.samp);
-    glBindSampler(1, s_fx.samp);
-    glBindSampler(2, s_fx.samp);
-    if (s_fx.mode == 1) {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.fbo);
-        glUseProgram(s_fx.prog);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, src);
-        glUniform1i(s_fx.l_tex, 0);
-        glUniform2f(s_fx.l_rcp, 1.0f / (float)w, 1.0f / (float)h);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-    } else {
-        float m0 = 1.0f / (float)w, m1 = 1.0f / (float)h;
-        /* the frame, upside down (row 0 at the top); v277: with MSAA from the
-         * resolved copy (the caller resolved it), as a flipping copy out of
-         * a multisampled framebuffer is not allowed */
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : src_fbo);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.f_col);
-        glBlitFramebuffer(0, 0, w, h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        /* 1: edges */
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.f_edge);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glUseProgram(s_fx.p_edge);
-        glUniform4f(s_fx.le_m, m0, m1, (float)w, (float)h);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_col);
-        glUniform1i(s_fx.le_col, 0);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        /* 2: blend weights */
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.f_blend);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glUseProgram(s_fx.p_wgt);
-        glUniform4f(s_fx.lw_m, m0, m1, (float)w, (float)h);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_edge);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_area);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_search);
-        glUniform1i(s_fx.lw_edge, 0);
-        glUniform1i(s_fx.lw_area, 1);
-        glUniform1i(s_fx.lw_search, 2);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        /* 3: neighbourhood blending, written the right way up */
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.fbo);
-        glUseProgram(s_fx.p_nb);
-        glUniform4f(s_fx.ln_m, m0, m1, (float)w, (float)h);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_col);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, s_fx.t_blend);
-        glUniform1i(s_fx.ln_col, 0);
-        glUniform1i(s_fx.ln_blend, 1);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-    }
-    /* put it all back */
-    glBindSampler(2, (GLuint)samp2);
-    glBindSampler(1, (GLuint)samp1);
-    glBindSampler(0, (GLuint)samp0);
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)tex2);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)tex1);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
-    glActiveTexture((GLenum)unit);
-    glBindVertexArray((GLuint)vao);
-    glUseProgram((GLuint)prog);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, align);
-    glClearColor(cc[0], cc[1], cc[2], cc[3]);
-    glDepthMask(dm);
-    glColorMask(cm[0], cm[1], cm[2], cm[3]);
-    glViewport(vp[0], vp[1], vp[2], vp[3]);
-    for (i = 0; i < 9; i++)
-        if (en[i]) glEnable(caps[i]);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dfbo);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfbo);
-    return s_fx.fbo;
-}
-
-/* ── MSAA upsample: draw the single-sampled frame into a multisample target ──
- * A single->multi glBlitFramebuffer is INVALID_OPERATION (multi -> single is
- * the only direction the spec allows), so this runs the image as a texture
- * through a fullscreen triangle instead; the LINEAR sampler also does the
- * RECOMP_GL_SCALE upscale. Runs inside gt_call_sync, so the whole save /
- * draw / restore stays coherent against the executor's caches. */
-static const char *MS_UP_FS =
-"#version 330 core\n"
-"uniform sampler2D u_tex;\n"
-"in vec2 v_uv;\n"
-"out vec4 o_col;\n"
-"void main() {\n"
-"  o_col = texture(u_tex, v_uv);\n"
-"}\n";
-
-static struct {
-    int state;                 /* 0 not built, 1 ready, -1 failed */
-    GLuint prog, vao, samp;
-    GLint l_tex;
-} s_ms_up;
-
-static void ms_up_run(void *p)
-{
-    MsUpArgs *a = (MsUpArgs *)p;
-    static const GLenum caps[9] = { GL_DEPTH_TEST, GL_BLEND, GL_CULL_FACE, GL_STENCIL_TEST,
-                                    GL_SCISSOR_TEST, GL_POLYGON_OFFSET_FILL,
-                                    GL_CLIP_DISTANCE0, GL_CLIP_DISTANCE1, GL_CLIP_DISTANCE2 };
-    GLint prog, vao, unit, tex0, samp0, dfbo, rfbo, vp[4], align;
-    GLfloat cc[4];
-    GLboolean cm[4], dm, en[9];
-    int i;
-
-    if (s_ms_up.state == 0) {
-        glGenVertexArrays(1, &s_ms_up.vao);        /* no attributes enabled */
-        glGenSamplers(1, &s_ms_up.samp);
-        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glSamplerParameteri(s_ms_up.samp, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        s_ms_up.prog = aa_link(compile(GL_VERTEX_SHADER, FXAA_VS),
-                               compile(GL_FRAGMENT_SHADER, MS_UP_FS));
-        if (!s_ms_up.prog) {
-            fprintf(stderr, "[GL] MSAA upsample shader did not build: draws dropped\n");
-            s_ms_up.state = -1;
-            return;
-        }
-        s_ms_up.l_tex = glGetUniformLocation(s_ms_up.prog, "u_tex");
-        s_ms_up.state = 1;
-    }
-    if (s_ms_up.state < 0)
-        return;
-
-    glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &unit);
-    glGetIntegerv(GL_UNPACK_ALIGNMENT, &align);
-    glActiveTexture(GL_TEXTURE0);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
-    glGetIntegerv(GL_SAMPLER_BINDING, &samp0);
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dfbo);
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfbo);
-    glGetIntegerv(GL_VIEWPORT, vp);
-    glGetFloatv(GL_COLOR_CLEAR_VALUE, cc);
-    glGetBooleanv(GL_COLOR_WRITEMASK, cm);
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &dm);
-    for (i = 0; i < 9; i++) {
-        en[i] = glIsEnabled(caps[i]);
-        if (en[i]) glDisable(caps[i]);
-    }
-
-    glViewport(0, 0, a->w, a->h);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glDepthMask(GL_FALSE);
-    rb_bind_draw(a->dst_fbo);
-    glBindVertexArray(s_ms_up.vao);
-    glUseProgram(s_ms_up.prog);
-    glBindSampler(0, s_ms_up.samp);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, a->src_tex);
-    glUniform1i(s_ms_up.l_tex, 0);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    rb_draw_bound_set(a->dst_fbo);
-
-    /* put it all back */
-    glBindSampler(0, (GLuint)samp0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
-    glActiveTexture((GLenum)unit);
-    glBindVertexArray((GLuint)vao);
-    glUseProgram((GLuint)prog);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, align);
-    glColorMask(cm[0], cm[1], cm[2], cm[3]);
-    glDepthMask(dm);
-    glViewport(vp[0], vp[1], vp[2], vp[3]);
-    for (i = 0; i < 9; i++)
-        if (en[i]) glEnable(caps[i]);
-    if ((GLuint)dfbo != (GLuint)a->dst_fbo) {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dfbo);
-        rb_draw_bound_set((GLuint)dfbo);
-    }
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfbo);
-    rb_fixed_lost();
-}
 
 #if defined(_WIN32)
 /* Present s through DXGI; 0 = not available (caller falls back). */
@@ -3929,7 +3415,7 @@ static int dxp_present(GlSurf *s, HWND hwnd, int cw, int ch, int dx, int dy, int
         return 1;
     {
         surf_resolve(s);
-        GLuint fx = present_aa(s->tex, s->fbo, SC(s->w), SC(s->h));   /* v238 */
+        GLuint fx = rb_present_aa(s->tex, s->fbo, SC(s->w), SC(s->h));   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dx.fbo);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
                          : s_msaa > 1 ? s_resolve_fbo : s->fbo);
@@ -4091,7 +3577,7 @@ static int gl_window_present_impl(GlSurf *s)
     }
     {
         surf_resolve(s);
-        GLuint fx = present_aa(s->tex, s->fbo, SC(s->w), SC(s->h));   /* v238 */
+        GLuint fx = rb_present_aa(s->tex, s->fbo, SC(s->w), SC(s->h));   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
                          : s_msaa > 1 ? s_resolve_fbo : s->fbo);
@@ -4140,7 +3626,7 @@ static void gw_present_gl(void *arg)
         return;
     }
     {
-        GLuint fx = present_aa(f->tex, f->fbo, SC(f->w), SC(f->h));   /* v238 */
+        GLuint fx = rb_present_aa(f->tex, f->fbo, SC(f->w), SC(f->h));   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
                          : s_msaa > 1 ? s_resolve_fbo : f->fbo);
@@ -4215,7 +3701,7 @@ static void gw_present_sdl(void *arg)
     xbox_PresentFit(cw, ch, &dw, &dh);
     dx = (cw - dw) / 2; dy = (ch - dh) / 2;
     {
-        GLuint fx = present_aa(f->tex, f->fbo, SC(f->w), SC(f->h));
+        GLuint fx = rb_present_aa(f->tex, f->fbo, SC(f->w), SC(f->h));
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         /* the default framebuffer takes no multisample blit (driver raises
          * INVALID_OPERATION), so under MSAA read the resolve target */

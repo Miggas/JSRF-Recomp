@@ -96,4 +96,11 @@ void     rb_vbuf_bound_set(uint32_t b);
 /* a whole image from one target to another, scaled, no scissor or masks */
 void     rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int dh, uint32_t filter);
 
+/* ── anti-aliasing and MSAA (v238) ─────────────────────────────────────── */
+/* the finished frame (texture src, target src_fbo, w x h) through FXAA /
+ * SMAA (RECOMP_GL_AA): the target holding the result, or 0 when AA is off */
+uint32_t rb_present_aa(uint32_t src, uint32_t src_fbo, int w, int h);
+/* a single-sampled image into a multisampled target, scaled to w x h */
+void     rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h);
+
 #endif
