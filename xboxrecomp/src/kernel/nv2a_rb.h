@@ -123,4 +123,14 @@ void rb_set_window(void *sdl_window);
 /* v101: the GPU-side spacing of shown frames, for the log; 0 = nothing yet */
 int  rb_gpu_frame_stats(char *buf, size_t n);
 
+/* ── render targets ────────────────────────────────────────────────────── */
+void     rb_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples);
+void     rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth);
+uint32_t rb_target_depth(uint32_t fbo, uint32_t buf, int is_tex);
+void     rb_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int sh,
+                           const uint32_t *px, int samples);
+void     rb_read_pixels(uint32_t fbo, int w, int h, uint32_t *px);
+uint32_t rb_resolve(uint32_t fbo, uint32_t tex, int w, int h);
+uint32_t rb_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh);
+
 #endif
