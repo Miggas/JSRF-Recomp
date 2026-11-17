@@ -585,5 +585,7 @@ static void present_overlay_f(int cw, int ch, int flip)
 }
 
 static void present_overlay(int cw, int ch) { present_overlay_f(cw, ch, 0); }
+/* the backend draws it over each frame it shows (rb_set_overlay) */
+void present_overlay_f_fwd(int cw, int ch, int flip) { present_overlay_f(cw, ch, flip); }
 
 #endif /* NV2A_GL_QUIT_H */

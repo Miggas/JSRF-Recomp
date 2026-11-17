@@ -14,6 +14,7 @@
 #define NV2A_RB_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* ── fixed-function state (everything a draw needs that isn't a shader) ── */
 typedef struct {
@@ -102,5 +103,24 @@ void     rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int 
 uint32_t rb_present_aa(uint32_t src, uint32_t src_fbo, int w, int h);
 /* a single-sampled image into a multisampled target, scaled to w x h */
 void     rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h);
+
+/* ── the window ────────────────────────────────────────────────────────── */
+/* a finished frame for the window: its target and texture (and the target
+ * the multisampled frame was resolved into, else 0), at its rendered size,
+ * with the side fill of wide menus (v217b; 0 = none) */
+typedef struct {
+    uint32_t fbo, tex, resolve;
+    int w, h;
+    double rowk;
+} RbFrame;
+/* shown in the game window, fitted (4:3 or widescreen); 0: the window path
+ * can't (yet), the caller shows it another way */
+int  rb_window_present(const RbFrame *f);
+/* drawn over each shown frame: our menus (flip: rows top-down, DXGI) */
+void rb_set_overlay(void (*fn)(int cw, int ch, int flip));
+/* Linux: the SDL window the GL context was made with */
+void rb_set_window(void *sdl_window);
+/* v101: the GPU-side spacing of shown frames, for the log; 0 = nothing yet */
+int  rb_gpu_frame_stats(char *buf, size_t n);
 
 #endif
