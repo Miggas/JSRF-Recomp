@@ -2176,3 +2176,151 @@ void rb_pump(void) { if (s_rb_win) SDL_PumpEvents(); }
 void rb_tex_bind_raw(uint32_t target, uint32_t id) { glBindTexture(target, id); }
 void rb_errors_drain(void) { while (glGetError() != GL_NO_ERROR) {} }
 uint32_t rb_error(void) { return glGetError(); }
+
+/* ── our menus over the frame (moved from nv2a_gl_quit.h) ────────────────
+ * One tiny shader draws coloured or font-textured triangles; the font is
+ * on unit 15. The program, vertex array and buffer bound before are put
+ * back (the renderer keeps them cached), and so is unit 15. */
+
+#define RBG_OV_UNIT 15
+static GLuint s_ov_prog, s_ov_vao, s_ov_vbo, s_ov_tex;
+static GLint s_ov_l_vp, s_ov_l_tex;
+
+static GLuint ov_shader(GLenum type, const char *src)
+{
+    GLuint sh = glCreateShader(type);
+    GLint ok = 0;
+    glShaderSource(sh, 1, &src, NULL);
+    glCompileShader(sh);
+    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[512];
+        glGetShaderInfoLog(sh, sizeof log, NULL, log);
+        fprintf(stderr, "[QUIT] window shader: %s\n", log);
+        glDeleteShader(sh);
+        return 0;
+    }
+    return sh;
+}
+
+static int ov_setup(const unsigned char *atlas, int aw, int ah)
+{
+    static const char *vs =
+        "#version 330 core\n"
+        "layout(location = 0) in vec2 p;\n"
+        "layout(location = 1) in vec4 c;\n"
+        "layout(location = 2) in vec2 t;\n"
+        "uniform vec3 vp;\n"   /* width, height, 1 or -1 (DXGI: upside down) */
+        "out vec4 vc;\n"
+        "out vec2 vt;\n"
+        "void main() { gl_Position = vec4(p.x / vp.x * 2.0 - 1.0, (1.0 - p.y / vp.y * 2.0) * vp.z, 0.0, 1.0); vc = c; vt = t; }\n";
+    static const char *fs =
+        "#version 330 core\n"
+        "in vec4 vc;\n"
+        "in vec2 vt;\n"
+        "uniform sampler2D tex;\n"
+        "out vec4 o;\n"
+        "void main() { o = vt.x < 0.0 ? vc : vec4(vc.rgb, vc.a * texture(tex, vt).r); }\n";
+    GLuint v = ov_shader(GL_VERTEX_SHADER, vs), f = ov_shader(GL_FRAGMENT_SHADER, fs);
+    GLint ok = 0;
+    if (!v || !f) return 0;
+    s_ov_prog = glCreateProgram();
+    glAttachShader(s_ov_prog, v);
+    glAttachShader(s_ov_prog, f);
+    glLinkProgram(s_ov_prog);
+    glDeleteShader(v);
+    glDeleteShader(f);
+    glGetProgramiv(s_ov_prog, GL_LINK_STATUS, &ok);
+    if (!ok) return 0;
+    s_ov_l_vp = glGetUniformLocation(s_ov_prog, "vp");
+    s_ov_l_tex = glGetUniformLocation(s_ov_prog, "tex");
+    glGenVertexArrays(1, &s_ov_vao);
+    glGenBuffers(1, &s_ov_vbo);
+    glBindVertexArray(s_ov_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, s_ov_vbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(RbOvVert), (void *)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(RbOvVert), (void *)(4 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(RbOvVert), (void *)(2 * sizeof(float)));
+    if (atlas) {   /* v266: the font into a texture, on unit 15, whatever was there put back */
+        GLint unit0 = 0, tex0 = 0, smp0 = 0, align0 = 4;
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &unit0);
+        glActiveTexture(GL_TEXTURE0 + RBG_OV_UNIT);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
+        glGetIntegerv(GL_SAMPLER_BINDING, &smp0);
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &align0);
+        glBindSampler(RBG_OV_UNIT, 0);
+        glGenTextures(1, &s_ov_tex);
+        glBindTexture(GL_TEXTURE_2D, s_ov_tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, aw, ah, 0, GL_RED, GL_UNSIGNED_BYTE, atlas);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, align0);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
+        glBindSampler(RBG_OV_UNIT, (GLuint)smp0);
+        glActiveTexture((GLenum)unit0);
+    }
+    return 1;
+}
+
+int rb_overlay_init(const unsigned char *atlas, int w, int h)
+{
+    GLint p0 = 0, va0 = 0, ab0 = 0;
+    int ok;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &va0);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &ab0);
+    ok = ov_setup(atlas, w, h);
+    glBindVertexArray((GLuint)va0);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ab0);
+    glUseProgram((GLuint)p0);
+    return ok;
+}
+
+void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font)
+{
+    GLint p0 = 0, va0 = 0, ab0 = 0;
+    GLint unit0 = 0, tex0 = 0, smp0 = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &va0);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &ab0);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_STENCIL_TEST);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glViewport(0, 0, cw, ch);
+    glUseProgram(s_ov_prog);
+    glUniform3f(s_ov_l_vp, (float)cw, (float)ch, flip ? -1.0f : 1.0f);
+    if (font) {            /* v266: the font on unit 15; what was there put back after */
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &unit0);
+        glActiveTexture(GL_TEXTURE0 + RBG_OV_UNIT);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
+        glGetIntegerv(GL_SAMPLER_BINDING, &smp0);
+        glBindTexture(GL_TEXTURE_2D, s_ov_tex);
+        glBindSampler(RBG_OV_UNIT, 0);
+        glUniform1i(s_ov_l_tex, RBG_OV_UNIT);
+    }
+    glBindVertexArray(s_ov_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, s_ov_vbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)((size_t)n * sizeof(RbOvVert)), v, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, n);
+    if (font) {
+        glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
+        glBindSampler(RBG_OV_UNIT, (GLuint)smp0);
+        glActiveTexture((GLenum)unit0);
+    }
+    glDisable(GL_BLEND);
+    glBindVertexArray((GLuint)va0);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ab0);
+    glUseProgram((GLuint)p0);
+}

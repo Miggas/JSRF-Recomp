@@ -215,4 +215,15 @@ void rb_tex_bind_raw(uint32_t target, uint32_t id);
 void rb_errors_drain(void);
 uint32_t rb_error(void);
 
+
+/* ── our menus over the frame (the quit window, the list menu, notes) ── */
+typedef struct { float x, y, u, v, r, g, b, a; } RbOvVert;   /* window pixels, row 0 at the top; u < 0: no texture */
+/* the shader and vertex layout, and the font atlas (one channel, may be
+ * NULL) as a texture; what was bound is put back. 0 when it can't be. */
+int  rb_overlay_init(const unsigned char *atlas, int w, int h);
+/* triangles over the frame of cw x ch pixels in the framebuffer bound for
+ * drawing, alpha-blended; flip: that framebuffer's row 0 is the top (DXGI);
+ * font: the atlas is there. What was bound is put back. */
+void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font);
+
 #endif

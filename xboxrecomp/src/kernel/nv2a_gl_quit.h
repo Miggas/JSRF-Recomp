@@ -7,11 +7,11 @@
  *
  * Text: v266, the NiseJSRF font (Yoyo's, dafont.com, "100% Free";
  * third_party/fonts, Miggas's pick), baked once by stb_truetype (public
- * domain) into a texture on unit 15 (bindings there put back); before,
- * and if that fails, stb_easy_font, which makes each letter a few
- * rectangles. One tiny shader draws coloured or font-textured triangles. The program, vertex array and buffer bound before are put back
- * (the renderer keeps them cached); blend and depth are re-applied by the
- * renderer after every present (rb_fixed_lost). Included by nv2a_gl.c. */
+ * domain) into an atlas; before, and if that fails, stb_easy_font, which
+ * makes each letter a few rectangles. The triangles (coloured or
+ * font-textured) are made here and drawn by the backend (rb_overlay_draw);
+ * blend and depth are re-applied by the renderer after every present
+ * (rb_fixed_lost). Included by nv2a_gl.c. */
 #ifndef NV2A_GL_QUIT_H
 #define NV2A_GL_QUIT_H
 
@@ -39,114 +39,36 @@ extern char g_xbox_timer[24];   /* v300 */
 extern int g_xbox_timer_big;    /* v301d: the clear screen's place */
 extern char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: a panel beside the list menu */
 
-typedef struct { float x, y, u, v, r, g, b, a; } QdVert;   /* u < 0: no texture */
+typedef RbOvVert QdVert;        /* u < 0: no texture */
 #define QD_MAX (6 * 6000)
 static QdVert s_qd_v[QD_MAX];
 static int s_qd_n;
 static int s_qd_state;          /* 0 not set up, 1 ready, -1 failed */
-static GLuint s_qd_prog, s_qd_vao, s_qd_vbo;
-static GLint s_qd_l_vp, s_qd_l_tex;
 /* v266: the font, baked at 64 pixels (ASCII 32..126) */
 #define QD_FONT_PX 64.0f
 #define QD_ATLAS_W 1024
 #define QD_ATLAS_H 512
-#define QD_UNIT 15
 static stbtt_bakedchar s_qd_cd[95];
-static GLuint s_qd_tex;
 static int s_qd_font;           /* 1: the font is there */
 static float s_qd_cap;          /* the capitals' height, in baked pixels */
 
-static GLuint qd_shader(GLenum type, const char *src)
-{
-    GLuint sh = glCreateShader(type);
-    GLint ok = 0;
-    glShaderSource(sh, 1, &src, NULL);
-    glCompileShader(sh);
-    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[512];
-        glGetShaderInfoLog(sh, sizeof log, NULL, log);
-        fprintf(stderr, "[QUIT] window shader: %s\n", log);
-        glDeleteShader(sh);
-        return 0;
-    }
-    return sh;
-}
-
+/* v266: the font baked into an atlas, then the backend's overlay set up
+ * with it (rb_overlay_init: the shader, vertex layout and font texture) */
 static int qd_setup(void)
 {
-    static const char *vs =
-        "#version 330 core\n"
-        "layout(location = 0) in vec2 p;\n"
-        "layout(location = 1) in vec4 c;\n"
-        "layout(location = 2) in vec2 t;\n"
-        "uniform vec3 vp;\n"   /* width, height, 1 or -1 (DXGI: upside down) */
-        "out vec4 vc;\n"
-        "out vec2 vt;\n"
-        "void main() { gl_Position = vec4(p.x / vp.x * 2.0 - 1.0, (1.0 - p.y / vp.y * 2.0) * vp.z, 0.0, 1.0); vc = c; vt = t; }\n";
-    static const char *fs =
-        "#version 330 core\n"
-        "in vec4 vc;\n"
-        "in vec2 vt;\n"
-        "uniform sampler2D tex;\n"
-        "out vec4 o;\n"
-        "void main() { o = vt.x < 0.0 ? vc : vec4(vc.rgb, vc.a * texture(tex, vt).r); }\n";
-    GLuint v = qd_shader(GL_VERTEX_SHADER, vs), f = qd_shader(GL_FRAGMENT_SHADER, fs);
-    GLint ok = 0;
-    if (!v || !f) return 0;
-    s_qd_prog = glCreateProgram();
-    glAttachShader(s_qd_prog, v);
-    glAttachShader(s_qd_prog, f);
-    glLinkProgram(s_qd_prog);
-    glDeleteShader(v);
-    glDeleteShader(f);
-    glGetProgramiv(s_qd_prog, GL_LINK_STATUS, &ok);
-    if (!ok) return 0;
-    s_qd_l_vp = glGetUniformLocation(s_qd_prog, "vp");
-    s_qd_l_tex = glGetUniformLocation(s_qd_prog, "tex");
-    glGenVertexArrays(1, &s_qd_vao);
-    glGenBuffers(1, &s_qd_vbo);
-    glBindVertexArray(s_qd_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, s_qd_vbo);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(QdVert), (void *)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(QdVert), (void *)(4 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(QdVert), (void *)(2 * sizeof(float)));
-    {   /* v266: the font into a texture, on unit 15, whatever was there put back */
-        static unsigned char atlas[QD_ATLAS_W * QD_ATLAS_H];
-        int r = stbtt_BakeFontBitmap(k_nisejsrf_ttf, 0, QD_FONT_PX, atlas, QD_ATLAS_W, QD_ATLAS_H,
-                                     32, 95, s_qd_cd);
-        if (r > 0) {
-            GLint unit0 = 0, tex0 = 0, smp0 = 0, align0 = 4;
-            float x = 0, y = 0;
-            stbtt_aligned_quad q;
-            glGetIntegerv(GL_ACTIVE_TEXTURE, &unit0);
-            glActiveTexture(GL_TEXTURE0 + QD_UNIT);
-            glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
-            glGetIntegerv(GL_SAMPLER_BINDING, &smp0);
-            glGetIntegerv(GL_UNPACK_ALIGNMENT, &align0);
-            glBindSampler(QD_UNIT, 0);
-            glGenTextures(1, &s_qd_tex);
-            glBindTexture(GL_TEXTURE_2D, s_qd_tex);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, QD_ATLAS_W, QD_ATLAS_H, 0, GL_RED, GL_UNSIGNED_BYTE, atlas);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, align0);
-            glGenerateMipmap(GL_TEXTURE_2D);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
-            glBindSampler(QD_UNIT, (GLuint)smp0);
-            glActiveTexture((GLenum)unit0);
-            stbtt_GetBakedQuad(s_qd_cd, QD_ATLAS_W, QD_ATLAS_H, 'H' - 32, &x, &y, &q, 1);
-            s_qd_cap = -q.y0;
-            s_qd_font = s_qd_cap > 1.0f;
-        }
-        if (!s_qd_font) fprintf(stderr, "[QUIT] the font could not be baked: the plain letters\n");
+    static unsigned char atlas[QD_ATLAS_W * QD_ATLAS_H];
+    int r = stbtt_BakeFontBitmap(k_nisejsrf_ttf, 0, QD_FONT_PX, atlas, QD_ATLAS_W, QD_ATLAS_H,
+                                 32, 95, s_qd_cd);
+    if (!rb_overlay_init(r > 0 ? atlas : NULL, QD_ATLAS_W, QD_ATLAS_H))
+        return 0;
+    if (r > 0) {
+        float x = 0, y = 0;
+        stbtt_aligned_quad q;
+        stbtt_GetBakedQuad(s_qd_cd, QD_ATLAS_W, QD_ATLAS_H, 'H' - 32, &x, &y, &q, 1);
+        s_qd_cap = -q.y0;
+        s_qd_font = s_qd_cap > 1.0f;
     }
+    if (!s_qd_font) fprintf(stderr, "[QUIT] the font could not be baked: the plain letters\n");
     return 1;
 }
 
@@ -331,15 +253,8 @@ static void present_overlay_f(int cw, int ch, int flip)
     if (!quit) s_qd_last_sel = -1;
     if ((!quit && !menu && !g_gl_build_msg[0] && !g_xbox_note[0] && !g_xbox_timer[0]) || cw <= 0 || ch <= 0) return;
     if (!s_qd_state) {
-        GLint p0 = 0, va0 = 0, ab0 = 0;
-        glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
-        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &va0);
-        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &ab0);
         s_qd_state = qd_setup() ? 1 : -1;
         if (s_qd_state < 0) fprintf(stderr, "[QUIT] the quit window cannot be drawn\n");
-        glBindVertexArray((GLuint)va0);
-        glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ab0);
-        glUseProgram((GLuint)p0);
     }
     if (s_qd_state < 0) return;
 
@@ -544,44 +459,7 @@ static void present_overlay_f(int cw, int ch, int flip)
         }
     }
 
-    GLint p0 = 0, va0 = 0, ab0 = 0;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &p0);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &va0);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &ab0);
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_STENCIL_TEST);
-    glEnable(GL_BLEND);
-    glBlendEquation(GL_FUNC_ADD);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glViewport(0, 0, cw, ch);
-    glUseProgram(s_qd_prog);
-    glUniform3f(s_qd_l_vp, (float)cw, (float)ch, flip ? -1.0f : 1.0f);
-    GLint unit0 = 0, tex0 = 0, smp0 = 0;
-    if (s_qd_font) {            /* v266: the font on unit 15; what was there put back after */
-        glGetIntegerv(GL_ACTIVE_TEXTURE, &unit0);
-        glActiveTexture(GL_TEXTURE0 + QD_UNIT);
-        glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex0);
-        glGetIntegerv(GL_SAMPLER_BINDING, &smp0);
-        glBindTexture(GL_TEXTURE_2D, s_qd_tex);
-        glBindSampler(QD_UNIT, 0);
-        glUniform1i(s_qd_l_tex, QD_UNIT);
-    }
-    glBindVertexArray(s_qd_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, s_qd_vbo);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(s_qd_n * sizeof(QdVert)), s_qd_v, GL_STREAM_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, s_qd_n);
-    if (s_qd_font) {
-        glBindTexture(GL_TEXTURE_2D, (GLuint)tex0);
-        glBindSampler(QD_UNIT, (GLuint)smp0);
-        glActiveTexture((GLenum)unit0);
-    }
-    glDisable(GL_BLEND);
-    glBindVertexArray((GLuint)va0);
-    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ab0);
-    glUseProgram((GLuint)p0);
+    rb_overlay_draw(s_qd_v, s_qd_n, cw, ch, flip, s_qd_font);
 }
 
 static void present_overlay(int cw, int ch) { present_overlay_f(cw, ch, 0); }
