@@ -133,4 +133,18 @@ void     rb_read_pixels(uint32_t fbo, int w, int h, uint32_t *px);
 uint32_t rb_resolve(uint32_t fbo, uint32_t tex, int w, int h);
 uint32_t rb_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh);
 
+/* ── textures (on the active unit's binding; OpenGL's numbers) ─────────── */
+void rb_tex_new(uint32_t *id);
+void rb_tex_delete(uint32_t *id);
+void rb_tex_image(uint32_t target, int level, int ifmt, int w, int h, int border,
+                  uint32_t format, uint32_t type, const void *data);
+void rb_tex_image_dxt(uint32_t target, int level, uint32_t cfmt, int w, int h, int border,
+                      int size, const void *data);
+void rb_tex_param(uint32_t target, uint32_t pname, int v);
+void rb_tex_mipmaps(uint32_t target);
+void rb_errors_clear(void);
+int  rb_no_error(void);
+int  rb_max_aniso(void);
+void rb_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int h, uint32_t src_fbo, int sh);
+
 #endif

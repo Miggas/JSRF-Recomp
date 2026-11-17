@@ -1966,3 +1966,54 @@ uint32_t rb_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh)
     rb_copy_target(fbo, sw, sh, s_dn_fbo, (int)w, (int)h, GL_LINEAR);
     return s_dn_fbo;
 }
+
+/* ── textures ──────────────────────────────────────────────────────────────
+ * On the texture bound to the active unit's target (rb_unit_bind /
+ * rb_active_unit), as OpenGL does; targets, formats and parameter names are
+ * OpenGL's numbers, which the Vulkan backend maps too. */
+
+void rb_tex_new(uint32_t *id) { glGenTextures(1, id); }
+void rb_tex_delete(uint32_t *id) { glDeleteTextures(1, id); }
+void rb_tex_image(uint32_t target, int level, int ifmt, int w, int h, int border,
+                  uint32_t format, uint32_t type, const void *data)
+{
+    glTexImage2D(target, level, ifmt, w, h, border, format, type, data);
+}
+void rb_tex_image_dxt(uint32_t target, int level, uint32_t cfmt, int w, int h, int border,
+                      int size, const void *data)
+{
+    glCompressedTexImage2D(target, level, cfmt, w, h, border, size, data);
+}
+void rb_tex_param(uint32_t target, uint32_t pname, int v) { glTexParameteri(target, pname, v); }
+void rb_tex_mipmaps(uint32_t target) { glGenerateMipmap(target); }
+void rb_errors_clear(void) { int q = 8; while (q-- && glGetError() != GL_NO_ERROR) {} }
+int  rb_no_error(void) { return glGetError() == GL_NO_ERROR; }
+int  rb_max_aniso(void) { GLint mx = 0; glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &mx); return mx; }
+
+/* A surface's image into a texture, flipped (a surface's rows run
+ * bottom-up, a texture's top-down): the bottom w x h of a target sh high,
+ * into texture id, (re)made w x h first when `remake` (alpha read as 1 with
+ * one_alpha). */
+void rb_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int h, uint32_t src_fbo, int sh)
+{
+    static GLuint s_copy_fbo;
+    GLuint prev = rb_draw_bound();
+    if (!s_copy_fbo)
+        glGenFramebuffers(1, &s_copy_fbo);
+    if (remake) {
+        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, id); rb_active_unit(NV_GL_SCRATCH_UNIT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)w, (GLsizei)h,
+                     0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+        if (one_alpha)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ONE);
+    }
+    rb_bind_draw(s_copy_fbo);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, id, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
+    glDisable(GL_SCISSOR_TEST);             /* v172: as blit_fb */
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBlitFramebuffer(0, sh - h, w, sh, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glEnable(GL_SCISSOR_TEST);
+    rb_fixed_lost();
+    rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
+}

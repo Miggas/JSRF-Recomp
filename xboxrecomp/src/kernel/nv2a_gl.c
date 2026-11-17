@@ -2222,19 +2222,19 @@ static int init_gl(void)
 
     /* Stand-ins for a stage whose texture is unusable: the software sampler
      * reads such a stage as white, and so does this. */
-    glGenTextures(1, &s_white2d);
+    rb_tex_new(&s_white2d);
     glBindTexture(GL_TEXTURE_2D, s_white2d);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_BGRA,
+    rb_tex_image(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_BGRA,
                  GL_UNSIGNED_INT_8_8_8_8_REV, &white);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glGenTextures(1, &s_whitecube);
+    rb_tex_param(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    rb_tex_param(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    rb_tex_new(&s_whitecube);
     glBindTexture(GL_TEXTURE_CUBE_MAP, s_whitecube);
     for (i = 0; i < 6; i++)
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8, 1, 1, 0,
+        rb_tex_image(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8, 1, 1, 0,
                      GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, &white);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    rb_tex_param(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    rb_tex_param(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     /* v77: the raw-input VAO for the GPU vertex path. Same index buffer;
      * its attribute arrays are pointed per batch (nv2a_gl_draw_raw). */
@@ -3350,7 +3350,7 @@ static int standin_upload(const NvGlTexture *t, const uint8_t *mem, uint64_t h, 
     for (i = 0; i < STANDIN_MAX; i++) {
         StandIn *e = &s_standin[i];
         if (e->nlev && e->key == h && e->n == t->bytes && e->rgba) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
+            rb_tex_image(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
                          GL_UNSIGNED_INT_8_8_8_8_REV, e->lev[0]);
             e->used = ++s_standin_clock;
             if (e->hits++ < 3)
@@ -3363,14 +3363,14 @@ static int standin_upload(const NvGlTexture *t, const uint8_t *mem, uint64_t h, 
             uint32_t lv, levels = t->levels ? t->levels : 1, w = t->width, hh = t->height;
             uint32_t off = t->offset, limit = t->offset + 2u * t->bytes;
             for (n = 0; n < e->nlev; n++)
-                glCompressedTexImage2D(GL_TEXTURE_2D, n, cfmt, (GLsizei)(e->w >> n),
+                rb_tex_image_dxt(GL_TEXTURE_2D, n, cfmt, (GLsizei)(e->w >> n),
                                        (GLsizei)(e->h >> n), 0, (GLsizei)e->lsz[n], e->lev[n]);
             for (lv = 0; lv < levels && n < 16; lv++) {
                 uint32_t bw = (w + 3) / 4, bh = (hh + 3) / 4;
                 uint32_t sz = (bw ? bw : 1) * (bh ? bh : 1) * block;
                 if (off + sz > limit)
                     break;
-                glCompressedTexImage2D(GL_TEXTURE_2D, n++, cfmt, (GLsizei)w, (GLsizei)hh, 0,
+                rb_tex_image_dxt(GL_TEXTURE_2D, n++, cfmt, (GLsizei)w, (GLsizei)hh, 0,
                                        (GLsizei)sz, mem + off);
                 off += sz;
                 if (w == 1 && hh == 1)
@@ -3509,7 +3509,7 @@ static int rgba_standin_upload(const NvGlTexture *t, const uint32_t *px)
             if (!key)
                 key = hash_bytes((const uint8_t *)px, (size_t)W * (size_t)H * 4u);
             if (e->key == key) {
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
+                rb_tex_image(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)e->w, (GLsizei)e->h, 0, GL_BGRA,
                              GL_UNSIGNED_INT_8_8_8_8_REV, e->data);
                 e->used = ++s_standin_clock;
                 if (e->hits++ < 2)
@@ -3548,7 +3548,7 @@ static int rgba_standin_upload(const NvGlTexture *t, const uint32_t *px)
                 }
                 fe[n]->used = ++s_standin_clock;
             }
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)BW, (GLsizei)BH, 0, GL_BGRA,
+            rb_tex_image(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)BW, (GLsizei)BH, 0, GL_BGRA,
                          GL_UNSIGNED_INT_8_8_8_8_REV, big);
             free(big);
             done = 1;
@@ -3600,43 +3600,23 @@ static int tex_from_surface_ok(const GlSurf *g, const NvGlTexture *t)
     return 0;
 }
 
-static GLuint s_copy_fbo;
-
 /* Guest rows run top-down; a surface's GL rows bottom-up (surf_upload), a
  * texture's top-down (bind_texture). So the blit flips. */
 static void tex_copy_from_surface(GlTex *e, const NvGlTexture *t, GlSurf *g)
 {
-    GLuint prev = rb_draw_bound();
-    if (!s_copy_fbo)
-        glGenFramebuffers(1, &s_copy_fbo);
     /* alloc 2: storage at the scaled size (v87); a CPU upload in between
      * re-specified it at the guest size (alloc 1) */
-    if (s_scale == 1 ? !e->alloc : e->alloc != 2) {
-        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, e->id); rb_active_unit(NV_GL_SCRATCH_UNIT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)SC(t->width), (GLsizei)SC(t->height),
-                     0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-        if (t->color == 0x1E)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ONE);
+    int remake = s_scale == 1 ? !e->alloc : e->alloc != 2;
+    if (remake)
         e->alloc = s_scale == 1 ? 1 : 2;
-    }
     /* v277: with MSAA the surface's samples are resolved first: a copy out
      * of a multisampled framebuffer may not flip or move (GL), so the
      * game's frame-as-texture effects (the boost blur, the garage previews)
      * would read nothing */
     if (s_msaa > 1)
         surf_resolve(g);
-    rb_bind_draw(s_copy_fbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           e->id, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : g->fbo);
-    glDisable(GL_SCISSOR_TEST);             /* v172: as blit_fb */
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBlitFramebuffer(0, SC(g->h - t->height), SC(t->width), SC(g->h),
-                      0, SC(t->height), SC(t->width), 0,
-                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glEnable(GL_SCISSOR_TEST);
-    rb_fixed_lost();
-    rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
+    rb_tex_from_target(e->id, remake, t->color == 0x1E, SC(t->width), SC(t->height),
+                       s_msaa > 1 ? s_resolve_fbo : g->fbo, SC(g->h));
     e->from_gpu = 1;
     e->src_fbo = g->fbo;
     e->src_draws = g->draws;
@@ -3709,7 +3689,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
     if (!e) {
         e = victim;
         if (!e->id) {
-            glGenTextures(1, &e->id);
+            rb_tex_new(&e->id);
             e->p_mag = e->p_min = e->p_ws = e->p_wt = 0;
             e->p_aniso = 0;
             e->p_maxlev = 1000;
@@ -3903,13 +3883,13 @@ static void bind_texture(int stage, const NvGlTexture *t)
                  * uploads went through without one, they are taken as good */
                 static int dxt_good;
                 int check = !s_gt_on || dxt_good < 16;
-                if (check) { int q = 8; while (q-- && glGetError() != GL_NO_ERROR) {} }
+                if (check) rb_errors_clear();
                 for (lv = 0; lv < levels && lv < 16; lv++) {
                     uint32_t bw = (w + 3) / 4, bh = (hh + 3) / 4;
                     uint32_t sz = (bw ? bw : 1) * (bh ? bh : 1) * block;
                     if (off + sz > limit)
                         break;
-                    glCompressedTexImage2D(GL_TEXTURE_2D, (GLint)lv, cfmt,
+                    rb_tex_image_dxt(GL_TEXTURE_2D, (GLint)lv, cfmt,
                                            (GLsizei)w, (GLsizei)hh, 0,
                                            (GLsizei)sz, mem + off);
                     off += sz;
@@ -3919,7 +3899,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
                     w = w > 1 ? w >> 1 : 1;
                     hh = hh > 1 ? hh >> 1 : 1;
                 }
-                if (n && (!check || glGetError() == GL_NO_ERROR)) {
+                if (n && (!check || rb_no_error())) {
                     if (check) dxt_good++;
                     e->comp = 1;
                     e->nlev = (int)n;
@@ -3943,7 +3923,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
                         memset(px, 0xFF, (size_t)t->width * t->height * 4);
                     else if (!f && s_rstandin_any && rgba_standin_upload(t, px))
                         continue;           /* v310e: a bigger one went up */
-                    glTexImage2D(t->cube ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + f
+                    rb_tex_image(t->cube ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + f
                                          : GL_TEXTURE_2D,
                                  0, GL_RGBA8, (GLsizei)t->width,
                                  (GLsizei)t->height, 0, GL_BGRA,
@@ -3980,16 +3960,16 @@ uploaded:
         if (want < 0) want = 0;
         mips = mips && e->nlev > 1;
         if (e->p_maxlev != want) {
-            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, want);
+            rb_active_unit(bt_unit); rb_tex_param(target, GL_TEXTURE_MAX_LEVEL, want);
             e->p_maxlev = want;
         }
     } else {
         if (e->p_maxlev != 1000) {
-            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 1000);
+            rb_active_unit(bt_unit); rb_tex_param(target, GL_TEXTURE_MAX_LEVEL, 1000);
             e->p_maxlev = 1000;
         }
         if (mips && e->mips != 1) {
-            rb_active_unit(bt_unit); glGenerateMipmap(target);
+            rb_active_unit(bt_unit); rb_tex_mipmaps(target);
             e->mips = 1;
         }
     }
@@ -4002,11 +3982,11 @@ uploaded:
                               : (linear ? GL_LINEAR : GL_NEAREST);
         GLint ws = (GLint)gl_wrap(t->addr_u), wt = (GLint)gl_wrap(t->addr_v);
         if (e->p_mag != want_mag) {
-            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MAG_FILTER, want_mag);
+            rb_active_unit(bt_unit); rb_tex_param(target, GL_TEXTURE_MAG_FILTER, want_mag);
             e->p_mag = want_mag;
         }
         if (e->p_min != want_min) {
-            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_MIN_FILTER, want_min);
+            rb_active_unit(bt_unit); rb_tex_param(target, GL_TEXTURE_MIN_FILTER, want_min);
             e->p_min = want_min;
         }
         {
@@ -4026,8 +4006,7 @@ uploaded:
                      * ran on the executor, which has no context -- v187v's
                      * maximum read 1 and the setting never reached the
                      * driver (run 187w: read back as 0) */
-                    GLint mx = 0;
-                    glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &mx);
+                    GLint mx = rb_max_aniso();
                     if (mx >= 2 && aniso > mx) aniso = mx;
                     if (aniso > 16) aniso = 16;
                     fprintf(stderr, "[GL] anisotropic filtering %dx (RECOMP_GL_ANISO; driver"
@@ -4041,18 +4020,18 @@ uploaded:
             want_a = mips ? aniso : 1;
             if (aniso > 1 && e->p_aniso != want_a) {
                 rb_active_unit(bt_unit);
-                glTexParameteri(target, GL_TEXTURE_MAX_ANISOTROPY, want_a);
+                rb_tex_param(target, GL_TEXTURE_MAX_ANISOTROPY, want_a);
                 e->p_aniso = want_a;
             }
         }
         if (e->p_ws != ws) {
-            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_WRAP_S, ws);
+            rb_active_unit(bt_unit); rb_tex_param(target, GL_TEXTURE_WRAP_S, ws);
             e->p_ws = ws;
         }
         if (e->p_wt != wt) {
-            rb_active_unit(bt_unit); glTexParameteri(target, GL_TEXTURE_WRAP_T, wt);
+            rb_active_unit(bt_unit); rb_tex_param(target, GL_TEXTURE_WRAP_T, wt);
             if (t->cube)
-                glTexParameteri(target, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+                rb_tex_param(target, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
             e->p_wt = wt;
         }
     }
