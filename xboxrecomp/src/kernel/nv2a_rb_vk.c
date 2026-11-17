@@ -74,7 +74,7 @@
 #undef glBufferData
 #define glBufferData gv_BufferData
 #undef glBufferStorage
-#define glBufferStorage gvx_BufferStorage
+#define glBufferStorage vkx_BufferStorage
 #undef glBufferSubData
 #define glBufferSubData gv_BufferSubData
 #undef glCheckFramebufferStatus
@@ -632,9 +632,19 @@ static void API vkd_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum ty
 }
 
 
+/* persistent rings (v311g-vk8d): the core's buffers are host memory mapped
+ * for good, so immutable storage is a buffer like any other and the renderer
+ * writes its vertices and indices straight into it -- no copy through
+ * glBufferSubData, and no new buffer each time a ring comes round (each one
+ * a vkAllocateMemory: 2.4 ms on Windows, Miggas's vk8c profile) */
+static void vkx_BufferStorage(GLenum t, GLsizeiptr n, const void *d, GLbitfield fl)
+{
+    (void)fl;
+    gv_BufferData(t, n, d, GL_STREAM_DRAW);
+}
+
 /* not in the core: the paths that use them are off here (rb_caps) */
 static void gvx_BindVertexBuffers(GLuint f, GLsizei n, const GLuint *b, const GLintptr *o, const GLsizei *st) { (void)f; (void)n; (void)b; (void)o; (void)st; }
-static void gvx_BufferStorage(GLenum t, GLsizeiptr n, const void *d, GLbitfield fl) { (void)t; (void)n; (void)d; (void)fl; }
 static void gvx_GetProgramBinary(GLuint p, GLsizei n, GLsizei *len, GLenum *fmt, void *b) { (void)p; (void)n; (void)fmt; (void)b; if (len) *len = 0; }
 static void gvx_ProgramBinary(GLuint p, GLenum fmt, const void *b, GLsizei n) { (void)p; (void)fmt; (void)b; (void)n; }
 static void gvx_VertexAttribBinding(GLuint a, GLuint b) { (void)a; (void)b; }
@@ -2165,7 +2175,7 @@ int rb_init(void)
     v = 0; gv_GetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &v);          s_rb_caps.max_target = v;
     v = 0; gv_GetIntegerv(GL_MAX_SAMPLES, &v);                    s_rb_caps.max_samples = v;
     v = 0; gv_GetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &v);  s_rb_caps.vs_uniform_comps = v;
-    s_rb_caps.persistent_buffers = 0;
+    s_rb_caps.persistent_buffers = 1;     /* vk8d: the core maps its buffers for good */
     s_rb_caps.dxt = G.bc_ok;
     s_rb_caps.aniso = G.max_aniso > 1.0f;
     s_rb_caps.attrib_binding = 0;
