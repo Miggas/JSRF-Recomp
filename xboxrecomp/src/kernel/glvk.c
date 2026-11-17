@@ -1934,6 +1934,7 @@ static uint32_t attr_bytes(const GAttr *a)
 typedef struct {
     VkFormat vf[NATTR];
     uint32_t vstride[NATTR];
+    uint32_t vrel[NATTR];           /* the attribute's offset in its vertex */
     VkFormat cf, df;
     int samples;
     int blend;
@@ -1992,7 +1993,7 @@ static VkPipeline pipe_make(GProg *g, const PKey *k)
         va[n].location = i;
         va[n].binding = i;
         va[n].format = k->vf[i];
-        va[n].offset = 0;
+        va[n].offset = k->vrel[i];
         n++;
     }
     vi.vertexBindingDescriptionCount = n;
@@ -2115,10 +2116,18 @@ static int draw_setup(void)
             if (!(g->inputs & (1u << i))) continue;
             if (v->a[i].enabled && buf_of(v->a[i].buf)) {
                 GBuf *b = buf_of(v->a[i].buf);
+                VkDeviceSize off = (VkDeviceSize)v->a[i].off;
                 k.vf[i] = attr_format(&v->a[i]);
                 k.vstride[i] = v->a[i].stride ? (uint32_t)v->a[i].stride : attr_bytes(&v->a[i]);
+                /* bound at the start of a vertex, the attribute's place in
+                 * it in the pipeline: drivers (AMD's) count the vertices a
+                 * binding holds from its offset, and an offset inside the
+                 * vertex loses the buffer's last one */
+                k.vrel[i] = (uint32_t)(off % k.vstride[i]);
+                if (k.vrel[i] > G.c.props.limits.maxVertexInputAttributeOffset)
+                    k.vrel[i] = 0;
                 vbufs[i] = b->b;
-                voffs[i] = (VkDeviceSize)v->a[i].off;
+                voffs[i] = off - k.vrel[i];
             } else {
                 memcpy(r->map + co, S.generic[i], 16);
                 k.vf[i] = VK_FORMAT_R32G32B32A32_SFLOAT;
