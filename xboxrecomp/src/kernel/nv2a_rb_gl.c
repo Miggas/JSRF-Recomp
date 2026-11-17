@@ -28,6 +28,13 @@
 #include <sys/stat.h>
 #endif
 #include "nv2a_tm.h"             /* TM_NOW */
+#ifdef XBOXRECOMP_HAVE_VK
+#include "nv2a_vk.h"
+#include "glvk.h"                /* vulkan-test: this file's GL calls answered on Vulkan */
+#if !defined(_WIN32)
+#include <SDL_vulkan.h>
+#endif
+#endif
 
 /* the texture unit for binding a texture to work on it (uploads, parameters),
  * so the draw stages' bindings stay as they are */
@@ -1033,6 +1040,71 @@ static void rbg_row_fill(double k, GLint sw, GLint sh, int dx, int y0, int dw, i
 
 extern void *xbox_FramebufferWindowHwnd(void);
 extern void xbox_FramebufferWindowGLOwned(void);
+
+#ifdef XBOXRECOMP_HAVE_VK
+/* vulkan-test, step 5: RECOMP_RENDERER=vulkan -- no OpenGL driver; this
+ * file's GL calls are answered by glvk.c on Vulkan (rb_init). The frame goes
+ * into the window with the same blits as the OpenGL paths below, into the
+ * default framebuffer (sized to the window), which glvk_swap hands to the
+ * Vulkan presenter. Windows: the game's own window (fb_present.c's HWND,
+ * which stops drawing with GDI); Linux: the SDL Vulkan window rb_init made. */
+static int s_rbg_vkr;                  /* GL calls answered by glvk.c */
+static int s_vkw_state;
+extern void xbox_FramebufferWindowAttach(void *sdl_window);   /* fb_present.c */
+extern void xbox_FramebufferWindowPump(void);
+static int rbg_vk_window_present(const RbFrame *f)
+{
+    int cw = 0, ch = 0, dw, dh, dx, dy;
+    void *win;
+    GLuint fx;
+#if defined(_WIN32)
+    RECT cr;
+    win = xbox_FramebufferWindowHwnd();
+    if (!win || !GetClientRect((HWND)win, &cr))
+        return 0;
+    cw = cr.right - cr.left; ch = cr.bottom - cr.top;
+    if (!s_vkw_state) {
+        s_vkw_state = 1;
+        xbox_FramebufferWindowGLOwned();
+        fprintf(stderr, "[VK] frames drawn into the game window\n");
+    }
+#else
+    win = s_rb_win;
+    if (!win)
+        return 0;
+    if (!s_vkw_state) {
+        s_vkw_state = 1;
+        xbox_FramebufferWindowAttach(s_rb_win);
+        xbox_FramebufferWindowGLOwned();
+        fprintf(stderr, "[VK] frames drawn into the game window (SDL)\n");
+    }
+    xbox_FramebufferWindowPump();
+    SDL_Vulkan_GetDrawableSize(s_rb_win, &cw, &ch);
+#endif
+    if (cw <= 0 || ch <= 0)
+        return 1;                           /* minimised: nothing to show */
+    xbox_PresentFit(cw, ch, &dw, &dh);
+    dx = (cw - dw) / 2; dy = (ch - dh) / 2;
+    glvk_default_size(cw, ch);
+    fx = rb_present_aa(f->tex, f->resolve ? f->resolve : f->fbo, f->w, f->h);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : f->resolve ? f->resolve : f->fbo);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glViewport(0, 0, cw, ch);
+    rbg_bar_color(f->w, f->h);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glBlitFramebuffer(0, 0, f->w, f->h, dx, dy, dx + dw, dy + dh,
+                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    rbg_row_fill(f->rowk, f->w, f->h, dx, dy, dw, dy + dh);
+    if (s_rb_overlay) s_rb_overlay(cw, ch, 0);
+    glvk_swap(win);
+    glEnable(GL_SCISSOR_TEST);
+    rb_bindings_lost();
+    rb_fixed_lost();
+    return 1;
+}
+#endif
 #if defined(_WIN32)
 typedef BOOL  (WINAPI *wgl_make_t)(HDC, HGLRC);
 typedef HGLRC (WINAPI *wgl_getctx_t)(void);
@@ -1655,6 +1727,10 @@ static void gw_present_sync(void *arg)
 }
 int rb_window_present(const RbFrame *fr)
 {
+#ifdef XBOXRECOMP_HAVE_VK
+    if (s_rbg_vkr)
+        return rbg_vk_window_present(fr);
+#endif
     if (s_gt_on && t_gt_mode == 1) {
         if (s_gw.state == 1) {
             GwFrame f;
@@ -1726,6 +1802,10 @@ static void gw_present_sdl(void *arg)
 int rb_window_present(const RbFrame *fr)
 {
     GwFrame f;
+#ifdef XBOXRECOMP_HAVE_VK
+    if (s_rbg_vkr)
+        return rbg_vk_window_present(fr);
+#endif
     if (!s_rb_win)
         return 0;
     if (!s_sdlw_state) {
@@ -2140,6 +2220,39 @@ int rb_init(void)
                 SDL_GetError());
         return 0;
     }
+#ifdef XBOXRECOMP_HAVE_VK
+    if (nv2a_vk_renderer()) {
+        /* vulkan-test, step 5: no OpenGL driver; the GL calls are answered
+         * by glvk.c on Vulkan. The window: on Windows the game's own
+         * (fb_present.c's HWND), on Linux an SDL Vulkan window made here. */
+        void *vwin = NULL;
+        const char *sw = getenv("RECOMP_VK_SOFTWARE");
+#if !defined(_WIN32)
+        s_rb_win = SDL_CreateWindow("Jet Set Radio Future", SDL_WINDOWPOS_CENTERED,
+                                    SDL_WINDOWPOS_CENTERED, 640, 480,
+                                    SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+        vwin = s_rb_win;
+#endif
+        if (!(sw && sw[0] == '1') && glvk_init(vwin)
+                && gladLoadGL((GLADloadfunc)glvk_proc)) {
+            s_rbg_vkr = 1;
+        } else {
+            /* step 4: the software rasteriser, shown through Vulkan */
+            extern int (*xbox_fb_vk_frame)(void *, const uint32_t *, uint32_t, uint32_t,
+                                           int, int, int, int, int, int);
+#if !defined(_WIN32)
+            if (s_rb_win) { SDL_DestroyWindow(s_rb_win); s_rb_win = NULL; }
+#endif
+            xbox_fb_vk_frame = nv2a_vk_present_frame;
+            fprintf(stderr, "[VK] RECOMP_RENDERER=vulkan: %s; the software rasteriser draws"
+                    " the frames, shown through Vulkan (slow)\n",
+                    sw && sw[0] == '1' ? "RECOMP_VK_SOFTWARE=1"
+                                       : "the Vulkan renderer can't run here (above)");
+            return 0;
+        }
+    }
+    if (!s_rbg_vkr) {
+#endif
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
@@ -2166,6 +2279,9 @@ int rb_init(void)
         fprintf(stderr, "[GL] could not load GL functions -- software renderer\n");
         return 0;
     }
+#ifdef XBOXRECOMP_HAVE_VK
+    }
+#endif
     s_rb_caps.version  = (const char *)glGetString(GL_VERSION);
     s_rb_caps.renderer = (const char *)glGetString(GL_RENDERER);
     s_rb_caps.vendor   = (const char *)glGetString(GL_VENDOR);
@@ -2195,7 +2311,14 @@ void rb_init_state(int clip_planes)
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
 }
 
-void rb_thread_start(void) { gt_start(s_rb_win, s_rb_ctx); }
+void rb_thread_start(void)
+{
+#ifdef XBOXRECOMP_HAVE_VK
+    if (s_rbg_vkr)
+        return;                        /* glvk: on this thread */
+#endif
+    gt_start(s_rb_win, s_rb_ctx);
+}
 void rb_pump(void) { if (s_rb_win) SDL_PumpEvents(); }
 void rb_tex_bind_raw(uint32_t target, uint32_t id) { glBindTexture(target, id); }
 void rb_errors_drain(void) { while (glGetError() != GL_NO_ERROR) {} }

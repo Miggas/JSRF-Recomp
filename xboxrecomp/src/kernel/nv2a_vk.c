@@ -18,6 +18,7 @@
  * kept for the port. RECOMP_VK_VALIDATE=1 turns on the validation layer when
  * it is installed. */
 #include "nv2a_vk.h"
+#include "nv2a_vk_core.h"
 
 #include <volk.h>
 #include <glslang/Include/glslang_c_interface.h>
@@ -77,6 +78,8 @@ static const char *const k_fs =
 
 typedef struct { uint32_t *code; size_t words; } Spirv;
 
+static char s_glsl_err[4096];        /* the last compile or link log */
+
 static glslang_shader_t *gl_shader(glslang_stage_t stage, const char *src, glslang_input_t *in)
 {
     glslang_shader_t *sh;
@@ -100,6 +103,9 @@ static glslang_shader_t *gl_shader(glslang_stage_t stage, const char *src, glsla
                                | GLSLANG_SHADER_VULKAN_RULES_RELAXED);
     glslang_shader_set_default_uniform_block_set_and_binding(sh, 0, 0);
     if (!glslang_shader_preprocess(sh, in) || !glslang_shader_parse(sh, in)) {
+        snprintf(s_glsl_err, sizeof s_glsl_err, "%s shader: %s",
+                 stage == GLSLANG_STAGE_VERTEX ? "vertex" : "fragment",
+                 glslang_shader_get_info_log(sh));
         VK_LOG("GLSL (%s) did not compile:\n%.1500s\n",
                stage == GLSLANG_STAGE_VERTEX ? "vertex" : "fragment",
                glslang_shader_get_info_log(sh));
@@ -137,8 +143,10 @@ static int glsl_to_spirv(const char *vs, const char *fs, Spirv *v, Spirv *f)
     pg = glslang_program_create();
     glslang_program_add_shader(pg, sv);
     glslang_program_add_shader(pg, sf);
-    if (!glslang_program_link(pg, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT))
+    if (!glslang_program_link(pg, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT)) {
+        snprintf(s_glsl_err, sizeof s_glsl_err, "link: %s", glslang_program_get_info_log(pg));
         VK_LOG("GLSL did not link:\n%.1500s\n", glslang_program_get_info_log(pg));
+    }
     else if (!glslang_program_map_io(pg))
         VK_LOG("GLSL inputs/outputs could not be mapped:\n%.1500s\n", glslang_program_get_info_log(pg));
     else
@@ -940,6 +948,41 @@ static void spv_save(const char *vs, const char *fs, const Spirv *v, const Spirv
         remove(tmp);
 }
 
+int nv2a_vk_spirv(const char *vs, const char *fs, uint32_t **vw, size_t *vn,
+                  uint32_t **fw, size_t *fn, int *cached, char **err)
+{
+    static int up;
+    Spirv v, f;
+    if (err) *err = NULL;
+    *cached = 0;
+    if (spv_load(vs, fs, &v, &f)) {
+        *cached = 1;
+    } else {
+        if (!up) {
+#if defined(_WIN32)
+            CreateDirectoryA("shader_cache", NULL);
+            CreateDirectoryA("shader_cache\\spirv", NULL);
+#else
+            mkdir("shader_cache", 0755);
+            mkdir("shader_cache/spirv", 0755);
+#endif
+            glslang_initialize_process();
+            up = 1;
+        }
+        s_glsl_err[0] = 0;
+        if (!glsl_to_spirv(vs, fs, &v, &f)) {
+            free(v.code);
+            free(f.code);
+            if (err) *err = strdup(s_glsl_err[0] ? s_glsl_err : "SPIR-V generation failed");
+            return 0;
+        }
+        spv_save(vs, fs, &v, &f);
+    }
+    *vw = v.code; *vn = v.words;
+    *fw = f.code; *fn = f.words;
+    return 1;
+}
+
 /* one program: GLSL -> SPIR-V, then the pipeline, as the renderer will
  * build it (16 vec4 inputs, colour and depth-stencil, blending and depth
  * on, the rest dynamic) */
@@ -1241,8 +1284,17 @@ static int vp_mem_type(uint32_t bits, VkMemoryPropertyFlags want)
     return -1;
 }
 
-/* the instance, the window's surface, a device that can present to it */
-static int vp_device(void *win)
+/* The instance and the device, shared by the presenter and (step 5) the
+ * renderer (glvk.c). Asks for Vulkan 1.3 and what the renderer uses
+ * (dynamic rendering, push descriptors, clip distances, depth clamp, BC
+ * textures, anisotropy); a device without them still presents, and the
+ * renderer then stays off (vp_core_full). win: the HWND (Windows) or the
+ * SDL Vulkan window (Linux, whose instance extensions SDL names). */
+static int s_core_state;             /* 0 not tried, 1 up, -1 failed */
+static int s_core_full;              /* the renderer's needs are all there */
+static VkPhysicalDeviceProperties s_core_props;
+
+static int vp_core(void *win)
 {
     VkPresenter *p = &s_vp;
     VkApplicationInfo app = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
@@ -1255,6 +1307,9 @@ static int vp_device(void *win)
     const char *val = getenv("RECOMP_VK_VALIDATE");
     static int volk_up;
 
+    if (s_core_state)
+        return s_core_state > 0;
+    s_core_state = -1;
     if (!volk_up) {
         if (volkInitialize() != VK_SUCCESS) {
             VK_LOG("no Vulkan loader (vulkan-1.dll / libvulkan.so.1): Vulkan can't be"
@@ -1264,12 +1319,13 @@ static int vp_device(void *win)
         volk_up = 1;
     }
 #if defined(_WIN32)
+    (void)win;
     iext[niext++] = VK_KHR_SURFACE_EXTENSION_NAME;
     iext[niext++] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
 #else
     {
         unsigned int ne = 0;
-        if (!SDL_Vulkan_GetInstanceExtensions((SDL_Window *)win, &ne, NULL) || ne > 8
+        if (!win || !SDL_Vulkan_GetInstanceExtensions((SDL_Window *)win, &ne, NULL) || ne > 8
                 || !SDL_Vulkan_GetInstanceExtensions((SDL_Window *)win, &ne, iext)) {
             VK_LOG("the window can't take a Vulkan surface: %s\n", SDL_GetError());
             return 0;
@@ -1278,7 +1334,7 @@ static int vp_device(void *win)
     }
 #endif
     app.pApplicationName = "Jet Set Radio Future";
-    app.apiVersion = VK_API_VERSION_1_1;
+    app.apiVersion = VK_API_VERSION_1_3;
     ici.pApplicationInfo = &app;
     ici.enabledExtensionCount = niext;
     ici.ppEnabledExtensionNames = iext;
@@ -1297,29 +1353,12 @@ static int vp_device(void *win)
         return 0;
     }
     volkLoadInstance(p->inst);
-#if defined(_WIN32)
-    {
-        VkWin32SurfaceCreateInfoKHR si = { VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR };
-        si.hinstance = GetModuleHandleA(NULL);
-        si.hwnd = (HWND)win;
-        if (vkCreateWin32SurfaceKHR(p->inst, &si, NULL, &p->surf) != VK_SUCCESS) {
-            VK_LOG("no Vulkan surface for the window\n");
-            return 0;
-        }
-    }
-#else
-    if (!SDL_Vulkan_CreateSurface((SDL_Window *)win, p->inst, &p->surf)) {
-        VK_LOG("no Vulkan surface for the window: %s\n", SDL_GetError());
-        return 0;
-    }
-#endif
     n = 16;
     if (vkEnumeratePhysicalDevices(p->inst, &n, pds) < 0 || !n) {
         VK_LOG("no Vulkan device\n");
         return 0;
     }
-    /* a discrete card first, then an integrated one, then anything; it has
-     * to have a queue that draws and presents to this window */
+    /* Vulkan 1.3 first, then a discrete card, then an integrated one */
     for (i = 0; i < n; i++) {
         VkPhysicalDeviceProperties pp;
         VkQueueFamilyProperties qf[16];
@@ -1328,49 +1367,89 @@ static int vp_device(void *win)
         vkGetPhysicalDeviceProperties(pds[i], &pp);
         rank = pp.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? 3
              : pp.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 2 : 1;
+        if (VK_API_VERSION_MINOR(pp.apiVersion) >= 3 || VK_API_VERSION_MAJOR(pp.apiVersion) > 1)
+            rank += 4;
         vkGetPhysicalDeviceQueueFamilyProperties(pds[i], &nq, qf);
         for (k = 0; k < nq; k++) {
-            VkBool32 ok = VK_FALSE;
             if (!(qf[k].queueFlags & VK_QUEUE_GRAPHICS_BIT))
-                continue;
-            if (vkGetPhysicalDeviceSurfaceSupportKHR(pds[i], k, p->surf, &ok) != VK_SUCCESS
-                    || !ok)
                 continue;
             if (rank > best_rank) { best_rank = rank; best = i; best_q = k; }
             break;
         }
     }
     if (best == (uint32_t)-1) {
-        VK_LOG("no Vulkan device can present to the window\n");
+        VK_LOG("no Vulkan device with a graphics queue\n");
         return 0;
     }
     p->pd = pds[best];
     p->qfam = best_q;
-    {
-        VkPhysicalDeviceProperties pp;
-        vkGetPhysicalDeviceProperties(p->pd, &pp);
-        VK_LOG("presenting with %s (%s), Vulkan %u.%u.%u\n", pp.deviceName,
-               vendor_name(pp.vendorID), VK_API_VERSION_MAJOR(pp.apiVersion),
-               VK_API_VERSION_MINOR(pp.apiVersion), VK_API_VERSION_PATCH(pp.apiVersion));
-    }
+    vkGetPhysicalDeviceProperties(p->pd, &s_core_props);
+    VK_LOG("device: %s (%s), Vulkan %u.%u.%u\n", s_core_props.deviceName,
+           vendor_name(s_core_props.vendorID), VK_API_VERSION_MAJOR(s_core_props.apiVersion),
+           VK_API_VERSION_MINOR(s_core_props.apiVersion),
+           VK_API_VERSION_PATCH(s_core_props.apiVersion));
     {
         float prio = 1.0f;
-        const char *dext = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        const char *dext[4];
+        uint32_t nd = 0;
         VkDeviceQueueCreateInfo qi = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
         VkDeviceCreateInfo dci = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
         VkCommandPoolCreateInfo cpi = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
         VkCommandBufferAllocateInfo cai = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
         VkFenceCreateInfo fci = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
         VkSemaphoreCreateInfo sci = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        VkPhysicalDeviceFeatures have, want;
+        VkPhysicalDeviceVulkan13Features f13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        VkPhysicalDeviceFeatures2 f2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        VkExtensionProperties ep[512];
+        uint32_t ne = 512;
+        int v13 = VK_API_VERSION_MINOR(s_core_props.apiVersion) >= 3
+                  || VK_API_VERSION_MAJOR(s_core_props.apiVersion) > 1;
+        int push = 0;
+        dext[nd++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        if (vkEnumerateDeviceExtensionProperties(p->pd, NULL, &ne, ep) >= 0)
+            for (k = 0; k < ne; k++)
+                if (!strcmp(ep[k].extensionName, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME))
+                    push = 1;
+        if (push)
+            dext[nd++] = VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME;
+        vkGetPhysicalDeviceFeatures(p->pd, &have);
+        memset(&want, 0, sizeof want);
+        want.shaderClipDistance = have.shaderClipDistance;
+        want.depthClamp = have.depthClamp;
+        want.samplerAnisotropy = have.samplerAnisotropy;
+        want.textureCompressionBC = have.textureCompressionBC;
+        want.independentBlend = have.independentBlend;
+        if (v13) {
+            VkPhysicalDeviceVulkan13Features h13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+            VkPhysicalDeviceFeatures2 h2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+            h2.pNext = &h13;
+            vkGetPhysicalDeviceFeatures2(p->pd, &h2);
+            f13.dynamicRendering = h13.dynamicRendering;
+            f13.synchronization2 = h13.synchronization2;
+            f2.features = want;
+            f2.pNext = &f13;
+            dci.pNext = &f2;
+        } else {
+            dci.pEnabledFeatures = &want;
+        }
+        s_core_full = v13 && f13.dynamicRendering && push && have.shaderClipDistance
+                      && have.depthClamp;
+        if (!s_core_full)
+            VK_LOG("this device lacks what the Vulkan renderer needs (Vulkan 1.3 with dynamic"
+                   " rendering, push descriptors, clip distances, depth clamp): %s%s%s%s%s\n",
+                   v13 ? "" : "no 1.3 ", v13 && !f13.dynamicRendering ? "no dynamic rendering " : "",
+                   push ? "" : "no push descriptors ", have.shaderClipDistance ? "" : "no clip distances ",
+                   have.depthClamp ? "" : "no depth clamp");
         qi.queueFamilyIndex = p->qfam;
         qi.queueCount = 1;
         qi.pQueuePriorities = &prio;
         dci.queueCreateInfoCount = 1;
         dci.pQueueCreateInfos = &qi;
-        dci.enabledExtensionCount = 1;
-        dci.ppEnabledExtensionNames = &dext;
+        dci.enabledExtensionCount = nd;
+        dci.ppEnabledExtensionNames = dext;
         if (vkCreateDevice(p->pd, &dci, NULL, &p->dev) != VK_SUCCESS) {
-            VK_LOG("the device could not be opened for presenting\n");
+            VK_LOG("the device could not be opened\n");
             return 0;
         }
         volkLoadDevice(p->dev);
@@ -1390,6 +1469,51 @@ static int vp_device(void *win)
                     || vkCreateSemaphore(p->dev, &sci, NULL, &p->acq[i]) != VK_SUCCESS)
                 return 0;
     }
+    s_core_state = 1;
+    return 1;
+}
+
+int nv2a_vk_core(void *win, NvVkCore *c)
+{
+    if (!vp_core(win) || !s_core_full)
+        return 0;
+    c->inst = s_vp.inst;
+    c->pd = s_vp.pd;
+    c->dev = s_vp.dev;
+    c->q = s_vp.q;
+    c->qfam = s_vp.qfam;
+    c->props = s_core_props;
+    return 1;
+}
+
+/* the window's surface, once; the queue has to present to it */
+static int vp_surface(void *win)
+{
+    VkPresenter *p = &s_vp;
+    VkBool32 ok = VK_FALSE;
+    if (p->surf)
+        return 1;
+#if defined(_WIN32)
+    {
+        VkWin32SurfaceCreateInfoKHR si = { VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR };
+        si.hinstance = GetModuleHandleA(NULL);
+        si.hwnd = (HWND)win;
+        if (vkCreateWin32SurfaceKHR(p->inst, &si, NULL, &p->surf) != VK_SUCCESS) {
+            VK_LOG("no Vulkan surface for the window\n");
+            return 0;
+        }
+    }
+#else
+    if (!SDL_Vulkan_CreateSurface((SDL_Window *)win, p->inst, &p->surf)) {
+        VK_LOG("no Vulkan surface for the window: %s\n", SDL_GetError());
+        return 0;
+    }
+#endif
+    if (vkGetPhysicalDeviceSurfaceSupportKHR(p->pd, p->qfam, p->surf, &ok) != VK_SUCCESS || !ok) {
+        VK_LOG("the device's graphics queue can't present to the window\n");
+        return 0;
+    }
+    VK_LOG("presenting with %s\n", s_core_props.deviceName);
     return 1;
 }
 
@@ -1635,8 +1759,8 @@ static void vp_barrier(VkCommandBuffer c, VkImage img, VkImageLayout from, VkIma
     vkCmdPipelineBarrier(c, ss, ds, 0, 0, NULL, 0, NULL, 1, &b);
 }
 
-int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
-                          int cw, int ch, int dx, int dy, int dw, int dh)
+static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w, uint32_t h,
+                      int cw, int ch, int dx, int dy, int dw, int dh)
 {
     VkPresenter *p = &s_vp;
     uint32_t f, img = 0;
@@ -1648,11 +1772,11 @@ int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
         return 0;
     if (p->state == 0) {
         p->state = -1;
-        if (!vp_device(win))
+        if (!vp_core(win) || !vp_surface(win))
             return 0;
         p->state = 1;
     }
-    if (!px || !w || !h)
+    if (!src_img && (!px || !w || !h))
         return 1;
     for (tries = 0; tries < 2; tries++) {
         if (!p->sc || p->stale || p->req_w != cw || p->req_h != ch) {
@@ -1688,12 +1812,13 @@ int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
         dy = (int)(dy * ky); dh = (int)(dh * ky);
         cw = (int)p->ext.width; ch = (int)p->ext.height;
     }
-    if (!vp_src(w, h) || !vp_staging(f, (VkDeviceSize)w * h * 4)) {
+    if (!src_img && (!vp_src(w, h) || !vp_staging(f, (VkDeviceSize)w * h * 4))) {
         p->state = -1;
         return 0;
     }
     vkResetFences(p->dev, 1, &p->fence[f]);
-    memcpy(p->stg_map[f], px, (size_t)w * h * 4);
+    if (!src_img)
+        memcpy(p->stg_map[f], px, (size_t)w * h * 4);
 
     c = p->cmd[f];
     vkResetCommandBuffer(c, 0);
@@ -1705,6 +1830,15 @@ int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
         VkImageBlit bl;
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(c, &bi);
+        if (src_img) {
+            /* step 5: the renderer's image, drawn by commands submitted
+             * before this on the same queue (layout GENERAL, rows bottom-up) */
+            VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+            mb.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+            mb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+        } else {
         /* the frame into its image (the last frame's blit read it: wait) */
         vp_barrier(c, p->src, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -1720,6 +1854,7 @@ int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                    VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        }
         /* the window: black, then the picture fitted into it */
         vp_barrier(c, p->img[img], VK_IMAGE_LAYOUT_UNDEFINED,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -1745,13 +1880,18 @@ int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
             bl.srcOffsets[1].x = (int32_t)w;
             bl.srcOffsets[1].y = (int32_t)h;
             bl.srcOffsets[1].z = 1;
+            if (src_img) {                   /* rows bottom-up: flipped */
+                bl.srcOffsets[0].y = (int32_t)h;
+                bl.srcOffsets[1].y = 0;
+            }
             bl.dstSubresource = bl.srcSubresource;
             bl.dstOffsets[0].x = dx;
             bl.dstOffsets[0].y = dy;
             bl.dstOffsets[1].x = dx + dw;
             bl.dstOffsets[1].y = dy + dh;
             bl.dstOffsets[1].z = 1;
-            vkCmdBlitImage(c, p->src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            vkCmdBlitImage(c, src_img ? src_img : p->src,
+                           src_img ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                            p->img[img], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl,
                            (uint32_t)dw == w && (uint32_t)dh == h ? VK_FILTER_NEAREST
                                                                   : VK_FILTER_LINEAR);
@@ -1796,6 +1936,17 @@ int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
         VK_LOG("first frame shown (%ux%u into %dx%d of a %dx%d window)\n",
                w, h, dw, dh, cw, ch);
     return 1;
+}
+
+int nv2a_vk_present_frame(void *win, const uint32_t *px, uint32_t w, uint32_t h,
+                          int cw, int ch, int dx, int dy, int dw, int dh)
+{
+    return vp_present(win, px, VK_NULL_HANDLE, w, h, cw, ch, dx, dy, dw, dh);
+}
+
+int nv2a_vk_present_image(void *win, VkImage img, uint32_t w, uint32_t h)
+{
+    return vp_present(win, NULL, img, w, h, (int)w, (int)h, 0, 0, (int)w, (int)h);
 }
 
 int nv2a_vk_renderer(void)
