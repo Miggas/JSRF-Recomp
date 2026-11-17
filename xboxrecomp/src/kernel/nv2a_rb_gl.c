@@ -1,9 +1,33 @@
-/* nv2a_rb_gl.c: the OpenGL backend (nv2a_rb.h).
- *
- * While step 1 of the backends plan moves the GL code here piece by piece,
- * this file is compiled as part of nv2a_gl.c (included after the GL thread's
- * headers, so its calls go through the GL thread like the rest); when every
- * GL call is here, it becomes a file of its own and nv2a_gl.c has none. */
+/* nv2a_rb_gl.c: the OpenGL backend (nv2a_rb.h): every OpenGL call the
+ * renderer (nv2a_render.c) needs, made here -- through the GL thread when that
+ * is on (nv2a_gl_thread*.h, generated from this file by gen_glthread.py). */
+#include "nv2a_gl.h"
+#include "nv2a_rb.h"
+
+#define SDL_MAIN_HANDLED
+#include <SDL.h>
+#include <glad/gl.h>
+#include "nv2a_gl_thread_rt.h"   /* v172: the GL thread (and the GL call counts of v169) */
+#include "nv2a_gl_thread.h"      /* generated: tools/gen_glthread.py */
+#include "nv2a_gl_thread_rt2.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+#include <math.h>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#define COBJMACROS
+#include <d3d11.h>
+#include <dxgi1_5.h>
+#else
+#include <sys/stat.h>
+#endif
+#include "nv2a_tm.h"             /* TM_NOW */
 
 /* the texture unit for binding a texture to work on it (uploads, parameters),
  * so the draw stages' bindings stay as they are */
@@ -79,7 +103,7 @@ void rb_fixed(const RbFixed *f)
 }
 #undef RBF_CH
 
-/* ── programs (moved from nv2a_gl.c: compile, the program-binary cache, link) ── */
+/* ── programs (moved from the renderer: compile, the program-binary cache, link) ── */
 
 static const char *(*s_rb_defs)(void);
 static int (*s_rb_salt)(const char **out, int max);
@@ -345,7 +369,7 @@ void rb_u3fv(int l, int n, const float *v) { glUniform3fv(l, n, v); }
 void rb_u4fv(int l, int n, const float *v) { glUniform4fv(l, n, v); }
 void rb_umat4(int l, int n, int transpose, const float *v) { glUniformMatrix4fv(l, n, transpose ? GL_TRUE : GL_FALSE, v); }
 
-/* ── bindings: what GL has bound, cached (moved from nv2a_gl.c) ──────────── */
+/* ── bindings: what GL has bound, cached (moved from the renderer) ──────────── */
 
 static GLuint s_bound_ab = (GLuint)-1;
 void rb_bind_vbuf(uint32_t b)
@@ -439,7 +463,7 @@ void rb_bindings_lost(void)
     s_bound_vp[0] = s_bound_vp[1] = -1;
     s_bound_sc[0] = s_bound_sc[1] = s_bound_sc[2] = s_bound_sc[3] = -1;
 }
-/* ── anti-aliasing and the MSAA upscale (moved whole from nv2a_gl.c) ─────── */
+/* ── anti-aliasing and the MSAA upscale (moved whole from the renderer) ─────── */
 
 /* MSAA: draw a single-sampled image into a multisample framebuffer (ms_up_run) */
 typedef struct { GLuint src_tex, dst_fbo; int w, h; } MsUpArgs;
@@ -555,7 +579,7 @@ static const char *SMAA_NB_FS =
 "  o_col = SMAANeighborhoodBlendingPS(v_uv, v_off, u_color, u_blend);\n"
 "}\n";
 
-static GLuint compile(GLenum type, const char *src);
+static GLuint compile(GLenum type, const char *src) { return rb_shader_compile(type == GL_VERTEX_SHADER, src); }
 static struct {
     int state;                 /* 0 not tried, 1 ready, -1 off or failed */
     int mode;                  /* 1 fxaa, 2..5 smaa low..ultra */
@@ -786,7 +810,7 @@ uint32_t rb_present_aa(uint32_t src, uint32_t src_fbo, int w, int h)
         /* the frame, upside down (row 0 at the top); v277: with MSAA from the
          * resolved copy (the caller resolved it), as a flipping copy out of
          * a multisampled framebuffer is not allowed */
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_msaa > 1 ? s_resolve_fbo : src_fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fx.f_col);
         glBlitFramebuffer(0, 0, w, h, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -965,7 +989,7 @@ void rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h)
     gt_call_sync(ms_up_run, &a);
 }
 
-/* ── the window: presenting (moved from nv2a_gl.c) ──────────────────────────
+/* ── the window: presenting (moved from the renderer) ──────────────────────────
  * WGL (the game window's DC), DXGI flip model (RECOMP_GL_PRESENT=dxgi) and
  * SDL (Linux); on the GL thread when that is on; the GPU timing of frames. */
 
@@ -1387,7 +1411,7 @@ static int dxp_present(const RbFrame *f, HWND hwnd, int cw, int ch, int dx, int 
     if (!s_dx.lock(s_dx.hdev, 1, &s_dx.hobj))
         return 1;
     {
-        GLuint fx = rb_present_aa(f->tex, f->fbo, f->w, f->h);   /* v238 */
+        GLuint fx = rb_present_aa(f->tex, f->resolve ? f->resolve : f->fbo, f->w, f->h);   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dx.fbo);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
                          : f->resolve ? f->resolve : f->fbo);
@@ -1548,7 +1572,7 @@ static int gl_window_present_impl(const RbFrame *f)
         return 0;
     }
     {
-        GLuint fx = rb_present_aa(f->tex, f->fbo, f->w, f->h);   /* v238 */
+        GLuint fx = rb_present_aa(f->tex, f->resolve ? f->resolve : f->fbo, f->w, f->h);   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
                          : f->resolve ? f->resolve : f->fbo);
@@ -1598,7 +1622,7 @@ static void gw_present_gl(void *arg)
         return;
     }
     {
-        GLuint fx = rb_present_aa(f->tex, f->fbo, f->w, f->h);   /* v238 */
+        GLuint fx = rb_present_aa(f->tex, f->resolve ? f->resolve : f->fbo, f->w, f->h);   /* v238 */
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx
                          : f->resolve ? f->resolve : f->fbo);
@@ -1672,7 +1696,7 @@ static void gw_present_sdl(void *arg)
     xbox_PresentFit(cw, ch, &dw, &dh);
     dx = (cw - dw) / 2; dy = (ch - dh) / 2;
     {
-        GLuint fx = rb_present_aa(f->tex, f->fbo, f->w, f->h);
+        GLuint fx = rb_present_aa(f->tex, f->resolve ? f->resolve : f->fbo, f->w, f->h);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         /* the default framebuffer takes no multisample blit (driver raises
          * INVALID_OPERATION), so under MSAA read the resolve target */
@@ -2102,7 +2126,7 @@ int rb_read_depth(uint32_t fbo, int x, int y, float *z)
     return glGetError() == GL_NO_ERROR;
 }
 
-/* ── start-up (moved from nv2a_gl.c's init_gl) ─────────────────────────── */
+/* ── start-up (moved from the renderer's init_gl) ─────────────────────────── */
 
 static SDL_GLContext s_rb_ctx;
 static RbCaps s_rb_caps;
@@ -2323,4 +2347,74 @@ void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int fon
     glBindVertexArray((GLuint)va0);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)ab0);
     glUseProgram((GLuint)p0);
+}
+
+/* ── the GL thread and the call counts (v169 / v172) ──────────────────── */
+
+int  rb_threaded(void) { return s_gt_on; }
+void rb_frame_end(void) { gt_frame_end(); }
+void rb_gpu_frame_mark(void) { gq_frame_start(); }
+int  rb_shader_cache_on(void) { return shader_cache_on(); }
+void rb_shader_cache_path(char *b, size_t n, const char *vsrc, const char *fsrc) { cache_path(b, n, vsrc, fsrc); }
+
+/* v169: the GL calls made since the last report: per draw, and the ones
+ * made most (each is a driver call; under Proton a crossing into Wine's
+ * unix side, which the executor profile cannot see into) */
+int rb_call_stats(char *buf, size_t n, uint64_t draws, uint64_t layouts_new)
+{
+#ifndef NV2A_GL_NO_COUNT
+    static unsigned long long l_c[NV2A_GLC_N], l_d;
+    unsigned long long tot = 0, d = draws - l_d;
+    int top[8], nt = 0, i, j;
+    size_t k;
+    if (!buf || !n)
+        return 0;
+    for (i = 0; i < NV2A_GLC_N; i++) {
+        unsigned long long c = s_glc[i] - l_c[i];
+        tot += c;
+        for (j = nt; j > 0 && s_glc[top[j - 1]] - l_c[top[j - 1]] < c; j--)
+            if (j < 8) top[j] = top[j - 1];
+        if (j < 8) { top[j] = i; if (nt < 8) nt++; }
+    }
+    {
+        static uint64_t l_vm;
+        snprintf(buf, n, "%llu in all, %.1f a draw (%llu new vertex layouts); most:", tot,
+                 d ? (double)tot / (double)d : 0.0, (unsigned long long)(layouts_new - l_vm));
+        l_vm = layouts_new;
+    }
+    for (i = 0; i < nt; i++) {
+        unsigned long long c = s_glc[top[i]] - l_c[top[i]];
+        if (!c) break;
+        k = strlen(buf);
+        snprintf(buf + k, n - k, " %s %llu", s_glc_name[top[i]] + 2, c);
+    }
+    if (s_gt_on) {
+        /* v172: how often the executor had to wait for the GL thread */
+        static uint64_t l_sy, l_pw, l_cm;
+        k = strlen(buf);
+        snprintf(buf + k, n - k, "; GL thread: %llu queued, %llu waited for, %llu waits for room/frames/fences",
+                 (unsigned long long)(s_gt_n_cmds - l_cm), (unsigned long long)(s_gt_n_sync - l_sy),
+                 (unsigned long long)(s_gt_n_pwait - l_pw));
+        l_sy = s_gt_n_sync; l_pw = s_gt_n_pwait; l_cm = s_gt_n_cmds;
+        {
+            static uint64_t l_ls, l_ln;
+            uint64_t ln = s_gt_lat_n - l_ln;
+            double fq = 1000.0 / (double)SDL_GetPerformanceFrequency();
+            if (ln) {
+                k = strlen(buf);
+                snprintf(buf + k, n - k, "; frames shown %.2f ms after they were finished"
+                         " on average, %.2f ms at most", (double)(s_gt_lat_sum - l_ls) * fq / (double)ln,
+                         (double)s_gt_lat_max * fq);
+            }
+            l_ls = s_gt_lat_sum; l_ln = s_gt_lat_n;
+            s_gt_lat_max = 0;
+        }
+    }
+    memcpy(l_c, s_glc, sizeof l_c);
+    l_d = draws;
+    return 1;
+#else
+    (void)buf; (void)n; (void)draws; (void)layouts_new;
+    return 0;
+#endif
 }

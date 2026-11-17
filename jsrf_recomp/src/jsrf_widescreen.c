@@ -2,7 +2,7 @@
  * v187n: widescreen, game side -- the HUD at the screen edges, and the
  * screens built for 4:3 only. Adapted from Piaka's widescreen patch (his
  * addresses and the sprite-queue idea; his renderer half is not used, the
- * toolkit's nv2a_pb_exec.c / nv2a_gl.c squeeze does that part here).
+ * toolkit's nv2a_pb_exec.c / nv2a_render.c squeeze does that part here).
  * Nothing here does anything unless widescreen is on (RECOMP_WIDESCREEN /
  * RECOMP_ASPECT).
  *

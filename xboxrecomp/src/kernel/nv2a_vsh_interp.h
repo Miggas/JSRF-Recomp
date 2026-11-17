@@ -69,7 +69,7 @@ void nv2a_vsh_constant_component(uint32_t index, uint32_t comp, uint32_t word);
 void nv2a_vsh_set_instruction(uint32_t slot, const uint32_t words[4]);
 
 /* v77, for the GPU vertex shader: the decoded program packed four words an
- * instruction (layout in nv2a_gl.c's VS), its generation, the inputs it
+ * instruction (layout in nv2a_render.c's VS), its generation, the inputs it
  * reads, and the constant array with a generation that moves on any change. */
 int nv2a_vsh_gpu_program(uint32_t out[NV2A_VSH_SLOTS][4], uint32_t *gen);
 uint32_t nv2a_vsh_input_mask(void);

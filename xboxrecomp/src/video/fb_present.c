@@ -824,7 +824,7 @@ void xbox_FramebufferWindowStart(void)
 
 #else
 /* ── v244: Linux. The window is the GL context's own SDL window
- * (nv2a_gl.c shows it at the first frame and hands it over with
+ * (nv2a_render.c shows it at the first frame and hands it over with
  * xbox_FramebufferWindowAttach); this keeps its events, the keys the game
  * reads, full screen, the title and the free camera's mouse. Everything
  * runs on the executor thread, which made the window: the events are

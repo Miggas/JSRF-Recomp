@@ -1,5 +1,10 @@
 /**
- * NV2A rasterisation through OpenGL 3.3 core. See nv2a_gl.h.
+ * NV2A rasterisation on the host GPU: the renderer. See nv2a_gl.h.
+ *
+ * Renderer backends plan, step 1: this file (until then nv2a_gl.c) holds the
+ * renderer's logic and makes no GPU calls of its own; it talks to the GPU
+ * through nv2a_rb.h, answered by nv2a_rb_gl.c (OpenGL 3.3 core). It still
+ * names OpenGL's enums and types (glad/gl.h), which are the NV2A's own.
  *
  * Conventions:
  *  - Screen space is the NV2A's: x right, y down, pixel centres at +0.5.
@@ -22,10 +27,7 @@
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
-#include <glad/gl.h>
-#include "nv2a_gl_thread_rt.h"   /* v172: the GL thread (and the GL call counts of v169) */
-#include "nv2a_gl_thread.h"      /* generated: tools/gen_glthread.py */
-#include "nv2a_gl_thread_rt2.h"
+#include <glad/gl.h>              /* the enums and types only: no GL calls here */
 #include "nv2a_rb.h"
 
 #include <stdio.h>
@@ -37,11 +39,6 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#define COBJMACROS
-#include <d3d11.h>
-#include <dxgi1_5.h>
-#else
-#include <sys/stat.h>
 #endif
 
 /* ── context ──────────────────────────────────────────────────────────── */
@@ -55,39 +52,8 @@ static uint64_t s_n_draws, s_n_tris, s_n_uploads, s_n_readbacks, s_n_texup;
 static uint64_t s_n_gpucopy, s_n_present_reads, s_n_cpu_taken;
 static uint32_t s_frame = 1;
 static uint64_t s_tm[4];               /* see nv2a_gl_times */
-#if defined(_WIN32)
-/* v169: rdtsc-based, in the same units (SDL's counter is QueryPerformanceCounter
- * here, ~140 ns a read under Proton); see recomp_fastclock.h */
-#include "recomp_fastclock.h"
-#define TM_NOW() ((uint64_t)fast_qpc())
-#else
-/* v258: rdtsc on Linux too, in SDL's units. SDL's counter is clock_gettime,
- * read about ten times a draw for the [PERF] figures: 3% of the executor on
- * the Deck (Miggas's profile, 99th Street). As recomp_fastclock.h: the first
- * half second from SDL's counter, then the rate between the two is fixed and
- * rdtsc is used, from the same starting point. Durations only. */
-#include <x86intrin.h>
-static volatile double s_tmf_ratio;
-static uint64_t s_tmf_tsc0, s_tmf_q0;
-static uint64_t tm_now_slow(void)
-{
-    uint64_t t = __rdtsc(), q = SDL_GetPerformanceCounter();
-    if (!s_tmf_q0) { s_tmf_q0 = q; s_tmf_tsc0 = t; }
-    else if (q - s_tmf_q0 >= SDL_GetPerformanceFrequency() / 2 && t > s_tmf_tsc0
-             && !getenv("RECOMP_FAST_CLOCK_OFF"))
-        s_tmf_ratio = (double)(q - s_tmf_q0) / (double)(t - s_tmf_tsc0);
-    return q;
-}
-static inline uint64_t tm_now_fast(void)
-{
-    double r = s_tmf_ratio;
-    if (r > 0.0) return s_tmf_q0 + (uint64_t)((double)(__rdtsc() - s_tmf_tsc0) * r);
-    return tm_now_slow();
-}
-#define TM_NOW() tm_now_fast()
-#endif
+#include "nv2a_tm.h"               /* TM_NOW */
 
-#include "nv2a_rb_gl.c"           /* the OpenGL backend; its own file at the end of step 1 */
 
 /* v169: GL_ARRAY_BUFFER is context state (not the VAO's) and the GPU-vertex
  * draw bound it again on every draw: one driver call each. */
@@ -1817,7 +1783,7 @@ static void rcp_read(void)
     FILE *f;
     char magic[8];
     s_rcp_state = -1;
-    if (!prebuild_on() || !shader_cache_on())
+    if (!prebuild_on() || !rb_shader_cache_on())
         return;
     s_rcp_state = 1;
 #if defined(_WIN32)
@@ -1940,7 +1906,7 @@ static int rcp_build2(const Recipe *r, int check_only)
         fsrc = fgen;
     } else
         fsrc = r->nz ? fs_nz() : FS;
-    cache_path(path, sizeof path, vsrc, fsrc);
+    rb_shader_cache_path(path, sizeof path, vsrc, fsrc);
     f = fopen(path, "rb");
     if (f)
         fclose(f);                     /* already built */
@@ -3830,7 +3796,7 @@ static void bind_texture(int stage, const NvGlTexture *t)
                 /* v172: the error checks are waits for the GL thread; once 16
                  * uploads went through without one, they are taken as good */
                 static int dxt_good;
-                int check = !s_gt_on || dxt_good < 16;
+                int check = !rb_threaded() || dxt_good < 16;
                 if (check) rb_errors_clear();
                 for (lv = 0; lv < levels && lv < 16; lv++) {
                     uint32_t bw = (w + 3) / 4, bh = (hh + 3) / 4;
@@ -4035,7 +4001,7 @@ void nv2a_gl_end_frame(void)
         fx_frame();
     }
     rb_vbuf_lost();   /* v169: bound again once a frame, whatever else ran */
-    gt_frame_end();            /* v172: at most RECOMP_GL_THREAD_LAG frames queued */
+    rb_frame_end();            /* v172: at most RECOMP_GL_THREAD_LAG frames queued */
     if (++s_frame == 0)
         s_frame = 1;
     rb_pump();
@@ -4627,7 +4593,7 @@ drawn:
     s->dirty = 1;
     s->draws++;
     s_n_draws++;
-    gq_frame_start();
+    rb_gpu_frame_mark();
     s_tm[0] += TM_NOW() - t0;
     s_n_tris += n_idx / 3;
     {
@@ -5239,7 +5205,7 @@ arrays_set:
     s->dirty = 1;
     s->draws++;
     s_n_draws++;
-    gq_frame_start();
+    rb_gpu_frame_mark();
     s_tm[0] += TM_NOW() - t0;
     s_n_tris += n_idx / 3;
     {
@@ -5437,61 +5403,9 @@ void nv2a_gl_times(uint64_t t[4], uint64_t *freq)
  * unix side, which the executor profile cannot see into) */
 int nv2a_gl_call_stats(char *buf, size_t n)
 {
-#ifndef NV2A_GL_NO_COUNT
-    static unsigned long long l_c[NV2A_GLC_N], l_d;
-    unsigned long long tot = 0, d = s_n_draws - l_d;
-    int top[8], nt = 0, i, j;
-    size_t k;
     if (s_state != 1 || !buf || !n)
         return 0;
-    for (i = 0; i < NV2A_GLC_N; i++) {
-        unsigned long long c = s_glc[i] - l_c[i];
-        tot += c;
-        for (j = nt; j > 0 && s_glc[top[j - 1]] - l_c[top[j - 1]] < c; j--)
-            if (j < 8) top[j] = top[j - 1];
-        if (j < 8) { top[j] = i; if (nt < 8) nt++; }
-    }
-    {
-        static uint64_t l_vm;
-        snprintf(buf, n, "%llu in all, %.1f a draw (%llu new vertex layouts); most:", tot,
-                 d ? (double)tot / (double)d : 0.0, (unsigned long long)(s_vaoc_miss - l_vm));
-        l_vm = s_vaoc_miss;
-    }
-    for (i = 0; i < nt; i++) {
-        unsigned long long c = s_glc[top[i]] - l_c[top[i]];
-        if (!c) break;
-        k = strlen(buf);
-        snprintf(buf + k, n - k, " %s %llu", s_glc_name[top[i]] + 2, c);
-    }
-    if (s_gt_on) {
-        /* v172: how often the executor had to wait for the GL thread */
-        static uint64_t l_sy, l_pw, l_cm;
-        k = strlen(buf);
-        snprintf(buf + k, n - k, "; GL thread: %llu queued, %llu waited for, %llu waits for room/frames/fences",
-                 (unsigned long long)(s_gt_n_cmds - l_cm), (unsigned long long)(s_gt_n_sync - l_sy),
-                 (unsigned long long)(s_gt_n_pwait - l_pw));
-        l_sy = s_gt_n_sync; l_pw = s_gt_n_pwait; l_cm = s_gt_n_cmds;
-        {
-            static uint64_t l_ls, l_ln;
-            uint64_t ln = s_gt_lat_n - l_ln;
-            double fq = 1000.0 / (double)SDL_GetPerformanceFrequency();
-            if (ln) {
-                k = strlen(buf);
-                snprintf(buf + k, n - k, "; frames shown %.2f ms after they were finished"
-                         " on average, %.2f ms at most", (double)(s_gt_lat_sum - l_ls) * fq / (double)ln,
-                         (double)s_gt_lat_max * fq);
-            }
-            l_ls = s_gt_lat_sum; l_ln = s_gt_lat_n;
-            s_gt_lat_max = 0;
-        }
-    }
-    memcpy(l_c, s_glc, sizeof l_c);
-    l_d = s_n_draws;
-    return 1;
-#else
-    (void)buf; (void)n;
-    return 0;
-#endif
+    return rb_call_stats(buf, n, s_n_draws, s_vaoc_miss);
 }
 
 int nv2a_gl_submit_stats(char *buf, size_t n)

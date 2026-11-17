@@ -608,7 +608,7 @@ int xbox_QuitToTitleTake(void) { return (int)InterlockedExchange(&s_qd_title_req
 static DWORD s_lm_last_t;                 /* v278b: the last move, to take one device's only */
 static int s_lm_last_dir;
 
-/* v252: while the window is open the game is held (kernel/nv2a_gl.c holds
+/* v252: while the window is open the game is held (kernel/nv2a_render.c holds
  * it at its next frame), its sound too (apu/apu_core.c) */
 volatile LONG g_xbox_game_held;
 

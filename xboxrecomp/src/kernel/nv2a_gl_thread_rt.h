@@ -3,7 +3,7 @@
  * The NV2A executor used to make every OpenGL call itself, and under Proton
  * each one is a crossing into Wine's unix side and the Mesa driver: about
  * 1.3 s of every 10 in the busy street, plus the present. Now everything in
- * nv2a_gl.c still runs on the executor at the moment it ran before -- state
+ * nv2a_render.c still runs on the executor at the moment it ran before -- state
  * decisions, texture checks and decoding, vertex copies into the rings -- but
  * the GL calls it makes are written into a queue (a byte ring, one writer and
  * one reader) and made by a thread of their own that owns the context.

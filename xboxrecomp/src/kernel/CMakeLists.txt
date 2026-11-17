@@ -29,12 +29,13 @@ set(KERNEL_SOURCES
     nv2a_combiner.c
 )
 
-# GPU rasterisation through OpenGL 3.3 (nv2a_gl.c). SDL2 provides the
+# GPU rasterisation through OpenGL 3.3 (nv2a_render.c, the renderer, and
+# nv2a_rb_gl.c, its OpenGL backend). SDL2 provides the
 # context: found on the system on Linux, downloaded and built statically on
 # Windows. -DXBOXRECOMP_GL=OFF builds without it (software rasteriser only).
 option(XBOXRECOMP_GL "Rasterise NV2A batches on the host GPU via OpenGL" ON)
 if(XBOXRECOMP_GL)
-    list(APPEND KERNEL_SOURCES nv2a_gl.c ../third_party/glad/src/gl.c)
+    list(APPEND KERNEL_SOURCES nv2a_render.c nv2a_rb_gl.c ../third_party/glad/src/gl.c)
 else()
     list(APPEND KERNEL_SOURCES nv2a_gl_stub.c)
 endif()

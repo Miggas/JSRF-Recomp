@@ -98,8 +98,9 @@ void     rb_vbuf_bound_set(uint32_t b);
 void     rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int dh, uint32_t filter);
 
 /* ── anti-aliasing and MSAA (v238) ─────────────────────────────────────── */
-/* the finished frame (texture src, target src_fbo, w x h) through FXAA /
- * SMAA (RECOMP_GL_AA): the target holding the result, or 0 when AA is off */
+/* the finished frame (texture src, w x h; src_fbo: a single-sampled target
+ * holding it -- the resolved copy with MSAA) through FXAA / SMAA
+ * (RECOMP_GL_AA): the target holding the result, or 0 when AA is off */
 uint32_t rb_present_aa(uint32_t src, uint32_t src_fbo, int w, int h);
 /* a single-sampled image into a multisampled target, scaled to w x h */
 void     rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h);
@@ -225,5 +226,17 @@ int  rb_overlay_init(const unsigned char *atlas, int w, int h);
  * drawing, alpha-blended; flip: that framebuffer's row 0 is the top (DXGI);
  * font: the atlas is there. What was bound is put back. */
 void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font);
+
+
+/* ── the backend's thread and counters ────────────────────────────────── */
+int  rb_threaded(void);            /* calls run on a thread of their own */
+void rb_frame_end(void);           /* a frame queued (at most RECOMP_GL_THREAD_LAG) */
+void rb_gpu_frame_mark(void);      /* GPU timing: a frame's work starts here */
+/* the backend calls made since the last report, per draw, the most made,
+ * and the thread's waits: one line for [PERF]; 0 when not counted */
+int  rb_call_stats(char *buf, size_t n, uint64_t draws, uint64_t layouts_new);
+/* the on-disk shader cache: on, and the file for a pair of sources */
+int  rb_shader_cache_on(void);
+void rb_shader_cache_path(char *b, size_t n, const char *vsrc, const char *fsrc);
 
 #endif

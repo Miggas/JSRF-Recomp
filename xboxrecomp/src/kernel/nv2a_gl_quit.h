@@ -11,7 +11,7 @@
  * makes each letter a few rectangles. The triangles (coloured or
  * font-textured) are made here and drawn by the backend (rb_overlay_draw);
  * blend and depth are re-applied by the renderer after every present
- * (rb_fixed_lost). Included by nv2a_gl.c. */
+ * (rb_fixed_lost). Included by nv2a_render.c. */
 #ifndef NV2A_GL_QUIT_H
 #define NV2A_GL_QUIT_H
 
@@ -245,7 +245,7 @@ static void qd_button_f(float x0, float x1, const char *label, int picked, float
 
 /* the window, over a frame of cw x ch pixels in the framebuffer bound for
  * drawing; flip: that framebuffer's row 0 is the top (DXGI) */
-extern char g_gl_build_msg[64];   /* v253: nv2a_gl.c, while shaders are built */
+extern char g_gl_build_msg[64];   /* v253: nv2a_render.c, while shaders are built */
 
 static void present_overlay_f(int cw, int ch, int flip)
 {

@@ -375,7 +375,7 @@ void nv2a_vsh_prepare(void)
     s_prog_gen++;
 }
 
-/* v77: the program and constants for the GPU's vertex shader (nv2a_gl.c),
+/* v77: the program and constants for the GPU's vertex shader (nv2a_render.c),
  * which runs the same decode on the graphics card. */
 static uint32_t pack_src(const VshSrc *s)
 {

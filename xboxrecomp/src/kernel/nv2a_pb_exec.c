@@ -2702,7 +2702,7 @@ static void vcache_put(uint32_t index, const Nv2aVshOutput *v)
     s_perf_vruns++;
 }
 
-/* ── GPU backend glue (nv2a_gl.c) ─────────────────────────────────────── */
+/* ── GPU backend glue (nv2a_render.c) ─────────────────────────────────────── */
 
 static uint32_t tex_bytes(const Texture *t)
 {
@@ -2798,7 +2798,7 @@ int nv2a_exec_decode_texture(int stage, uint32_t face, uint32_t *out)
     return 1;
 }
 
-/* Everything nv2a_gl.c needs to draw what the executor would. Returns 0 when
+/* Everything nv2a_render.c needs to draw what the executor would. Returns 0 when
  * there is no drawable surface. */
 static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h);   /* v187e */
 
@@ -2921,7 +2921,7 @@ static int gl_state(NvGlState *st)
         st->poly_offset = 0;
     }
     /* v207b: on the screens kept at 4:3 (the garage menus, character
-     * select) depth is stored over the whole range (bg_far 2; nv2a_gl.c).
+     * select) depth is stored over the whole range (bg_far 2; nv2a_render.c).
      * The graffiti menu's buttons and icons are small 3D models, an icon
      * 1-4 steps of 24-bit depth in front of its button (RECOMP_GL_DRAWLOG,
      * Miggas's run); the near band stores 1 - z/2, and half a step is below
@@ -3006,7 +3006,7 @@ static float ws_cut_for(int kind, const NvGlState *st);                 /* v217c
 /* v224b: the menus whose sides are filled row by row say so in the command
  * stream itself: jsrf_widescreen.c sets a z-bias no title uses (units 2e7:
  * fill, 2e8: a menu with its own sides, no fill) and puts the real one back
- * before anything is drawn. Seen here in order, so the flip (nv2a_gl.c)
+ * before anything is drawn. Seen here in order, so the flip (nv2a_render.c)
  * knows exactly which frames have it: no frame before or after the menu is
  * filled, and none of its own is missed (v224 went by when the game set its
  * marks, which runs ahead of this and not in step: the fill flashed). */
@@ -4100,7 +4100,7 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
  * background layers across the whole width may colour that column: anything
  * narrower that reaches the top or the bottom -- the bars scanning along
  * the top, which flashed the whole corner when they crossed it -- is kept
- * off it (nv2a_gl.c, by the scissor).
+ * off it (nv2a_render.c, by the scissor).
  * The small grey square in the top-left corner (an untextured piece of the
  * menu's backdrop within a dozen pixels of the corner, hidden by a TV's
  * overscan) is not drawn at all: it was carried out to the screen edge.
