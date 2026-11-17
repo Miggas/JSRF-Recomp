@@ -124,9 +124,9 @@
 #undef glDisableVertexAttribArray
 #define glDisableVertexAttribArray gv_DisableVertexAttribArray
 #undef glDrawArrays
-#define glDrawArrays gv_DrawArrays
+#define glDrawArrays vkd_DrawArrays
 #undef glDrawElementsBaseVertex
-#define glDrawElementsBaseVertex gv_DrawElementsBaseVertex
+#define glDrawElementsBaseVertex vkd_DrawElementsBaseVertex
 #undef glEnable
 #define glEnable gv_Enable
 #undef glEnableVertexAttribArray
@@ -265,6 +265,346 @@
 #define glVertexAttribPointer gv_VertexAttribPointer
 #undef glViewport
 #define glViewport gv_Viewport
+
+
+/* ── draws (step 2b, slice 1: the backend's own) ──────────────────────────
+ * The core's draw_setup records everything a draw needs on every draw: the
+ * pipeline looked up by a hash of its whole key, each vertex buffer, sixteen
+ * pieces of dynamic state, the index buffer and a push of every descriptor.
+ * Here the command buffer's state is remembered and only what changed is
+ * recorded: the pipeline key is compared with the last draw's before any
+ * hashing, vertex buffers go in one call when they moved, dynamic state is
+ * set when it differs, and the descriptors are pushed only when the layout,
+ * the uniforms' place or a texture or sampler changed. All of it is
+ * forgotten with a new command buffer. The pictures are the same. */
+
+#define VKD_NII 160
+static struct {
+    VkCommandBuffer cmd; uint64_t serial;      /* the command buffer this is about */
+    /* pipeline */
+    GProg *g; PKey k; VkPipeline kp;          /* the last key looked up, and its pipeline */
+    /* vertex and index buffers */
+    VkBuffer vb[NATTR]; VkDeviceSize vo[NATTR]; uint32_t vmask;
+    VkBuffer ib; VkIndexType it;
+    /* dynamic state */
+    int dyn_ok;
+    VkViewport vp; VkRect2D sc;
+    VkCullModeFlags cull; VkFrontFace ff;
+    VkBool32 dt, dw, st, be;
+    VkCompareOp dc, sf;
+    VkStencilOp so[3];
+    uint32_t scm, swm, sref;
+    float bias[2], bc[4];
+    /* descriptors */
+    VkPipelineLayout pl;
+    VkDescriptorBufferInfo bi; int ubo;
+    VkDescriptorImageInfo ii[VKD_NII]; uint32_t nii;
+    uint32_t wb[40], wc[40], nw;
+} D;
+static uint64_t s_vkd_draws, s_vkd_pipe_hash, s_vkd_vb, s_vkd_dyn, s_vkd_push;
+
+static int vkd_same_cmd(void)
+{
+    VkCommandBuffer c = G.b[G.cur].cmd;
+    if (D.cmd == c && D.serial == G.b[G.cur].serial)
+        return 1;
+    memset(&D, 0, sizeof D);
+    D.cmd = c;
+    D.serial = G.b[G.cur].serial;
+    return 0;
+}
+
+static int vkd_setup(void)
+{
+    GProg *g = prog_of(S.prog);
+    GVao *v = GET(t_vao, S.vao);
+    GTex *col, *ds;
+    GLuint ci, di;
+    PKey k;
+    VkPipeline p;
+    VkCommandBuffer c;
+    VkBuffer vbufs[NATTR];
+    VkDeviceSize voffs[NATTR];
+    int i;
+    if (!g || !g->linked || !v)
+        return 0;
+    if (S.vp[2] <= 0 || S.vp[3] <= 0)
+        return 0;
+    if (!rendering_begin())
+        return 0;
+    vkd_same_cmd();
+    fbo_tex(S.draw_fbo, &col, &ds, &ci, &di);
+    if (col && col->bc) col = NULL;
+    if (R.ds == 0) ds = NULL;
+    memset(&k, 0, sizeof k);
+    k.cf = col ? col->fmt : VK_FORMAT_UNDEFINED;
+    k.df = ds ? ds->fmt : VK_FORMAT_UNDEFINED;
+    k.samples = col ? col->samples : ds ? ds->samples : 1;
+    k.blend = S.blend;
+    if (S.blend) { k.bs = S.bl_src; k.bd = S.bl_dst; k.be = S.bl_eq; }
+    k.cmask = (S.cmask[0] ? 1 : 0) | (S.cmask[1] ? 2 : 0) | (S.cmask[2] ? 4 : 0)
+            | (S.cmask[3] && !(col && col->rgb) ? 8 : 0);     /* RGB targets keep alpha 1 */
+    /* vertex inputs: an array, or the generic value as a one-vertex buffer */
+    {
+        Ring *r = NULL;
+        VkDeviceSize co = 0;
+        int nconst = 0;
+        for (i = 0; i < NATTR; i++)
+            if ((g->inputs & (1u << i)) && !(v->a[i].enabled && buf_of(v->a[i].buf)))
+                nconst++;
+        if (nconst) {
+            co = ring_take(0, (VkDeviceSize)nconst * 16, 16, &r);
+            if (!r) return 0;
+        }
+        for (i = 0; i < NATTR; i++) {
+            if (!(g->inputs & (1u << i))) continue;
+            if (v->a[i].enabled && buf_of(v->a[i].buf)) {
+                GBuf *b = buf_of(v->a[i].buf);
+                VkDeviceSize off = (VkDeviceSize)v->a[i].off;
+                k.vf[i] = attr_format(&v->a[i]);
+                k.vstride[i] = v->a[i].stride ? (uint32_t)v->a[i].stride : attr_bytes(&v->a[i]);
+                /* bound at the start of a vertex, the attribute's place in it
+                 * in the pipeline (AMD counts a binding's vertices from its
+                 * offset: v311g-vk5d) */
+                k.vrel[i] = (uint32_t)(off % k.vstride[i]);
+                if (k.vrel[i] > G.c.props.limits.maxVertexInputAttributeOffset)
+                    k.vrel[i] = 0;
+                vbufs[i] = b->b;
+                voffs[i] = off - k.vrel[i];
+            } else {
+                memcpy(r->map + co, S.generic[i], 16);
+                k.vf[i] = VK_FORMAT_R32G32B32A32_SFLOAT;
+                k.vstride[i] = 0;
+                vbufs[i] = r->b;
+                voffs[i] = co;
+                co += 16;
+            }
+        }
+    }
+    if (D.kp && D.g == g && !memcmp(&D.k, &k, sizeof k))
+        p = D.kp;                             /* the same pipeline as the last draw */
+    else {
+        p = pipe_get(g, &k);
+        s_vkd_pipe_hash++;
+        if (!p)
+            return 0;
+        D.g = g; D.k = k; D.kp = p;
+    }
+    c = G.b[G.cur].cmd;
+    if (R.pipe != p) {
+        vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+        R.pipe = p;
+    }
+    /* vertex buffers: the inputs' bindings, in runs, where they moved */
+    {
+        uint32_t m = g->inputs & ((1u << NATTR) - 1);
+        int changed = m != D.vmask;
+        for (i = 0; i < NATTR && !changed; i++)
+            if ((m >> i & 1) && (D.vb[i] != vbufs[i] || D.vo[i] != voffs[i]))
+                changed = 1;
+        if (changed) {
+            for (i = 0; i < NATTR; ) {
+                int j;
+                if (!(m >> i & 1)) { i++; continue; }
+                for (j = i; j < NATTR && (m >> j & 1); j++) {}
+                vkCmdBindVertexBuffers(c, (uint32_t)i, (uint32_t)(j - i), &vbufs[i], &voffs[i]);
+                i = j;
+            }
+            for (i = 0; i < NATTR; i++) { D.vb[i] = vbufs[i]; D.vo[i] = voffs[i]; }
+            D.vmask = m;
+            s_vkd_vb++;
+        }
+    }
+    /* dynamic state, where it differs */
+    {
+        VkViewport vp;
+        VkRect2D sc;
+        VkCullModeFlags cull;
+        VkFrontFace ff;
+        VkBool32 dt, dwr, st, be;
+        VkCompareOp dc, sf;
+        VkStencilOp so[3];
+        int all = !D.dyn_ok, n = 0;
+        vp.x = (float)S.vp[0]; vp.y = (float)S.vp[1];
+        vp.width = (float)S.vp[2]; vp.height = (float)S.vp[3];
+        vp.minDepth = 0.0f; vp.maxDepth = 1.0f;
+        if (S.scissor) {
+            int x0 = S.sc[0] < 0 ? 0 : S.sc[0], y0 = S.sc[1] < 0 ? 0 : S.sc[1];
+            int x1 = S.sc[0] + S.sc[2], y1 = S.sc[1] + S.sc[3];
+            if (x1 > R.vw) x1 = R.vw;
+            if (y1 > R.vh) y1 = R.vh;
+            sc.offset.x = x0; sc.offset.y = y0;
+            sc.extent.width = (uint32_t)(x1 > x0 ? x1 - x0 : 0);
+            sc.extent.height = (uint32_t)(y1 > y0 ? y1 - y0 : 0);
+        } else {
+            sc.offset.x = sc.offset.y = 0;
+            sc.extent.width = (uint32_t)R.vw;
+            sc.extent.height = (uint32_t)R.vh;
+        }
+        if (!sc.extent.width || !sc.extent.height)
+            return 0;
+        if (all || memcmp(&vp, &D.vp, sizeof vp)) { vkCmdSetViewport(c, 0, 1, &vp); D.vp = vp; n++; }
+        if (all || memcmp(&sc, &D.sc, sizeof sc)) { vkCmdSetScissor(c, 0, 1, &sc); D.sc = sc; n++; }
+        if (all) vkCmdSetPrimitiveTopology(c, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        cull = !S.cull ? VK_CULL_MODE_NONE
+             : S.cull_face == GL_FRONT ? VK_CULL_MODE_FRONT_BIT
+             : S.cull_face == GL_FRONT_AND_BACK ? VK_CULL_MODE_FRONT_AND_BACK
+             : VK_CULL_MODE_BACK_BIT;
+        if (all || cull != D.cull) { vkCmdSetCullMode(c, cull); D.cull = cull; n++; }
+        /* OpenGL's area sign is the opposite of Vulkan's for the same rows */
+        ff = S.front_face == GL_CW ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
+        if (all || ff != D.ff) { vkCmdSetFrontFace(c, ff); D.ff = ff; n++; }
+        dt = S.depth_test && ds ? VK_TRUE : VK_FALSE;
+        dwr = S.depth_test && S.depth_mask && ds ? VK_TRUE : VK_FALSE;
+        dc = vk_cmp(S.depth_func);
+        if (all || dt != D.dt) { vkCmdSetDepthTestEnable(c, dt); D.dt = dt; n++; }
+        if (all || dwr != D.dw) { vkCmdSetDepthWriteEnable(c, dwr); D.dw = dwr; n++; }
+        if (all || dc != D.dc) { vkCmdSetDepthCompareOp(c, dc); D.dc = dc; n++; }
+        st = S.stencil_test && ds ? VK_TRUE : VK_FALSE;
+        if (all || st != D.st) { vkCmdSetStencilTestEnable(c, st); D.st = st; n++; }
+        so[0] = vk_sop(S.st_fail); so[1] = vk_sop(S.st_zpass); so[2] = vk_sop(S.st_zfail);
+        sf = vk_cmp(S.st_func);
+        if (all || memcmp(so, D.so, sizeof so) || sf != D.sf) {
+            vkCmdSetStencilOp(c, VK_STENCIL_FACE_FRONT_AND_BACK, so[0], so[1], so[2], sf);
+            memcpy(D.so, so, sizeof so); D.sf = sf; n++;
+        }
+        if (all || (S.st_mask & 0xFF) != D.scm) {
+            D.scm = S.st_mask & 0xFF;
+            vkCmdSetStencilCompareMask(c, VK_STENCIL_FACE_FRONT_AND_BACK, D.scm); n++;
+        }
+        if (all || (S.st_wmask & 0xFF) != D.swm) {
+            D.swm = S.st_wmask & 0xFF;
+            vkCmdSetStencilWriteMask(c, VK_STENCIL_FACE_FRONT_AND_BACK, D.swm); n++;
+        }
+        if (all || ((uint32_t)S.st_ref & 0xFF) != D.sref) {
+            D.sref = (uint32_t)S.st_ref & 0xFF;
+            vkCmdSetStencilReference(c, VK_STENCIL_FACE_FRONT_AND_BACK, D.sref); n++;
+        }
+        be = S.poff ? VK_TRUE : VK_FALSE;
+        if (all || be != D.be) { vkCmdSetDepthBiasEnable(c, be); D.be = be; n++; }
+        if (all || S.po_units != D.bias[0] || S.po_factor != D.bias[1]) {
+            vkCmdSetDepthBias(c, S.po_units, 0.0f, S.po_factor);
+            D.bias[0] = S.po_units; D.bias[1] = S.po_factor; n++;
+        }
+        if (all || memcmp(S.bl_col, D.bc, sizeof D.bc)) {
+            vkCmdSetBlendConstants(c, S.bl_col);
+            memcpy(D.bc, S.bl_col, sizeof D.bc); n++;
+        }
+        D.dyn_ok = 1;
+        s_vkd_dyn += (uint64_t)n;
+    }
+    /* the uniforms and textures, pushed when something in them changed */
+    {
+        VkWriteDescriptorSet w[40];
+        VkDescriptorBufferInfo bi;
+        VkDescriptorImageInfo ii[VKD_NII];
+        uint32_t nw = 0, nii = 0, wb[40], wc[40];
+        int ubo = 0, same;
+        memset(&bi, 0, sizeof bi);
+        if (g->ubo_binding >= 0) {
+            if (g->dirty || g->ubo_serial != G.b[G.cur].serial || !g->ubo_buf) {
+                Ring *r;
+                VkDeviceSize o = ring_take(0, g->ubo_size ? g->ubo_size : 16, G.ubo_align, &r);
+                if (!r) return 0;
+                memcpy(r->map + o, g->shadow, g->ubo_size);
+                g->ubo_off = o;
+                g->ubo_buf = r->b;
+                g->ubo_serial = G.b[G.cur].serial;
+                g->dirty = 0;
+            }
+            bi.buffer = g->ubo_buf;
+            bi.offset = g->ubo_off;
+            bi.range = g->ubo_size ? g->ubo_size : 16;
+            memset(&w[nw], 0, sizeof w[nw]);
+            w[nw].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w[nw].dstBinding = (uint32_t)g->ubo_binding;
+            w[nw].descriptorCount = 1;
+            w[nw].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            w[nw].pBufferInfo = &bi;
+            wb[nw] = w[nw].dstBinding; wc[nw] = 1;
+            nw++;
+            ubo = 1;
+        }
+        for (i = 0; i < g->nu && nw < 40; i++) {
+            Uni *u = &g->u[i];
+            int e;
+            if (!u->sampler) continue;
+            memset(&w[nw], 0, sizeof w[nw]);
+            w[nw].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w[nw].dstBinding = u->binding;
+            w[nw].descriptorCount = (uint32_t)u->count;
+            w[nw].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w[nw].pImageInfo = &ii[nii];
+            for (e = 0; e < u->count && nii < VKD_NII; e++) {
+                int unit = u->unit[e] & (NUNIT - 1);
+                GTex *t = tex_of(u->cube ? S.texcube[unit] : S.tex2d[unit]);
+                GSamp *sm = S.samp[unit] && S.samp[unit] < t_samp_n && t_samp[S.samp[unit]].used
+                            ? &t_samp[S.samp[unit]] : NULL;
+                int maxlod = 0;
+                if (!t || !t->img || !t->view || t->ds || !(t->defined & 1)
+                        || (u->cube ? t->layers != 6 : t->layers != 1)) {
+                    t = u->cube ? s_whitecube : s_white2d;
+                } else if (t == col) {
+                    GV_ONCE(4, "a texture is sampled while drawn into (left out)\n");
+                    t = u->cube ? s_whitecube : s_white2d;
+                }
+                while (maxlod + 1 < t->levels && (t->defined >> (maxlod + 1) & 1))
+                    maxlod++;
+                if (maxlod > t->maxlev) maxlod = t->maxlev;
+                if (t->swz_a1 != t->view_swz) {          /* the alpha swizzle changed */
+                    junk(2, (uint64_t)t->view, VK_NULL_HANDLE);
+                    t->view = make_view(t, 1, t->swz_a1);
+                    t->view_swz = t->swz_a1;
+                }
+                ii[nii].imageView = t->view;
+                ii[nii].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+                ii[nii].sampler = sm ? sampler_for(sm->minf, sm->magf, sm->wrap_s, sm->wrap_t,
+                                                   GL_CLAMP_TO_EDGE, maxlod, 1)
+                                     : sampler_for(t->minf, t->magf, t->wrap_s, t->wrap_t, t->wrap_r,
+                                                   maxlod, t->aniso);
+                nii++;
+            }
+            wb[nw] = w[nw].dstBinding; wc[nw] = w[nw].descriptorCount;
+            nw++;
+        }
+        same = D.pl == g->pl && D.nw == nw && D.ubo == ubo && D.nii == nii
+               && (!ubo || !memcmp(&D.bi, &bi, sizeof bi))
+               && !memcmp(D.wb, wb, nw * sizeof wb[0]) && !memcmp(D.wc, wc, nw * sizeof wc[0])
+               && !memcmp(D.ii, ii, nii * sizeof ii[0]);
+        if (nw && !same) {
+            vkCmdPushDescriptorSetKHR(c, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pl, 0, nw, w);
+            D.pl = g->pl; D.nw = nw; D.ubo = ubo; D.bi = bi; D.nii = nii;
+            memcpy(D.wb, wb, nw * sizeof wb[0]); memcpy(D.wc, wc, nw * sizeof wc[0]);
+            memcpy(D.ii, ii, nii * sizeof ii[0]);
+            s_vkd_push++;
+        }
+    }
+    s_n_draws++;
+    s_vkd_draws++;
+    return 1;
+}
+
+static void API vkd_DrawArrays(GLenum mode, GLint first, GLsizei count)
+{
+    if (mode != GL_TRIANGLES || count <= 0 || !vkd_setup()) return;
+    vkCmdDraw(G.b[G.cur].cmd, (uint32_t)count, 1, (uint32_t)first, 0);
+}
+
+static void API vkd_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type,
+                                           const void *off, GLint base)
+{
+    GVao *v = GET(t_vao, S.vao);
+    GBuf *e = v ? buf_of(v->ebo) : NULL;
+    VkIndexType it = type == GL_UNSIGNED_SHORT ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
+    if (mode != GL_TRIANGLES || count <= 0 || !e || !e->b) return;
+    if (!vkd_setup()) return;
+    if (D.ib != e->b || D.it != it) {
+        vkCmdBindIndexBuffer(G.b[G.cur].cmd, e->b, 0, it);
+        D.ib = e->b; D.it = it;
+    }
+    vkCmdDrawIndexed(G.b[G.cur].cmd, (uint32_t)count, 1,
+                     (uint32_t)((uintptr_t)off / (type == GL_UNSIGNED_SHORT ? 2 : 4)), base, 0);
+}
 
 
 /* not in the core: the paths that use them are off here (rb_caps) */
@@ -1345,6 +1685,17 @@ int rb_window_present(const RbFrame *f)
     if (s_rb_overlay) s_rb_overlay(cw, ch, 0);
     rbvk_core_swap(win);
     s_win_frames++;
+    {
+        static uint64_t frames;
+        if ((++frames % 600 == 0 || frames == 120) && s_vkd_draws) {
+            fprintf(stderr, "[VK] draws %llu: pipeline looked up %.1f%%, vertex buffers bound %.1f%%,"
+                    " %.2f dynamic states set a draw (of 16), descriptors pushed %.1f%%\n",
+                    (unsigned long long)s_vkd_draws, 100.0 * (double)s_vkd_pipe_hash / (double)s_vkd_draws,
+                    100.0 * (double)s_vkd_vb / (double)s_vkd_draws, (double)s_vkd_dyn / (double)s_vkd_draws,
+                    100.0 * (double)s_vkd_push / (double)s_vkd_draws);
+            s_vkd_draws = s_vkd_pipe_hash = s_vkd_vb = s_vkd_dyn = s_vkd_push = 0;
+        }
+    }
     glEnable(GL_SCISSOR_TEST);
     rb_bindings_lost();
     rb_fixed_lost();
