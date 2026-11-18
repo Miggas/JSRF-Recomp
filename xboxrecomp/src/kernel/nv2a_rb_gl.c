@@ -28,6 +28,9 @@
 #include <sys/stat.h>
 #endif
 #include "nv2a_tm.h"             /* TM_NOW */
+#if !defined(_WIN32)
+int _stricmp(const char *a, const char *b);   /* platform/win32_compat.c (v311g-rb1b) */
+#endif
 
 /* the texture unit for binding a texture to work on it (uploads, parameters),
  * so the draw stages' bindings stay as they are */
