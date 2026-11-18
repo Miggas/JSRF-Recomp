@@ -43,6 +43,7 @@
 /* xboxrecomp runtime headers */
 #include <xbox/xboxrecomp.h>
 #include "jsrf_version.h"
+#include "jsrf_logname.h"
 
 /*
  * If xboxrecomp.h is not an umbrella header in your setup, include
@@ -198,7 +199,8 @@ static void portable_setup(void)
         int captured = h && h != INVALID_HANDLE_VALUE && GetFileType(h) != FILE_TYPE_UNKNOWN;
         const char *log = getenv("RECOMP_LOG");
         if (!captured && log && *log) {
-            freopen(log, "w", stderr);
+            char name[MAX_PATH];
+            freopen(jsrf_log_name(log, name, sizeof name), "w", stderr);
             freopen("NUL", "w", stdout);
         }
     }
