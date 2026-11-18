@@ -1270,6 +1270,7 @@ typedef struct {
     VkFormat src_fmt;
     int req_w, req_h;                /* the window size it was made for */
     int pend_w, pend_h, pend_n;      /* vk12: a new size, and for how many frames */
+    int subopt_n;                    /* vk12b: presents in a row that were suboptimal */
     uint64_t frames;
     int logged_sc;
 } VkPresenter;
@@ -1833,6 +1834,7 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
             if (!s) { p->state = -1; return 0; }
             p->req_w = cw;
             p->req_h = ch;
+            p->subopt_n = 0;
         }
         f = p->f;
         if (vkWaitForFences(p->dev, 1, &p->fence[f], VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
@@ -1980,9 +1982,17 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
         pi.pImageIndices = &img;
         r = vkQueuePresentKHR(p->q, &pi);
         nv2a_vk_qunlock();
-        if (r == VK_ERROR_OUT_OF_DATE_KHR)
-            p->stale = 1;                    /* vk12: suboptimal (a size on its way) waits for it */
-        else if (r != VK_SUCCESS) {
+        if (r == VK_SUCCESS)
+            p->subopt_n = 0;
+        else if (r == VK_ERROR_OUT_OF_DATE_KHR)
+            p->stale = 1;
+        else if (r == VK_SUBOPTIMAL_KHR) {
+            /* vk12b: shown, though not as well as it could be (a size on its
+             * way): a new swapchain if it goes on for 6 frames. vk12 took it
+             * for a failure and stopped showing frames (Miggas: F11 and
+             * resizing left the last frame in the window) */
+            if (++p->subopt_n >= 6) { p->stale = 1; p->subopt_n = 0; }
+        } else if (r != VK_SUCCESS) {
             VK_LOG("presenting failed (%d)\n", (int)r);
             p->state = -1;
             return 0;
