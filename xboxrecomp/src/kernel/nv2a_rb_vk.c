@@ -622,6 +622,7 @@ typedef struct VkpJob {
     int kind;                          /* 0 a pipeline, 1 a program's SPIR-V (vk10) */
     int state;                         /* 0 to do, 1 being done, 2 done, 3 taken */
     int ahead;                         /* from the list, at start-up */
+    int low;                           /* vk10d: a guess, done after everything else */
     /* a pipeline */
     GLuint prog;                       /* the program it is for */
     uint64_t kh;                       /* pkey_hash of k */
@@ -644,7 +645,7 @@ static SDL_mutex *s_vkp_mu;
 static SDL_cond *s_vkp_cv;             /* a job done */
 static SDL_cond *s_vkp_work;           /* a job to do */
 static VkpJob **s_vkp_job;
-static int s_vkp_njob, s_vkp_cjob, s_vkp_next, s_vkp_threads;
+static int s_vkp_njob, s_vkp_cjob, s_vkp_next, s_vkp_next_low, s_vkp_threads;
 static int s_vkp_nahead, s_vkp_made, s_vkp_taken, s_vkp_waited, s_vkp_logged;
 static VkpReady *s_vkp_ready;
 static int s_vkp_nready;
@@ -820,14 +821,25 @@ static int SDLCALL vkp_worker(void *arg)
     (void)arg;
     SDL_LockMutex(s_vkp_mu);
     for (;;) {
-        VkpJob *j;
-        while (s_vkp_next < s_vkp_njob && s_vkp_job[s_vkp_next]->state != 0)
+        VkpJob *j = NULL;
+        /* vk10d: what is needed first (programs, pipelines waited for, the
+         * list), the guesses only when nothing else is left */
+        while (s_vkp_next < s_vkp_njob
+               && (s_vkp_job[s_vkp_next]->state != 0 || s_vkp_job[s_vkp_next]->low))
             s_vkp_next++;
-        if (s_vkp_next >= s_vkp_njob) {
+        if (s_vkp_next < s_vkp_njob)
+            j = s_vkp_job[s_vkp_next++];
+        else {
+            while (s_vkp_next_low < s_vkp_njob
+                   && (s_vkp_job[s_vkp_next_low]->state != 0 || !s_vkp_job[s_vkp_next_low]->low))
+                s_vkp_next_low++;
+            if (s_vkp_next_low < s_vkp_njob)
+                j = s_vkp_job[s_vkp_next_low++];
+        }
+        if (!j) {
             SDL_CondWait(s_vkp_work, s_vkp_mu);
             continue;
         }
-        j = s_vkp_job[s_vkp_next++];
         j->state = 1;
         SDL_UnlockMutex(s_vkp_mu);
         vkp_do(j);
@@ -987,9 +999,11 @@ static char *vka_with_defs(const char *src)
  * parts of a key other than the program -- vertex formats, target formats and
  * samples, blending -- repeat across programs, so a new program gets, in the
  * background, the keys other programs with the same vertex inputs have been
- * drawn with most (up to 16). A program with a stand-in also gets its
- * stand-in's keys, and it waits for those only. */
-#define VKP_GUESS 16
+ * drawn with most (up to 6; vk10d: 16 made 5x the pipelines and buried
+ * the needed ones). A program with a stand-in also gets its stand-in's
+ * keys, and it waits for those only; guesses nothing waits for are made
+ * after everything else. */
+#define VKP_GUESS 6
 static uint32_t vkp_key_mask(const PKey *k)
 {
     uint32_t m = 0;
@@ -1000,7 +1014,7 @@ static uint32_t vkp_key_mask(const PKey *k)
 }
 /* a job for program id (g) and key k, unless it has the pipeline or a job
  * for it already; added to *list when list is given */
-static void vkp_queue(GLuint id, GProg *g, const PKey *k, VkpJob ***list, int *n)
+static void vkp_queue(GLuint id, GProg *g, const PKey *k, VkpJob ***list, int *n, int low)
 {
     uint64_t kh = pkey_hash(k);
     VkpJob *pj;
@@ -1018,6 +1032,7 @@ static void vkp_queue(GLuint id, GProg *g, const PKey *k, VkpJob ***list, int *n
     SDL_UnlockMutex(s_vkp_mu);
     pj = vkp_pipe_job(id, g, k);
     if (!pj) return;
+    pj->low = low;
     if (list) {
         VkpJob **nl = (VkpJob **)realloc(*list, (size_t)(*n + 1) * sizeof *nl);
         if (!nl) { free(pj); return; }
@@ -1035,7 +1050,7 @@ static void vkp_queue_like(GLuint id, GProg *g, GLuint like, VkpJob ***list, int
     int k;
     for (k = 0; k < s_vkp_npk; k++)
         if (s_vkp_pk[k].prog == like)
-            vkp_queue(id, g, &s_vkp_pk[k].k, list, n);
+            vkp_queue(id, g, &s_vkp_pk[k].k, list, n, 0);
 }
 static void vkp_queue_guess(GLuint id, GProg *g, VkpJob ***list, int *n)
 {
@@ -1058,7 +1073,7 @@ static void vkp_queue_guess(GLuint id, GProg *g, VkpJob ***list, int *n)
         }
     }
     for (i = 0; i < nc; i++)
-        vkp_queue(id, g, &s_vkp_pk[at[i]].k, list, n);
+        vkp_queue(id, g, &s_vkp_pk[at[i]].k, list, n, list == NULL);
     s_vkp_guessed += (unsigned)nc;
 }
 
