@@ -921,12 +921,12 @@ static void panel_debug(struct nk_context *ctx, float w)
     bool prof = !strcmp(get_or("RECOMP_PROFILE", "0"), "1");
     bool nl = check(ctx, "Logging", logging);
 #ifdef _WIN32
-    desc(ctx, w, "Writes stderr.txt in the game folder, for bug reports, with the debug file (jsrf_recomp.pdb) "
+    desc(ctx, w, "Writes a log in the game folder, for bug reports: stderr.txt (on the vulkan-test branch stderr_gl_ or stderr_vk_ with the date and time, one per run), with the debug file (jsrf_recomp.pdb) "
          "so it can name the game's functions. Turns quiet mode off, so the game runs a little slower.", C_DIM);
     if (logging && !ini_dirty(gi()) && debug_files_missing())
         desc(ctx, w, "jsrf_recomp.pdb is missing: the log can't name the game's functions. Build again to restore it.", C_BAD);
 #else
-    desc(ctx, w, "Writes stderr.txt in the game folder, for bug reports. Turns quiet mode off, so the game runs a little slower.", C_DIM);
+    desc(ctx, w, "Writes a log in the game folder, for bug reports: stderr.txt (on the vulkan-test branch stderr_gl_ or stderr_vk_ with the date and time, one per run). Turns quiet mode off, so the game runs a little slower.", C_DIM);
 #endif
     bool np = check(ctx, "Performance logs", prof);
     desc(ctx, w, "Slows the game down. Adds where the time goes to the log every 10 seconds. Turns Logging on.", C_BAD);
@@ -1306,16 +1306,16 @@ static void tab_debug(struct nk_context *ctx, float h)
     bool exe = have_game_exe();
     nk_layout_row_dynamic(ctx, s_row * 1.3f, 3);
     if (button(ctx, "Play, stop after 30 s", exe && !busy)) {
-        if (play_watchdog(30)) snprintf(s_message, sizeof s_message, "Game started: it stops after 30 s, with a dump in stderr.txt.");
+        if (play_watchdog(30)) snprintf(s_message, sizeof s_message, "Game started: it stops after 30 s, with a dump in the log.");
     }
     if (button(ctx, "Sample a hang", exe)) {
         flag_file("sample.flag");
-        snprintf(s_message, sizeof s_message, "Sampling the game: [SAMPLE] lines in stderr.txt in a few seconds.");
+        snprintf(s_message, sizeof s_message, "Sampling the game: [SAMPLE] lines in the log in a few seconds.");
     }
     if (button(ctx, "Trace one frame", exe)) {
         flag_file("trace.flag");
         s_trace_until = SDL_GetTicks() + 5000;
-        snprintf(s_message, sizeof s_message, "Tracing one frame: [FTRACE] lines in stderr.txt.");
+        snprintf(s_message, sizeof s_message, "Tracing one frame: [FTRACE] lines in the log.");
     }
     used += s_row * 1.3f + 4;
     nk_layout_row_dynamic(ctx, s_row - 6, 1);
