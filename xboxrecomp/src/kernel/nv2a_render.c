@@ -110,6 +110,7 @@ typedef struct GlProg {
      * that leaves depth to GL (early depth test), built when first needed */
     const char *vsrc; int vsrc_owned;
     struct GlProg *nz;
+    struct GlProg *nz_wait;          /* vk10: the twin, being built in the background */
 } GlProg;
 static GlProg *P;                    /* the bound program */
 #define u_vp (P->L_vp)
@@ -1134,6 +1135,7 @@ static GLuint compile(GLenum type, const char *src) { return rb_shader_compile(t
 
 static GLuint link_with2(const char *vsrc, const char *fsrc);
 static GlProg *zvar(GlProg *p, const NvGlState *st);
+static int async_on(void);
 static void rcp_note(int kind, int ffkey, int nz, const uint32_t *spec,
                      const uint32_t (*prog)[4], int n);                 /* v241 */
 static void rcp_note_prog(const GlProg *base, int nz, const uint32_t *spec);
@@ -1429,6 +1431,46 @@ static uint32_t vsh_hash(const uint32_t (*prog)[4], int n)
     return h ^ (uint32_t)n;
 }
 
+/* vk10: game vertex programs being built in the background */
+#define VSH_WAIT_N 32
+typedef struct {
+    uint32_t h; int n; uint32_t (*key)[4];
+    char *src;
+    uint32_t id;                         /* the backend's handle */
+    int failed;
+} VshWait;
+static VshWait s_vsh_wait[VSH_WAIT_N];
+static int s_vsh_nwait;
+static int vsh_wait_find(uint32_t h, const uint32_t (*prog)[4], int n)
+{
+    int i;
+    for (i = 0; i < s_vsh_nwait; i++)
+        if (s_vsh_wait[i].h == h && s_vsh_wait[i].n == n
+                && !memcmp(s_vsh_wait[i].key, prog, (size_t)n * 16))
+            return i;
+    return -1;
+}
+static int vsh_wait_add(uint32_t h, const uint32_t (*prog)[4], int n, char *src, uint32_t id)
+{
+    VshWait *w;
+    if (s_vsh_nwait == VSH_WAIT_N)
+        return 0;
+    w = &s_vsh_wait[s_vsh_nwait];
+    w->key = (uint32_t (*)[4])malloc((size_t)n * 16);
+    if (!w->key)
+        return 0;
+    memcpy(w->key, prog, (size_t)n * 16);
+    w->h = h; w->n = n; w->src = src; w->id = id; w->failed = 0;
+    s_vsh_nwait++;
+    return 1;
+}
+/* the entry gone (its src handed on, not freed) */
+static void vsh_wait_drop(int i)
+{
+    free(s_vsh_wait[i].key);
+    s_vsh_wait[i] = s_vsh_wait[--s_vsh_nwait];
+}
+
 static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
 {
     uint32_t h = vsh_hash(prog, n);
@@ -1448,14 +1490,43 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
     {
         static int fails;
         GlProg *p = &s_p_vsh[victim];
-        char *src = gen_vsh(prog, n);
-        GLuint id;
+        char *src = NULL;
+        GLuint id = 0;
         unsigned ch, cm;
         uint64_t c0, c1;                       /* v190: how long the driver took */
+        int w = vsh_wait_find(h, prog, n);
         rb_program_stats(&ch, &cm, &c0);
-        if (!src)
-            return NULL;
-        id = link_with(src);
+        if (w >= 0) {                          /* vk10: being built in the background */
+            int r = s_vsh_wait[w].failed ? -1 : rb_program_ready(&s_vsh_wait[w].id);
+            if (r == 0)
+                return NULL;                   /* not yet: the CPU meanwhile */
+            if (r < 0) {
+                if (!s_vsh_wait[w].failed && fails++ < 4)
+                    fprintf(stderr, "[GL] vertex program (%d instructions) did not build;"
+                            " it stays on the CPU\n", n);
+                s_vsh_wait[w].failed = 1;      /* kept, so it isn't tried again */
+                return NULL;
+            }
+            id = s_vsh_wait[w].id;
+            src = s_vsh_wait[w].src;
+            vsh_wait_drop(w);
+        } else {
+            src = gen_vsh(prog, n);
+            if (!src)
+                return NULL;
+            if (async_on()) {
+                uint32_t a = rb_program_build_async(src, FS, 0);
+                if (a && rb_program_ready(&a) == 1)
+                    id = a;                    /* made ahead at start-up */
+                else if (a) {
+                    if (vsh_wait_add(h, prog, n, src, a))
+                        return NULL;           /* the CPU until it is ready */
+                    rb_program_delete(a);      /* no room to wait: at once */
+                }
+            }
+            if (!id)
+                id = link_with(src);
+        }
         rb_program_stats(&ch, &cm, &c1);
         c0 = c1 - c0;
         if (!id) {
@@ -1473,6 +1544,10 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
             if (p->nz && p->nz != p) {
                 rb_program_delete(p->nz->id);
                 free(p->nz);
+            }
+            if (p->nz_wait) {                   /* vk10 */
+                rb_program_delete(p->nz_wait->id);
+                free(p->nz_wait);
             }
             spec_purge(p);
             if (p->vsrc_owned)
@@ -1505,6 +1580,17 @@ static GlProg *vsh_find(const uint32_t (*prog)[4], int n, int build)
  * write the title's depth, else p's twin whose shader leaves depth to GL, so
  * the GPU tests depth before shading (see zdirect_wanted in nv2a_pb_exec.c).
  * RECOMP_GL_NZ_TWINS=0 always uses p (pre-v103). */
+static void zvar_set(GlProg *p, GlProg *q)
+{
+    static unsigned nb;
+    get_locs(q);
+    p->nz = q;
+    rcp_note_prog(p, 1, NULL);     /* v241 */
+    if (nb++ == 0)
+        fprintf(stderr, "[GL] 3D batches leave depth to GL: the GPU tests it"
+                " before shading (RECOMP_GL_FRAGDEPTH=1 for the old way)\n");
+}
+
 static GlProg *zvar(GlProg *p, const NvGlState *st)
 {
     static int direct = -1, twins = -1;
@@ -1520,19 +1606,23 @@ static GlProg *zvar(GlProg *p, const NvGlState *st)
     if (!p->nz) {
         GlProg *q = (GlProg *)calloc(1, sizeof *q);
         p->nz = p;                              /* until it builds */
-        if (q) {
+        if (q && async_on() && (q->id = rb_program_build_async(p->vsrc, fs_nz(), p->id)) != 0)
+            p->nz_wait = q;                     /* vk10: p meanwhile */
+        else if (q) {
             q->id = link_with2(p->vsrc, fs_nz());
-            if (q->id) {
-                static unsigned nb;
-                get_locs(q);
-                p->nz = q;
-                rcp_note_prog(p, 1, NULL);     /* v241 */
-                if (nb++ == 0)
-                    fprintf(stderr, "[GL] 3D batches leave depth to GL: the GPU tests it"
-                            " before shading (RECOMP_GL_FRAGDEPTH=1 for the old way)\n");
-            } else {
+            if (q->id)
+                zvar_set(p, q);
+            else
                 free(q);
-            }
+        }
+    }
+    if (p->nz_wait) {
+        int r = rb_program_ready(&p->nz_wait->id);
+        if (r) {
+            GlProg *q = p->nz_wait;
+            p->nz_wait = NULL;
+            if (r > 0) zvar_set(p, q);
+            else free(q);
         }
     }
     return p->nz;
@@ -1562,10 +1652,25 @@ typedef struct {
     GlProg *prog;            /* NULL: built and failed */
     uint32_t used;
     int live;
+    int pending;             /* vk10: being built in the background (prog->id a handle) */
 } SpecEnt;
 static SpecEnt s_spec[SPEC_N];
 static unsigned s_spec_built, s_spec_failed, s_spec_evicted, s_spec_live, s_spec_new;
 static uint32_t s_spec_clock;
+
+/* v311g-vk10: new shaders built in the background where the backend can
+ * (the Vulkan backend), drawn meanwhile with what stands in for them: the
+ * general fragment shader for a specialised one, p itself for its depth
+ * twin, the CPU for a game vertex program. RECOMP_ASYNC_SHADERS=0: at once. */
+static int async_on(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("RECOMP_ASYNC_SHADERS");
+        v = !(e && !strcmp(e, "0"));
+    }
+    return v;
+}
 
 static int spec_on(void)
 {
@@ -1704,6 +1809,25 @@ static GlProg *pick_prog(GlProg *p, const NvGlState *st)
         if (!e->live) { if (victim < 0 || s_spec[victim].live) victim = slot; continue; }
         if (e->base == p && e->nz == nz && !memcmp(e->key, k, sizeof k)) {
             e->used = ++s_spec_clock;
+            if (e->pending) {                  /* vk10: built in the background */
+                int r = rb_program_ready(&e->prog->id);
+                if (r == 0)
+                    return z;                  /* not yet: the general one meanwhile */
+                e->pending = 0;
+                if (r < 0) {
+                    free(e->prog);
+                    e->prog = NULL;
+                    if (s_spec_failed++ < 3)
+                        fprintf(stderr, "[GL] a specialised fragment shader did not build;"
+                                " that setup keeps the general one\n");
+                } else {
+                    get_locs(e->prog);
+                    rcp_note_prog(p, nz, k);
+                    if (s_spec_built++ == 0)
+                        fprintf(stderr, "[GL] fragment shaders specialised to each combiner setup"
+                                " (RECOMP_GL_RC_SPECIAL=0 for the general one)\n");
+                }
+            }
             return e->prog ? e->prog : z;
         }
         if (victim < 0 || (s_spec[victim].live && e->used < s_spec[victim].used))
@@ -1727,6 +1851,19 @@ static GlProg *pick_prog(GlProg *p, const NvGlState *st)
         if (src && getenv("RECOMP_GL_DUMP_SPEC") && s_spec_built < 2)
             fprintf(stderr, "[GL] specialised fragment shader:\n%s\n", src);
         q = src ? (GlProg *)calloc(1, sizeof *q) : NULL;
+        if (q && async_on() && z && z->id
+                && (q->id = rb_program_build_async(p->vsrc, src, z->id)) != 0) {
+            e->prog = q;                       /* vk10: drawn with z until it is ready */
+            e->pending = 1;
+            free(src);
+            if (rb_program_ready(&e->prog->id) == 1) {   /* made ahead at start-up */
+                e->pending = 0;
+                get_locs(e->prog);
+                rcp_note_prog(p, nz, k);
+                return e->prog;
+            }
+            return z;
+        }
         if (q) {
             q->id = link_with2(p->vsrc, src);
             if (q->id) {

@@ -78,7 +78,9 @@ static const char *const k_fs =
 
 typedef struct { uint32_t *code; size_t words; } Spirv;
 
-static char s_glsl_err[4096];        /* the last compile or link log */
+/* the last compile or link log; per thread (vk10: the Vulkan backend
+ * compiles on worker threads) */
+static _Thread_local char s_glsl_err[4096];
 
 static glslang_shader_t *gl_shader(glslang_stage_t stage, const char *src, glslang_input_t *in)
 {
@@ -952,27 +954,34 @@ static void spv_save(const char *vs, const char *fs, const Spirv *v, const Spirv
         remove(tmp);
 }
 
+/* the folders and glslang, once; called on the main thread before any
+ * worker compiles (nv2a_rb_vk.c), and again harmlessly from below */
+static volatile int s_spv_up;
+void nv2a_vk_spirv_init(void)
+{
+    if (s_spv_up)
+        return;
+#if defined(_WIN32)
+    CreateDirectoryA("shader_cache", NULL);
+    CreateDirectoryA("shader_cache\\spirv", NULL);
+#else
+    mkdir("shader_cache", 0755);
+    mkdir("shader_cache/spirv", 0755);
+#endif
+    glslang_initialize_process();
+    s_spv_up = 1;
+}
+
 int nv2a_vk_spirv(const char *vs, const char *fs, uint32_t **vw, size_t *vn,
                   uint32_t **fw, size_t *fn, int *cached, char **err)
 {
-    static int up;
     Spirv v, f;
     if (err) *err = NULL;
     *cached = 0;
     if (spv_load(vs, fs, &v, &f)) {
         *cached = 1;
     } else {
-        if (!up) {
-#if defined(_WIN32)
-            CreateDirectoryA("shader_cache", NULL);
-            CreateDirectoryA("shader_cache\\spirv", NULL);
-#else
-            mkdir("shader_cache", 0755);
-            mkdir("shader_cache/spirv", 0755);
-#endif
-            glslang_initialize_process();
-            up = 1;
-        }
+        nv2a_vk_spirv_init();
         s_glsl_err[0] = 0;
         if (!glsl_to_spirv(vs, fs, &v, &f)) {
             free(v.code);

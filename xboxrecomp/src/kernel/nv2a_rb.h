@@ -48,6 +48,13 @@ void rb_shader_options(const char *(*defs)(void), int (*salt)(const char **out, 
  * it failed (the log says why). The OpenGL backend keeps linked programs
  * on disk (shader_cache). */
 uint32_t rb_program_build(const char *vsrc, const char *fsrc);
+/* step 2 (vk10): the same, built in the background. A handle at once (0 if
+ * this backend can't: build it with rb_program_build then); `like` is a
+ * program drawn in its place meanwhile, whose pipelines are made for it
+ * too (0: none). rb_program_ready: 1 when it can be drawn with (*id is then
+ * the program), 0 not yet, -1 it failed. rb_program_delete takes either. */
+uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t like);
+int  rb_program_ready(uint32_t *id);
 /* one shader on its own, for programs put together by the caller (AA) */
 uint32_t rb_shader_compile(int vertex, const char *src);
 /* programs loaded from the cache, built, and the time building took (TM ticks) */

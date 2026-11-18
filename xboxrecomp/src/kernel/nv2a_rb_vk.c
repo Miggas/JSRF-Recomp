@@ -618,7 +618,11 @@ static int vkd_setup(void)
  * the renderer the program already made; the first draw takes its pipeline
  * from the workers (waiting only if that one is still being made). */
 
-typedef struct {
+typedef struct VkpJob {
+    int kind;                          /* 0 a pipeline, 1 a program's SPIR-V (vk10) */
+    int state;                         /* 0 to do, 1 being done, 2 done, 3 taken */
+    int ahead;                         /* from the list, at start-up */
+    /* a pipeline */
     GLuint prog;                       /* the program it is for */
     uint64_t kh;                       /* pkey_hash of k */
     PKey k;
@@ -626,16 +630,20 @@ typedef struct {
     VkPipelineLayout pl;
     uint32_t inputs;
     int dclamp;
-    int state;                         /* 0 to make, 1 being made, 2 made, 3 taken */
     VkPipeline p;
+    /* a program's SPIR-V (into the SPIR-V cache, where linking finds it) */
+    char *vs, *fs;
+    int ok;
 } VkpJob;
 typedef struct { uint64_t h; GLuint id; int handed; } VkpReady;
 static GLuint vkp_link(const char *vsrc, const char *fsrc);
 
 static SDL_mutex *s_vkp_mu;
-static SDL_cond *s_vkp_cv;
-static VkpJob *s_vkp_job;
-static int s_vkp_njob, s_vkp_next, s_vkp_made, s_vkp_taken, s_vkp_waited, s_vkp_logged;
+static SDL_cond *s_vkp_cv;             /* a job done */
+static SDL_cond *s_vkp_work;           /* a job to do */
+static VkpJob **s_vkp_job;
+static int s_vkp_njob, s_vkp_cjob, s_vkp_next, s_vkp_threads;
+static int s_vkp_nahead, s_vkp_made, s_vkp_taken, s_vkp_waited, s_vkp_logged;
 static VkpReady *s_vkp_ready;
 static int s_vkp_nready;
 static uint64_t s_vkp_t0, s_vkp_t1;
@@ -644,6 +652,11 @@ static uint32_t s_vkp_nidh;
 static uint64_t s_vkp_known[8192];     /* hashes written down: programs, and program x key */
 static FILE *s_vkp_out;
 static int s_vkp_off = -1;
+/* each program's pipeline keys so far (what a program built in the
+ * background in its place will need: vk10) */
+typedef struct { GLuint prog; PKey k; } VkpKey;
+static VkpKey *s_vkp_pk;
+static int s_vkp_npk, s_vkp_cpk;
 
 static int vkp_on(void)
 {
@@ -744,30 +757,100 @@ static void vkp_pipes_add(GProg *g, uint64_t kh, VkPipeline p)
     g->npipes++;
 }
 
+static void vkp_key_note(GLuint prog, const PKey *k)
+{
+    if (s_vkp_npk == s_vkp_cpk) {
+        int nc = s_vkp_cpk ? s_vkp_cpk * 2 : 256;
+        VkpKey *n = (VkpKey *)realloc(s_vkp_pk, (size_t)nc * sizeof *n);
+        if (!n) return;
+        s_vkp_pk = n;
+        s_vkp_cpk = nc;
+    }
+    s_vkp_pk[s_vkp_npk].prog = prog;
+    s_vkp_pk[s_vkp_npk].k = *k;
+    s_vkp_npk++;
+}
+
+/* a job for the workers (the lock held) */
+static int vkp_push_locked(VkpJob *j)
+{
+    if (s_vkp_njob == s_vkp_cjob) {
+        int nc = s_vkp_cjob ? s_vkp_cjob * 2 : 256;
+        VkpJob **n = (VkpJob **)realloc(s_vkp_job, (size_t)nc * sizeof *n);
+        if (!n) return 0;
+        s_vkp_job = n;
+        s_vkp_cjob = nc;
+    }
+    s_vkp_job[s_vkp_njob++] = j;
+    SDL_CondSignal(s_vkp_work);
+    return 1;
+}
+static VkpJob *vkp_pipe_job(GLuint prog, GProg *g, const PKey *k)
+{
+    VkpJob *j = (VkpJob *)calloc(1, sizeof *j);
+    if (!j) return NULL;
+    j->kind = 0;
+    j->prog = prog;
+    j->k = *k;
+    j->kh = pkey_hash(k);
+    j->vm = g->vm; j->fm = g->fm; j->pl = g->pl;
+    j->inputs = g->inputs;
+    j->dclamp = S.dclamp;
+    return j;
+}
+
+static void vkp_do(VkpJob *j)
+{
+    if (j->kind == 0) {
+        j->p = pipe_make_x(j->vm, j->fm, j->pl, j->inputs, &j->k, j->dclamp);
+    } else {
+        uint32_t *vw = NULL, *fw = NULL;
+        size_t vn = 0, fn = 0;
+        int cached = 0;
+        char *err = NULL;
+        j->ok = nv2a_vk_spirv(j->vs, j->fs, &vw, &vn, &fw, &fn, &cached, &err);
+        free(vw); free(fw); free(err);
+    }
+}
+
 static int SDLCALL vkp_worker(void *arg)
 {
     (void)arg;
+    SDL_LockMutex(s_vkp_mu);
     for (;;) {
-        VkpJob *j = NULL;
-        VkPipeline p;
-        SDL_LockMutex(s_vkp_mu);
-        while (s_vkp_next < s_vkp_njob && s_vkp_job[s_vkp_next].state != 0)
+        VkpJob *j;
+        while (s_vkp_next < s_vkp_njob && s_vkp_job[s_vkp_next]->state != 0)
             s_vkp_next++;
-        if (s_vkp_next < s_vkp_njob) {
-            j = &s_vkp_job[s_vkp_next++];
-            j->state = 1;
+        if (s_vkp_next >= s_vkp_njob) {
+            SDL_CondWait(s_vkp_work, s_vkp_mu);
+            continue;
         }
+        j = s_vkp_job[s_vkp_next++];
+        j->state = 1;
         SDL_UnlockMutex(s_vkp_mu);
-        if (!j)
-            return 0;
-        p = pipe_make_x(j->vm, j->fm, j->pl, j->inputs, &j->k, j->dclamp);
+        vkp_do(j);
         SDL_LockMutex(s_vkp_mu);
-        j->p = p;
         j->state = 2;
-        if (++s_vkp_made == s_vkp_njob) s_vkp_t1 = TM_NOW();
+        if (j->ahead && ++s_vkp_made == s_vkp_nahead) s_vkp_t1 = TM_NOW();
         SDL_CondBroadcast(s_vkp_cv);
-        SDL_UnlockMutex(s_vkp_mu);
     }
+    return 0;                          /* not reached: the workers live as long as the game */
+}
+
+/* the job, done: here if no worker has begun it, else waited for (the lock held) */
+static void vkp_finish_locked(VkpJob *j)
+{
+    if (j->state == 0) {
+        j->state = 1;
+        SDL_UnlockMutex(s_vkp_mu);
+        vkp_do(j);
+        SDL_LockMutex(s_vkp_mu);
+        j->state = 2;
+        if (j->ahead && ++s_vkp_made == s_vkp_nahead) s_vkp_t1 = TM_NOW();
+        SDL_CondBroadcast(s_vkp_cv);
+    }
+    while (j->state == 1)
+        SDL_CondWait(s_vkp_cv, s_vkp_mu);
 }
 
 /* the pipeline for program `id` (g) and key k: already made, made ahead, or now */
@@ -782,31 +865,24 @@ static VkPipeline vkp_get(GProg *g, GLuint id, const PKey *k)
     if (s_vkp_njob) {
         VkpJob *j = NULL;
         SDL_LockMutex(s_vkp_mu);
-        for (i = 0; i < s_vkp_njob; i++)
-            if (s_vkp_job[i].prog == id && s_vkp_job[i].kh == kh && s_vkp_job[i].state != 3
-                    && !memcmp(&s_vkp_job[i].k, k, sizeof *k)) {
-                j = &s_vkp_job[i];
+        for (i = 0; i < s_vkp_njob; i++) {
+            VkpJob *c = s_vkp_job[i];
+            if (c->kind == 0 && c->prog == id && c->kh == kh && c->state != 3
+                    && !memcmp(&c->k, k, sizeof *k)) {
+                j = c;
                 break;
             }
+        }
         if (j) {
-            if (j->state == 0) {               /* not begun: made here, now */
-                j->state = 1;
-                SDL_UnlockMutex(s_vkp_mu);
-                p = pipe_make_x(j->vm, j->fm, j->pl, j->inputs, &j->k, j->dclamp);
-                SDL_LockMutex(s_vkp_mu);
-                j->p = p;
-                if (++s_vkp_made == s_vkp_njob) s_vkp_t1 = TM_NOW();
-            } else {
-                if (j->state == 1) s_vkp_waited++;
-                while (j->state == 1)           /* a worker is on it */
-                    SDL_CondWait(s_vkp_cv, s_vkp_mu);
-            }
+            if (j->state == 1) s_vkp_waited++;
+            vkp_finish_locked(j);
             p = j->p;
             j->state = 3;
             s_vkp_taken++;
             SDL_UnlockMutex(s_vkp_mu);
             if (p) {
                 vkp_pipes_add(g, kh, p);
+                vkp_key_note(id, k);
                 s_n_pipes++;
                 return p;
             }
@@ -817,8 +893,195 @@ static VkPipeline vkp_get(GProg *g, GLuint id, const PKey *k)
     if (!p)
         return VK_NULL_HANDLE;
     vkp_pipes_add(g, kh, p);
+    vkp_key_note(id, k);
     vkp_write_key(vkp_id_hash(id), kh, k);
     return p;
+}
+
+/* ── programs built in the background (v311g-vk10) ────────────────────────
+ * The first time a shader is needed it was compiled there and then (glslang,
+ * then the driver for its pipelines): tens of milliseconds the game waited.
+ * Where the renderer has something to draw with meanwhile (the general
+ * fragment shader for a specialised one, the CPU for a vertex program), it
+ * asks for the program in the background: a worker makes its SPIR-V, the
+ * main thread links it (from the SPIR-V cache, a fraction of a millisecond),
+ * the workers make the pipelines the stand-in has been drawn with, and only
+ * then is it ready. Nothing waits. RECOMP_VK_ASYNC=0: built at once. */
+#define VKA_HANDLE 0x40000000u
+typedef struct {
+    uint32_t handle;
+    int state;                         /* 0 compiling, 1 pipelines, -1 failed */
+    int cancel;
+    GLuint id, like;
+    uint64_t h;
+    VkpJob *spv;
+    VkpJob **pj;
+    int npj;
+} VkpAsync;
+static VkpAsync **s_vka;
+static int s_nvka, s_cvka;
+static uint32_t s_vka_count;
+static unsigned s_vka_started, s_vka_ready, s_vka_failed, s_vka_pipes;
+static int s_vka_off = -1;
+
+static int vka_on(void)
+{
+    if (s_vka_off < 0) {
+        const char *e = getenv("RECOMP_VK_ASYNC");
+        s_vka_off = e && e[0] == '0';
+    }
+    return !s_vka_off && s_vkp_threads > 0;
+}
+static int vka_find(uint32_t handle)
+{
+    int i;
+    for (i = 0; i < s_nvka; i++)
+        if (s_vka[i]->handle == handle) return i;
+    return -1;
+}
+static void vka_free(int i)
+{
+    VkpAsync *a = s_vka[i];
+    free(a->pj);
+    free(a);
+    s_vka[i] = s_vka[--s_nvka];
+}
+/* a SPIR-V job no longer wanted: dropped if not begun (the lock held);
+ * 1 when it can be freed now */
+static int vkp_spv_drop_locked(VkpJob *j)
+{
+    if (j->state == 0) j->state = 3;
+    if (j->state == 1) return 0;
+    j->state = 3;
+    return 1;
+}
+
+uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t like)
+{
+    uint64_t h;
+    VkpAsync *a;
+    VkpJob *j;
+    int i;
+    if (!vka_on())
+        return 0;
+    h = vkp_src_hash(vsrc, fsrc);
+    for (i = 0; i < s_vkp_nready; i++)
+        if (s_vkp_ready[i].h == h && !s_vkp_ready[i].handed) {
+            s_vkp_ready[i].handed = 1;       /* made at start-up: ready now */
+            return s_vkp_ready[i].id;
+        }
+    a = (VkpAsync *)calloc(1, sizeof *a);
+    j = (VkpJob *)calloc(1, sizeof *j);
+    if (!a || !j || s_nvka == (1 << 20)) { free(a); free(j); return 0; }
+    j->kind = 1;
+    j->vs = strdup(vsrc);
+    j->fs = strdup(fsrc);
+    if (!j->vs || !j->fs) { free(j->vs); free(j->fs); free(j); free(a); return 0; }
+    if (s_nvka == s_cvka) {
+        int nc = s_cvka ? s_cvka * 2 : 32;
+        VkpAsync **n = (VkpAsync **)realloc(s_vka, (size_t)nc * sizeof *n);
+        if (!n) { free(j->vs); free(j->fs); free(j); free(a); return 0; }
+        s_vka = n;
+        s_cvka = nc;
+    }
+    a->handle = VKA_HANDLE | (++s_vka_count & (VKA_HANDLE - 1));
+    a->like = like;
+    a->h = h;
+    a->spv = j;
+    SDL_LockMutex(s_vkp_mu);
+    if (!vkp_push_locked(j)) {
+        SDL_UnlockMutex(s_vkp_mu);
+        free(j->vs); free(j->fs); free(j); free(a);
+        return 0;
+    }
+    SDL_UnlockMutex(s_vkp_mu);
+    s_vka[s_nvka++] = a;
+    s_vka_started++;
+    return a->handle;
+}
+
+int rb_program_ready(uint32_t *id)
+{
+    int i, k, done;
+    VkpAsync *a;
+    if (!(*id & VKA_HANDLE))
+        return 1;
+    i = vka_find(*id);
+    if (i < 0)
+        return -1;
+    a = s_vka[i];
+    if (a->state == 0) {
+        VkpJob *j = a->spv;
+        GProg *g;
+        SDL_LockMutex(s_vkp_mu);
+        done = j->state == 2;
+        SDL_UnlockMutex(s_vkp_mu);
+        if (!done)
+            return 0;
+        /* linked here, from the SPIR-V the worker left in the cache */
+        a->id = j->ok ? vkp_link(j->vs, j->fs) : 0;
+        if (a->id) {
+            vkp_set_id(a->id, a->h);
+            if (vkp_on()) vkp_write_prog(a->h, j->vs, j->fs);
+        }
+        SDL_LockMutex(s_vkp_mu);
+        free(j->vs); free(j->fs);            /* taken (the job itself stays in the list) */
+        j->vs = j->fs = NULL;
+        j->state = 3;
+        SDL_UnlockMutex(s_vkp_mu);
+        a->spv = NULL;
+        g = a->id ? prog_of(a->id) : NULL;
+        if (!g || !g->linked) {
+            if (a->id) rb_program_delete(a->id);
+            s_vka_failed++;
+            vka_free(i);
+            return -1;
+        }
+        /* the pipelines the stand-in was drawn with */
+        for (k = 0; k < s_vkp_npk; k++)
+            if (a->like && s_vkp_pk[k].prog == a->like) {
+                VkpJob *pj = vkp_pipe_job(a->id, g, &s_vkp_pk[k].k);
+                VkpJob **n = (VkpJob **)realloc(a->pj, (size_t)(a->npj + 1) * sizeof *n);
+                if (!pj || !n) { free(pj); if (n) a->pj = n; continue; }
+                a->pj = n;
+                SDL_LockMutex(s_vkp_mu);
+                if (vkp_push_locked(pj)) a->pj[a->npj++] = pj;
+                else free(pj);
+                SDL_UnlockMutex(s_vkp_mu);
+            }
+        a->state = 1;
+    }
+    /* state 1: ready when its pipelines are */
+    SDL_LockMutex(s_vkp_mu);
+    for (k = 0; k < a->npj; k++)
+        if (a->pj[k]->state < 2) {
+            SDL_UnlockMutex(s_vkp_mu);
+            return 0;
+        }
+    SDL_UnlockMutex(s_vkp_mu);
+    {
+        GProg *g = prog_of(a->id);
+        for (k = 0; k < a->npj; k++) {
+            VkpJob *pj = a->pj[k];
+            SDL_LockMutex(s_vkp_mu);
+            pj->state = 3;                   /* taken (left in the list, as the made-ahead ones) */
+            SDL_UnlockMutex(s_vkp_mu);
+            if (pj->p && g) {
+                int dup = 0, m;
+                for (m = 0; m < g->npipes; m++) if (g->pipes[m].key == pj->kh) dup = 1;
+                if (dup) { vkDestroyPipeline(G.c.dev, pj->p, NULL); continue; }
+                vkp_pipes_add(g, pj->kh, pj->p);
+                vkp_key_note(a->id, &pj->k);
+                vkp_write_key(a->h, pj->kh, &pj->k);
+                s_n_pipes++;
+                s_vka_pipes++;
+            }
+        }
+    }
+    *id = a->id;
+    s_vka_ready++;
+    vka_free(i);
+    return 1;
 }
 
 GLuint rb_program_build(const char *vsrc, const char *fsrc)
@@ -842,11 +1105,32 @@ GLuint rb_program_build(const char *vsrc, const char *fsrc)
 void rb_program_delete(uint32_t id)
 {
     int i;
+    if (id & VKA_HANDLE) {                   /* one still being built: let go of it */
+        i = vka_find(id);
+        if (i < 0) return;
+        if (s_vka[i]->state == 0) {
+            VkpJob *j = s_vka[i]->spv;
+            int now;
+            SDL_LockMutex(s_vkp_mu);
+            now = vkp_spv_drop_locked(j);
+            SDL_UnlockMutex(s_vkp_mu);
+            if (!now) { s_vka[i]->cancel = 1; return; }   /* freed by vka_reap */
+            SDL_LockMutex(s_vkp_mu);
+            free(j->vs); free(j->fs);
+            j->vs = j->fs = NULL;
+            SDL_UnlockMutex(s_vkp_mu);
+            vka_free(i);
+            return;
+        }
+        id = s_vka[i]->id;                   /* linked: its pipelines are dropped below */
+        vka_free(i);
+    }
     if (s_vkp_njob) {
         SDL_LockMutex(s_vkp_mu);
         for (i = 0; i < s_vkp_njob; i++) {
-            VkpJob *j = &s_vkp_job[i];
-            if (j->prog != id || j->state == 3) continue;
+            VkpJob *j = s_vkp_job[i];
+            if (j->kind != 0 || j->prog != id || j->state == 3) continue;
+            if (j->state == 0) j->state = 3;
             while (j->state == 1)
                 SDL_CondWait(s_vkp_cv, s_vkp_mu);
             if (j->state == 2 && j->p)
@@ -858,8 +1142,32 @@ void rb_program_delete(uint32_t id)
     }
     for (i = 0; i < s_vkp_nready; i++)
         if (s_vkp_ready[i].id == id) s_vkp_ready[i].id = 0, s_vkp_ready[i].handed = 1;
+    for (i = 0; i < s_vkp_npk; )
+        if (s_vkp_pk[i].prog == id) s_vkp_pk[i] = s_vkp_pk[--s_vkp_npk];
+        else i++;
     vkp_set_id(id, 0);
     glDeleteProgram(id);
+}
+
+/* the ones let go of while a worker had them, freed once it is done */
+static void vka_reap(void)
+{
+    int i;
+    for (i = 0; i < s_nvka; ) {
+        VkpAsync *a = s_vka[i];
+        int done;
+        if (!a->cancel) { i++; continue; }
+        SDL_LockMutex(s_vkp_mu);
+        done = a->spv->state != 1;
+        SDL_UnlockMutex(s_vkp_mu);
+        if (!done) { i++; continue; }
+        SDL_LockMutex(s_vkp_mu);
+        free(a->spv->vs); free(a->spv->fs);
+        a->spv->vs = a->spv->fs = NULL;
+        a->spv->state = 3;
+        SDL_UnlockMutex(s_vkp_mu);
+        vka_free(i);
+    }
 }
 
 /* what the last runs wrote down: read at rb_init, before any program is
@@ -938,15 +1246,12 @@ static void vkp_read(void)
 static void vkp_start(void)
 {
     int i, a, nthreads;
-    if (!s_vkp_nrk) {
-        for (i = 0; i < s_vkp_nrp; i++) { free(s_vkp_rp[i].v); free(s_vkp_rp[i].fr); }
-        return;
-    }
     s_vkp_t0 = TM_NOW();
-    s_vkp_job = (VkpJob *)calloc((size_t)s_vkp_nrk, sizeof *s_vkp_job);
-    s_vkp_ready = (VkpReady *)calloc((size_t)(s_vkp_nrp ? s_vkp_nrp : 1), sizeof *s_vkp_ready);
-    for (i = 0; i < s_vkp_nrk && s_vkp_job && s_vkp_ready; i++) {
+    if (s_vkp_nrk)
+        s_vkp_ready = (VkpReady *)calloc((size_t)(s_vkp_nrp ? s_vkp_nrp : 1), sizeof *s_vkp_ready);
+    for (i = 0; i < s_vkp_nrk && s_vkp_ready; i++) {
         GProg *g;
+        VkpJob *j;
         for (a = 0; a < s_vkp_nrp && s_vkp_rp[a].h != s_vkp_rkh[i]; a++) {}
         if (a == s_vkp_nrp) continue;          /* its program was not written down */
         if (!s_vkp_rp[a].id) {
@@ -965,49 +1270,62 @@ static void vkp_start(void)
         }
         g = prog_of(s_vkp_rp[a].id);
         if (!g || !g->linked) continue;
-        s_vkp_job[s_vkp_njob].prog = s_vkp_rp[a].id;
-        s_vkp_job[s_vkp_njob].k = s_vkp_rk[i];
-        s_vkp_job[s_vkp_njob].kh = pkey_hash(&s_vkp_rk[i]);
-        s_vkp_job[s_vkp_njob].vm = g->vm;
-        s_vkp_job[s_vkp_njob].fm = g->fm;
-        s_vkp_job[s_vkp_njob].pl = g->pl;
-        s_vkp_job[s_vkp_njob].inputs = g->inputs;
-        s_vkp_job[s_vkp_njob].dclamp = S.dclamp;
-        s_vkp_njob++;
+        j = vkp_pipe_job(s_vkp_rp[a].id, g, &s_vkp_rk[i]);
+        if (!j) continue;
+        j->ahead = 1;
+        if (s_vkp_njob == s_vkp_cjob) {
+            int nc = s_vkp_cjob ? s_vkp_cjob * 2 : 256;
+            VkpJob **n = (VkpJob **)realloc(s_vkp_job, (size_t)nc * sizeof *n);
+            if (!n) { free(j); continue; }
+            s_vkp_job = n;
+            s_vkp_cjob = nc;
+        }
+        s_vkp_job[s_vkp_njob++] = j;
+        s_vkp_nahead++;
     }
     for (i = 0; i < s_vkp_nrp; i++) { free(s_vkp_rp[i].v); free(s_vkp_rp[i].fr); }
     free(s_vkp_rp); free(s_vkp_rk); free(s_vkp_rkh);
     s_vkp_rp = NULL; s_vkp_rk = NULL; s_vkp_rkh = NULL;
-    if (!s_vkp_njob)
-        return;
+    {
+        const char *e = getenv("RECOMP_VK_ASYNC");
+        if (!s_vkp_njob && e && e[0] == '0')
+            return;                            /* nothing for workers to do */
+    }
+    nv2a_vk_spirv_init();                      /* before any worker compiles */
     s_vkp_mu = SDL_CreateMutex();
     s_vkp_cv = SDL_CreateCond();
-    if (!s_vkp_mu || !s_vkp_cv) {
-        s_vkp_njob = 0;
+    s_vkp_work = SDL_CreateCond();
+    if (!s_vkp_mu || !s_vkp_cv || !s_vkp_work) {
+        s_vkp_njob = s_vkp_nahead = 0;
         return;
     }
     nthreads = SDL_GetCPUCount() - 2;
     if (nthreads > 4) nthreads = 4;
     if (nthreads < 1) nthreads = 1;
     for (i = 0; i < nthreads; i++) {
-        SDL_Thread *t = SDL_CreateThread(vkp_worker, "vk pipelines", NULL);
-        if (t) SDL_DetachThread(t);
+        SDL_Thread *t = SDL_CreateThread(vkp_worker, "vk builder", NULL);
+        if (t) { SDL_DetachThread(t); s_vkp_threads++; }
     }
-    fprintf(stderr, "[VK] pipelines ahead: %d programs made (%.0f ms), %d pipelines being made"
-            " on %d threads (RECOMP_VK_PIPES_AHEAD=0 for none)\n", s_vkp_nready,
-            (double)(TM_NOW() - s_vkp_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
-            s_vkp_njob, nthreads);
+    if (s_vkp_nahead)
+        fprintf(stderr, "[VK] pipelines ahead: %d programs made (%.0f ms), %d pipelines being made"
+                " on %d threads (RECOMP_VK_PIPES_AHEAD=0 for none)\n", s_vkp_nready,
+                (double)(TM_NOW() - s_vkp_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
+                s_vkp_nahead, s_vkp_threads);
+    if (vka_on())
+        fprintf(stderr, "[VK] new shaders are built in the background on %d threads, drawn with"
+                " the general ones meanwhile (RECOMP_VK_ASYNC=0: built at once)\n", s_vkp_threads);
 }
 
 /* once they are all made: one line */
 static void vkp_report(void)
 {
-    if (s_vkp_logged || !s_vkp_njob) return;
+    vka_reap();
+    if (s_vkp_logged || !s_vkp_nahead) return;
     SDL_LockMutex(s_vkp_mu);
-    if (s_vkp_made == s_vkp_njob) {
+    if (s_vkp_made == s_vkp_nahead) {
         s_vkp_logged = 1;
         fprintf(stderr, "[VK] pipelines ahead: all %d made in %.0f ms; %d used so far, %d draws"
-                " waited for one\n", s_vkp_njob,
+                " waited for one\n", s_vkp_nahead,
                 (double)(s_vkp_t1 - s_vkp_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
                 s_vkp_taken, s_vkp_waited);
     }
@@ -2151,6 +2469,10 @@ int rb_window_present(const RbFrame *f)
                 memset(s_vkd_t, 0, sizeof s_vkd_t);
                 s_vkd_ubytes = 0;
             }
+            if (s_vka_started)
+                fprintf(stderr, "[VK]   built in the background so far: %u shaders asked for, %u ready"
+                        " (%u pipelines with them), %u failed, %d being built\n", s_vka_started,
+                        s_vka_ready, s_vka_pipes, s_vka_failed, s_nvka);
             s_vkd_draws = s_vkd_pipe_hash = s_vkd_vb = s_vkd_dyn = s_vkd_push = 0;
         }
     }

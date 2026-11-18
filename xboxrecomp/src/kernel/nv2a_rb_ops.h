@@ -10,6 +10,8 @@ typedef struct RbOps {
     void (*fixed_lost)(void);
     void (*shader_options)(const char *(*defs)(void), int (*salt)(const char **out, int max));
     uint32_t (*program_build)(const char *vsrc, const char *fsrc);
+    uint32_t (*program_build_async)(const char *vsrc, const char *fsrc, uint32_t like);
+    int (*program_ready)(uint32_t *id);
     uint32_t (*shader_compile)(int vertex, const char *src);
     void (*program_stats)(unsigned *hits, unsigned *misses, uint64_t *ticks);
     void (*use_program)(uint32_t p);

@@ -319,6 +319,14 @@ GLuint rb_shader_compile(int vertex, const char *src)
     return rbg_compile(vertex ? GL_VERTEX_SHADER : GL_FRAGMENT_SHADER, src);
 }
 
+/* no background building here (yet): the caller builds at once */
+uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t like)
+{
+    (void)vsrc; (void)fsrc; (void)like;
+    return 0;
+}
+int rb_program_ready(uint32_t *id) { (void)id; return 1; }
+
 void rb_program_stats(unsigned *hits, unsigned *misses, uint64_t *ticks)
 {
     *hits = s_cache_hits;
