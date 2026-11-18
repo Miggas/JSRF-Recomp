@@ -2234,7 +2234,10 @@ static int init_gl(void)
 #ifdef XBOXRECOMP_HAVE_VK
     if (nv2a_vk_native()) {             /* step 2b: the Vulkan backend */
         extern const RbOps rbvk_ops;
-        rb_select(&rbvk_ops);
+        extern const RbOps *rbq_wrap(const RbOps *in);
+        /* vk13: its draws recorded on a thread of their own once start-up
+         * is done (rb_thread_start; RECOMP_VK_RECORD_THREAD=0: not) */
+        rb_select(rbq_wrap(&rbvk_ops));
     }
 #endif
     if (!rb_init())
