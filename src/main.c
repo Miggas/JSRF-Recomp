@@ -1304,7 +1304,9 @@ static void tab_debug(struct nk_context *ctx, float h)
     used += s_row * 1.3f + 4;
 
     bool exe = have_game_exe();
-    nk_layout_row_dynamic(ctx, s_row * 1.3f, 3);
+    char sc[LPATH];
+    pjoin(sc, g_paths.game, "shader_cache");
+    nk_layout_row_dynamic(ctx, s_row * 1.3f, 4);
     if (button(ctx, "Play, stop after 30 s", exe && !busy)) {
         if (play_watchdog(30)) snprintf(s_message, sizeof s_message, "Game started: it stops after 30 s, with a dump in the log.");
     }
@@ -1317,9 +1319,18 @@ static void tab_debug(struct nk_context *ctx, float h)
         s_trace_until = SDL_GetTicks() + 5000;
         snprintf(s_message, sizeof s_message, "Tracing one frame: [FTRACE] lines in the log.");
     }
+    /* v3c: the whole shader cache (Idea by Miggas): OpenGL's and Vulkan's
+     * shaders, pipelines and recipes, made again as the game needs them */
+    if (button(ctx, "Delete shader_cache", !busy && is_dir(sc))) {
+        if (remove_tree(sc) && !is_dir(sc))
+            snprintf(s_message, sizeof s_message, "Deleted shader_cache: the next run builds its shaders again (some stutters at first).");
+        else
+            snprintf(s_message, sizeof s_message, "Could not delete all of shader_cache: is the game still running?");
+        logf_("%s", s_message);
+    }
     used += s_row * 1.3f + 4;
     nk_layout_row_dynamic(ctx, s_row - 6, 1);
-    nk_label_colored(ctx, "The last two work on a running game with Logging on (Settings -> Debug).", NK_TEXT_LEFT, C_DIM);
+    nk_label_colored(ctx, "Sample and Trace work on a running game with Logging on (Settings -> Debug). Close the game before deleting the shader cache.", NK_TEXT_LEFT, C_DIM);
     used += s_row - 2;
 
     nk_layout_row_dynamic(ctx, s_row * 1.2f, 3);
