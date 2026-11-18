@@ -1,2 +1,2 @@
 /* the build number, shown in the log ([CONFIG] build ...) */
-#define JSRF_BUILD "v311g-vk13"
+#define JSRF_BUILD "v311g-vk13b"

@@ -57,6 +57,11 @@ static int q_thread(void *u)
 {
     uint64_t r = 0;
     (void)u;
+    {   /* RECOMP_PROFILE samples this thread too ([PROF] VK recording) */
+        extern void (*g_thread_watch_hook)(const char *name);
+        if (g_thread_watch_hook)
+            g_thread_watch_hook("VK recording");
+    }
     for (;;) {
         uint64_t w = atomic_load_explicit(&q_w, memory_order_acquire);
         if (r == w) {
