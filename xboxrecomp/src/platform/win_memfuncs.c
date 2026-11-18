@@ -1,6 +1,6 @@
 /*
- * win_memfuncs.c -- memcpy, memmove, memset and memcmp for the Zig (clang,
- * MinGW) build on Windows.
+ * win_memfuncs.c -- memcpy, memmove, memset, memcmp and bcmp for the Zig
+ * builds (clang; MinGW on Windows, glibc on Linux).
  *
  * Zig links its own versions of these when the C library has none to
  * offer, and on Windows it has none: Microsoft's live in vcruntime, which a
@@ -17,6 +17,13 @@
  * No plain byte loops anywhere: the compiler would turn them back into a
  * call to memcpy (this function). Built with -fno-builtin for the same
  * reason. Only in Windows builds that are not MSVC (see the CMakeLists).
+ *
+ * vk14: on Linux too. Glibc has fast ones, but Zig puts its own (weak)
+ * into the program whenever it links its compiler runtime for anything
+ * else, and a definition in the program wins over the C library's -- for
+ * the shared libraries as well (the program exports its symbols). Miggas's
+ * Steam Deck profile: bcmp and memcpy, byte loops, 14% of the NV2A
+ * executor's time in the busiest part of 99th Street.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -137,23 +144,66 @@ void *memset(void *dst, int c, size_t n)
     return dst;
 }
 
+/* the first differing byte of two 8-byte words, as memcmp orders them */
+static inline int diff64(u64 x, u64 y)
+{
+    x = __builtin_bswap64(x);
+    y = __builtin_bswap64(y);
+    return x < y ? -1 : 1;
+}
+
 int memcmp(const void *a, const void *b, size_t n)
 {
     const unsigned char *p = a, *q = b;
-    size_t i = 0;
-    /* 16 bytes a step to the first difference, then that byte decides */
-    for (; i + 16 <= n; i += 16) {
-        __m128i x = _mm_loadu_si128((const __m128i *)(p + i));
-        __m128i y = _mm_loadu_si128((const __m128i *)(q + i));
-        unsigned m = (unsigned)_mm_movemask_epi8(_mm_cmpeq_epi8(x, y));
-        if (m != 0xFFFF) {
-            unsigned k = (unsigned)__builtin_ctz(~m & 0xFFFF);
-            return (int)p[i + k] - (int)q[i + k];
+    if (n >= 16) {
+        size_t i = 0;
+        unsigned m;
+        /* 16 bytes a step to the first difference, then that byte decides;
+         * the last step overlaps the one before (equal there anyway) */
+        for (;;) {
+            if (i + 16 > n)
+                i = n - 16;
+            m = (unsigned)_mm_movemask_epi8(_mm_cmpeq_epi8(
+                    _mm_loadu_si128((const __m128i *)(p + i)),
+                    _mm_loadu_si128((const __m128i *)(q + i))));
+            if (m != 0xFFFF) {
+                unsigned k = (unsigned)__builtin_ctz(~m & 0xFFFF);
+                return (int)p[i + k] - (int)q[i + k];
+            }
+            if (i + 16 >= n)
+                return 0;
+            i += 16;
         }
     }
-    for (; i < n; i++) {
+    if (n >= 8) {
+        u64 x = *(const u64u *)p, y = *(const u64u *)q;
+        if (x != y) return diff64(x, y);
+        x = *(const u64u *)(p + n - 8); y = *(const u64u *)(q + n - 8);
+        return x != y ? diff64(x, y) : 0;
+    }
+    if (n >= 4) {
+        u64 x = ((u64)*(const u32u *)p << 32) | *(const u32u *)(p + n - 4);
+        u64 y = ((u64)*(const u32u *)q << 32) | *(const u32u *)(q + n - 4);
+        if (x == y) return 0;
+        /* byte order within each half matters: compare them as bytes */
+        {
+            uint32_t a0 = __builtin_bswap32(*(const u32u *)p), b0 = __builtin_bswap32(*(const u32u *)q);
+            if (a0 != b0) return a0 < b0 ? -1 : 1;
+            a0 = __builtin_bswap32(*(const u32u *)(p + n - 4));
+            b0 = __builtin_bswap32(*(const u32u *)(q + n - 4));
+            return a0 < b0 ? -1 : 1;
+        }
+    }
+    for (size_t i = 0; i < n; i++) {
         int d = (int)p[i] - (int)q[i];
         if (d) return d;
     }
     return 0;
+}
+
+/* what the compiler calls for memcmp(...) == 0 where the C library has it
+ * (Linux): Zig's compares a byte at a time too */
+int bcmp(const void *a, const void *b, size_t n)
+{
+    return memcmp(a, b, n);
 }

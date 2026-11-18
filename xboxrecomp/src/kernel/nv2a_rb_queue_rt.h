@@ -32,6 +32,7 @@
 #define RBQ_SIZE      (16u << 20)        /* the ring */
 #define RBQ_MAX_COPY  (1u << 20)         /* larger data: the call waits and runs here */
 #define RBQ_OP_WRAP   0xFFFFu
+#define RBQ_WAKE      (64u << 10)        /* a sleeping reader is woken for this much */
 
 typedef struct { uint32_t op, len; uint64_t pad; } RbqHdr;   /* 16 bytes */
 
@@ -43,6 +44,7 @@ static uint64_t q_wl;                    /* written (writer's own) */
 static _Alignas(64) _Atomic uint64_t q_w;     /* published to the reader */
 static _Alignas(64) _Atomic uint64_t q_done;  /* made by the reader */
 static _Alignas(64) _Atomic int q_sleep;
+static _Atomic uint64_t q_sleep_at;           /* where the reader was when it slept */
 static _Alignas(64) _Atomic int q_dwait;
 static SDL_sem *q_wake, *q_dsem;
 
@@ -66,13 +68,17 @@ static int q_thread(void *u)
         uint64_t w = atomic_load_explicit(&q_w, memory_order_acquire);
         if (r == w) {
             int spin;
-            for (spin = 0; spin < 4000; spin++) {      /* ~20-60 us */
+            /* vk14: hardly a spin, then sleep until there is RBQ_WAKE to do
+             * or something waits (vk13 spun ~50 us each time: 85% of the
+             * thread's time on the Deck, a core's worth of power) */
+            for (spin = 0; spin < 32; spin++) {
                 RBQ_PAUSE();
                 if (atomic_load_explicit(&q_w, memory_order_acquire) != r)
                     break;
             }
             if (atomic_load_explicit(&q_w, memory_order_acquire) != r)
                 continue;
+            atomic_store_explicit(&q_sleep_at, r, memory_order_relaxed);
             atomic_store(&q_sleep, 1);
             if (atomic_load(&q_w) != r) {
                 if (atomic_exchange(&q_sleep, 0))
@@ -108,24 +114,29 @@ static int q_thread(void *u)
 
 static unsigned q_unpub;                  /* calls written, not yet published */
 
-static void q_publish(void)
+/* the calls written so far to the reader; a sleeping reader is woken when
+ * there is RBQ_WAKE to do (fewer wake-ups: each costs both threads a system
+ * call), or always (force: something waits for it) */
+static void q_publish_w(int force)
 {
     q_unpub = 0;
     atomic_store_explicit(&q_w, q_wl, memory_order_release);
     atomic_thread_fence(memory_order_seq_cst); /* the store before the look at q_sleep */
-    if (atomic_load_explicit(&q_sleep, memory_order_relaxed) && atomic_exchange(&q_sleep, 0))
+    if (atomic_load_explicit(&q_sleep, memory_order_relaxed)
+            && (force || q_wl - atomic_load_explicit(&q_sleep_at, memory_order_relaxed) >= RBQ_WAKE)
+            && atomic_exchange(&q_sleep, 0))
         SDL_SemPost(q_wake);
 }
+#define q_publish() q_publish_w(1)
 
 /* wait until the reader has made every call written so far */
 static void q_drain(int op)
 {
     uint64_t t0;
     int spin;
-    if (q_unpub)
-        q_publish();
     if (atomic_load_explicit(&q_done, memory_order_acquire) == q_wl)
         return;
+    q_publish();                                /* and wake the reader, whatever is left */
     t0 = TM_NOW();
     q_n_drain++;
     if (op >= 0 && op < RB_NCALLS_Q) q_drain_by[op]++;
@@ -192,7 +203,7 @@ static void *q_begin(uint32_t op, size_t body)
 static inline void q_end(void)
 {
     if (++q_unpub >= 8)
-        q_publish();
+        q_publish_w(0);
 }
 
 static int q_start(void)
