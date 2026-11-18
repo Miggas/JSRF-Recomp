@@ -1772,6 +1772,20 @@ static void vp_barrier(VkCommandBuffer c, VkImage img, VkImageLayout from, VkIma
     vkCmdPipelineBarrier(c, ss, ds, 0, 0, NULL, 0, NULL, 1, &b);
 }
 
+/* v311g-vk11: the queue is used from two threads (the Vulkan backend's
+ * frames are shown from a thread of their own), and Vulkan wants the queue
+ * -- and the whole device, for vkDeviceWaitIdle -- used by one at a time */
+static SDL_mutex *s_qmu;
+void nv2a_vk_qlock(void)
+{
+    if (!s_qmu) s_qmu = SDL_CreateMutex();   /* first use is on the game thread */
+    if (s_qmu) SDL_LockMutex(s_qmu);
+}
+void nv2a_vk_qunlock(void)
+{
+    if (s_qmu) SDL_UnlockMutex(s_qmu);
+}
+
 static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w, uint32_t h,
                       int cw, int ch, int dx, int dy, int dw, int dh)
 {
@@ -1793,7 +1807,10 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
         return 1;
     for (tries = 0; tries < 2; tries++) {
         if (!p->sc || p->stale || p->req_w != cw || p->req_h != ch) {
-            int s = vp_swapchain(cw, ch);
+            int s;
+            nv2a_vk_qlock();
+            s = vp_swapchain(cw, ch);
+            nv2a_vk_qunlock();
             if (s < 0)
                 return 1;            /* minimised */
             if (!s) { p->state = -1; return 0; }
@@ -1825,7 +1842,14 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
         dy = (int)(dy * ky); dh = (int)(dh * ky);
         cw = (int)p->ext.width; ch = (int)p->ext.height;
     }
-    if (!src_img && (!vp_src(w, h) || !vp_staging(f, (VkDeviceSize)w * h * 4))) {
+    if (!src_img) {
+        int ok;
+        nv2a_vk_qlock();
+        ok = vp_src(w, h) && vp_staging(f, (VkDeviceSize)w * h * 4);
+        nv2a_vk_qunlock();
+        if (!ok) src_img = VK_NULL_HANDLE, w = 0;
+    }
+    if (!src_img && !w) {
         p->state = -1;
         return 0;
     }
@@ -1925,7 +1949,9 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
         si.pCommandBuffers = &c;
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &p->done[img];
+        nv2a_vk_qlock();
         if (vkQueueSubmit(p->q, 1, &si, p->fence[f]) != VK_SUCCESS) {
+            nv2a_vk_qunlock();
             VK_LOG("presenting: the frame could not be submitted\n");
             p->state = -1;
             return 0;
@@ -1936,6 +1962,7 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
         pi.pSwapchains = &p->sc;
         pi.pImageIndices = &img;
         r = vkQueuePresentKHR(p->q, &pi);
+        nv2a_vk_qunlock();
         if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR)
             p->stale = 1;
         else if (r != VK_SUCCESS) {

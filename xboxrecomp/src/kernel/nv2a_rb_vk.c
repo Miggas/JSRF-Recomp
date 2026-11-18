@@ -2536,11 +2536,125 @@ extern void xbox_FramebufferWindowPump(void);
  * HWND, which stops drawing with GDI); Linux: the SDL Vulkan window rb_init made. */
 static int s_vkw_state;
 static uint64_t s_win_frames;
+/* ── showing the frame from a thread of its own (v311g-vk11) ───────────────
+ * Waiting for a swapchain image, the copy into it and vkQueuePresentKHR took
+ * the game thread about 180 us a frame (Miggas's profiles); OpenGL hands the
+ * same to its GL thread. Here the frame's commands are submitted on the game
+ * thread as before, and a thread of its own shows the window's image; the
+ * next frame waits for that (long done by then) before it draws into the
+ * window's image again. The queue is shared under nv2a_vk_qlock.
+ * RECOMP_VK_PRESENT_THREAD=0: shown on the game thread. */
+static SDL_mutex *s_pt_mu;
+static SDL_cond *s_pt_cv;
+static int s_pt_state;                 /* 0 none, 1 idle, 2 a frame to show */
+static int s_pt_ok = 1;
+static void *s_pt_win;
+static VkImage s_pt_img;
+static uint32_t s_pt_w, s_pt_h;
+static uint64_t s_pt_waits, s_pt_wait_t;
+
+static int SDLCALL pt_main(void *arg)
+{
+    (void)arg;
+    SDL_LockMutex(s_pt_mu);
+    for (;;) {
+        void *win;
+        VkImage img;
+        uint32_t w, h;
+        int ok;
+        while (s_pt_state != 2)
+            SDL_CondWait(s_pt_cv, s_pt_mu);
+        win = s_pt_win; img = s_pt_img; w = s_pt_w; h = s_pt_h;
+        SDL_UnlockMutex(s_pt_mu);
+        ok = nv2a_vk_present_image(win, img, w, h);
+        SDL_LockMutex(s_pt_mu);
+        s_pt_ok = ok;
+        s_pt_state = 1;
+        SDL_CondBroadcast(s_pt_cv);
+    }
+    return 0;
+}
+static int pt_on(void)
+{
+    if (!s_pt_state) {
+        const char *e = getenv("RECOMP_VK_PRESENT_THREAD");
+        s_pt_state = -1;
+        if (!(e && e[0] == '0')) {
+            s_pt_mu = SDL_CreateMutex();
+            s_pt_cv = SDL_CreateCond();
+            if (s_pt_mu && s_pt_cv) {
+                SDL_Thread *t;
+                s_pt_state = 1;
+                t = SDL_CreateThread(pt_main, "vk present", NULL);
+                if (t) {
+                    SDL_DetachThread(t);
+                    fprintf(stderr, "[VK] frames shown from a thread of their own"
+                            " (RECOMP_VK_PRESENT_THREAD=0: on the game thread)\n");
+                } else
+                    s_pt_state = -1;
+            }
+        }
+    }
+    return s_pt_state > 0;
+}
+/* the last frame shown (the window's image is free again) */
+static void pt_wait(void)
+{
+    if (s_pt_state <= 0) return;
+    SDL_LockMutex(s_pt_mu);
+    if (s_pt_state == 2) {
+        uint64_t t0 = TM_NOW();
+        while (s_pt_state == 2)
+            SDL_CondWait(s_pt_cv, s_pt_mu);
+        s_pt_waits++;
+        s_pt_wait_t += TM_NOW() - t0;
+    }
+    SDL_UnlockMutex(s_pt_mu);
+}
+/* the core's glvk_swap, with the showing handed to the thread */
+static int rbvk_swap(void *win)
+{
+    GTex *t = def_tex();
+    static uint64_t frames;
+    static int saved;
+    int ok = 1;
+    if (!t)
+        return 0;
+    if (!pt_on())
+        return rbvk_core_swap(win);
+    rendering_end();
+    batch_submit();
+    SDL_LockMutex(s_pt_mu);
+    ok = s_pt_ok;
+    s_pt_win = win; s_pt_img = t->img; s_pt_w = (uint32_t)t->w; s_pt_h = (uint32_t)t->h;
+    s_pt_state = 2;
+    SDL_CondBroadcast(s_pt_cv);
+    SDL_UnlockMutex(s_pt_mu);
+    frames++;
+    if (frames % 600 == 0) {
+        GV_LOG("%llu frames: %llu draws, %llu submits, %llu pipelines, %llu programs"
+               " (%llu from the SPIR-V cache, %.0f ms); the game waited for the frame before"
+               " %llu times, %.2f ms in all\n",
+               (unsigned long long)frames, (unsigned long long)s_n_draws,
+               (unsigned long long)s_n_submits, (unsigned long long)s_n_pipes,
+               (unsigned long long)s_n_links, (unsigned long long)s_n_links_cached, s_link_ms,
+               (unsigned long long)s_pt_waits,
+               (double)s_pt_wait_t * 1000.0 / (double)SDL_GetPerformanceFrequency());
+        s_pt_waits = s_pt_wait_t = 0;
+    }
+    if ((frames == 120 && !saved) || frames % 3600 == 0) {
+        pcache_save();                        /* the pipelines kept */
+        saved = 1;
+    }
+    return ok;
+}
+
 int rb_window_present(const RbFrame *f)
 {
     int cw = 0, ch = 0, dw, dh, dx, dy;
     void *win;
     GLuint fx;
+    pt_wait();                               /* vk11: the last frame is shown */
 #if defined(_WIN32)
     RECT cr;
     win = xbox_FramebufferWindowHwnd();
@@ -2582,7 +2696,7 @@ int rb_window_present(const RbFrame *f)
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     rbg_row_fill(f->rowk, f->w, f->h, dx, dy, dw, dy + dh);
     if (s_rb_overlay) s_rb_overlay(cw, ch, 0);
-    rbvk_core_swap(win);
+    rbvk_swap(win);
     s_win_frames++;
     vkp_report();
     {

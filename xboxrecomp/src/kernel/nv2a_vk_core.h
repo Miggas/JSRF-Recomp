@@ -27,6 +27,9 @@ int nv2a_vk_present_image(void *win, VkImage img, uint32_t w, uint32_t h);
  * stages linked together. *cached: 1 when it came from the cache. The
  * words are malloc'd. 0 when the GLSL doesn't compile (log in *err, which
  * is malloc'd too, or NULL). */
+/* the queue (and device-wide waits) used by one thread at a time (vk11) */
+void nv2a_vk_qlock(void);
+void nv2a_vk_qunlock(void);
 /* glslang and the cache folders, made ready (once; before workers compile) */
 void nv2a_vk_spirv_init(void);
 int nv2a_vk_spirv(const char *vs, const char *fs, uint32_t **v, size_t *vn,

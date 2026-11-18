@@ -240,8 +240,10 @@ static void batch_submit(void)
     vkEndCommandBuffer(b->cmd);
     si.commandBufferCount = 1;
     si.pCommandBuffers = &b->cmd;
+    nv2a_vk_qlock();
     if (vkQueueSubmit(G.c.q, 1, &si, b->fence) != VK_SUCCESS)
         GV_ONCE(4, "a batch could not be submitted (the device may be lost)\n");
+    nv2a_vk_qunlock();
     b->open = 0;
     s_n_submits++;
     G.cur = (G.cur + 1) % NB;
@@ -276,7 +278,9 @@ static int serial_done(uint64_t serial, int wait)
 static void wait_idle(void)
 {
     batch_submit();
+    nv2a_vk_qlock();
     vkQueueWaitIdle(G.c.q);
+    nv2a_vk_qunlock();
     G.done = G.serial;
 }
 
