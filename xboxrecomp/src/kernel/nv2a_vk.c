@@ -1269,6 +1269,7 @@ typedef struct {
     uint32_t src_w, src_h;
     VkFormat src_fmt;
     int req_w, req_h;                /* the window size it was made for */
+    int pend_w, pend_h, pend_n;      /* vk12: a new size, and for how many frames */
     uint64_t frames;
     int logged_sc;
 } VkPresenter;
@@ -1806,7 +1807,23 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
     if (!src_img && (!px || !w || !h))
         return 1;
     for (tries = 0; tries < 2; tries++) {
-        if (!p->sc || p->stale || p->req_w != cw || p->req_h != ch) {
+        /* v311g-vk12: while the window is being resized the frames go on into
+         * the swapchain there is, fitted to it; a new one is made once the
+         * size has held for 6 frames (each one made waits for the device:
+         * dragging the window's edge made dozens, 3.2 s of waits in Miggas's
+         * vk11 log). Out of date (the driver says it can't be used): now. */
+        int remake = !p->sc || p->stale;
+        if (!remake && (p->req_w != cw || p->req_h != ch)) {
+            static int defer = -1;
+            if (defer < 0) {
+                const char *e = getenv("RECOMP_VK_RESIZE_SETTLE");
+                defer = e ? atoi(e) : 6;
+            }
+            if (p->pend_w == cw && p->pend_h == ch) p->pend_n++;
+            else { p->pend_w = cw; p->pend_h = ch; p->pend_n = 1; }
+            remake = p->pend_n >= defer;
+        }
+        if (remake) {
             int s;
             nv2a_vk_qlock();
             s = vp_swapchain(cw, ch);
@@ -1963,8 +1980,8 @@ static int vp_present(void *win, const uint32_t *px, VkImage src_img, uint32_t w
         pi.pImageIndices = &img;
         r = vkQueuePresentKHR(p->q, &pi);
         nv2a_vk_qunlock();
-        if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR)
-            p->stale = 1;
+        if (r == VK_ERROR_OUT_OF_DATE_KHR)
+            p->stale = 1;                    /* vk12: suboptimal (a size on its way) waits for it */
         else if (r != VK_SUCCESS) {
             VK_LOG("presenting failed (%d)\n", (int)r);
             p->state = -1;

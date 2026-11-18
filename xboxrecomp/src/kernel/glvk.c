@@ -1710,6 +1710,21 @@ static void uni_set(GLint loc, GLsizei count, int comps, int kind, const void *v
             u->unit[e0 + e] = kind == 2 ? (int)((const float *)vals)[e] : ((const int *)vals)[e];
         return;
     }
+    if (u->cols <= 1 && kind == 2 && u->base == 0 && comps == u->comps) {
+        /* v311g-vk12: floats into floats (glUniform4fv and the like, most of
+         * the calls): copied whole, element by element at most */
+        int n = count;
+        uint8_t *dst = g->shadow + u->off + (uint32_t)e0 * u->astride;
+        if (n > u->count - e0) n = u->count - e0;
+        if (n <= 0) return;
+        if (u->astride == (uint32_t)comps * 4)
+            memcpy(dst, src, (size_t)n * comps * 4);
+        else
+            for (e = 0; e < n; e++)
+                memcpy(dst + (uint32_t)e * u->astride, src + (size_t)e * comps, (size_t)comps * 4);
+        g->dirty = 1;
+        return;
+    }
     for (e = 0; e < count && e0 + e < u->count; e++) {
         uint8_t *dst = g->shadow + u->off + (uint32_t)(e0 + e) * u->astride;
         if (u->cols > 1) {

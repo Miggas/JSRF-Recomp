@@ -288,6 +288,9 @@ static struct {
     /* vertex and index buffers */
     VkBuffer vb[NATTR]; VkDeviceSize vo[NATTR]; uint32_t vmask;
     VkBuffer ib; VkIndexType it;
+    int32_t vshift;                    /* vk12: vertices the bindings were moved back by */
+    VkBuffer cbuf; VkDeviceSize coff;  /* vk12: the generic values last put in the ring */
+    uint32_t cmask; float cval[NATTR][4];
     /* dynamic state */
     int dyn_ok;
     VkViewport vp; VkRect2D sc;
@@ -303,7 +306,8 @@ static struct {
     VkDescriptorImageInfo ii[VKD_NII]; uint32_t nii;
     uint32_t wb[40], wc[40], nw;
 } D;
-static uint64_t s_vkd_draws, s_vkd_pipe_hash, s_vkd_vb, s_vkd_dyn, s_vkd_push;
+static uint64_t s_vkd_draws, s_vkd_pipe_hash, s_vkd_vb, s_vkd_dyn, s_vkd_push, s_vkd_push_ubo;
+static uint64_t s_vkd_shifted;          /* vk12: draws whose arrays were moved back */
 /* RECOMP_RB_PROFILE=1: where a draw's time goes (ticks): 0 rendering begun,
  * 1 vertex inputs and key, 2 pipeline, 3 vertex buffers, 4 dynamic state,
  * 5 uniforms copied, 6 descriptors, 7 the draw command; and uniform bytes */
@@ -312,6 +316,17 @@ static int s_vkd_prof = -1;
 #define VKD_T(i) do { if (s_vkd_prof) { uint64_t t_ = TM_NOW(); s_vkd_t[i] += t_ - tp_; tp_ = t_; } } while (0)
 
 static VkPipeline vkp_get(GProg *g, GLuint id, const PKey *k);
+
+/* vk12's two, each with a way out: 0 RECOMP_VK_VB_SHIFT, 1 RECOMP_VK_PUSH_UBO (=0: off) */
+static int vkd_opt(int i)
+{
+    static int v[2] = { -1, -1 };
+    if (v[i] < 0) {
+        const char *e = getenv(i ? "RECOMP_VK_PUSH_UBO" : "RECOMP_VK_VB_SHIFT");
+        v[i] = !(e && e[0] == '0');
+    }
+    return v[i];
+}
 
 static int vkd_same_cmd(void)
 {
@@ -362,13 +377,27 @@ static int vkd_setup(void)
     {
         Ring *r = NULL;
         VkDeviceSize co = 0;
-        int nconst = 0;
+        VkBuffer cb = VK_NULL_HANDLE;
+        uint32_t cm = 0;
+        int nconst = 0, creuse;
         for (i = 0; i < NATTR; i++)
-            if ((g->inputs & (1u << i)) && !(v->a[i].enabled && buf_of(v->a[i].buf)))
+            if ((g->inputs & (1u << i)) && !(v->a[i].enabled && buf_of(v->a[i].buf))) {
                 nconst++;
-        if (nconst) {
+                cm |= 1u << i;
+            }
+        /* vk12: the same generic values as the last draw: the same place in the ring */
+        creuse = nconst && D.cbuf && D.cmask == cm;
+        for (i = 0; creuse && i < NATTR; i++)
+            if ((cm >> i & 1) && memcmp(D.cval[i], S.generic[i], 16)) creuse = 0;
+        if (nconst && !creuse) {
             co = ring_take(0, (VkDeviceSize)nconst * 16, 16, &r);
             if (!r) return 0;
+            cb = r->b;
+            D.cbuf = cb; D.coff = co; D.cmask = cm;
+            for (i = 0; i < NATTR; i++)
+                if (cm >> i & 1) memcpy(D.cval[i], S.generic[i], 16);
+        } else if (creuse) {
+            cb = D.cbuf; co = D.coff;
         }
         for (i = 0; i < NATTR; i++) {
             if (!(g->inputs & (1u << i))) continue;
@@ -386,12 +415,35 @@ static int vkd_setup(void)
                 vbufs[i] = b->b;
                 voffs[i] = off - k.vrel[i];
             } else {
-                memcpy(r->map + co, S.generic[i], 16);
+                if (!creuse) memcpy(r->map + co, S.generic[i], 16);
                 k.vf[i] = VK_FORMAT_R32G32B32A32_SFLOAT;
                 k.vstride[i] = 0;
-                vbufs[i] = r->b;
+                vbufs[i] = cb;
                 voffs[i] = co;
                 co += 16;
+            }
+        }
+        /* vk12: the arrays bound at a whole number of vertices from where the
+         * last draw had them, the difference given to the draw as its first
+         * vertex -- the ring moves every draw, the bindings then don't. Only
+         * when every array moves by the same number of its own vertices. */
+        {
+            int64_t q = -1;
+            int ok = 1;
+            for (i = 0; i < NATTR && ok; i++) {
+                int64_t qi;
+                if (!(g->inputs & (1u << i)) || !k.vstride[i]) continue;
+                qi = (int64_t)(voffs[i] / k.vstride[i]);
+                if (q < 0) q = qi;
+                else if (qi != q) ok = 0;
+            }
+            D.vshift = 0;
+            if (ok && q > 0 && q <= 0x3FFFFFFF && vkd_opt(0)) {
+                s_vkd_shifted++;
+                for (i = 0; i < NATTR; i++)
+                    if ((g->inputs & (1u << i)) && k.vstride[i])
+                        voffs[i] -= (VkDeviceSize)q * k.vstride[i];
+                D.vshift = (int32_t)q;
             }
         }
     }
@@ -591,7 +643,15 @@ static int vkd_setup(void)
                && (!ubo || !memcmp(&D.bi, &bi, sizeof bi))
                && !memcmp(D.wb, wb, nw * sizeof wb[0]) && !memcmp(D.wc, wc, nw * sizeof wc[0])
                && !memcmp(D.ii, ii, nii * sizeof ii[0]);
-        if (nw && !same) {
+        if (nw && !same && ubo && nw > 1 && vkd_opt(1) && D.pl == g->pl && D.nw == nw && D.ubo == ubo
+                && D.nii == nii && !memcmp(D.wb, wb, nw * sizeof wb[0])
+                && !memcmp(D.wc, wc, nw * sizeof wc[0]) && !memcmp(D.ii, ii, nii * sizeof ii[0])) {
+            /* vk12: only the uniforms moved: only they are pushed (the
+             * textures pushed before stay) */
+            vkCmdPushDescriptorSetKHR(c, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pl, 0, 1, w);
+            D.bi = bi;
+            s_vkd_push_ubo++;
+        } else if (nw && !same) {
             vkCmdPushDescriptorSetKHR(c, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pl, 0, nw, w);
             D.pl = g->pl; D.nw = nw; D.ubo = ubo; D.bi = bi; D.nii = nii;
             memcpy(D.wb, wb, nw * sizeof wb[0]); memcpy(D.wc, wc, nw * sizeof wc[0]);
@@ -1471,7 +1531,7 @@ static void API vkd_DrawArrays(GLenum mode, GLint first, GLsizei count)
     uint64_t tp_;
     if (mode != GL_TRIANGLES || count <= 0 || !vkd_setup()) return;
     tp_ = s_vkd_prof ? TM_NOW() : 0;
-    vkCmdDraw(G.b[G.cur].cmd, (uint32_t)count, 1, (uint32_t)first, 0);
+    vkCmdDraw(G.b[G.cur].cmd, (uint32_t)count, 1, (uint32_t)(first + D.vshift), 0);
     VKD_T(7);
 }
 
@@ -1490,7 +1550,7 @@ static void API vkd_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum ty
         D.ib = e->b; D.it = it;
     }
     vkCmdDrawIndexed(G.b[G.cur].cmd, (uint32_t)count, 1,
-                     (uint32_t)((uintptr_t)off / (type == GL_UNSIGNED_SHORT ? 2 : 4)), base, 0);
+                     (uint32_t)((uintptr_t)off / (type == GL_UNSIGNED_SHORT ? 2 : 4)), base + D.vshift, 0);
     VKD_T(7);
 }
 
@@ -2612,7 +2672,7 @@ static void pt_wait(void)
     SDL_UnlockMutex(s_pt_mu);
 }
 /* the core's glvk_swap, with the showing handed to the thread */
-static int rbvk_swap(void *win)
+static int rbvk_swap(void *win, int cw, int ch)
 {
     GTex *t = def_tex();
     static uint64_t frames;
@@ -2620,16 +2680,18 @@ static int rbvk_swap(void *win)
     int ok = 1;
     if (!t)
         return 0;
-    if (!pt_on())
-        return rbvk_core_swap(win);
     rendering_end();
     batch_submit();
-    SDL_LockMutex(s_pt_mu);
-    ok = s_pt_ok;
-    s_pt_win = win; s_pt_img = t->img; s_pt_w = (uint32_t)t->w; s_pt_h = (uint32_t)t->h;
-    s_pt_state = 2;
-    SDL_CondBroadcast(s_pt_cv);
-    SDL_UnlockMutex(s_pt_mu);
+    if (!pt_on())
+        ok = nv2a_vk_present_image(win, t->img, (uint32_t)cw, (uint32_t)ch);
+    else {
+        SDL_LockMutex(s_pt_mu);
+        ok = s_pt_ok;
+        s_pt_win = win; s_pt_img = t->img; s_pt_w = (uint32_t)cw; s_pt_h = (uint32_t)ch;
+        s_pt_state = 2;
+        SDL_CondBroadcast(s_pt_cv);
+        SDL_UnlockMutex(s_pt_mu);
+    }
     frames++;
     if (frames % 600 == 0) {
         GV_LOG("%llu frames: %llu draws, %llu submits, %llu pipelines, %llu programs"
@@ -2683,7 +2745,16 @@ int rb_window_present(const RbFrame *f)
         return 1;                           /* minimised: nothing to show */
     xbox_PresentFit(cw, ch, &dw, &dh);
     dx = (cw - dw) / 2; dy = (ch - dh) / 2;
-    rbvk_core_default_size(cw, ch);
+    {   /* vk12: the window's image only grows (in steps of 256), and the frame
+         * uses its corner: resizing the window doesn't make a new one each
+         * frame (each one new memory: milliseconds on Windows) */
+        static int iw, ih;
+        if (cw > iw || ch > ih || cw < iw / 2 || ch < ih / 2) {
+            iw = (cw + 255) & ~255;
+            ih = (ch + 255) & ~255;
+        }
+        rbvk_core_default_size(iw, ih);
+    }
     fx = rb_present_aa(f->tex, f->resolve ? f->resolve : f->fbo, f->w, f->h);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fx ? fx : f->resolve ? f->resolve : f->fbo);
@@ -2696,17 +2767,20 @@ int rb_window_present(const RbFrame *f)
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
     rbg_row_fill(f->rowk, f->w, f->h, dx, dy, dw, dy + dh);
     if (s_rb_overlay) s_rb_overlay(cw, ch, 0);
-    rbvk_swap(win);
+    rbvk_swap(win, cw, ch);
     s_win_frames++;
     vkp_report();
     {
         static uint64_t frames;
         if ((++frames % 600 == 0 || frames == 120) && s_vkd_draws) {
             fprintf(stderr, "[VK] draws %llu: pipeline looked up %.1f%%, vertex buffers bound %.1f%%,"
-                    " %.2f dynamic states set a draw (of 16), descriptors pushed %.1f%%\n",
+                    " %.2f dynamic states set a draw (of 16), descriptors pushed %.1f%% (only the uniforms %.1f%%),"
+                    " arrays moved back %.1f%%\n",
                     (unsigned long long)s_vkd_draws, 100.0 * (double)s_vkd_pipe_hash / (double)s_vkd_draws,
                     100.0 * (double)s_vkd_vb / (double)s_vkd_draws, (double)s_vkd_dyn / (double)s_vkd_draws,
-                    100.0 * (double)s_vkd_push / (double)s_vkd_draws);
+                    100.0 * (double)s_vkd_push / (double)s_vkd_draws,
+                    100.0 * (double)s_vkd_push_ubo / (double)s_vkd_draws,
+                    100.0 * (double)s_vkd_shifted / (double)s_vkd_draws);
             if (s_vkd_prof > 0) {
                 double us = 1e6 / (double)SDL_GetPerformanceFrequency() / (double)s_vkd_draws;
                 fprintf(stderr, "[VK]   a draw's time (us): begin %.2f, inputs %.2f, pipeline %.2f,"
@@ -2722,7 +2796,7 @@ int rb_window_present(const RbFrame *f)
                         " (%u linked from the workers' SPIR-V, %u pipelines with them), %u failed,"
                         " %d being built; %u likely pipelines asked for ahead\n", s_vka_started,
                         s_vka_ready, s_vka_hit, s_vka_pipes, s_vka_failed, s_nvka, s_vkp_guessed);
-            s_vkd_draws = s_vkd_pipe_hash = s_vkd_vb = s_vkd_dyn = s_vkd_push = 0;
+            s_vkd_draws = s_vkd_pipe_hash = s_vkd_vb = s_vkd_dyn = s_vkd_push = s_vkd_push_ubo = s_vkd_shifted = 0;
         }
     }
     glEnable(GL_SCISSOR_TEST);
