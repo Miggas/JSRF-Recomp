@@ -33,6 +33,9 @@
 #include <sys/stat.h>
 #endif
 #include "nv2a_tm.h"             /* TM_NOW */
+#if !defined(_WIN32)
+int _stricmp(const char *a, const char *b);   /* platform/win32_compat.c (v311g-rb1b) */
+#endif
 #ifdef XBOXRECOMP_HAVE_VK
 #include "nv2a_vk.h"
 #include "glvk.h"                /* vulkan-test: this file's GL calls answered on Vulkan */

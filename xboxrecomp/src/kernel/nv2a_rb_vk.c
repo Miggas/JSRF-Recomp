@@ -32,6 +32,9 @@
 #include <windows.h>
 #endif
 #include "nv2a_tm.h"             /* TM_NOW */
+#if !defined(_WIN32)
+int _stricmp(const char *a, const char *b);   /* platform/win32_compat.c (v311g-rb1b) */
+#endif
 
 /* glvk's core, compiled in (its public names kept apart from glvk.c's own) */
 #define GLVK_AS_CORE 1
