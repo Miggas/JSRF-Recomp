@@ -1943,20 +1943,52 @@ static GLuint s_unit2d[16], s_unitcube[16];
 static int    s_active_unit = -1;
 static GLuint s_bound_fbo = (GLuint)-1;
 static int    s_bound_vp[2] = {-1, -1}, s_bound_sc[4] = {-1, -1, -1, -1};
+/* vk15: the backend's own image work -- targets, depth buffers, copies,
+ * resolves, uploads, read-backs, clears -- straight onto the images (the
+ * core's GTex), not through OpenGL's framebuffer bindings, scissor and
+ * masks (and so no rb_fixed_lost after each: the next draw sent all its
+ * state again). Names stay the core's, so the draws find the same images. */
+static GTex *vk_col(GLuint fbo)
+{
+    GTex *c, *d;
+    GLuint a, b;
+    fbo_tex(fbo, &c, &d, &a, &b);
+    return c;
+}
+static GTex *vk_ds(GLuint fbo)
+{
+    GTex *c, *d;
+    GLuint a, b;
+    fbo_tex(fbo, &c, &d, &a, &b);
+    return d;
+}
+/* a framebuffer's attachments (names; 0 none), as glFramebufferTexture2D */
+static void vk_fbo_set(GLuint fbo, int col, GLuint c, int ds, GLuint d)
+{
+    GFbo *fb = GET(t_fbo, fbo);
+    if (!fb)
+        return;
+    if (R.rendering)
+        rendering_end();                 /* it may be the one drawn into */
+    if (col) fb->col = c;
+    if (ds) fb->ds = d;
+}
+/* texture `id` made w x h as glTexImage2D(level 0, no data) makes it */
+static int vk_tex_shape(GLuint id, GLenum target, GLenum ifmt, int w, int h, int samples)
+{
+    GTex *t = GET(t_tex, id);
+    if (!t)
+        return 0;
+    t->used = 1;
+    if (!tex_alloc(t, target, ifmt, w, h, samples > 1 ? 1 : full_levels(w, h), 1, samples))
+        return 0;
+    t->defined = 1;
+    return 1;
+}
+
 void rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int dh, GLenum filter)
 {
-    /* v172: no glIsEnabled / glGetBooleanv (each one a wait for the GL
-     * thread): the scissor test is always on outside these copies, and the
-     * colour mask is set again by the next draw */
-    GLuint prev = s_bound_fbo;
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, src);
-    rb_bind_draw(dst);
-    glDisable(GL_SCISSOR_TEST);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBlitFramebuffer(0, 0, sw, sh, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, filter);
-    glEnable(GL_SCISSOR_TEST);
-    rb_fixed_lost();
-    rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
+    tex_blit(vk_col(src), 0, 0, sw, sh, vk_col(dst), 0, 0, dw, dh, filter);
 }
 void rb_active_unit(int u)
 {
@@ -2831,14 +2863,6 @@ void rb_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max,
 
 /* ── render targets and depth buffers ──────────────────────────────────── */
 
-typedef struct { GLuint tex; GLenum target; GLsizei samples; GLenum internalformat;
-                 GLsizei w, h; GLboolean fixed; } MsTexCreateArgs;
-static void ms_tex_create_cb(void *p)
-{
-    MsTexCreateArgs *a = (MsTexCreateArgs *)p;
-    glBindTexture(a->target, a->tex);
-    glTexImage2DMultisample(a->target, a->samples, a->internalformat, a->w, a->h, a->fixed);
-}
 
 /* (re)make a target for a w x h surface: its colour texture (RGBA8, or RGB8
  * without alpha), and with samples > 1 a multisampled colour image drawn
@@ -2846,46 +2870,24 @@ static void ms_tex_create_cb(void *p)
  * later (rb_target_depth). *fbo / *tex are made when 0, *ms_tex replaced. */
 void rb_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples)
 {
+    GTex *t;
     if (!*fbo) {
         glGenFramebuffers(1, fbo);
         glGenTextures(1, tex);
     }
-    /* clear any stale attachments */
-    rb_bind_draw(*fbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           samples > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                           samples > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
-    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 0);
-    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+    vk_fbo_set(*fbo, 1, 0, 1, 0);       /* no stale attachments */
     if (*ms_tex)
         glDeleteTextures(1, ms_tex);    /* the previous shape's */
     *ms_tex = 0;
-    rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, *tex); rb_active_unit(NV_GL_SCRATCH_UNIT);
-    glTexImage2D(GL_TEXTURE_2D, 0, alpha ? GL_RGBA8 : GL_RGB8, (GLsizei)w, (GLsizei)h, 0, GL_BGRA,
-                 GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    vk_tex_shape(*tex, GL_TEXTURE_2D, alpha ? GL_RGBA8 : GL_RGB8, w, h, 1);
+    if ((t = tex_of(*tex)) != NULL)
+        t->minf = t->magf = GL_NEAREST;
     if (samples > 1) {
-        MsTexCreateArgs ma;
         glGenTextures(1, ms_tex);
-        ma.tex = *ms_tex;
-        ma.target = GL_TEXTURE_2D_MULTISAMPLE;
-        ma.samples = samples;
-        ma.internalformat = alpha ? GL_RGBA8 : GL_RGB8;
-        ma.w = (GLsizei)w;
-        ma.h = (GLsizei)h;
-        ma.fixed = GL_TRUE;
-        gt_call_sync(ms_tex_create_cb, &ma);
+        vk_tex_shape(*ms_tex, GL_TEXTURE_2D_MULTISAMPLE, alpha ? GL_RGBA8 : GL_RGB8, w, h, samples);
     }
+    vk_fbo_set(*fbo, 1, samples > 1 ? *ms_tex : *tex, 0, 0);
     rb_bind_draw(*fbo);
-    if (samples > 1) {
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D_MULTISAMPLE, *ms_tex, 0);
-    } else {
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, *tex, 0);
-    }
 }
 
 /* (re)make a depth-stencil buffer, w x h (D24S8, or D32F S8 with
@@ -2893,8 +2895,9 @@ void rb_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int 
  * clear_depth and stencil 0; *buf made when 0, or of the other kind */
 void rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth)
 {
+    GLenum fmt = depth32f ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8;
+    GTex *t;
     if (samples > 1) {
-        /* evict: free a prior name of the other kind before (re)creating */
         if (*buf && !*is_tex) {
             glDeleteRenderbuffers(1, buf);
             *buf = 0;
@@ -2902,47 +2905,30 @@ void rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int de
         if (!*buf)
             glGenTextures(1, buf);
         *is_tex = 1;
-        {
-            MsTexCreateArgs za;
-            za.tex = *buf;
-            za.target = GL_TEXTURE_2D_MULTISAMPLE;
-            za.samples = samples;
-            za.internalformat = depth32f ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8;
-            za.w = (GLsizei)w;
-            za.h = (GLsizei)h;
-            za.fixed = GL_TRUE;
-            gt_call_sync(ms_tex_create_cb, &za);
-        }
+        vk_tex_shape(*buf, GL_TEXTURE_2D_MULTISAMPLE, fmt, w, h, samples);
     } else {
+        GTex *r;
         if (!*buf)
             glGenRenderbuffers(1, buf);
         *is_tex = 0;
-        glBindRenderbuffer(GL_RENDERBUFFER, *buf);
-        glRenderbufferStorage(GL_RENDERBUFFER, depth32f ? GL_DEPTH32F_STENCIL8 : GL_DEPTH24_STENCIL8,
-                              (GLsizei)w, (GLsizei)h);
+        if ((r = GET(t_tex, *buf)) != NULL) {
+            r->used = 1;
+            if (tex_alloc(r, GL_RENDERBUFFER, fmt, w, h, 1, 1, 1))
+                r->defined = 1;
+        }
     }
     /* A new depth buffer starts at "far" with stencil 0, as the software
      * one does. */
-    {
-        GLuint tmp;
-        glGenFramebuffers(1, &tmp);
-        rb_bind_draw(tmp);
-        if (*is_tex)
-            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                                   GL_TEXTURE_2D_MULTISAMPLE, *buf, 0);
-        else
-            glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                                      GL_RENDERBUFFER, *buf);
-        glDisable(GL_SCISSOR_TEST);
-        glDepthMask(GL_TRUE);
-        glStencilMask(0xFF);
-        glClearDepth(clear_depth);
-        glClearStencil(0);
-        glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-        glEnable(GL_SCISSOR_TEST);
-        rb_bind_draw(0);
-        glDeleteFramebuffers(1, &tmp);
-        rb_fixed_lost();             /* depth and stencil masks changed */
+    t = tex_of(*buf);
+    if (t && t->img) {
+        VkClearDepthStencilValue z;
+        VkImageSubresourceRange all = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1 };
+        z.depth = (float)clear_depth;
+        z.stencil = 0;
+        rendering_end();
+        barrier_all();
+        vkCmdClearDepthStencilImage(cmd(), t->img, VK_IMAGE_LAYOUT_GENERAL, &z, 1, &all);
+        barrier_all();
     }
 }
 
@@ -2950,21 +2936,15 @@ void rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int de
  * OpenGL's status when the target can't be drawn into */
 uint32_t rb_target_depth(uint32_t fbo, uint32_t buf, int is_tex)
 {
-    GLenum fs;
+    (void)is_tex;
+    vk_fbo_set(fbo, 0, 0, 1, buf);
     rb_bind_draw(fbo);
-    if (is_tex)
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                               GL_TEXTURE_2D_MULTISAMPLE, buf, 0);
-    else
-        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                                  GL_RENDERBUFFER, buf);
-    fs = s_gt_on ? GL_FRAMEBUFFER_COMPLETE : glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
-    return fs == GL_FRAMEBUFFER_COMPLETE ? 0 : fs;
+    return vk_col(fbo) || vk_ds(fbo) ? 0 : GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
 }
 
 /* ── surfaces: uploads, read-backs, resolves ───────────────────────────── */
 
-static GLuint s_dn_fbo, s_dn_rb, s_up_fbo, s_up_tex;
+static GLuint s_dn_fbo, s_dn_rb, s_up_tex;
 static uint32_t s_dn_w, s_dn_h, s_up_w, s_up_h;
 
 /* guest pixels (gw x gh, BGRA, rows bottom-up) into a target drawn at sw x sh:
@@ -2974,9 +2954,9 @@ void rb_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int s
                        const uint32_t *px, int samples)
 {
     if (sw == gw && sh == gh) {
-        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, tex); rb_active_unit(NV_GL_SCRATCH_UNIT);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)gw, (GLsizei)gh,
-                        GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
+        GTex *t = tex_of(tex);
+        if (t)
+            tex_upload(t, 0, 0, 0, 0, gw, gh, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px, 0);
         if (samples > 1) {
             /* single -> multi goes through a draw: a single to multi
              * glBlitFramebuffer is invalid */
@@ -2984,31 +2964,22 @@ void rb_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int s
         }
     } else {
         /* guest size into a staging texture, then scaled up into the surface */
-        if (!s_up_fbo) {
-            glGenFramebuffers(1, &s_up_fbo);
+        GTex *u;
+        if (!s_up_tex)
             glGenTextures(1, &s_up_tex);
-        }
-        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, s_up_tex); rb_active_unit(NV_GL_SCRATCH_UNIT);
         if (s_up_w != (uint32_t)gw || s_up_h != (uint32_t)gh) {
-            GLuint prev = rb_draw_bound();
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)gw, (GLsizei)gh, 0,
-                         GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            rb_bind_draw(s_up_fbo);
-            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                   GL_TEXTURE_2D, s_up_tex, 0);
-            rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
+            vk_tex_shape(s_up_tex, GL_TEXTURE_2D, GL_RGBA8, gw, gh, 1);
+            if ((u = tex_of(s_up_tex)) != NULL)
+                u->minf = u->magf = GL_NEAREST;
             s_up_w = (uint32_t)gw; s_up_h = (uint32_t)gh;
-        } else {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)gw, (GLsizei)gh,
-                            GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
         }
+        if ((u = tex_of(s_up_tex)) != NULL)
+            tex_upload(u, 0, 0, 0, 0, gw, gh, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px, 0);
         if (samples > 1) {
             /* the LINEAR sampler of the upsample draw does the upscale */
             rb_ms_upscale(s_up_tex, fbo, sw, sh);
         } else {
-            rb_copy_target(s_up_fbo, gw, gh, fbo, sw, sh, GL_LINEAR);
+            tex_blit(u, 0, 0, gw, gh, vk_col(fbo), 0, 0, sw, sh, GL_LINEAR);
         }
     }
 }
@@ -3016,8 +2987,7 @@ void rb_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int s
 /* a target's image (gw x gh, BGRA, rows bottom-up) into memory */
 void rb_read_pixels(uint32_t fbo, int w, int h, uint32_t *px)
 {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-    glReadPixels(0, 0, (GLsizei)w, (GLsizei)h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
+    tex_read(vk_col(fbo), NULL, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, px);
 }
 
 /* Resolve a multisampled target's colour into its single-sampled texture
@@ -3025,23 +2995,10 @@ void rb_read_pixels(uint32_t fbo, int w, int h, uint32_t *px)
 uint32_t rb_resolve(uint32_t fbo, uint32_t tex, int w, int h)
 {
     static GLuint s_resolve_fbo;
-    GLuint prev_draw, prev_read;
     if (!s_resolve_fbo)
         glGenFramebuffers(1, &s_resolve_fbo);
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, (GLint *)&prev_draw);
-    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, (GLint *)&prev_read);
-    rb_bind_draw(s_resolve_fbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, tex, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-    glDisable(GL_SCISSOR_TEST);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h,
-                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glEnable(GL_SCISSOR_TEST);
-    rb_fixed_lost();
-    rb_bind_draw(prev_draw == (GLuint)-1 ? 0 : prev_draw);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read);
+    vk_fbo_set(s_resolve_fbo, 1, tex, 0, 0);
+    tex_blit(vk_col(fbo), 0, 0, w, h, tex_of(tex), 0, 0, w, h, GL_NEAREST);
     return s_resolve_fbo;
 }
 
@@ -3055,16 +3012,16 @@ uint32_t rb_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh)
         glGenRenderbuffers(1, &s_dn_rb);
     }
     if (s_dn_w != w || s_dn_h != h) {
-        GLuint prev = rb_draw_bound();
-        glBindRenderbuffer(GL_RENDERBUFFER, s_dn_rb);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, (GLsizei)w, (GLsizei)h);
-        rb_bind_draw(s_dn_fbo);
-        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                  GL_RENDERBUFFER, s_dn_rb);
-        rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
+        GTex *r = GET(t_tex, s_dn_rb);
+        if (r) {
+            r->used = 1;
+            if (tex_alloc(r, GL_RENDERBUFFER, GL_RGBA8, (int)w, (int)h, 1, 1, 1))
+                r->defined = 1;
+        }
+        vk_fbo_set(s_dn_fbo, 1, s_dn_rb, 0, 0);
         s_dn_w = w; s_dn_h = h;
     }
-    rb_copy_target(fbo, sw, sh, s_dn_fbo, (int)w, (int)h, GL_LINEAR);
+    tex_blit(vk_col(fbo), 0, 0, sw, sh, vk_col(s_dn_fbo), 0, 0, (int)w, (int)h, GL_LINEAR);
     return s_dn_fbo;
 }
 
@@ -3097,26 +3054,13 @@ int  rb_max_aniso(void) { GLint mx = 0; glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTR
  * one_alpha). */
 void rb_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int h, uint32_t src_fbo, int sh)
 {
-    static GLuint s_copy_fbo;
-    GLuint prev = rb_draw_bound();
-    if (!s_copy_fbo)
-        glGenFramebuffers(1, &s_copy_fbo);
     if (remake) {
-        rb_unit_bind(NV_GL_SCRATCH_UNIT, GL_TEXTURE_2D, id); rb_active_unit(NV_GL_SCRATCH_UNIT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)w, (GLsizei)h,
-                     0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
-        if (one_alpha)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, GL_ONE);
+        GTex *t;
+        vk_tex_shape(id, GL_TEXTURE_2D, GL_RGBA8, w, h, 1);
+        if (one_alpha && (t = tex_of(id)) != NULL)
+            t->swz_a1 = 1;
     }
-    rb_bind_draw(s_copy_fbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, id, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
-    glDisable(GL_SCISSOR_TEST);             /* v172: as blit_fb */
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBlitFramebuffer(0, sh - h, w, sh, 0, h, w, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glEnable(GL_SCISSOR_TEST);
-    rb_fixed_lost();
-    rb_bind_draw(prev == (GLuint)-1 ? 0 : prev);
+    tex_blit(vk_col(src_fbo), 0, sh - h, w, sh, tex_of(id), 0, h, w, 0, GL_NEAREST);
 }
 
 /* ── vertex data, fences and draws (OpenGL's meaning; the Vulkan backend
@@ -3153,25 +3097,49 @@ void rb_draw_arrays(uint32_t mode, int first, int count) { glDrawArrays(mode, fi
  * (rb_fixed_lost). */
 void rb_clear(int color, const float rgba[4], int alpha, int depth, double zval, int stencil, int sval)
 {
-    GLbitfield bits = 0;
-    if (color) {
-        glClearColor(rgba[0], rgba[1], rgba[2], rgba[3]);
-        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, alpha ? GL_TRUE : GL_FALSE);
-        bits |= GL_COLOR_BUFFER_BIT;
+    /* as glClear with the masks it would set: every colour channel (the
+     * Vulkan clear writes all four; alpha reads 1 on an RGB image), depth
+     * and stencil in full, within the scissor */
+    VkClearAttachment a[2];
+    VkClearRect r;
+    uint32_t n = 0;
+    GTex *col, *ds;
+    GLuint ci, di;
+    (void)alpha;
+    if (!(color || depth || stencil) || !rendering_begin())
+        return;
+    fbo_tex(S.draw_fbo, &col, &ds, &ci, &di);
+    if (R.ds == 0) ds = NULL;
+    memset(a, 0, sizeof a);
+    if (color && col && !col->bc) {
+        a[n].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        memcpy(a[n].clearValue.color.float32, rgba, 16);
+        if (col->rgb) a[n].clearValue.color.float32[3] = 1.0f;
+        n++;
     }
-    if (depth) {
-        glDepthMask(GL_TRUE);
-        glClearDepth(zval);
-        bits |= GL_DEPTH_BUFFER_BIT;
+    if (ds && (depth || stencil)) {
+        if (depth) a[n].aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (stencil) a[n].aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        a[n].clearValue.depthStencil.depth = (float)zval;
+        a[n].clearValue.depthStencil.stencil = (uint32_t)sval & 0xFF;
+        n++;
     }
-    if (stencil) {
-        glStencilMask(0xFF);
-        glClearStencil((GLint)sval);
-        bits |= GL_STENCIL_BUFFER_BIT;
+    if (!n) return;
+    if (S.scissor) {
+        int x0 = S.sc[0] < 0 ? 0 : S.sc[0], y0 = S.sc[1] < 0 ? 0 : S.sc[1];
+        int x1 = S.sc[0] + S.sc[2], y1 = S.sc[1] + S.sc[3];
+        if (x1 > R.vw) x1 = R.vw;
+        if (y1 > R.vh) y1 = R.vh;
+        if (x1 <= x0 || y1 <= y0) return;
+        r.rect.offset.x = x0; r.rect.offset.y = y0;
+        r.rect.extent.width = (uint32_t)(x1 - x0); r.rect.extent.height = (uint32_t)(y1 - y0);
+    } else {
+        r.rect.offset.x = r.rect.offset.y = 0;
+        r.rect.extent.width = (uint32_t)R.vw; r.rect.extent.height = (uint32_t)R.vh;
     }
-    if (bits)
-        glClear(bits);
-    rb_fixed_lost();                 /* masks changed above */
+    r.baseArrayLayer = 0;
+    r.layerCount = 1;
+    vkCmdClearAttachments(G.b[G.cur].cmd, n, a, 1, &r);
 }
 
 /* ── occlusion queries (samples passed) ───────────────────────────────── */
@@ -3185,23 +3153,21 @@ void rb_query_result(uint32_t id, uint32_t *v) { glGetQueryObjectuiv(id, GL_QUER
  * through rb_buf_map (asynchronous) */
 void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf)
 {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-    rb_buf_bind(GL_PIXEL_PACK_BUFFER, buf);
-    glReadPixels(0, 0, (GLsizei)w, (GLsizei)h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, (void *)0);
-    rb_buf_bind(GL_PIXEL_PACK_BUFFER, 0);
+    tex_read(vk_col(fbo), buf_of(buf), 0, 0, w, h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, (void *)0);
 }
 /* one pixel of a target (GL rows), BGRA (debug probes) */
 void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c)
 {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-    glReadPixels(x, y, 1, 1, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, c);
+    tex_read(vk_col(fbo), NULL, x, y, 1, 1, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, c);
 }
 /* its depth there (0..1): 0 when it can't be read */
 int rb_read_depth(uint32_t fbo, int x, int y, float *z)
 {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-    glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, z);
-    return glGetError() == GL_NO_ERROR;
+    GTex *t = vk_ds(fbo);
+    if (!t || t->samples > 1 || x < 0 || y < 0 || x >= t->w || y >= t->h)
+        return 0;
+    tex_read(t, NULL, x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, z);
+    return 1;
 }
 
 

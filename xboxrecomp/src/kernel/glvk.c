@@ -2410,17 +2410,13 @@ static void API gv_Clear(GLbitfield mask)
     vkCmdClearAttachments(G.b[G.cur].cmd, n, a, 1, &r);
 }
 
-static void API gv_BlitFramebuffer(GLint sx0, GLint sy0, GLint sx1, GLint sy1,
-                                   GLint dx0, GLint dy0, GLint dx1, GLint dy1,
-                                   GLbitfield mask, GLenum filter)
+/* vk15: a copy from one image to another, scaled (a resolve when the source
+ * is multisampled): glBlitFramebuffer's, and the Vulkan backend's own */
+static void tex_blit(GTex *sc, GLint sx0, GLint sy0, GLint sx1, GLint sy1,
+                     GTex *dc, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLenum filter)
 {
-    GTex *sc, *sd, *dc, *dd;
-    GLuint a, b;
     VkCommandBuffer c;
-    if (!(mask & GL_COLOR_BUFFER_BIT)) return;
-    fbo_tex(S.read_fbo, &sc, &sd, &a, &b);
-    fbo_tex(S.draw_fbo, &dc, &dd, &a, &b);
-    if (!sc || !dc || sc->bc || dc->bc) return;
+    if (!sc || !dc || !sc->img || !dc->img || sc->bc || dc->bc) return;
     rendering_end();
     barrier_all();
     c = cmd();
@@ -2463,11 +2459,24 @@ static void API gv_BlitFramebuffer(GLint sx0, GLint sy0, GLint sx1, GLint sy1,
     barrier_all();
 }
 
-static void API gv_ReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum format, GLenum type, void *data)
+static void API gv_BlitFramebuffer(GLint sx0, GLint sy0, GLint sx1, GLint sy1,
+                                   GLint dx0, GLint dy0, GLint dx1, GLint dy1,
+                                   GLbitfield mask, GLenum filter)
 {
-    GTex *col, *ds, *t;
+    GTex *sc, *sd, *dc, *dd;
     GLuint a, b;
-    GBuf *pb = buf_of(S.pack);
+    if (!(mask & GL_COLOR_BUFFER_BIT)) return;
+    fbo_tex(S.read_fbo, &sc, &sd, &a, &b);
+    fbo_tex(S.draw_fbo, &dc, &dd, &a, &b);
+    tex_blit(sc, sx0, sy0, sx1, sy1, dc, dx0, dy0, dx1, dy1, filter);
+}
+
+/* vk15: pixels of an image into memory (now, waited for) or into a
+ * pixel-pack buffer (pb: data is the offset); glReadPixels's, and the
+ * Vulkan backend's own */
+static void tex_read(GTex *t, GBuf *pb, GLint x, GLint y, GLsizei w, GLsizei h,
+                     GLenum format, GLenum type, void *data)
+{
     VkBufferImageCopy cp;
     VkBuffer dst;
     VkDeviceSize doff;
@@ -2476,9 +2485,7 @@ static void API gv_ReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum for
     VkBuffer tmp = VK_NULL_HANDLE;
     VkDeviceMemory tmpm = VK_NULL_HANDLE;
     uint8_t *tmap = NULL;
-    fbo_tex(S.read_fbo, &col, &ds, &a, &b);
-    t = depth ? ds : col;
-    if (!t || t->samples > 1 || w <= 0 || h <= 0) return;
+    if (!t || !t->img || t->samples > 1 || w <= 0 || h <= 0) return;
     if (x < 0 || y < 0 || x + w > t->w || y + h > t->h) return;
     rendering_end();
     barrier_all();
@@ -2532,6 +2539,14 @@ static void API gv_ReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum for
     }
     vkDestroyBuffer(G.c.dev, tmp, NULL);
     vkFreeMemory(G.c.dev, tmpm, NULL);
+}
+
+static void API gv_ReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum format, GLenum type, void *data)
+{
+    GTex *col, *ds;
+    GLuint a, b;
+    fbo_tex(S.read_fbo, &col, &ds, &a, &b);
+    tex_read(format == GL_DEPTH_COMPONENT ? ds : col, buf_of(S.pack), x, y, w, h, format, type, data);
 }
 
 /* ── queries (samples passed) and sync objects ──────────────────────────── */
