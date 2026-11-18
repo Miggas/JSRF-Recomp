@@ -48,7 +48,7 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_GL_MENU_DEPTH", "0", "0 turns off the menu depth fix (graffiti menu icons hidden behind their buttons)." },
     { "RECOMP_GL_NO_WINDOW_CLIP", "1", "Ignores the game's window clipping (used by split screen)." },
     { "RECOMP_CURSOR_HIDE", "0", "0 keeps the mouse pointer visible over the game." },
-    { "RECOMP_RENDERER", "sw", "sw: the software renderer instead of OpenGL. Very slow; for comparing when the GPU draws something wrong." },
+    { "RECOMP_RENDERER", "sw", "sw: the software renderer instead of OpenGL. Very slow; for comparing when the GPU draws something wrong. glvk: OpenGL's calls answered on Vulkan (the reference the Vulkan backend is checked against). OpenGL or Vulkan: Settings > Video > Render API." },
     { "RECOMP_GL_DXT", "0", "0: compressed textures are unpacked on the CPU instead of by the graphics card (slower, area-entry stutters)." },
     { "RECOMP_GL_TEX_WATCH", "0", "0 turns off the texture write-watch (textures are checked for changes by reading them). Try it if the game stutters." },
     { "RECOMP_GL_TEX_FULLCHECK", "1", "Checks every texture in full each time it's used (slower; the default samples it)." },

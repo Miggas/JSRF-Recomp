@@ -708,6 +708,19 @@ static void panel_gameplay(struct nk_context *ctx, float w)
 
 static void panel_video(struct nk_context *ctx, float w)
 {
+    /* v3a: render API, RECOMP_RENDERER (Idea by Miggas): OpenGL (the line off)
+     * or Vulkan (vulkan). Other values typed by hand (sw, glvk) show as
+     * OpenGL and stay until this is changed. */
+    {
+        static const char *const items[] = { "OpenGL", "Vulkan" };
+        const char *v = get_or("RECOMP_RENDERER", "");
+        int cur = (!strcmp(v, "vulkan") || !strcmp(v, "vk")) ? 1 : 0;
+        int sel = combo(ctx, "Render API", items, 2, cur);
+        if (sel != cur) { if (sel) put("RECOMP_RENDERER", "vulkan", "display"); else off("RECOMP_RENDERER"); }
+        desc(ctx, w, "OpenGL is the default and the most tested. Vulkan is new and still being worked on: "
+                     "it is only in the vulkan-test branch for now (other branches draw with OpenGL whatever "
+                     "this says). If something looks wrong with Vulkan, switch back to OpenGL.", C_DIM);
+    }
     /* resolution scale: RECOMP_GL_SCALE */
     {
         static const char *const items[] = { "1x (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)",
@@ -924,6 +937,23 @@ static void panel_debug(struct nk_context *ctx, float w)
         else { off("RECOMP_LOG"); put("RECOMP_QUIET", "1", "game"); }
     }
     if (np != prof) { if (np) put("RECOMP_PROFILE", "1", "files"); else off("RECOMP_PROFILE"); }
+    /* v3a: RECOMP_RB_PROFILE (Idea by Miggas): every call the renderer makes
+     * to its backend (OpenGL or Vulkan) timed, for comparing the two */
+    {
+        bool rb = !strcmp(get_or("RECOMP_RB_PROFILE", "0"), "1");
+        bool nrb = check(ctx, "Renderer profile", rb);
+        desc(ctx, w, "Times every call the renderer makes to OpenGL or Vulkan and adds a line to the log every "
+                     "10 seconds: the time each draw takes and the ten calls that cost most (with Vulkan, also "
+                     "where a draw's time goes and how much the GPU did). For comparing OpenGL and Vulkan, or "
+                     "finding what makes a scene slow. Costs a little. Turns Logging on.", C_DIM);
+        if (nrb != rb) {
+            if (nrb) {
+                put("RECOMP_RB_PROFILE", "1", "files");
+                if (!logging) { put("RECOMP_LOG", "stderr.txt", "files"); off("RECOMP_QUIET"); }
+            } else
+                off("RECOMP_RB_PROFILE");
+        }
+    }
     /* v2k: chapter select (the game's v276, RECOMP_CHAPTER_SELECT=<chapter>[:<mission>]):
      * each chapter's opening (mission 96, the default) and its Garage
      * (mission 0; chapter 5's is 10) */
