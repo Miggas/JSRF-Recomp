@@ -923,7 +923,7 @@ typedef struct {
 static VkpAsync **s_vka;
 static int s_nvka, s_cvka;
 static uint32_t s_vka_count;
-static unsigned s_vka_started, s_vka_ready, s_vka_failed, s_vka_pipes, s_vka_hit;
+static unsigned s_vka_started, s_vka_ready, s_vka_failed, s_vka_pipes, s_vka_hit, s_vkp_guessed;
 static int s_vka_off = -1;
 
 static int vka_on(void)
@@ -979,6 +979,87 @@ static char *vka_with_defs(const char *src)
     memcpy(o + a, defs, b);
     memcpy(o + a + b, nl + 1, c + 1);
     return o;
+}
+
+/* ── likely pipelines (v311g-vk10c) ─────────────────────────────────────────
+ * A pipeline for a new combination was still made on the draw that first
+ * needed it (Miggas's vk10b: 59 us a draw over the first 120 frames). The
+ * parts of a key other than the program -- vertex formats, target formats and
+ * samples, blending -- repeat across programs, so a new program gets, in the
+ * background, the keys other programs with the same vertex inputs have been
+ * drawn with most (up to 16). A program with a stand-in also gets its
+ * stand-in's keys, and it waits for those only. */
+#define VKP_GUESS 16
+static uint32_t vkp_key_mask(const PKey *k)
+{
+    uint32_t m = 0;
+    int i;
+    for (i = 0; i < NATTR; i++)
+        if (k->vf[i] != VK_FORMAT_UNDEFINED) m |= 1u << i;
+    return m;
+}
+/* a job for program id (g) and key k, unless it has the pipeline or a job
+ * for it already; added to *list when list is given */
+static void vkp_queue(GLuint id, GProg *g, const PKey *k, VkpJob ***list, int *n)
+{
+    uint64_t kh = pkey_hash(k);
+    VkpJob *pj;
+    int i;
+    for (i = 0; i < g->npipes; i++)
+        if (g->pipes[i].key == kh) return;
+    SDL_LockMutex(s_vkp_mu);
+    for (i = 0; i < s_vkp_njob; i++) {
+        VkpJob *c = s_vkp_job[i];
+        if (c->kind == 0 && c->prog == id && c->kh == kh && c->state != 3) {
+            SDL_UnlockMutex(s_vkp_mu);
+            return;
+        }
+    }
+    SDL_UnlockMutex(s_vkp_mu);
+    pj = vkp_pipe_job(id, g, k);
+    if (!pj) return;
+    if (list) {
+        VkpJob **nl = (VkpJob **)realloc(*list, (size_t)(*n + 1) * sizeof *nl);
+        if (!nl) { free(pj); return; }
+        *list = nl;
+    }
+    SDL_LockMutex(s_vkp_mu);
+    if (vkp_push_locked(pj)) {
+        if (list) (*list)[(*n)++] = pj;
+    } else
+        free(pj);
+    SDL_UnlockMutex(s_vkp_mu);
+}
+static void vkp_queue_like(GLuint id, GProg *g, GLuint like, VkpJob ***list, int *n)
+{
+    int k;
+    for (k = 0; k < s_vkp_npk; k++)
+        if (s_vkp_pk[k].prog == like)
+            vkp_queue(id, g, &s_vkp_pk[k].k, list, n);
+}
+static void vkp_queue_guess(GLuint id, GProg *g, VkpJob ***list, int *n)
+{
+    uint64_t kh[VKP_GUESS];
+    int cnt[VKP_GUESS], at[VKP_GUESS], nc = 0, k, i;
+    uint32_t m = g->inputs & ((1u << NATTR) - 1);
+    if (!s_vkp_threads) return;
+    for (k = 0; k < s_vkp_npk; k++) {
+        uint64_t h;
+        if (vkp_key_mask(&s_vkp_pk[k].k) != m) continue;
+        h = pkey_hash(&s_vkp_pk[k].k);
+        for (i = 0; i < nc && kh[i] != h; i++) {}
+        if (i < nc) { cnt[i]++; continue; }
+        if (nc < VKP_GUESS) { kh[nc] = h; cnt[nc] = 1; at[nc] = k; nc++; continue; }
+        /* full: replace the least used, if it is used once (keeps the common ones) */
+        {
+            int lo = 0;
+            for (i = 1; i < nc; i++) if (cnt[i] < cnt[lo]) lo = i;
+            if (cnt[lo] <= 1) { kh[lo] = h; cnt[lo] = 1; at[lo] = k; }
+        }
+    }
+    for (i = 0; i < nc; i++)
+        vkp_queue(id, g, &s_vkp_pk[at[i]].k, list, n);
+    s_vkp_guessed += (unsigned)nc;
 }
 
 uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t like)
@@ -1075,18 +1156,13 @@ int rb_program_ready(uint32_t *id)
             vka_free(i);
             return -1;
         }
-        /* the pipelines the stand-in was drawn with */
-        for (k = 0; k < s_vkp_npk; k++)
-            if (a->like && s_vkp_pk[k].prog == a->like) {
-                VkpJob *pj = vkp_pipe_job(a->id, g, &s_vkp_pk[k].k);
-                VkpJob **n = (VkpJob **)realloc(a->pj, (size_t)(a->npj + 1) * sizeof *n);
-                if (!pj || !n) { free(pj); if (n) a->pj = n; continue; }
-                a->pj = n;
-                SDL_LockMutex(s_vkp_mu);
-                if (vkp_push_locked(pj)) a->pj[a->npj++] = pj;
-                else free(pj);
-                SDL_UnlockMutex(s_vkp_mu);
-            }
+        /* the pipelines the stand-in was drawn with; with no stand-in (a
+         * vertex program: the CPU meanwhile), the likeliest for its inputs */
+        if (a->like) {
+            vkp_queue_like(a->id, g, a->like, &a->pj, &a->npj);
+            vkp_queue_guess(a->id, g, NULL, NULL);   /* not waited for */
+        } else
+            vkp_queue_guess(a->id, g, &a->pj, &a->npj);
         a->state = 1;
     }
     /* state 1: ready when its pipelines are */
@@ -1136,6 +1212,11 @@ GLuint rb_program_build(const char *vsrc, const char *fsrc)
     if (id && vkp_on()) {
         vkp_set_id(id, h);
         vkp_write_prog(h, vsrc, fsrc);
+    }
+    if (id && vka_on()) {                    /* vk10c: the likeliest pipelines, ahead */
+        GProg *g = prog_of(id);
+        if (g && g->linked)
+            vkp_queue_guess(id, g, NULL, NULL);
     }
     return id;
 }
@@ -2507,11 +2588,11 @@ int rb_window_present(const RbFrame *f)
                 memset(s_vkd_t, 0, sizeof s_vkd_t);
                 s_vkd_ubytes = 0;
             }
-            if (s_vka_started)
+            if (s_vka_started || s_vkp_guessed)
                 fprintf(stderr, "[VK]   built in the background so far: %u shaders asked for, %u ready"
                         " (%u linked from the workers' SPIR-V, %u pipelines with them), %u failed,"
-                        " %d being built\n", s_vka_started, s_vka_ready, s_vka_hit, s_vka_pipes,
-                        s_vka_failed, s_nvka);
+                        " %d being built; %u likely pipelines asked for ahead\n", s_vka_started,
+                        s_vka_ready, s_vka_hit, s_vka_pipes, s_vka_failed, s_nvka, s_vkp_guessed);
             s_vkd_draws = s_vkd_pipe_hash = s_vkd_vb = s_vkd_dyn = s_vkd_push = 0;
         }
     }
