@@ -311,6 +311,8 @@ static uint64_t s_vkd_t[8], s_vkd_ubytes;
 static int s_vkd_prof = -1;
 #define VKD_T(i) do { if (s_vkd_prof) { uint64_t t_ = TM_NOW(); s_vkd_t[i] += t_ - tp_; tp_ = t_; } } while (0)
 
+static VkPipeline vkp_get(GProg *g, GLuint id, const PKey *k);
+
 static int vkd_same_cmd(void)
 {
     VkCommandBuffer c = G.b[G.cur].cmd;
@@ -397,7 +399,7 @@ static int vkd_setup(void)
     if (D.kp && D.g == g && !memcmp(&D.k, &k, sizeof k))
         p = D.kp;                             /* the same pipeline as the last draw */
     else {
-        p = pipe_get(g, &k);
+        p = vkp_get(g, S.prog, &k);
         s_vkd_pipe_hash++;
         if (!p)
             return 0;
@@ -601,6 +603,415 @@ static int vkd_setup(void)
     s_n_draws++;
     s_vkd_draws++;
     return 1;
+}
+
+/* ── pipelines built ahead (v311g-vk9) ─────────────────────────────────────
+ * A pipeline is the program with everything fixed around it (vertex
+ * formats, the target's formats and samples, blending); the driver compiles
+ * it when it is made, and making it on the first draw that needs it is a
+ * hitch (Miggas's vk8d: 58 -> 99 pipelines made during a session, 2-10 us a
+ * draw averaged over the ten seconds they fell in). So each one made is
+ * written down -- the program's sources once, and the pipeline's key --
+ * in shader_cache/vk_pipes.bin, and the next start makes them all before
+ * they are needed: the programs at once (from the SPIR-V cache), the
+ * pipelines on worker threads while the game boots. rb_program_build hands
+ * the renderer the program already made; the first draw takes its pipeline
+ * from the workers (waiting only if that one is still being made). */
+
+typedef struct {
+    GLuint prog;                       /* the program it is for */
+    uint64_t kh;                       /* pkey_hash of k */
+    PKey k;
+    VkShaderModule vm, fm;             /* copied: the program table may move */
+    VkPipelineLayout pl;
+    uint32_t inputs;
+    int dclamp;
+    int state;                         /* 0 to make, 1 being made, 2 made, 3 taken */
+    VkPipeline p;
+} VkpJob;
+typedef struct { uint64_t h; GLuint id; int handed; } VkpReady;
+static GLuint vkp_link(const char *vsrc, const char *fsrc);
+
+static SDL_mutex *s_vkp_mu;
+static SDL_cond *s_vkp_cv;
+static VkpJob *s_vkp_job;
+static int s_vkp_njob, s_vkp_next, s_vkp_made, s_vkp_taken, s_vkp_waited, s_vkp_logged;
+static VkpReady *s_vkp_ready;
+static int s_vkp_nready;
+static uint64_t s_vkp_t0, s_vkp_t1;
+static uint64_t *s_vkp_idh;            /* program id -> its sources' hash (0: unknown) */
+static uint32_t s_vkp_nidh;
+static uint64_t s_vkp_known[8192];     /* hashes written down: programs, and program x key */
+static FILE *s_vkp_out;
+static int s_vkp_off = -1;
+
+static int vkp_on(void)
+{
+    if (s_vkp_off < 0) {
+        const char *e = getenv("RECOMP_VK_PIPES_AHEAD");
+        s_vkp_off = e && e[0] == '0';
+    }
+    return !s_vkp_off;
+}
+static uint64_t vkp_src_hash(const char *v, const char *f)
+{
+    uint64_t h = 0xCBF29CE484222325ull;
+    const unsigned char *p;
+    for (p = (const unsigned char *)v; *p; p++) h = (h ^ *p) * 0x100000001B3ull;
+    h = (h ^ 0xFF) * 0x100000001B3ull;
+    for (p = (const unsigned char *)f; *p; p++) h = (h ^ *p) * 0x100000001B3ull;
+    return h ? h : 1;
+}
+/* 1 when h was new (and is now known) */
+static int vkp_mark(uint64_t h)
+{
+    unsigned i, at = (unsigned)(h ^ (h >> 31)) & 8191u;
+    if (!h) h = 1;
+    for (i = 0; i < 8192; i++, at = (at + 1) & 8191u) {
+        if (s_vkp_known[at] == h) return 0;
+        if (!s_vkp_known[at]) { s_vkp_known[at] = h; return 1; }
+    }
+    return 0;
+}
+static void vkp_set_id(GLuint id, uint64_t h)
+{
+    if (id >= s_vkp_nidh) {
+        uint32_t n = s_vkp_nidh ? s_vkp_nidh : 256;
+        uint64_t *nh;
+        while (n <= id) n *= 2;
+        nh = (uint64_t *)realloc(s_vkp_idh, n * sizeof *nh);
+        if (!nh) return;
+        memset(nh + s_vkp_nidh, 0, (n - s_vkp_nidh) * sizeof *nh);
+        s_vkp_idh = nh;
+        s_vkp_nidh = n;
+    }
+    s_vkp_idh[id] = h;
+}
+static uint64_t vkp_id_hash(GLuint id) { return id < s_vkp_nidh ? s_vkp_idh[id] : 0; }
+
+static const char *vkp_path(void)
+{
+#if defined(_WIN32)
+    return "shader_cache\\vk_pipes.bin";
+#else
+    return "shader_cache/vk_pipes.bin";
+#endif
+}
+static FILE *vkp_writer(void)
+{
+    if (!s_vkp_out && vkp_on()) {
+        s_vkp_out = fopen(vkp_path(), "ab");
+        if (s_vkp_out && ftell(s_vkp_out) == 0) {
+            uint32_t ks = (uint32_t)sizeof(PKey);
+            fwrite("JSRFVKP1", 1, 8, s_vkp_out);
+            fwrite(&ks, 4, 1, s_vkp_out);
+        }
+        if (!s_vkp_out) s_vkp_off = 1;   /* no shader_cache folder: nothing kept */
+    }
+    return s_vkp_out;
+}
+static void vkp_write_prog(uint64_t h, const char *v, const char *f)
+{
+    FILE *o;
+    uint32_t vl = (uint32_t)strlen(v), fl = (uint32_t)strlen(f);
+    if (!vkp_mark(h) || !(o = vkp_writer())) return;
+    fputc('P', o);
+    fwrite(&h, 8, 1, o); fwrite(&vl, 4, 1, o); fwrite(&fl, 4, 1, o);
+    fwrite(v, 1, vl, o); fwrite(f, 1, fl, o);
+    fflush(o);
+}
+static void vkp_write_key(uint64_t h, uint64_t kh, const PKey *k)
+{
+    FILE *o;
+    if (!h || !vkp_mark(h ^ (kh * 0x9E3779B97F4A7C15ull)) || !(o = vkp_writer())) return;
+    fputc('K', o);
+    fwrite(&h, 8, 1, o);
+    fwrite(k, sizeof *k, 1, o);
+    fflush(o);
+}
+
+static void vkp_pipes_add(GProg *g, uint64_t kh, VkPipeline p)
+{
+    if (g->npipes == g->cpipes) {
+        int nc = g->cpipes ? g->cpipes * 2 : 8;
+        PipeSlot *np = (PipeSlot *)realloc(g->pipes, (size_t)nc * sizeof *np);
+        if (!np) return;
+        g->pipes = np;
+        g->cpipes = nc;
+    }
+    g->pipes[g->npipes].key = kh;
+    g->pipes[g->npipes].p = p;
+    g->npipes++;
+}
+
+static int SDLCALL vkp_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        VkpJob *j = NULL;
+        VkPipeline p;
+        SDL_LockMutex(s_vkp_mu);
+        while (s_vkp_next < s_vkp_njob && s_vkp_job[s_vkp_next].state != 0)
+            s_vkp_next++;
+        if (s_vkp_next < s_vkp_njob) {
+            j = &s_vkp_job[s_vkp_next++];
+            j->state = 1;
+        }
+        SDL_UnlockMutex(s_vkp_mu);
+        if (!j)
+            return 0;
+        p = pipe_make_x(j->vm, j->fm, j->pl, j->inputs, &j->k, j->dclamp);
+        SDL_LockMutex(s_vkp_mu);
+        j->p = p;
+        j->state = 2;
+        if (++s_vkp_made == s_vkp_njob) s_vkp_t1 = TM_NOW();
+        SDL_CondBroadcast(s_vkp_cv);
+        SDL_UnlockMutex(s_vkp_mu);
+    }
+}
+
+/* the pipeline for program `id` (g) and key k: already made, made ahead, or now */
+static VkPipeline vkp_get(GProg *g, GLuint id, const PKey *k)
+{
+    uint64_t kh = pkey_hash(k);
+    VkPipeline p;
+    int i;
+    for (i = 0; i < g->npipes; i++)
+        if (g->pipes[i].key == kh)
+            return g->pipes[i].p;
+    if (s_vkp_njob) {
+        VkpJob *j = NULL;
+        SDL_LockMutex(s_vkp_mu);
+        for (i = 0; i < s_vkp_njob; i++)
+            if (s_vkp_job[i].prog == id && s_vkp_job[i].kh == kh && s_vkp_job[i].state != 3
+                    && !memcmp(&s_vkp_job[i].k, k, sizeof *k)) {
+                j = &s_vkp_job[i];
+                break;
+            }
+        if (j) {
+            if (j->state == 0) {               /* not begun: made here, now */
+                j->state = 1;
+                SDL_UnlockMutex(s_vkp_mu);
+                p = pipe_make_x(j->vm, j->fm, j->pl, j->inputs, &j->k, j->dclamp);
+                SDL_LockMutex(s_vkp_mu);
+                j->p = p;
+                if (++s_vkp_made == s_vkp_njob) s_vkp_t1 = TM_NOW();
+            } else {
+                if (j->state == 1) s_vkp_waited++;
+                while (j->state == 1)           /* a worker is on it */
+                    SDL_CondWait(s_vkp_cv, s_vkp_mu);
+            }
+            p = j->p;
+            j->state = 3;
+            s_vkp_taken++;
+            SDL_UnlockMutex(s_vkp_mu);
+            if (p) {
+                vkp_pipes_add(g, kh, p);
+                s_n_pipes++;
+                return p;
+            }
+        } else
+            SDL_UnlockMutex(s_vkp_mu);
+    }
+    p = pipe_make(g, k);
+    if (!p)
+        return VK_NULL_HANDLE;
+    vkp_pipes_add(g, kh, p);
+    vkp_write_key(vkp_id_hash(id), kh, k);
+    return p;
+}
+
+GLuint rb_program_build(const char *vsrc, const char *fsrc)
+{
+    uint64_t h = vkp_src_hash(vsrc, fsrc);
+    GLuint id;
+    int i;
+    for (i = 0; i < s_vkp_nready; i++)
+        if (s_vkp_ready[i].h == h && !s_vkp_ready[i].handed) {
+            s_vkp_ready[i].handed = 1;       /* made at start-up */
+            return s_vkp_ready[i].id;
+        }
+    id = vkp_link(vsrc, fsrc);
+    if (id && vkp_on()) {
+        vkp_set_id(id, h);
+        vkp_write_prog(h, vsrc, fsrc);
+    }
+    return id;
+}
+
+void rb_program_delete(uint32_t id)
+{
+    int i;
+    if (s_vkp_njob) {
+        SDL_LockMutex(s_vkp_mu);
+        for (i = 0; i < s_vkp_njob; i++) {
+            VkpJob *j = &s_vkp_job[i];
+            if (j->prog != id || j->state == 3) continue;
+            while (j->state == 1)
+                SDL_CondWait(s_vkp_cv, s_vkp_mu);
+            if (j->state == 2 && j->p)
+                vkDestroyPipeline(G.c.dev, j->p, NULL);   /* never used */
+            j->p = VK_NULL_HANDLE;
+            j->state = 3;
+        }
+        SDL_UnlockMutex(s_vkp_mu);
+    }
+    for (i = 0; i < s_vkp_nready; i++)
+        if (s_vkp_ready[i].id == id) s_vkp_ready[i].id = 0, s_vkp_ready[i].handed = 1;
+    vkp_set_id(id, 0);
+    glDeleteProgram(id);
+}
+
+/* what the last runs wrote down: read at rb_init, before any program is
+ * built (so nothing is written twice) */
+typedef struct { uint64_t h; char *v, *fr; GLuint id; } VkpProg;
+static VkpProg *s_vkp_rp;
+static int s_vkp_nrp;
+static PKey *s_vkp_rk;
+static uint64_t *s_vkp_rkh;
+static int s_vkp_nrk;
+
+static void vkp_read(void)
+{
+    FILE *f;
+    char magic[8];
+    uint32_t ks = 0;
+    int cp = 0, ck = 0;
+    if (!vkp_on())
+        return;
+    f = fopen(vkp_path(), "rb");
+    if (!f)
+        return;
+    if (fread(magic, 1, 8, f) != 8 || memcmp(magic, "JSRFVKP1", 8) || fread(&ks, 4, 1, f) != 1
+            || ks != (uint32_t)sizeof(PKey)) {
+        fclose(f);
+        f = fopen(vkp_path(), "wb");     /* another build's: started again */
+        if (f) fclose(f);
+        return;
+    }
+    for (;;) {
+        int c = fgetc(f);
+        uint64_t h;
+        if (c == EOF || fread(&h, 8, 1, f) != 1) break;
+        if (c == 'P') {
+            uint32_t vl, fl;
+            char *v, *fr;
+            if (fread(&vl, 4, 1, f) != 1 || fread(&fl, 4, 1, f) != 1 || vl > (1u << 20) || fl > (1u << 20))
+                break;
+            v = (char *)malloc(vl + 1); fr = (char *)malloc(fl + 1);
+            if (!v || !fr || fread(v, 1, vl, f) != vl || fread(fr, 1, fl, f) != fl) { free(v); free(fr); break; }
+            v[vl] = 0; fr[fl] = 0;
+            if (!vkp_mark(h)) { free(v); free(fr); continue; }
+            if (s_vkp_nrp == cp) {
+                VkpProg *n;
+                cp = cp ? cp * 2 : 64;
+                n = (VkpProg *)realloc(s_vkp_rp, (size_t)cp * sizeof *n);
+                if (!n) { free(v); free(fr); break; }
+                s_vkp_rp = n;
+            }
+            s_vkp_rp[s_vkp_nrp].h = h; s_vkp_rp[s_vkp_nrp].v = v;
+            s_vkp_rp[s_vkp_nrp].fr = fr; s_vkp_rp[s_vkp_nrp].id = 0;
+            s_vkp_nrp++;
+        } else if (c == 'K') {
+            PKey k;
+            if (fread(&k, sizeof k, 1, f) != 1) break;
+            if (!vkp_mark(h ^ (pkey_hash(&k) * 0x9E3779B97F4A7C15ull))) continue;
+            if (s_vkp_nrk == ck) {
+                PKey *nk; uint64_t *nh;
+                ck = ck ? ck * 2 : 128;
+                nk = (PKey *)realloc(s_vkp_rk, (size_t)ck * sizeof *nk);
+                if (nk) s_vkp_rk = nk;
+                nh = (uint64_t *)realloc(s_vkp_rkh, (size_t)ck * sizeof *nh);
+                if (nh) s_vkp_rkh = nh;
+                if (!nk || !nh) break;
+            }
+            s_vkp_rk[s_vkp_nrk] = k; s_vkp_rkh[s_vkp_nrk] = h; s_vkp_nrk++;
+        } else
+            break;
+    }
+    fclose(f);
+}
+
+/* at start-up (rb_init_state, once depth clamp is set): the programs made
+ * (or found among those the renderer made already) and their pipelines
+ * given to the workers */
+static void vkp_start(void)
+{
+    int i, a, nthreads;
+    if (!s_vkp_nrk) {
+        for (i = 0; i < s_vkp_nrp; i++) { free(s_vkp_rp[i].v); free(s_vkp_rp[i].fr); }
+        return;
+    }
+    s_vkp_t0 = TM_NOW();
+    s_vkp_job = (VkpJob *)calloc((size_t)s_vkp_nrk, sizeof *s_vkp_job);
+    s_vkp_ready = (VkpReady *)calloc((size_t)(s_vkp_nrp ? s_vkp_nrp : 1), sizeof *s_vkp_ready);
+    for (i = 0; i < s_vkp_nrk && s_vkp_job && s_vkp_ready; i++) {
+        GProg *g;
+        for (a = 0; a < s_vkp_nrp && s_vkp_rp[a].h != s_vkp_rkh[i]; a++) {}
+        if (a == s_vkp_nrp) continue;          /* its program was not written down */
+        if (!s_vkp_rp[a].id) {
+            uint32_t id;
+            for (id = 1; id < s_vkp_nidh && s_vkp_idh[id] != s_vkp_rp[a].h; id++) {}
+            if (id < s_vkp_nidh)
+                s_vkp_rp[a].id = id;           /* the renderer has it already */
+            else {
+                s_vkp_rp[a].id = vkp_link(s_vkp_rp[a].v, s_vkp_rp[a].fr);
+                if (!s_vkp_rp[a].id) { s_vkp_rp[a].h = 0; continue; }
+                vkp_set_id(s_vkp_rp[a].id, s_vkp_rp[a].h);
+                s_vkp_ready[s_vkp_nready].h = s_vkp_rp[a].h;
+                s_vkp_ready[s_vkp_nready].id = s_vkp_rp[a].id;
+                s_vkp_nready++;
+            }
+        }
+        g = prog_of(s_vkp_rp[a].id);
+        if (!g || !g->linked) continue;
+        s_vkp_job[s_vkp_njob].prog = s_vkp_rp[a].id;
+        s_vkp_job[s_vkp_njob].k = s_vkp_rk[i];
+        s_vkp_job[s_vkp_njob].kh = pkey_hash(&s_vkp_rk[i]);
+        s_vkp_job[s_vkp_njob].vm = g->vm;
+        s_vkp_job[s_vkp_njob].fm = g->fm;
+        s_vkp_job[s_vkp_njob].pl = g->pl;
+        s_vkp_job[s_vkp_njob].inputs = g->inputs;
+        s_vkp_job[s_vkp_njob].dclamp = S.dclamp;
+        s_vkp_njob++;
+    }
+    for (i = 0; i < s_vkp_nrp; i++) { free(s_vkp_rp[i].v); free(s_vkp_rp[i].fr); }
+    free(s_vkp_rp); free(s_vkp_rk); free(s_vkp_rkh);
+    s_vkp_rp = NULL; s_vkp_rk = NULL; s_vkp_rkh = NULL;
+    if (!s_vkp_njob)
+        return;
+    s_vkp_mu = SDL_CreateMutex();
+    s_vkp_cv = SDL_CreateCond();
+    if (!s_vkp_mu || !s_vkp_cv) {
+        s_vkp_njob = 0;
+        return;
+    }
+    nthreads = SDL_GetCPUCount() - 2;
+    if (nthreads > 4) nthreads = 4;
+    if (nthreads < 1) nthreads = 1;
+    for (i = 0; i < nthreads; i++) {
+        SDL_Thread *t = SDL_CreateThread(vkp_worker, "vk pipelines", NULL);
+        if (t) SDL_DetachThread(t);
+    }
+    fprintf(stderr, "[VK] pipelines ahead: %d programs made (%.0f ms), %d pipelines being made"
+            " on %d threads (RECOMP_VK_PIPES_AHEAD=0 for none)\n", s_vkp_nready,
+            (double)(TM_NOW() - s_vkp_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
+            s_vkp_njob, nthreads);
+}
+
+/* once they are all made: one line */
+static void vkp_report(void)
+{
+    if (s_vkp_logged || !s_vkp_njob) return;
+    SDL_LockMutex(s_vkp_mu);
+    if (s_vkp_made == s_vkp_njob) {
+        s_vkp_logged = 1;
+        fprintf(stderr, "[VK] pipelines ahead: all %d made in %.0f ms; %d used so far, %d draws"
+                " waited for one\n", s_vkp_njob,
+                (double)(s_vkp_t1 - s_vkp_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency(),
+                s_vkp_taken, s_vkp_waited);
+    }
+    SDL_UnlockMutex(s_vkp_mu);
 }
 
 static void API vkd_DrawArrays(GLenum mode, GLint first, GLsizei count)
@@ -885,7 +1296,8 @@ static void cache_save(const char *path, GLuint pr)
     free(data);
 }
 
-GLuint rb_program_build(const char *vsrc, const char *fsrc)
+/* the program itself (rb_program_build, below, may have it ready) */
+static GLuint vkp_link(const char *vsrc, const char *fsrc)
 {
     GLuint vs, fs, pr;
     GLint ok = 0;
@@ -943,7 +1355,7 @@ void rb_program_stats(unsigned *hits, unsigned *misses, uint64_t *ticks)
 /* ── uniforms ───────────────────────────────────────────────────────────── */
 
 void rb_use_program(uint32_t p) { glUseProgram(p); }
-void rb_program_delete(uint32_t p) { glDeleteProgram(p); }
+/* rb_program_delete: below, with the pipelines built ahead */
 int rb_uniform_loc(uint32_t p, const char *name) { return glGetUniformLocation(p, name); }
 
 /* v117: how much of a vec4 array is live, and whether its elements'
@@ -1720,6 +2132,7 @@ int rb_window_present(const RbFrame *f)
     if (s_rb_overlay) s_rb_overlay(cw, ch, 0);
     rbvk_core_swap(win);
     s_win_frames++;
+    vkp_report();
     {
         static uint64_t frames;
         if ((++frames % 600 == 0 || frames == 120) && s_vkd_draws) {
@@ -2179,6 +2592,7 @@ int rb_init(void)
     s_rb_caps.dxt = G.bc_ok;
     s_rb_caps.aniso = G.max_aniso > 1.0f;
     s_rb_caps.attrib_binding = 0;
+    vkp_read();                        /* vk9: the pipelines the last runs used */
     return 1;
 }
 
@@ -2193,6 +2607,7 @@ void rb_init_state(int clip_planes)
     glEnable(GL_SCISSOR_TEST);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    vkp_start();                       /* vk9: the pipelines the last runs used */
 }
 
 void rb_thread_start(void) {}          /* everything on the caller's thread */

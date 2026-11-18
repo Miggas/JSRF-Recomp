@@ -1951,7 +1951,10 @@ static uint64_t pkey_hash(const PKey *k)
     return h ? h : 1;
 }
 
-static VkPipeline pipe_make(GProg *g, const PKey *k)
+/* a pipeline from the program's modules, layout and inputs (copied, so the
+ * Vulkan backend can build on a worker thread: nv2a_rb_vk.c) */
+static VkPipeline pipe_make_x(VkShaderModule vm, VkShaderModule fm, VkPipelineLayout pl,
+                              uint32_t inputs, const PKey *k, int dclamp)
 {
     VkPipelineShaderStageCreateInfo st[2] = {
         { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO },
@@ -1982,11 +1985,11 @@ static VkPipeline pipe_make(GProg *g, const PKey *k)
     uint32_t i, n = 0;
     for (i = 0; i < 2; i++) {
         st[i].stage = i ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
-        st[i].module = i ? g->fm : g->vm;
+        st[i].module = i ? fm : vm;
         st[i].pName = "main";
     }
     for (i = 0; i < NATTR; i++) {
-        if (!(g->inputs & (1u << i))) continue;
+        if (!(inputs & (1u << i))) continue;
         vb[n].binding = i;
         vb[n].stride = k->vstride[i];
         vb[n].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -2003,7 +2006,7 @@ static VkPipeline pipe_make(GProg *g, const PKey *k)
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     vs.viewportCount = 1;
     vs.scissorCount = 1;
-    rs.depthClampEnable = S.dclamp ? VK_TRUE : VK_FALSE;
+    rs.depthClampEnable = dclamp ? VK_TRUE : VK_FALSE;
     rs.polygonMode = VK_POLYGON_MODE_FILL;
     rs.lineWidth = 1.0f;
     ms.rasterizationSamples = (VkSampleCountFlagBits)k->samples;
@@ -2032,12 +2035,19 @@ static VkPipeline pipe_make(GProg *g, const PKey *k)
     gi.pDepthStencilState = &ds;
     gi.pColorBlendState = &cb;
     gi.pDynamicState = &dy;
-    gi.layout = g->pl;
+    gi.layout = pl;
     if (vkCreateGraphicsPipelines(G.c.dev, G.pcache, 1, &gi, NULL, &p) != VK_SUCCESS) {
         GV_ONCE(8, "a pipeline could not be made\n");
         return VK_NULL_HANDLE;
     }
-    s_n_pipes++;
+    return p;
+}
+
+static VkPipeline pipe_make(GProg *g, const PKey *k)
+{
+    VkPipeline p = pipe_make_x(g->vm, g->fm, g->pl, g->inputs, k, S.dclamp);
+    if (p)
+        s_n_pipes++;
     return p;
 }
 
