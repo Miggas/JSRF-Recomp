@@ -631,8 +631,10 @@ typedef struct VkpJob {
     uint32_t inputs;
     int dclamp;
     VkPipeline p;
-    /* a program's SPIR-V (into the SPIR-V cache, where linking finds it) */
-    char *vs, *fs;
+    /* a program's SPIR-V (into the SPIR-V cache, where linking finds it):
+     * vs/fs the sources as given, cvs/cfs as linking compiles them (the
+     * renderer's defines after #version, the vertex shader patched) */
+    char *vs, *fs, *cvs, *cfs;
     int ok;
 } VkpJob;
 typedef struct { uint64_t h; GLuint id; int handed; } VkpReady;
@@ -808,7 +810,7 @@ static void vkp_do(VkpJob *j)
         size_t vn = 0, fn = 0;
         int cached = 0;
         char *err = NULL;
-        j->ok = nv2a_vk_spirv(j->vs, j->fs, &vw, &vn, &fw, &fn, &cached, &err);
+        j->ok = j->cvs && j->cfs && nv2a_vk_spirv(j->cvs, j->cfs, &vw, &vn, &fw, &fn, &cached, &err);
         free(vw); free(fw); free(err);
     }
 }
@@ -921,7 +923,7 @@ typedef struct {
 static VkpAsync **s_vka;
 static int s_nvka, s_cvka;
 static uint32_t s_vka_count;
-static unsigned s_vka_started, s_vka_ready, s_vka_failed, s_vka_pipes;
+static unsigned s_vka_started, s_vka_ready, s_vka_failed, s_vka_pipes, s_vka_hit;
 static int s_vka_off = -1;
 
 static int vka_on(void)
@@ -956,6 +958,29 @@ static int vkp_spv_drop_locked(VkpJob *j)
     return 1;
 }
 
+/* a source as rbg_compile hands it to the core: the renderer's defines
+ * after the #version line */
+static const char *(*s_rb_defs)(void);
+static char *vka_with_defs(const char *src)
+{
+    const char *nl = strchr(src, '\n');
+    const char *defs = s_rb_defs ? s_rb_defs() : NULL;
+    size_t a, b, c;
+    char *o;
+    if (!(defs && nl && !strncmp(src, "#version", 8)))
+        return strdup(src);
+    a = (size_t)(nl - src) + 1;
+    if (a > 63) a = 63;                  /* rbg_compile keeps 63 bytes of it */
+    b = strlen(defs);
+    c = strlen(nl + 1);
+    o = (char *)malloc(a + b + c + 1);
+    if (!o) return NULL;
+    memcpy(o, src, a);
+    memcpy(o + a, defs, b);
+    memcpy(o + a + b, nl + 1, c + 1);
+    return o;
+}
+
 uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t like)
 {
     uint64_t h;
@@ -976,11 +1001,20 @@ uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t lik
     j->kind = 1;
     j->vs = strdup(vsrc);
     j->fs = strdup(fsrc);
-    if (!j->vs || !j->fs) { free(j->vs); free(j->fs); free(j); free(a); return 0; }
+    {
+        char *d = vka_with_defs(vsrc);
+        j->cvs = d ? patch_vs(d) : NULL;      /* as gv_LinkProgram compiles it */
+        free(d);
+        j->cfs = vka_with_defs(fsrc);
+    }
+    if (!j->vs || !j->fs || !j->cvs || !j->cfs) {
+        free(j->vs); free(j->fs); free(j->cvs); free(j->cfs); free(j); free(a);
+        return 0;
+    }
     if (s_nvka == s_cvka) {
         int nc = s_cvka ? s_cvka * 2 : 32;
         VkpAsync **n = (VkpAsync **)realloc(s_vka, (size_t)nc * sizeof *n);
-        if (!n) { free(j->vs); free(j->fs); free(j); free(a); return 0; }
+        if (!n) { free(j->vs); free(j->fs); free(j->cvs); free(j->cfs); free(j); free(a); return 0; }
         s_vka = n;
         s_cvka = nc;
     }
@@ -991,7 +1025,7 @@ uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t lik
     SDL_LockMutex(s_vkp_mu);
     if (!vkp_push_locked(j)) {
         SDL_UnlockMutex(s_vkp_mu);
-        free(j->vs); free(j->fs); free(j); free(a);
+        free(j->vs); free(j->fs); free(j->cvs); free(j->cfs); free(j); free(a);
         return 0;
     }
     SDL_UnlockMutex(s_vkp_mu);
@@ -1019,14 +1053,18 @@ int rb_program_ready(uint32_t *id)
         if (!done)
             return 0;
         /* linked here, from the SPIR-V the worker left in the cache */
-        a->id = j->ok ? vkp_link(j->vs, j->fs) : 0;
+        {
+            uint64_t c0 = s_n_links_cached;
+            a->id = j->ok ? vkp_link(j->vs, j->fs) : 0;
+            if (s_n_links_cached != c0) s_vka_hit++;   /* the worker's SPIR-V, as meant */
+        }
         if (a->id) {
             vkp_set_id(a->id, a->h);
             if (vkp_on()) vkp_write_prog(a->h, j->vs, j->fs);
         }
         SDL_LockMutex(s_vkp_mu);
-        free(j->vs); free(j->fs);            /* taken (the job itself stays in the list) */
-        j->vs = j->fs = NULL;
+        free(j->vs); free(j->fs); free(j->cvs); free(j->cfs);   /* taken (the job stays listed) */
+        j->vs = j->fs = j->cvs = j->cfs = NULL;
         j->state = 3;
         SDL_UnlockMutex(s_vkp_mu);
         a->spv = NULL;
@@ -1116,8 +1154,8 @@ void rb_program_delete(uint32_t id)
             SDL_UnlockMutex(s_vkp_mu);
             if (!now) { s_vka[i]->cancel = 1; return; }   /* freed by vka_reap */
             SDL_LockMutex(s_vkp_mu);
-            free(j->vs); free(j->fs);
-            j->vs = j->fs = NULL;
+            free(j->vs); free(j->fs); free(j->cvs); free(j->cfs);
+            j->vs = j->fs = j->cvs = j->cfs = NULL;
             SDL_UnlockMutex(s_vkp_mu);
             vka_free(i);
             return;
@@ -1162,8 +1200,8 @@ static void vka_reap(void)
         SDL_UnlockMutex(s_vkp_mu);
         if (!done) { i++; continue; }
         SDL_LockMutex(s_vkp_mu);
-        free(a->spv->vs); free(a->spv->fs);
-        a->spv->vs = a->spv->fs = NULL;
+        free(a->spv->vs); free(a->spv->fs); free(a->spv->cvs); free(a->spv->cfs);
+        a->spv->vs = a->spv->fs = a->spv->cvs = a->spv->cfs = NULL;
         a->spv->state = 3;
         SDL_UnlockMutex(s_vkp_mu);
         vka_free(i);
@@ -2471,8 +2509,9 @@ int rb_window_present(const RbFrame *f)
             }
             if (s_vka_started)
                 fprintf(stderr, "[VK]   built in the background so far: %u shaders asked for, %u ready"
-                        " (%u pipelines with them), %u failed, %d being built\n", s_vka_started,
-                        s_vka_ready, s_vka_pipes, s_vka_failed, s_nvka);
+                        " (%u linked from the workers' SPIR-V, %u pipelines with them), %u failed,"
+                        " %d being built\n", s_vka_started, s_vka_ready, s_vka_hit, s_vka_pipes,
+                        s_vka_failed, s_nvka);
             s_vkd_draws = s_vkd_pipe_hash = s_vkd_vb = s_vkd_dyn = s_vkd_push = 0;
         }
     }
