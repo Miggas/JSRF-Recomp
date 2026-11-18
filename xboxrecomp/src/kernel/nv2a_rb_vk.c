@@ -882,6 +882,7 @@ static void vkp_do(VkpJob *j)
 static int SDLCALL vkp_worker(void *arg)
 {
     (void)arg;
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
     SDL_LockMutex(s_vkp_mu);
     for (;;) {
         VkpJob *j = NULL;
@@ -1496,9 +1497,15 @@ static void vkp_start(void)
         s_vkp_njob = s_vkp_nahead = 0;
         return;
     }
-    nthreads = SDL_GetCPUCount() - 2;
+    /* vk12d: a quarter of the logical CPUs, 1 to 4 (the Steam Deck's 8 give
+     * 2: 6 left the game thread short while loading), at low priority */
+    nthreads = SDL_GetCPUCount() / 4;
     if (nthreads > 4) nthreads = 4;
     if (nthreads < 1) nthreads = 1;
+    {
+        const char *e = getenv("RECOMP_VK_WORKERS");
+        if (e && atoi(e) > 0) nthreads = atoi(e) > 8 ? 8 : atoi(e);
+    }
     for (i = 0; i < nthreads; i++) {
         SDL_Thread *t = SDL_CreateThread(vkp_worker, "vk builder", NULL);
         if (t) { SDL_DetachThread(t); s_vkp_threads++; }
@@ -2705,6 +2712,11 @@ static int rbvk_swap(void *win, int cw, int ch)
                (unsigned long long)s_n_links, (unsigned long long)s_n_links_cached, s_link_ms,
                (unsigned long long)s_pt_waits,
                (double)s_pt_wait_t * 1000.0 / (double)SDL_GetPerformanceFrequency());
+        /* vk12d: the GPU's side (one batch a frame, unless something waited) */
+        GV_LOG("  GPU: %.2f ms a frame (%llu batches timed), %.1f passes and %.1f full barriers a frame\n",
+               s_gpu_batches ? (double)s_gpu_ns / 1e6 / 600.0 : 0.0, (unsigned long long)s_gpu_batches,
+               (double)s_n_passes / 600.0, (double)s_n_barriers / 600.0);
+        s_gpu_ns = s_gpu_batches = s_n_passes = s_n_barriers = 0;
         s_pt_waits = s_pt_wait_t = 0;
     }
     if ((frames == 120 && !saved) || frames % 3600 == 0) {

@@ -70,7 +70,11 @@ typedef struct {
     int njunk, cjunk;
     VkQueryPool qp;
     uint32_t qn;                    /* queries used in it */
+    VkQueryPool tq;                 /* vk12d: GPU time of the batch (start, end) */
+    int tq_set;
 } Batch;
+/* vk12d: what the GPU did (for the Vulkan backend's log) */
+static uint64_t s_gpu_ns, s_gpu_batches, s_n_passes, s_n_barriers;
 
 static struct {
     int up;
@@ -205,6 +209,15 @@ static void batch_begin(void)
         if (b->serial > G.done)
             G.done = b->serial;
         queries_collect(b);
+        if (b->tq && b->tq_set) {
+            uint64_t t[2];
+            if (vkGetQueryPoolResults(G.c.dev, b->tq, 0, 2, sizeof t, t, 8, VK_QUERY_RESULT_64_BIT)
+                    == VK_SUCCESS && t[1] > t[0]) {
+                s_gpu_ns += (uint64_t)((double)(t[1] - t[0]) * G.c.props.limits.timestampPeriod);
+                s_gpu_batches++;
+            }
+        }
+        b->tq_set = 0;
     }
     junk_free(b);
     vkResetFences(G.c.dev, 1, &b->fence);
@@ -216,6 +229,10 @@ static void batch_begin(void)
     vkBeginCommandBuffer(b->cmd, &bi);
     if (b->qp)
         vkCmdResetQueryPool(b->cmd, b->qp, 0, QPOOL);
+    if (b->tq) {
+        vkCmdResetQueryPool(b->cmd, b->tq, 0, 2);
+        vkCmdWriteTimestamp(b->cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, b->tq, 0);
+    }
     b->qn = 0;
     b->open = 1;
     cmd_state_lost();
@@ -237,6 +254,10 @@ static void batch_submit(void)
     if (!b->open)
         return;
     rendering_end();
+    if (b->tq) {
+        vkCmdWriteTimestamp(b->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, b->tq, 1);
+        b->tq_set = 1;
+    }
     vkEndCommandBuffer(b->cmd);
     si.commandBufferCount = 1;
     si.pCommandBuffers = &b->cmd;
@@ -322,6 +343,7 @@ static VkDeviceSize ring_take(int which, VkDeviceSize n, VkDeviceSize align, Rin
 static void barrier_all(void)
 {
     VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+    s_n_barriers++;
     mb.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
     mb.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
     vkCmdPipelineBarrier(cmd(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -1074,6 +1096,7 @@ static int rendering_begin(void)
     rendering_end();
     batch_begin();
     barrier_all();
+    s_n_passes++;
     w = col ? col->w : ds->w;
     h = col ? col->h : ds->h;
     if (col && ds) {
@@ -2881,6 +2904,12 @@ int glvk_init(void *win)
         qi.queryCount = QPOOL;
         if (vkCreateQueryPool(G.c.dev, &qi, NULL, &b->qp) != VK_SUCCESS)
             b->qp = VK_NULL_HANDLE;
+        if (G.c.props.limits.timestampComputeAndGraphics) {
+            qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            qi.queryCount = 2;
+            if (vkCreateQueryPool(G.c.dev, &qi, NULL, &b->tq) != VK_SUCCESS)
+                b->tq = VK_NULL_HANDLE;
+        }
     }
     pcache_load();
     /* OpenGL's defaults */
