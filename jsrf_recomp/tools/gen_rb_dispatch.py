@@ -208,7 +208,8 @@ OWN = {'threaded', 'thread_start', 'window_present',
        # vk17: answered without waiting for the recording thread
        # (nv2a_rb_queue_rt.h): fences made in the queue, known passed from
        # G.done; the scissor the renderer last set, mirrored here
-       'fence', 'fence_wait', 'fence_delete', 'fence_signaled', 'scissor_get'}
+       'fence', 'fence_wait', 'fence_delete', 'fence_signaled', 'scissor_get',
+       'resolve'}
 # vk17: run on the renderer's side before a queued call is written
 PRE = {'scissor': 'q_sc_note(x, y, w, h);', 'scissor_once': 'q_sc_forget();',
        'bindings_lost': 'q_sc_forget();'}      # written in nv2a_rb_queue_rt.h's terms below

@@ -250,6 +250,7 @@ static void q_scissor_get(int sc[4])
  * for it to catch up and asks the backend as before. */
 #define Q_OP_FENCE      (RB_NCALLS_Q + 0)
 #define Q_OP_FENCE_DEL  (RB_NCALLS_Q + 1)
+#define Q_OP_RESOLVE    (RB_NCALLS_Q + 2)
 #define Q_ALREADY_SIGNALED 0x911Au           /* GL_ALREADY_SIGNALED */
 typedef struct { void *real; _Atomic int made; } QFence;
 typedef struct { QFence *f; uint32_t cond, flags; } QA_qfence;
@@ -307,10 +308,34 @@ static void q_fence_delete(void *h)
     q_end();
 }
 
+/* vk17b: rb_resolve answers with the target that holds the resolved image
+ * -- always the same one (the backend makes it the first time) -- so after
+ * the first, it is known here and the resolve itself goes in the queue (it
+ * waited for the recording thread twice a frame with MSAA). */
+typedef struct { uint32_t fbo, tex; int w, h; } QA_qresolve;
+static uint32_t q_resolve_fbo;
+static uint32_t q_resolve(uint32_t fbo, uint32_t tex, int w, int h)
+{
+    QA_qresolve *a;
+    if (!q_on || !q_resolve_fbo) {
+        if (q_on) q_drain(Q_IX_resolve);
+        return q_resolve_fbo = q_in->resolve(fbo, tex, w, h);
+    }
+    a = (QA_qresolve *)q_begin(Q_OP_RESOLVE, sizeof *a);
+    a->fbo = fbo; a->tex = tex; a->w = w; a->h = h;
+    q_end();
+    return q_resolve_fbo;
+}
+
 static void q_exec_own(const RbqHdr *h)
 {
     const QA_qfence *a = (const QA_qfence *)(h + 1);
     switch (h->op) {
+    case Q_OP_RESOLVE: {
+        const QA_qresolve *r = (const QA_qresolve *)(h + 1);
+        q_in->resolve(r->fbo, r->tex, r->w, r->h);
+        break;
+    }
     case Q_OP_FENCE:
         a->f->real = q_in->fence(a->cond, a->flags);
         atomic_store_explicit(&a->f->made, 1, memory_order_release);

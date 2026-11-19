@@ -628,7 +628,6 @@ static void q_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, 
 static uint32_t q_target_depth(uint32_t fbo, uint32_t buf, int is_tex) { if (q_on) q_drain(47); return q_in->target_depth(fbo, buf, is_tex); }
 static void q_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int sh, const uint32_t *px, int samples) { if (q_on) q_drain(48); q_in->surface_upload(fbo, tex, gw, gh, sw, sh, px, samples); }
 static void q_read_pixels(uint32_t fbo, int w, int h, uint32_t *px) { if (q_on) q_drain(49); q_in->read_pixels(fbo, w, h, px); }
-static uint32_t q_resolve(uint32_t fbo, uint32_t tex, int w, int h) { if (q_on) q_drain(50); return q_in->resolve(fbo, tex, w, h); }
 static uint32_t q_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh) { if (q_on) q_drain(51); return q_in->target_scaled(fbo, sw, sh, gw, gh); }
 static void q_tex_new(uint32_t *id) { if (q_on) q_drain(52); q_in->tex_new(id); }
 static void q_tex_delete(uint32_t *id) { if (q_on) q_drain(53); q_in->tex_delete(id); }
