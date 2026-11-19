@@ -9,10 +9,13 @@
  *    take turns; each has its own fence, staging ring (texture uploads),
  *    uniform ring (each draw's uniforms, constant attributes) and a list of
  *    objects to destroy once it has finished.
- *  - Every image is kept in VK_IMAGE_LAYOUT_GENERAL, and one full memory
- *    barrier separates a rendering pass from transfers (uploads, blits,
- *    copies) and transfers from rendering. Simple, and plenty for 640x480
- *    targets at a few scales.
+ *  - vk16: each image knows its layout and what last used it (img_use):
+ *    attachments are in the attachment layouts while drawn into, textures
+ *    in SHADER_READ_ONLY while sampled, copies in the transfer layouts, and
+ *    a barrier for that one image is made only when its use changes (it
+ *    was every image in GENERAL and a full memory barrier around every
+ *    pass, upload and copy: 12-19 a frame in play). The window's image is
+ *    left in GENERAL for the presenter.
  *  - Rendering is dynamic rendering (Vulkan 1.3), begun at the first draw
  *    or clear into a framebuffer and ended by anything else.
  *  - Programs: both stages' GLSL to SPIR-V through glslang and the SPIR-V
@@ -340,15 +343,6 @@ static VkDeviceSize ring_take(int which, VkDeviceSize n, VkDeviceSize align, Rin
     return o;
 }
 
-static void barrier_all(void)
-{
-    VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
-    s_n_barriers++;
-    mb.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-    mb.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-    vkCmdPipelineBarrier(cmd(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
-}
 
 /* ── GL objects ─────────────────────────────────────────────────────────── */
 
@@ -376,6 +370,11 @@ typedef struct {
     /* texture parameters */
     GLint minf, magf, wrap_s, wrap_t, wrap_r, maxlev, aniso, swz_a1;
     int view_swz;                   /* the swizzle `view` was made with */
+    /* vk16: its layout and its last use (img_use) */
+    VkImageLayout lay;
+    VkPipelineStageFlags st;        /* the stages that last used it */
+    VkAccessFlags acc;              /* and how */
+    int wr;                         /* that use wrote it */
 } GTex;
 
 typedef struct { int used; GLuint col, ds; } GFbo;
@@ -499,6 +498,61 @@ static void cmd_state_lost(void)
 static GTex *tex_of(GLuint id) { return id && id < t_tex_n && t_tex[id].used ? &t_tex[id] : NULL; }
 static GBuf *buf_of(GLuint id) { return id && id < t_buf_n && t_buf[id].used ? &t_buf[id] : NULL; }
 
+/* vk16: t used from here on in layout `lay`, by these stages, reading or
+ * writing: a barrier for this image when it is needed (a write before, a
+ * write now, or another layout). Never inside a rendering pass: one is
+ * ended first when a barrier is made. */
+static uint64_t s_n_ibarriers;
+static void img_use(GTex *t, VkImageLayout lay, VkPipelineStageFlags st, VkAccessFlags acc, int write)
+{
+    VkImageMemoryBarrier b = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    if (!t || !t->img)
+        return;
+    if (t->lay == lay && !t->wr && !write) {
+        t->st |= st;                    /* another reader: a write waits for all */
+        t->acc |= acc;
+        return;
+    }
+    if (R.rendering)
+        rendering_end();
+    b.srcAccessMask = t->wr ? t->acc : 0;
+    b.dstAccessMask = acc;
+    b.oldLayout = t->lay;
+    b.newLayout = lay;
+    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = t->img;
+    b.subresourceRange.aspectMask = t->ds ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+                                          : VK_IMAGE_ASPECT_COLOR_BIT;
+    b.subresourceRange.levelCount = (uint32_t)t->levels;
+    b.subresourceRange.layerCount = (uint32_t)t->layers;
+    vkCmdPipelineBarrier(cmd(), t->st ? t->st : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, st,
+                         0, 0, NULL, 0, NULL, 1, &b);
+    s_n_ibarriers++;
+    t->lay = lay;
+    t->st = st;
+    t->acc = acc;
+    t->wr = write;
+}
+#define IMG_SAMPLED(t) img_use((t), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, \
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, \
+        VK_ACCESS_SHADER_READ_BIT, 0)
+#define IMG_XSRC(t) img_use((t), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, \
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT, 0)
+#define IMG_XDST(t) img_use((t), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, \
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, 1)
+/* for the presenter, which copies from it on its own (GENERAL) */
+#define IMG_PRESENT(t) img_use((t), VK_IMAGE_LAYOUT_GENERAL, \
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT, 0)
+/* device writes into host-visible buffers, for the CPU */
+static void host_barrier(void)
+{
+    VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+    mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cmd(), VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                         0, 1, &mb, 0, NULL, 0, NULL);
+}
+
 /* ── buffers ────────────────────────────────────────────────────────────── */
 
 static GLuint *bind_slot(GLenum target)
@@ -595,6 +649,8 @@ static void tex_free_vk(GTex *t)
     t->img = VK_NULL_HANDLE;
     t->mem = VK_NULL_HANDLE;
     t->defined = 0;
+    t->lay = VK_IMAGE_LAYOUT_UNDEFINED;
+    t->st = 0; t->acc = 0; t->wr = 0;
 }
 
 static void API gv_DeleteTextures(GLsizei n, const GLuint *ids)
@@ -746,31 +802,24 @@ static int tex_alloc(GTex *t, GLenum target, GLenum ifmt, int w, int h, int leve
     if (!bc)
         t->att = make_view(t, 0, 0);
     {
-        /* into GENERAL, cleared, where the commands are now */
-        VkImageMemoryBarrier b = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+        /* cleared, where the commands are now */
         VkImageSubresourceRange all = { 0, 0, (uint32_t)levels, 0, (uint32_t)layers };
-        VkCommandBuffer c = cmd();
+        VkCommandBuffer c;
         all.aspectMask = ds ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
                             : VK_IMAGE_ASPECT_COLOR_BIT;
-        b.srcAccessMask = 0;
-        b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        b.image = t->img;
-        b.subresourceRange = all;
-        vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0, 0, NULL, 0, NULL, 1, &b);
+        t->lay = VK_IMAGE_LAYOUT_UNDEFINED;
+        t->st = 0; t->acc = 0; t->wr = 0;
+        IMG_XDST(t);
+        c = cmd();
         if (ds) {
             VkClearDepthStencilValue z = { 1.0f, 0 };
-            vkCmdClearDepthStencilImage(c, t->img, VK_IMAGE_LAYOUT_GENERAL, &z, 1, &all);
+            vkCmdClearDepthStencilImage(c, t->img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &z, 1, &all);
         } else if (!bc) {
             VkClearColorValue k;
             memset(&k, 0, sizeof k);
             k.float32[3] = 1.0f;
-            vkCmdClearColorImage(c, t->img, VK_IMAGE_LAYOUT_GENERAL, &k, 1, &all);
+            vkCmdClearColorImage(c, t->img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &k, 1, &all);
         }
-        barrier_all();
     }
     return 1;
 }
@@ -820,7 +869,7 @@ static void tex_upload(GTex *t, int level, int layer, int x, int y, int w, int h
             }
         }
     }
-    barrier_all();
+    IMG_XDST(t);
     memset(&cp, 0, sizeof cp);
     cp.bufferOffset = o;
     cp.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -832,8 +881,7 @@ static void tex_upload(GTex *t, int level, int layer, int x, int y, int w, int h
     cp.imageExtent.width = (uint32_t)w;
     cp.imageExtent.height = (uint32_t)h;
     cp.imageExtent.depth = 1;
-    vkCmdCopyBufferToImage(cmd(), r->b, t->img, VK_IMAGE_LAYOUT_GENERAL, 1, &cp);
-    barrier_all();
+    vkCmdCopyBufferToImage(cmd(), r->b, t->img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
 }
 
 static void tex_image(GLenum target, GLint level, GLenum ifmt, GLsizei w, GLsizei h,
@@ -932,7 +980,9 @@ static void API gv_GenerateMipmap(GLenum target)
     VkCommandBuffer c;
     if (!t || !t->img || t->bc || t->ds || t->levels < 2) return;
     if (R.rendering) rendering_end();
-    barrier_all();
+    /* level to level in the one image: GENERAL, a barrier between levels */
+    img_use(t, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, 1);
     c = cmd();
     for (l = 1; l < t->levels; l++) {
         for (f = 0; f < t->layers; f++) {
@@ -952,7 +1002,13 @@ static void API gv_GenerateMipmap(GLenum target)
             vkCmdBlitImage(c, t->img, VK_IMAGE_LAYOUT_GENERAL, t->img, VK_IMAGE_LAYOUT_GENERAL,
                            1, &b, VK_FILTER_LINEAR);
         }
-        barrier_all();
+        {
+            VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+            mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            mb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0, 1, &mb, 0, NULL, 0, NULL);
+        }
     }
     t->defined = (t->levels >= 32) ? ~0u : ((1u << t->levels) - 1);
 }
@@ -1095,7 +1151,6 @@ static int rendering_begin(void)
         return 1;
     rendering_end();
     batch_begin();
-    barrier_all();
     s_n_passes++;
     w = col ? col->w : ds->w;
     h = col ? col->h : ds->h;
@@ -1105,12 +1160,21 @@ static int rendering_begin(void)
         if (ds->samples != col->samples)
             ds = NULL, di = 0;          /* not drawable together: the colour only */
     }
+    /* vk16: into the attachment layouts (a barrier when the last use was
+     * another, or wrote: the previous pass into it) */
+    if (col)
+        img_use(col, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 1);
+    if (ds)
+        img_use(ds, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, 1);
     ri.renderArea.extent.width = (uint32_t)w;
     ri.renderArea.extent.height = (uint32_t)h;
     ri.layerCount = 1;
     if (col) {
         ca.imageView = col->att;
-        ca.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        ca.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         ca.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         ri.colorAttachmentCount = 1;
@@ -1118,7 +1182,7 @@ static int rendering_begin(void)
     }
     if (ds) {
         da.imageView = ds->att;
-        da.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        da.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         da.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         da.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         ri.pDepthAttachment = &da;
@@ -2122,6 +2186,42 @@ static VkPipeline pipe_get(GProg *g, const PKey *k)
 static GTex *s_white2d, *s_whitecube;
 static GLuint s_white2d_id, s_whitecube_id;
 
+/* the texture a sampler element reads (a white one when it can't be:
+ * missing, undefined, the wrong kind, or the target being drawn into) */
+static GTex *sampled_tex(const Uni *u, int e, GTex *col, int note)
+{
+    int unit = u->unit[e] & (NUNIT - 1);
+    GTex *t = tex_of(u->cube ? S.texcube[unit] : S.tex2d[unit]);
+    if (!t || !t->img || !t->view || t->ds || !(t->defined & 1)
+            || (u->cube ? t->layers != 6 : t->layers != 1))
+        return u->cube ? s_whitecube : s_white2d;
+    if (t == col) {
+        if (note) GV_ONCE(4, "a texture is sampled while drawn into (left out)\n");
+        return u->cube ? s_whitecube : s_white2d;
+    }
+    return t;
+}
+
+/* vk16: every texture the draw samples in SHADER_READ_ONLY, before its
+ * pass begins (a barrier ends one, so this comes first) */
+static void sampling_ready(GProg *g)
+{
+    GTex *col, *ds;
+    GLuint ci, di;
+    int i, e;
+    fbo_tex(S.draw_fbo, &col, &ds, &ci, &di);
+    if (col && col->bc) col = NULL;
+    for (i = 0; i < g->nu; i++) {
+        const Uni *u = &g->u[i];
+        if (!u->sampler) continue;
+        for (e = 0; e < u->count; e++) {
+            GTex *t = sampled_tex(u, e, col, 0);
+            if (t && (t->lay != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL || t->wr))
+                IMG_SAMPLED(t);
+        }
+    }
+}
+
 /* everything a draw needs bound; 0: nothing can be drawn */
 static int draw_setup(void)
 {
@@ -2139,6 +2239,7 @@ static int draw_setup(void)
         return 0;
     if (S.vp[2] <= 0 || S.vp[3] <= 0)
         return 0;
+    sampling_ready(g);
     if (!rendering_begin())
         return 0;
     fbo_tex(S.draw_fbo, &col, &ds, &ci, &di);
@@ -2286,17 +2387,10 @@ static int draw_setup(void)
             w[nw].pImageInfo = &ii[nii];
             for (e = 0; e < u->count && nii < 160; e++) {
                 int unit = u->unit[e] & (NUNIT - 1);
-                GTex *t = tex_of(u->cube ? S.texcube[unit] : S.tex2d[unit]);
+                GTex *t = sampled_tex(u, e, col, 1);
                 GSamp *sm = S.samp[unit] && S.samp[unit] < t_samp_n && t_samp[S.samp[unit]].used
                             ? &t_samp[S.samp[unit]] : NULL;
                 int maxlod = 0;
-                if (!t || !t->img || !t->view || t->ds || !(t->defined & 1)
-                        || (u->cube ? t->layers != 6 : t->layers != 1)) {
-                    t = u->cube ? s_whitecube : s_white2d;
-                } else if (t == col) {
-                    GV_ONCE(4, "a texture is sampled while drawn into (left out)\n");
-                    t = u->cube ? s_whitecube : s_white2d;
-                }
                 while (maxlod + 1 < t->levels && (t->defined >> (maxlod + 1) & 1))
                     maxlod++;
                 if (maxlod > t->maxlev) maxlod = t->maxlev;
@@ -2306,7 +2400,7 @@ static int draw_setup(void)
                     t->view_swz = t->swz_a1;
                 }
                 ii[nii].imageView = t->view;
-                ii[nii].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+                ii[nii].imageLayout = t->lay;
                 ii[nii].sampler = sm ? sampler_for(sm->minf, sm->magf, sm->wrap_s, sm->wrap_t,
                                                    GL_CLAMP_TO_EDGE, maxlod, 1)
                                      : sampler_for(t->minf, t->magf, t->wrap_s, t->wrap_t, t->wrap_r,
@@ -2416,9 +2510,17 @@ static void tex_blit(GTex *sc, GLint sx0, GLint sy0, GLint sx1, GLint sy1,
                      GTex *dc, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLenum filter)
 {
     VkCommandBuffer c;
+    VkImageLayout sl = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dl = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     if (!sc || !dc || !sc->img || !dc->img || sc->bc || dc->bc) return;
     rendering_end();
-    barrier_all();
+    if (sc == dc) {                     /* within one image */
+        sl = dl = VK_IMAGE_LAYOUT_GENERAL;
+        img_use(sc, sl, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, 1);
+    } else {
+        IMG_XSRC(sc);
+        IMG_XDST(dc);
+    }
     c = cmd();
     if (sc->samples > 1) {
         /* a resolve: the same size, no flip, into a single-sample image */
@@ -2434,7 +2536,7 @@ static void tex_blit(GTex *sc, GLint sx0, GLint sy0, GLint sx1, GLint sy1,
         rv.extent.height = (uint32_t)abs(sy1 - sy0);
         rv.extent.depth = 1;
         if (dc->samples == 1)
-            vkCmdResolveImage(c, sc->img, VK_IMAGE_LAYOUT_GENERAL, dc->img, VK_IMAGE_LAYOUT_GENERAL, 1, &rv);
+            vkCmdResolveImage(c, sc->img, sl, dc->img, dl, 1, &rv);
     } else {
         VkImageBlit bl;
         memset(&bl, 0, sizeof bl);
@@ -2453,10 +2555,9 @@ static void tex_blit(GTex *sc, GLint sx0, GLint sy0, GLint sx1, GLint sy1,
             return;
         }
         if (sx0 == sx1 || sy0 == sy1 || dx0 == dx1 || dy0 == dy1) return;
-        vkCmdBlitImage(c, sc->img, VK_IMAGE_LAYOUT_GENERAL, dc->img, VK_IMAGE_LAYOUT_GENERAL, 1, &bl,
+        vkCmdBlitImage(c, sc->img, sl, dc->img, dl, 1, &bl,
                        filter == GL_LINEAR && sc->fmt == dc->fmt ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
     }
-    barrier_all();
 }
 
 static void API gv_BlitFramebuffer(GLint sx0, GLint sy0, GLint sx1, GLint sy1,
@@ -2488,7 +2589,7 @@ static void tex_read(GTex *t, GBuf *pb, GLint x, GLint y, GLsizei w, GLsizei h,
     if (!t || !t->img || t->samples > 1 || w <= 0 || h <= 0) return;
     if (x < 0 || y < 0 || x + w > t->w || y + h > t->h) return;
     rendering_end();
-    barrier_all();
+    IMG_XSRC(t);
     memset(&cp, 0, sizeof cp);
     cp.imageSubresource.aspectMask = depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     cp.imageSubresource.layerCount = 1;
@@ -2503,15 +2604,16 @@ static void tex_read(GTex *t, GBuf *pb, GLint x, GLint y, GLsizei w, GLsizei h,
         dst = pb->b;
         doff = (VkDeviceSize)(uintptr_t)data;
         cp.bufferOffset = doff;
-        vkCmdCopyImageToBuffer(cmd(), t->img, VK_IMAGE_LAYOUT_GENERAL, dst, 1, &cp);
+        vkCmdCopyImageToBuffer(cmd(), t->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, 1, &cp);
         pb->gpu_write = G.b[G.cur].serial;
-        barrier_all();
+        host_barrier();
         return;
     }
     /* into memory: done now, waited for */
     if (!host_buffer((VkDeviceSize)w * h * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 1, &tmp, &tmpm, &tmap))
         return;
-    vkCmdCopyImageToBuffer(cmd(), t->img, VK_IMAGE_LAYOUT_GENERAL, tmp, 1, &cp);
+    vkCmdCopyImageToBuffer(cmd(), t->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tmp, 1, &cp);
+    host_barrier();
     wait_idle();
     {
         size_t i, n = (size_t)w * h;
@@ -2987,6 +3089,7 @@ int glvk_swap(void *win)
     if (!t)
         return 0;
     rendering_end();
+    IMG_PRESENT(t);
     batch_submit();
     ok = nv2a_vk_present_image(win, t->img, (uint32_t)t->w, (uint32_t)t->h);
     frames++;

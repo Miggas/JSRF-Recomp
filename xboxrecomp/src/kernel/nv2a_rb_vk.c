@@ -361,6 +361,7 @@ static int vkd_setup(void)
         return 0;
     if (S.vp[2] <= 0 || S.vp[3] <= 0)
         return 0;
+    sampling_ready(g);                   /* vk16: before the pass (barriers end one) */
     if (!rendering_begin())
         return 0;
     vkd_same_cmd();
@@ -612,17 +613,10 @@ static int vkd_setup(void)
             w[nw].pImageInfo = &ii[nii];
             for (e = 0; e < u->count && nii < VKD_NII; e++) {
                 int unit = u->unit[e] & (NUNIT - 1);
-                GTex *t = tex_of(u->cube ? S.texcube[unit] : S.tex2d[unit]);
+                GTex *t = sampled_tex(u, e, col, 1);
                 GSamp *sm = S.samp[unit] && S.samp[unit] < t_samp_n && t_samp[S.samp[unit]].used
                             ? &t_samp[S.samp[unit]] : NULL;
                 int maxlod = 0;
-                if (!t || !t->img || !t->view || t->ds || !(t->defined & 1)
-                        || (u->cube ? t->layers != 6 : t->layers != 1)) {
-                    t = u->cube ? s_whitecube : s_white2d;
-                } else if (t == col) {
-                    GV_ONCE(4, "a texture is sampled while drawn into (left out)\n");
-                    t = u->cube ? s_whitecube : s_white2d;
-                }
                 while (maxlod + 1 < t->levels && (t->defined >> (maxlod + 1) & 1))
                     maxlod++;
                 if (maxlod > t->maxlev) maxlod = t->maxlev;
@@ -632,7 +626,7 @@ static int vkd_setup(void)
                     t->view_swz = t->swz_a1;
                 }
                 ii[nii].imageView = t->view;
-                ii[nii].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+                ii[nii].imageLayout = t->lay;
                 ii[nii].sampler = sm ? sampler_for(sm->minf, sm->magf, sm->wrap_s, sm->wrap_t,
                                                    GL_CLAMP_TO_EDGE, maxlod, 1)
                                      : sampler_for(t->minf, t->magf, t->wrap_s, t->wrap_t, t->wrap_r,
@@ -2723,6 +2717,7 @@ static int rbvk_swap(void *win, int cw, int ch)
     if (!t)
         return 0;
     rendering_end();
+    IMG_PRESENT(t);                      /* vk16: the presenter copies from GENERAL */
     batch_submit();
     if (!pt_on())
         ok = nv2a_vk_present_image(win, t->img, (uint32_t)cw, (uint32_t)ch);
@@ -2745,10 +2740,11 @@ static int rbvk_swap(void *win, int cw, int ch)
                (unsigned long long)s_pt_waits,
                (double)s_pt_wait_t * 1000.0 / (double)SDL_GetPerformanceFrequency());
         /* vk12d: the GPU's side (one batch a frame, unless something waited) */
-        GV_LOG("  GPU: %.2f ms a frame (%llu batches timed), %.1f passes and %.1f full barriers a frame\n",
+        GV_LOG("  GPU: %.2f ms a frame (%llu batches timed), %.1f passes, %.1f image barriers"
+               " and %.1f full barriers a frame\n",
                s_gpu_batches ? (double)s_gpu_ns / 1e6 / 600.0 : 0.0, (unsigned long long)s_gpu_batches,
-               (double)s_n_passes / 600.0, (double)s_n_barriers / 600.0);
-        s_gpu_ns = s_gpu_batches = s_n_passes = s_n_barriers = 0;
+               (double)s_n_passes / 600.0, (double)s_n_ibarriers / 600.0, (double)s_n_barriers / 600.0);
+        s_gpu_ns = s_gpu_batches = s_n_passes = s_n_barriers = s_n_ibarriers = 0;
         s_pt_waits = s_pt_wait_t = 0;
     }
     if ((frames == 120 && !saved) || frames % 3600 == 0) {
@@ -2926,9 +2922,8 @@ void rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int de
         z.depth = (float)clear_depth;
         z.stencil = 0;
         rendering_end();
-        barrier_all();
-        vkCmdClearDepthStencilImage(cmd(), t->img, VK_IMAGE_LAYOUT_GENERAL, &z, 1, &all);
-        barrier_all();
+        IMG_XDST(t);
+        vkCmdClearDepthStencilImage(cmd(), t->img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &z, 1, &all);
     }
 }
 
