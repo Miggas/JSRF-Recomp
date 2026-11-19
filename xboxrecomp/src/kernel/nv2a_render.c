@@ -698,16 +698,22 @@ static const char *FS =
 "uniform samplerCube u_c2; uniform samplerCube u_c3;\n"
 "vec4 R[16];\n"
 "bool g_kill;\n"
+"/* v312b: DXT1 see-through texels are (0,0,0,0); a filtered edge divided\n"
+" * by its alpha has the visible texels' colour, without the dark rim */\n"
+"vec4 unpm(int st, vec4 r) {\n"
+"  if (u_tvalid[st] == 2 && r.a > 0.0 && r.a < 1.0) r.rgb = min(r.rgb / r.a, vec3(1.0));\n"
+"  return r;\n"
+"}\n"
 "vec4 fetch(int st, vec4 c, sampler2D s2, samplerCube sc) {\n"
 "  uint mode = (u_sp >> uint(st * 5)) & 31u;\n"
 "  if (mode == 0u) return vec4(0.0, 0.0, 0.0, 1.0);\n"
 "  if (mode == 1u || mode == 2u) {\n"
 "    float q = c.w != 0.0 ? c.w : 1.0;\n"
-"    return texture(s2, c.xy / q * u_tscale[st]);\n"
+"    return unpm(st, texture(s2, c.xy / q * u_tscale[st]));\n"
 "  }\n"
 "  if (mode == 3u) {\n"
 "    if (u_iscube[st] != 0) return texture(sc, c.xyz);\n"
-"    return texture(s2, c.xy * u_tscale[st]);\n"
+"    return unpm(st, texture(s2, c.xy * u_tscale[st]));\n"
 "  }\n"
 "  if (mode == 4u) return clamp(c, 0.0, 1.0);\n"
 "  if (mode == 5u) {\n"
@@ -807,7 +813,7 @@ static const char *FS =
 "#else\n"
 "  if (u_rc_on == 0) {\n"
 "    outc = v_d0;\n"
-"    if (u_tvalid[0] != 0) outc *= texture(u_s0, v_t0.xy * u_tscale[0]);\n"
+"    if (u_tvalid[0] != 0) outc *= unpm(0, texture(u_s0, v_t0.xy * u_tscale[0]));\n"
 "  } else {\n"
 "    for (int i = 0; i < 16; i++) R[i] = vec4(0.0);\n"
 "#ifdef FOG_PER_VERTEX\n"
@@ -3296,6 +3302,116 @@ static void dxt3_enc(uint8_t px[16][4], uint8_t *b)
     }
 }
 
+/* ---- v312b: no dark seams around 2D art (finding from ReJet,
+ * github.com/Rossybergg/ReJet; Idea by Miggas) ----
+ * A texel whose alpha is 0 keeps a colour, mostly black. The bilinear filter
+ * mixes that colour into the edge of the art next to it, so menu art, the
+ * HUD and text had a dark rim, more visible the higher the resolution.
+ * DXT1's see-through texels are always (0,0,0,0), so the shader divides the
+ * filtered colour by its alpha (u_tvalid == 2). For DXT3 and DXT5 the colour
+ * is whatever the artist stored: at upload (a copy, never the guest's
+ * memory) each see-through texel takes the colour index of the nearest
+ * visible texel of its block, and a block with none visible takes its
+ * neighbours' average colour. RECOMP_GL_DXT_FRINGE=0: off. */
+static int dxt_fringe_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_GL_DXT_FRINGE");
+        on = !(e && e[0] == '0');
+    }
+    return on;
+}
+
+/* the 16 alphas of a DXT3 (dxt5 = 0) or DXT5 block */
+static void dxt_alphas(const uint8_t *b, int dxt5, uint8_t a[16])
+{
+    int i;
+    if (!dxt5) {
+        for (i = 0; i < 16; i++)
+            a[i] = (uint8_t)(((b[i >> 1] >> ((i & 1) * 4)) & 15) * 17);
+        return;
+    }
+    {
+        unsigned a0 = b[0], a1 = b[1], pal[8];
+        uint64_t bits = 0;
+        for (i = 0; i < 6; i++) bits |= (uint64_t)b[2 + i] << (8 * i);
+        pal[0] = a0; pal[1] = a1;
+        if (a0 > a1) {
+            for (i = 1; i < 7; i++) pal[i + 1] = ((7 - i) * a0 + i * a1) / 7;
+        } else {
+            for (i = 1; i < 5; i++) pal[i + 1] = ((5 - i) * a0 + i * a1) / 5;
+            pal[6] = 0; pal[7] = 255;
+        }
+        for (i = 0; i < 16; i++)
+            a[i] = (uint8_t)pal[(bits >> (3 * i)) & 7];
+    }
+}
+
+/* One mip level of bw x bh DXT3/DXT5 blocks, in place. */
+static void dxt_bleed_level(uint8_t *blk, uint32_t bw, uint32_t bh, int dxt5)
+{
+    uint32_t n = bw * bh, i, bx, by;
+    /* per block: 0 all see-through, 1 some visible; and the visible average */
+    uint8_t *vis = (uint8_t *)calloc(n, 1);
+    uint8_t (*avg)[3] = (uint8_t (*)[3])malloc(n * 3);
+    if (!vis || !avg) { free(vis); free(avg); return; }
+    for (i = 0; i < n; i++) {
+        uint8_t *b = blk + i * 16, a[16], px[16][4];
+        int k, j, sum[3] = {0, 0, 0}, nv = 0, any0 = 0;
+        dxt_alphas(b, dxt5, a);
+        for (k = 0; k < 16; k++) { if (a[k]) nv++; else any0 = 1; }
+        if (!nv) continue;
+        dxt3_dec(b, px);
+        for (k = 0; k < 16; k++)
+            if (a[k]) for (j = 0; j < 3; j++) sum[j] += px[k][j];
+        for (j = 0; j < 3; j++) avg[i][j] = (uint8_t)(sum[j] / nv);
+        vis[i] = 1;
+        if (!any0) continue;
+        {   /* see-through texels: the index of the nearest visible one */
+            uint32_t idx = (uint32_t)b[12] | (uint32_t)b[13] << 8
+                         | (uint32_t)b[14] << 16 | (uint32_t)b[15] << 24, out = idx;
+            for (k = 0; k < 16; k++) {
+                int best = -1, bd = 99, m;
+                if (a[k]) continue;
+                for (m = 0; m < 16; m++) {
+                    int dx = (k & 3) - (m & 3), dy = (k >> 2) - (m >> 2), d;
+                    if (!a[m]) continue;
+                    d = dx * dx + dy * dy;
+                    if (d < bd) { bd = d; best = m; }
+                }
+                out &= ~(3u << (2 * k));
+                out |= ((idx >> (2 * best)) & 3u) << (2 * k);
+            }
+            b[12] = (uint8_t)out; b[13] = (uint8_t)(out >> 8);
+            b[14] = (uint8_t)(out >> 16); b[15] = (uint8_t)(out >> 24);
+        }
+    }
+    /* blocks with nothing visible next to ones with something: one colour */
+    for (by = 0; by < bh; by++)
+        for (bx = 0; bx < bw; bx++) {
+            uint8_t *b = blk + (by * bw + bx) * 16;
+            int sum[3] = {0, 0, 0}, nn = 0, dx, dy, j;
+            unsigned c;
+            if (vis[by * bw + bx]) continue;
+            for (dy = -1; dy <= 1; dy++)
+                for (dx = -1; dx <= 1; dx++) {
+                    int x = (int)bx + dx, y = (int)by + dy;
+                    if (x < 0 || y < 0 || x >= (int)bw || y >= (int)bh) continue;
+                    if (!vis[y * bw + x]) continue;
+                    for (j = 0; j < 3; j++) sum[j] += avg[y * bw + x][j];
+                    nn++;
+                }
+            if (!nn) continue;
+            c = rgb565(sum[0] / nn, sum[1] / nn, sum[2] / nn);
+            b[8] = b[10] = (uint8_t)c;
+            b[9] = b[11] = (uint8_t)(c >> 8);
+            b[12] = b[13] = b[14] = b[15] = 0;
+        }
+    free(vis);
+    free(avg);
+}
+
 void nv2a_gl_dxt3_shrink(const void *src_, int w, int h, int k, void *dst_)
 {
     const uint8_t *src = (const uint8_t *)src_;
@@ -3985,9 +4101,23 @@ static void bind_texture(int stage, const NvGlTexture *t)
                     uint32_t sz = (bw ? bw : 1) * (bh ? bh : 1) * block;
                     if (off + sz > limit)
                         break;
-                    rb_tex_image_dxt(GL_TEXTURE_2D, (GLint)lv, cfmt,
-                                           (GLsizei)w, (GLsizei)hh, 0,
-                                           (GLsizei)sz, mem + off);
+                    {
+                        /* v312b: DXT3/5 see-through texels take their
+                         * visible neighbours' colour (dxt_bleed_level) */
+                        const uint8_t *src = mem + off;
+                        uint8_t *cp = NULL;
+                        if (block == 16 && dxt_fringe_on()
+                                && (cp = (uint8_t *)malloc(sz)) != NULL) {
+                            memcpy(cp, src, sz);
+                            dxt_bleed_level(cp, bw ? bw : 1, bh ? bh : 1,
+                                            cfmt == GL_COMPRESSED_RGBA_S3TC_DXT5_EXT);
+                            src = cp;
+                        }
+                        rb_tex_image_dxt(GL_TEXTURE_2D, (GLint)lv, cfmt,
+                                               (GLsizei)w, (GLsizei)hh, 0,
+                                               (GLsizei)sz, src);
+                        free(cp);
+                    }
                     off += sz;
                     n++;
                     if (w == 1 && hh == 1)
@@ -4371,6 +4501,11 @@ static void apply_state(const NvGlState *st, const GlSurf *s)
         int used = st->rc_seen ? (((st->rc.stage_program >> (i * 5)) & 0x1F) != 0)
                                : (i == 0);
         tv[i] = t->valid && used;
+        /* v312b: DXT1 with blending by alpha or the alpha test: the shader
+         * divides by alpha (dxt_fringe_on) */
+        if (tv[i] && t->color == 0x0C && dxt_fringe_on()
+                && ((st->blend_enable && st->blend_sfactor == 0x0302) || st->alpha_test))
+            tv[i] = 2;
         isc[i] = t->cube;
         tsc[i][0] = t->normalised ? 1.0f : (t->width ? 1.0f / (float)t->width : 1.0f);
         tsc[i][1] = t->normalised ? 1.0f : (t->height ? 1.0f / (float)t->height : 1.0f);
