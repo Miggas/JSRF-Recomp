@@ -539,11 +539,6 @@ static void tab_play(struct nk_context *ctx)
         }
     }
 
-    /* v2i: Build's progress, here on Play */
-    if (job_busy()) {
-        spacer(ctx, 4);
-        progress_bar(ctx);
-    }
     /* v2z: Play, Build (only when there is something to build), Launch
      * ModTool (when it is in the launcher's folder) and Verify game files,
      * side by side (Miggas) */
@@ -585,6 +580,11 @@ static void tab_play(struct nk_context *ctx)
             snprintf(s_message, sizeof s_message, "%s", m);
         }
         ctx->style.button = keep;
+    }
+    /* v2i: Build's progress, here on Play; v3e: below the buttons (Miggas) */
+    if (job_busy()) {
+        spacer(ctx, 8);
+        progress_bar(ctx);
     }
 }
 
