@@ -3072,6 +3072,13 @@ void rb_buf_delete(int n, const uint32_t *ids) { glDeleteBuffers(n, ids); }
 void *rb_fence(uint32_t cond, uint32_t flags) { return (void *)glFenceSync(cond, flags); }
 uint32_t rb_fence_wait(void *f, uint32_t flags, uint64_t timeout_ns) { return glClientWaitSync((GLsync)f, flags, timeout_ns); }
 void rb_fence_delete(void *f) { glDeleteSync((GLsync)f); }
+/* a fence is a batch's serial: known done when G.done (published by
+ * done_set, any thread may read it) has passed it */
+int rb_fence_signaled(void *f)
+{
+    uint64_t s = (uint64_t)(uintptr_t)f;
+    return s && s <= __atomic_load_n(&G.done, __ATOMIC_ACQUIRE);
+}
 void rb_finish(void) { glFinish(); }
 void rb_va_new(int n, uint32_t *ids) { glGenVertexArrays(n, ids); }
 void rb_va_bind(uint32_t va) { glBindVertexArray(va); }

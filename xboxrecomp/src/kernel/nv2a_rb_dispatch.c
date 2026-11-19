@@ -10,7 +10,7 @@ extern const RbOps rbgl_ops;            /* nv2a_rb_gl.c: the default */
 const RbOps *g_rb = &rbgl_ops;
 void rb_select(const RbOps *ops) { g_rb = ops; }
 
-#define RB_NCALLS 110
+#define RB_NCALLS 111
 static const char *const s_rb_names[RB_NCALLS] = {
     "fixed", "fixed_lost", "shader_options", "program_build", "program_build_async", "program_ready",
     "shader_compile", "program_stats", "use_program", "program_delete", "uniform_loc", "uniform_vec4_len",
@@ -24,13 +24,13 @@ static const char *const s_rb_names[RB_NCALLS] = {
     "tex_image", "tex_image_dxt", "tex_param", "tex_mipmaps", "errors_clear", "no_error",
     "max_aniso", "tex_from_target", "buf_bind", "buf_data", "buf_sub", "buf_storage",
     "buf_map", "buf_unmap", "buf_new", "buf_delete", "fence", "fence_wait",
-    "fence_delete", "finish", "va_new", "va_bind", "attr_on", "attr_off",
-    "attr_pointer", "attr_format", "attr_binding", "vbufs", "attr_const4fv", "attr_const4f",
-    "draw_elements", "draw_arrays", "clear", "query_new", "query_begin", "query_end",
-    "query_result", "read_pixels_buf", "read_pixel", "read_depth", "init", "caps",
-    "init_state", "thread_start", "pump", "tex_bind_raw", "errors_drain", "error",
-    "overlay_init", "overlay_draw", "threaded", "frame_end", "gpu_frame_mark", "call_stats",
-    "shader_cache_on", "shader_cache_path",
+    "fence_delete", "fence_signaled", "finish", "va_new", "va_bind", "attr_on",
+    "attr_off", "attr_pointer", "attr_format", "attr_binding", "vbufs", "attr_const4fv",
+    "attr_const4f", "draw_elements", "draw_arrays", "clear", "query_new", "query_begin",
+    "query_end", "query_result", "read_pixels_buf", "read_pixel", "read_depth", "init",
+    "caps", "init_state", "thread_start", "pump", "tex_bind_raw", "errors_drain",
+    "error", "overlay_init", "overlay_draw", "threaded", "frame_end", "gpu_frame_mark",
+    "call_stats", "shader_cache_on", "shader_cache_path",
 };
 static int s_prof;
 static uint64_t s_prof_n[RB_NCALLS], s_prof_t[RB_NCALLS];
@@ -141,40 +141,41 @@ void rb_buf_delete(int n, const uint32_t *ids) { RB_P0; g_rb->buf_delete(n, ids)
 void *rb_fence(uint32_t cond, uint32_t flags) { RB_P0; void * r_ = g_rb->fence(cond, flags); RB_P1(70); return r_; }
 uint32_t rb_fence_wait(void *f, uint32_t flags, uint64_t timeout_ns) { RB_P0; uint32_t r_ = g_rb->fence_wait(f, flags, timeout_ns); RB_P1(71); return r_; }
 void rb_fence_delete(void *f) { RB_P0; g_rb->fence_delete(f); RB_P1(72); }
-void rb_finish(void) { RB_P0; g_rb->finish(); RB_P1(73); }
-void rb_va_new(int n, uint32_t *ids) { RB_P0; g_rb->va_new(n, ids); RB_P1(74); }
-void rb_va_bind(uint32_t va) { RB_P0; g_rb->va_bind(va); RB_P1(75); }
-void rb_attr_on(uint32_t loc) { RB_P0; g_rb->attr_on(loc); RB_P1(76); }
-void rb_attr_off(uint32_t loc) { RB_P0; g_rb->attr_off(loc); RB_P1(77); }
-void rb_attr_pointer(uint32_t loc, int size, uint32_t type, int norm, int stride, const void *ptr) { RB_P0; g_rb->attr_pointer(loc, size, type, norm, stride, ptr); RB_P1(78); }
-void rb_attr_format(uint32_t loc, int size, uint32_t type, int norm, uint32_t rel) { RB_P0; g_rb->attr_format(loc, size, type, norm, rel); RB_P1(79); }
-void rb_attr_binding(uint32_t loc, uint32_t stream) { RB_P0; g_rb->attr_binding(loc, stream); RB_P1(80); }
-void rb_vbufs(uint32_t first, int n, const uint32_t *bufs, const intptr_t *offs, const int *strides) { RB_P0; g_rb->vbufs(first, n, bufs, offs, strides); RB_P1(81); }
-void rb_attr_const4fv(uint32_t loc, const float *v) { RB_P0; g_rb->attr_const4fv(loc, v); RB_P1(82); }
-void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w) { RB_P0; g_rb->attr_const4f(loc, x, y, z, w); RB_P1(83); }
-void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base) { RB_P0; g_rb->draw_elements(mode, count, type, off, base); RB_P1(84); }
-void rb_draw_arrays(uint32_t mode, int first, int count) { RB_P0; g_rb->draw_arrays(mode, first, count); RB_P1(85); }
-void rb_clear(int color, const float rgba[4], int alpha, int depth, double zval, int stencil, int sval) { RB_P0; g_rb->clear(color, rgba, alpha, depth, zval, stencil, sval); RB_P1(86); }
-void rb_query_new(int n, uint32_t *ids) { RB_P0; g_rb->query_new(n, ids); RB_P1(87); }
-void rb_query_begin(uint32_t id) { RB_P0; g_rb->query_begin(id); RB_P1(88); }
-void rb_query_end(void) { RB_P0; g_rb->query_end(); RB_P1(89); }
-void rb_query_result(uint32_t id, uint32_t *v) { RB_P0; g_rb->query_result(id, v); RB_P1(90); }
-void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf) { RB_P0; g_rb->read_pixels_buf(fbo, w, h, buf); RB_P1(91); }
-void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c) { RB_P0; g_rb->read_pixel(fbo, x, y, c); RB_P1(92); }
-int rb_read_depth(uint32_t fbo, int x, int y, float *z) { RB_P0; int r_ = g_rb->read_depth(fbo, x, y, z); RB_P1(93); return r_; }
-int rb_init(void) { RB_P0; int r_ = g_rb->init(); RB_P1(94); return r_; }
-const RbCaps *rb_caps(void) { RB_P0; const RbCaps * r_ = g_rb->caps(); RB_P1(95); return r_; }
-void rb_init_state(int clip_planes) { RB_P0; g_rb->init_state(clip_planes); RB_P1(96); }
-void rb_thread_start(void) { RB_P0; g_rb->thread_start(); RB_P1(97); }
-void rb_pump(void) { RB_P0; g_rb->pump(); RB_P1(98); }
-void rb_tex_bind_raw(uint32_t target, uint32_t id) { RB_P0; g_rb->tex_bind_raw(target, id); RB_P1(99); }
-void rb_errors_drain(void) { RB_P0; g_rb->errors_drain(); RB_P1(100); }
-uint32_t rb_error(void) { RB_P0; uint32_t r_ = g_rb->error(); RB_P1(101); return r_; }
-int rb_overlay_init(const unsigned char *atlas, int w, int h) { RB_P0; int r_ = g_rb->overlay_init(atlas, w, h); RB_P1(102); return r_; }
-void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font) { RB_P0; g_rb->overlay_draw(v, n, cw, ch, flip, font); RB_P1(103); }
-int rb_threaded(void) { RB_P0; int r_ = g_rb->threaded(); RB_P1(104); return r_; }
-void rb_frame_end(void) { RB_P0; g_rb->frame_end(); RB_P1(105); }
-void rb_gpu_frame_mark(void) { RB_P0; g_rb->gpu_frame_mark(); RB_P1(106); }
-int rb_call_stats(char *buf, size_t n, uint64_t draws, uint64_t layouts_new) { RB_P0; int r_ = g_rb->call_stats(buf, n, draws, layouts_new); RB_P1(107); return r_; }
-int rb_shader_cache_on(void) { RB_P0; int r_ = g_rb->shader_cache_on(); RB_P1(108); return r_; }
-void rb_shader_cache_path(char *b, size_t n, const char *vsrc, const char *fsrc) { RB_P0; g_rb->shader_cache_path(b, n, vsrc, fsrc); RB_P1(109); }
+int rb_fence_signaled(void *f) { RB_P0; int r_ = g_rb->fence_signaled(f); RB_P1(73); return r_; }
+void rb_finish(void) { RB_P0; g_rb->finish(); RB_P1(74); }
+void rb_va_new(int n, uint32_t *ids) { RB_P0; g_rb->va_new(n, ids); RB_P1(75); }
+void rb_va_bind(uint32_t va) { RB_P0; g_rb->va_bind(va); RB_P1(76); }
+void rb_attr_on(uint32_t loc) { RB_P0; g_rb->attr_on(loc); RB_P1(77); }
+void rb_attr_off(uint32_t loc) { RB_P0; g_rb->attr_off(loc); RB_P1(78); }
+void rb_attr_pointer(uint32_t loc, int size, uint32_t type, int norm, int stride, const void *ptr) { RB_P0; g_rb->attr_pointer(loc, size, type, norm, stride, ptr); RB_P1(79); }
+void rb_attr_format(uint32_t loc, int size, uint32_t type, int norm, uint32_t rel) { RB_P0; g_rb->attr_format(loc, size, type, norm, rel); RB_P1(80); }
+void rb_attr_binding(uint32_t loc, uint32_t stream) { RB_P0; g_rb->attr_binding(loc, stream); RB_P1(81); }
+void rb_vbufs(uint32_t first, int n, const uint32_t *bufs, const intptr_t *offs, const int *strides) { RB_P0; g_rb->vbufs(first, n, bufs, offs, strides); RB_P1(82); }
+void rb_attr_const4fv(uint32_t loc, const float *v) { RB_P0; g_rb->attr_const4fv(loc, v); RB_P1(83); }
+void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w) { RB_P0; g_rb->attr_const4f(loc, x, y, z, w); RB_P1(84); }
+void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base) { RB_P0; g_rb->draw_elements(mode, count, type, off, base); RB_P1(85); }
+void rb_draw_arrays(uint32_t mode, int first, int count) { RB_P0; g_rb->draw_arrays(mode, first, count); RB_P1(86); }
+void rb_clear(int color, const float rgba[4], int alpha, int depth, double zval, int stencil, int sval) { RB_P0; g_rb->clear(color, rgba, alpha, depth, zval, stencil, sval); RB_P1(87); }
+void rb_query_new(int n, uint32_t *ids) { RB_P0; g_rb->query_new(n, ids); RB_P1(88); }
+void rb_query_begin(uint32_t id) { RB_P0; g_rb->query_begin(id); RB_P1(89); }
+void rb_query_end(void) { RB_P0; g_rb->query_end(); RB_P1(90); }
+void rb_query_result(uint32_t id, uint32_t *v) { RB_P0; g_rb->query_result(id, v); RB_P1(91); }
+void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf) { RB_P0; g_rb->read_pixels_buf(fbo, w, h, buf); RB_P1(92); }
+void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c) { RB_P0; g_rb->read_pixel(fbo, x, y, c); RB_P1(93); }
+int rb_read_depth(uint32_t fbo, int x, int y, float *z) { RB_P0; int r_ = g_rb->read_depth(fbo, x, y, z); RB_P1(94); return r_; }
+int rb_init(void) { RB_P0; int r_ = g_rb->init(); RB_P1(95); return r_; }
+const RbCaps *rb_caps(void) { RB_P0; const RbCaps * r_ = g_rb->caps(); RB_P1(96); return r_; }
+void rb_init_state(int clip_planes) { RB_P0; g_rb->init_state(clip_planes); RB_P1(97); }
+void rb_thread_start(void) { RB_P0; g_rb->thread_start(); RB_P1(98); }
+void rb_pump(void) { RB_P0; g_rb->pump(); RB_P1(99); }
+void rb_tex_bind_raw(uint32_t target, uint32_t id) { RB_P0; g_rb->tex_bind_raw(target, id); RB_P1(100); }
+void rb_errors_drain(void) { RB_P0; g_rb->errors_drain(); RB_P1(101); }
+uint32_t rb_error(void) { RB_P0; uint32_t r_ = g_rb->error(); RB_P1(102); return r_; }
+int rb_overlay_init(const unsigned char *atlas, int w, int h) { RB_P0; int r_ = g_rb->overlay_init(atlas, w, h); RB_P1(103); return r_; }
+void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font) { RB_P0; g_rb->overlay_draw(v, n, cw, ch, flip, font); RB_P1(104); }
+int rb_threaded(void) { RB_P0; int r_ = g_rb->threaded(); RB_P1(105); return r_; }
+void rb_frame_end(void) { RB_P0; g_rb->frame_end(); RB_P1(106); }
+void rb_gpu_frame_mark(void) { RB_P0; g_rb->gpu_frame_mark(); RB_P1(107); }
+int rb_call_stats(char *buf, size_t n, uint64_t draws, uint64_t layouts_new) { RB_P0; int r_ = g_rb->call_stats(buf, n, draws, layouts_new); RB_P1(108); return r_; }
+int rb_shader_cache_on(void) { RB_P0; int r_ = g_rb->shader_cache_on(); RB_P1(109); return r_; }
+void rb_shader_cache_path(char *b, size_t n, const char *vsrc, const char *fsrc) { RB_P0; g_rb->shader_cache_path(b, n, vsrc, fsrc); RB_P1(110); }

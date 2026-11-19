@@ -197,6 +197,30 @@ static void junk_free(Batch *b)
     b->njunk = 0;
 }
 
+/* vk17: the last batch known finished, published for other threads (the
+ * Vulkan backend's recording-thread queue asks rb_fence_signaled from the
+ * renderer's thread without waiting for the recording thread) */
+static void done_set(uint64_t serial)
+{
+    __atomic_store_n(&G.done, serial, __ATOMIC_RELEASE);
+}
+/* batches submitted before that have finished (not waiting): G.done
+ * forward, so fences a frame or two old are seen as passed */
+static void done_poll(void)
+{
+    uint64_t best = G.done;
+    int i;
+    for (i = 0; i < NB; i++) {
+        Batch *b = &G.b[i];
+        if (b->open || !b->serial || b->serial <= best)
+            continue;
+        if (vkGetFenceStatus(G.c.dev, b->fence) == VK_SUCCESS)
+            best = b->serial;
+    }
+    if (best > G.done)
+        done_set(best);
+}
+
 /* state that lives in the command buffer and has to be set again in a new one */
 static void cmd_state_lost(void);
 static void queries_collect(Batch *b);
@@ -210,7 +234,7 @@ static void batch_begin(void)
     if (b->serial) {
         vkWaitForFences(G.c.dev, 1, &b->fence, VK_TRUE, UINT64_MAX);
         if (b->serial > G.done)
-            G.done = b->serial;
+            done_set(b->serial);
         queries_collect(b);
         if (b->tq && b->tq_set) {
             uint64_t t[2];
@@ -271,6 +295,7 @@ static void batch_submit(void)
     b->open = 0;
     s_n_submits++;
     G.cur = (G.cur + 1) % NB;
+    done_poll();
 }
 
 /* has the batch `serial` finished? wait: until it has */
@@ -293,7 +318,7 @@ static int serial_done(uint64_t serial, int wait)
         else if (vkGetFenceStatus(G.c.dev, b->fence) != VK_SUCCESS)
             return 0;
         if (serial > G.done)
-            G.done = serial;
+            done_set(serial);
         return 1;
     }
     return 1;                             /* long gone */
@@ -305,7 +330,7 @@ static void wait_idle(void)
     nv2a_vk_qlock();
     vkQueueWaitIdle(G.c.q);
     nv2a_vk_qunlock();
-    G.done = G.serial;
+    done_set(G.serial);
 }
 
 /* room in a ring of the current batch; when it is full the batch goes and
@@ -2776,7 +2801,7 @@ static GLenum API gv_ClientWaitSync(GLsync s, GLbitfield flags, GLuint64 timeout
             if (G.b[i].open) batch_submit();
             if (vkWaitForFences(G.c.dev, 1, &G.b[i].fence, VK_TRUE, timeout) != VK_SUCCESS)
                 return GL_TIMEOUT_EXPIRED;
-            if (serial > G.done) G.done = serial;
+            if (serial > G.done) done_set(serial);
             return GL_CONDITION_SATISFIED;
         }
     return GL_ALREADY_SIGNALED;

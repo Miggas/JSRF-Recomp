@@ -54,6 +54,7 @@ static uint64_t q_n_async, q_bytes, q_n_drain, q_drain_t, q_n_space;
 static uint64_t q_drain_by[RB_NCALLS_Q], q_drain_t_by[RB_NCALLS_Q];
 
 static void q_exec(const RbqHdr *h);     /* generated */
+static void q_exec_own(const RbqHdr *h);  /* below: the calls written here */
 
 static int q_thread(void *u)
 {
@@ -223,6 +224,104 @@ static int q_start(void)
     SDL_DetachThread(t);
     q_on = 1;
     return 1;
+}
+
+
+/* ── vk17: calls answered on the renderer's side ────────────────────────── */
+
+/* The scissor the renderer last set (rb_scissor_get asked for it twice a
+ * frame, and each time waited for the recording thread): mirrored from the
+ * calls that change the backend's own copy. -1s: not known (as there). */
+static int q_sc[4] = { -1, -1, -1, -1 };
+static void q_sc_note(int x, int y, int w, int h) { q_sc[0] = x; q_sc[1] = y; q_sc[2] = w; q_sc[3] = h; }
+static void q_sc_forget(void) { q_sc[0] = q_sc[1] = q_sc[2] = q_sc[3] = -1; }
+static void q_scissor_get(int sc[4])
+{
+    if (!q_on) { q_in->scissor_get(sc); return; }
+    memcpy(sc, q_sc, sizeof q_sc);
+}
+
+/* Fences made in the queue, in order with the draws (rb_fence waited for
+ * the recording thread, 2000 times every 10 s in the busiest places: the
+ * vertex rings change segment). The renderer gets a stand-in at once; the
+ * recording thread fills in the backend's fence when it gets there. A wait
+ * on one the backend already knows passed (a frame or two old: what the
+ * rings wait for) needs nothing of the recording thread; any other waits
+ * for it to catch up and asks the backend as before. */
+#define Q_OP_FENCE      (RB_NCALLS_Q + 0)
+#define Q_OP_FENCE_DEL  (RB_NCALLS_Q + 1)
+#define Q_ALREADY_SIGNALED 0x911Au           /* GL_ALREADY_SIGNALED */
+typedef struct { void *real; _Atomic int made; } QFence;
+typedef struct { QFence *f; uint32_t cond, flags; } QA_qfence;
+static uint64_t q_n_fence_fast;
+
+static void *q_fence(uint32_t cond, uint32_t flags)
+{
+    QFence *f = (QFence *)malloc(sizeof *f);
+    QA_qfence *a;
+    if (!f)
+        return NULL;
+    if (!q_on) {
+        f->real = q_in->fence(cond, flags);
+        atomic_store(&f->made, 1);
+        return f;
+    }
+    f->real = NULL;
+    atomic_store(&f->made, 0);
+    a = (QA_qfence *)q_begin(Q_OP_FENCE, sizeof *a);
+    a->f = f; a->cond = cond; a->flags = flags;
+    q_end();
+    return f;
+}
+static uint32_t q_fence_wait(void *h, uint32_t flags, uint64_t timeout_ns)
+{
+    QFence *f = (QFence *)h;
+    if (!f)
+        return Q_ALREADY_SIGNALED;
+    if (atomic_load_explicit(&f->made, memory_order_acquire) && q_in->fence_signaled(f->real)) {
+        q_n_fence_fast++;
+        return Q_ALREADY_SIGNALED;
+    }
+    if (q_on) q_drain(Q_IX_fence_wait);
+    return q_in->fence_wait(f->real, flags, timeout_ns);
+}
+static int q_fence_signaled(void *h)
+{
+    QFence *f = (QFence *)h;
+    return f && atomic_load_explicit(&f->made, memory_order_acquire) && q_in->fence_signaled(f->real);
+}
+static void q_fence_delete(void *h)
+{
+    QFence *f = (QFence *)h;
+    QA_qfence *a;
+    if (!f)
+        return;
+    if (!q_on) {
+        q_in->fence_delete(f->real);
+        free(f);
+        return;
+    }
+    /* after the fence is made, in the queue's order */
+    a = (QA_qfence *)q_begin(Q_OP_FENCE_DEL, sizeof *a);
+    a->f = f; a->cond = a->flags = 0;
+    q_end();
+}
+
+static void q_exec_own(const RbqHdr *h)
+{
+    const QA_qfence *a = (const QA_qfence *)(h + 1);
+    switch (h->op) {
+    case Q_OP_FENCE:
+        a->f->real = q_in->fence(a->cond, a->flags);
+        atomic_store_explicit(&a->f->made, 1, memory_order_release);
+        break;
+    case Q_OP_FENCE_DEL:
+        q_in->fence_delete(a->f->real);
+        free(a->f);
+        break;
+    default:
+        break;
+    }
 }
 
 #endif

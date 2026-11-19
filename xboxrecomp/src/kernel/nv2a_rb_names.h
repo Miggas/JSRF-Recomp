@@ -75,6 +75,7 @@
 #define rb_fence RB_BACKEND_PREFIX(fence)
 #define rb_fence_wait RB_BACKEND_PREFIX(fence_wait)
 #define rb_fence_delete RB_BACKEND_PREFIX(fence_delete)
+#define rb_fence_signaled RB_BACKEND_PREFIX(fence_signaled)
 #define rb_finish RB_BACKEND_PREFIX(finish)
 #define rb_va_new RB_BACKEND_PREFIX(va_new)
 #define rb_va_bind RB_BACKEND_PREFIX(va_bind)
@@ -186,6 +187,7 @@
     rb_fence, \
     rb_fence_wait, \
     rb_fence_delete, \
+    rb_fence_signaled, \
     rb_finish, \
     rb_va_new, \
     rb_va_bind, \

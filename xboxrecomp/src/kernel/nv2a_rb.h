@@ -169,6 +169,9 @@ void rb_buf_delete(int n, const uint32_t *ids);
 void *rb_fence(uint32_t cond, uint32_t flags);
 uint32_t rb_fence_wait(void *f, uint32_t flags, uint64_t timeout_ns);
 void rb_fence_delete(void *f);
+/* vk17: 1 when the GPU is known to be past f -- cheap, from any thread
+ * (0: not known; then rb_fence_wait) */
+int rb_fence_signaled(void *f);
 void rb_finish(void);
 void rb_va_new(int n, uint32_t *ids);
 void rb_va_bind(uint32_t va);

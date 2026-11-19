@@ -79,6 +79,7 @@ typedef struct RbOps {
     void *(*fence)(uint32_t cond, uint32_t flags);
     uint32_t (*fence_wait)(void *f, uint32_t flags, uint64_t timeout_ns);
     void (*fence_delete)(void *f);
+    int (*fence_signaled)(void *f);
     void (*finish)(void);
     void (*va_new)(int n, uint32_t *ids);
     void (*va_bind)(uint32_t va);

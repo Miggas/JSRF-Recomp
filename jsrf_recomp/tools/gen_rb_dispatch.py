@@ -204,7 +204,14 @@ QUEUED = {
 # and counters (some are asked for from the [PERF] thread, as before)
 DIRECT = {'caps', 'shader_cache_on', 'shader_cache_path', 'max_aniso', 'window_stats',
           'gpu_frame_stats', 'program_stats', 'call_stats'}
-OWN = {'threaded', 'thread_start', 'window_present'}      # written in nv2a_rb_queue_rt.h's terms below
+OWN = {'threaded', 'thread_start', 'window_present',
+       # vk17: answered without waiting for the recording thread
+       # (nv2a_rb_queue_rt.h): fences made in the queue, known passed from
+       # G.done; the scissor the renderer last set, mirrored here
+       'fence', 'fence_wait', 'fence_delete', 'fence_signaled', 'scissor_get'}
+# vk17: run on the renderer's side before a queued call is written
+PRE = {'scissor': 'q_sc_note(x, y, w, h);', 'scissor_once': 'q_sc_forget();',
+       'bindings_lost': 'q_sc_forget();'}      # written in nv2a_rb_queue_rt.h's terms below
 
 def split_args(args):
     if args in ('void', ''):
@@ -235,6 +242,8 @@ w(' * vk13: rbq_ops, a backend made of another (rbq_wrap): the calls that return
 w(' * nothing are made on a thread of their own, in order; see nv2a_rb_queue_rt.h. */')
 w('#include "nv2a_rb_ops.h"')
 w('#define RB_NCALLS_Q %d' % len(protos))
+for i, (ret, name, args) in enumerate(protos):
+    w('#define Q_IX_%s %d' % (name[3:], i))
 w('#include "nv2a_rb_queue_rt.h"')
 w('')
 w('static const char *const q_names[RB_NCALLS_Q] = {')
@@ -283,10 +292,13 @@ for i, (ret, name, args) in enumerate(protos):
     w('static %s' % sig)
     w('{')
     w('    QA_%s *qa_;' % short)
+    pre = PRE.get(short)
     if copies:
         w('    uint8_t *qd_;')
         for n, t, sz in copies:
             w('    size_t z_%s = %s ? (size_t)(%s) : 0;' % (n, n, sz))
+    if pre:
+        w('    ' + pre)
     w('    if (!q_on) { %s; return; }' % passthru)
     if copies:
         tot = ' + '.join('Q_AL(z_%s)' % n for n, _, _ in copies)
@@ -332,7 +344,7 @@ w('static void q_exec(const RbqHdr *h)')
 w('{')
 w('    switch (h->op) {')
 C += execs
-w('    default: break;')
+w('    default: q_exec_own(h); break;')
 w('    }')
 w('}')
 w('')
@@ -365,12 +377,12 @@ w('        size_t k = strlen(tb);')
 w('        snprintf(tb + k, sizeof tb - k, "%s %s %llu (%.1f ms)", j ? "," : "; most:", q_names[top[j]],')
 w('                 (unsigned long long)q_drain_by[top[j]], (double)q_drain_t_by[top[j]] * fq);')
 w('    }')
-w('    fprintf(stderr, "[VK]   recording thread: %.0f ms busy, %llu calls (%.1f MB); the renderer waited for it %llu times, %.1f ms in all%s%s\\n",')
+w('    fprintf(stderr, "[VK]   recording thread: %.0f ms busy, %llu calls (%.1f MB); the renderer waited for it %llu times, %.1f ms in all%s%s; %llu fence waits answered at once\\n",')
 w('            (double)(busy - l_busy) * fq, (unsigned long long)q_n_async, (double)q_bytes / 1048576.0,')
 w('            (unsigned long long)q_n_drain, (double)q_drain_t * fq, tb,')
-w('            q_n_space ? "; the queue was full" : "");')
+w('            q_n_space ? "; the queue was full" : "", (unsigned long long)q_n_fence_fast);')
 w('    l_busy = busy;')
-w('    q_n_async = q_bytes = q_n_drain = q_drain_t = q_n_space = 0;')
+w('    q_n_async = q_bytes = q_n_drain = q_drain_t = q_n_space = q_n_fence_fast = 0;')
 w('    memset(q_drain_by, 0, sizeof q_drain_by);')
 w('    memset(q_drain_t_by, 0, sizeof q_drain_t_by);')
 w('}')
@@ -380,6 +392,7 @@ w('    static uint64_t frames;')
 w('    int r;')
 w('    if (q_on) q_drain(%d);' % [n[3:] for _, n, _ in protos].index('window_present'))
 w('    r = q_in->window_present(f);')
+w('    q_sc_forget();                     /* it forgets the bound scissor */')
 w('    if (q_on && ++frames % 600 == 0)')
 w('        q_report();')
 w('    return r;')
