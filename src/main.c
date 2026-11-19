@@ -717,8 +717,9 @@ static void panel_video(struct nk_context *ctx, float w)
         int cur = (!strcmp(v, "vulkan") || !strcmp(v, "vk")) ? 1 : 0;
         int sel = combo(ctx, "Render API", items, 2, cur);
         if (sel != cur) { if (sel) put("RECOMP_RENDERER", "vulkan", "display"); else off("RECOMP_RENDERER"); }
-        desc(ctx, w, "OpenGL is the default and the most tested. Vulkan is new and still being worked on: "
-                     "it is only in the vulkan-test branch for now (other branches draw with OpenGL whatever "
+        desc(ctx, w, "OpenGL is the default and the most tested. Vulkan is newer, and often lighter on the CPU "
+                     "(it held 60 fps on the Steam Deck in the busiest places): it is in the test and "
+                     "vulkan-test branches (game builds v312 and later; older ones draw with OpenGL whatever "
                      "this says). If something looks wrong with Vulkan, switch back to OpenGL.", C_DIM);
     }
     /* resolution scale: RECOMP_GL_SCALE */
@@ -921,12 +922,12 @@ static void panel_debug(struct nk_context *ctx, float w)
     bool prof = !strcmp(get_or("RECOMP_PROFILE", "0"), "1");
     bool nl = check(ctx, "Logging", logging);
 #ifdef _WIN32
-    desc(ctx, w, "Writes a log in the game folder, for bug reports: stderr.txt (on the vulkan-test branch stderr_gl_ or stderr_vk_ with the date and time, one per run), with the debug file (jsrf_recomp.pdb) "
+    desc(ctx, w, "Writes a log in the game folder, for bug reports: stderr.txt (in builds v312 and later stderr_gl_ or stderr_vk_ with the date and time, one per run), with the debug file (jsrf_recomp.pdb) "
          "so it can name the game's functions. Turns quiet mode off, so the game runs a little slower.", C_DIM);
     if (logging && !ini_dirty(gi()) && debug_files_missing())
         desc(ctx, w, "jsrf_recomp.pdb is missing: the log can't name the game's functions. Build again to restore it.", C_BAD);
 #else
-    desc(ctx, w, "Writes a log in the game folder, for bug reports: stderr.txt (on the vulkan-test branch stderr_gl_ or stderr_vk_ with the date and time, one per run). Turns quiet mode off, so the game runs a little slower.", C_DIM);
+    desc(ctx, w, "Writes a log in the game folder, for bug reports: stderr.txt (in builds v312 and later stderr_gl_ or stderr_vk_ with the date and time, one per run). Turns quiet mode off, so the game runs a little slower.", C_DIM);
 #endif
     bool np = check(ctx, "Performance logs", prof);
     desc(ctx, w, "Slows the game down. Adds where the time goes to the log every 10 seconds. Turns Logging on.", C_BAD);
