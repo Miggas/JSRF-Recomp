@@ -6479,7 +6479,14 @@ int nv2a_pb_exec_indices16(const uint32_t *p, uint32_t n)
 }
 
 /* v260b: the default branch's methods by kind, once seen (method >> 2) */
-enum { DCLS_UNKNOWN, DCLS_CONST, DCLS_PROG, DCLS_UNHANDLED };
+enum { DCLS_UNKNOWN, DCLS_CONST, DCLS_PROG, DCLS_UNHANDLED,
+       /* vk14: the plain stores further down the chain, which the fixed-
+        * function batches send every time (matrices: 16 words each; ~5% of
+        * the executor walked the chain for them, Miggas's Deck profile) */
+       DCLS_ALPHA_ICW, DCLS_COLOR_ICW, DCLS_COLOR_OCW, DCLS_ALPHA_OCW,
+       DCLS_FACTOR0, DCLS_FACTOR1, DCLS_VP_OFFSET, DCLS_VP_SCALE,
+       DCLS_MV, DCLS_INV_MV0, DCLS_TEXMAT, DCLS_TEXGEN, DCLS_TEXMAT_ON,
+       DCLS_TEXPLANE, DCLS_COMPOSITE };
 static uint8_t s_dcls[2048];
 
 static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
@@ -6977,29 +6984,70 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
         case DCLS_CONST:   nv2a_vsh_constant_word(param); return;
         case DCLS_PROG:    nv2a_vsh_program_word(param); return;
         case DCLS_UNHANDLED: note_unhandled(method, param); return;
+        case DCLS_ALPHA_ICW: s_gpu.rc.alpha_icw[(method - 0x0260) / 4] = param; return;
+        case DCLS_COLOR_ICW: s_gpu.rc.color_icw[(method - 0x0AC0) / 4] = param; return;
+        case DCLS_COLOR_OCW: s_gpu.rc.color_ocw[(method - 0x1E40) / 4] = param; return;
+        case DCLS_ALPHA_OCW: s_gpu.rc.alpha_ocw[(method - 0x0AA0) / 4] = param; return;
+        case DCLS_FACTOR0:   s_gpu.rc.factor0[(method - 0x0A60) / 4] = param; return;
+        case DCLS_FACTOR1:   s_gpu.rc.factor1[(method - 0x0A80) / 4] = param; return;
+        case DCLS_VP_OFFSET: nv2a_vsh_constant_component(59, (method - 0x0A20) / 4, param); return;
+        case DCLS_VP_SCALE:  nv2a_vsh_constant_component(58, (method - 0x0AF0) / 4, param); return;
+        case DCLS_MV: {
+            uint32_t k = (method - 0x0480) / 4;
+            memcpy(&s_gpu.ff_mv[k >> 4][k & 15], &param, 4);
+            return;
+        }
+        case DCLS_INV_MV0:   memcpy(&s_gpu.ff_inv_mv0[(method - 0x0580) / 4], &param, 4); return;
+        case DCLS_TEXMAT: {
+            uint32_t k = (method - 0x06C0) / 4;
+            memcpy(&s_gpu.ff_texmat[k >> 4][k & 15], &param, 4);
+            return;
+        }
+        case DCLS_TEXGEN: {
+            uint32_t k = (method - 0x03C0) / 4;
+            s_gpu.ff_texgen[k >> 2][k & 3] = param;
+            return;
+        }
+        case DCLS_TEXMAT_ON: s_gpu.ff_texmat_on[(method - 0x0420) / 4] = param; return;
+        case DCLS_TEXPLANE: {
+            uint32_t k = (method - 0x0840) / 4;
+            memcpy(&s_gpu.ff_texplane[k >> 4][(k >> 2) & 3][k & 3], &param, 4);
+            return;
+        }
+        case DCLS_COMPOSITE:
+            memcpy(&s_gpu.ff_composite[(method - 0x0680) / 4], &param, 4);
+            s_gpu.ff_composite_set = 1;
+            return;
         default: break;
         }
+#define DCLS_SET(c) (s_dcls[(method >> 2) & 2047] = (c))
         if (method >= 0x0260 && method < 0x0280) {         /* ALPHA_ICW(i) */
+            DCLS_SET(DCLS_ALPHA_ICW);
             s_gpu.rc.alpha_icw[(method - 0x0260) / 4] = param;
             break;
         }
         if (method >= 0x0AC0 && method < 0x0AE0) {         /* COLOR_ICW(i) */
+            DCLS_SET(DCLS_COLOR_ICW);
             s_gpu.rc.color_icw[(method - 0x0AC0) / 4] = param;
             break;
         }
         if (method >= 0x1E40 && method < 0x1E60) {         /* COLOR_OCW(i) */
+            DCLS_SET(DCLS_COLOR_OCW);
             s_gpu.rc.color_ocw[(method - 0x1E40) / 4] = param;
             break;
         }
         if (method >= 0x0AA0 && method < 0x0AC0) {         /* ALPHA_OCW(i) */
+            DCLS_SET(DCLS_ALPHA_OCW);
             s_gpu.rc.alpha_ocw[(method - 0x0AA0) / 4] = param;
             break;
         }
         if (method >= 0x0A60 && method < 0x0A80) {         /* FACTOR0(i) */
+            DCLS_SET(DCLS_FACTOR0);
             s_gpu.rc.factor0[(method - 0x0A60) / 4] = param;
             break;
         }
         if (method >= 0x0A80 && method < 0x0AA0) {         /* FACTOR1(i) */
+            DCLS_SET(DCLS_FACTOR1);
             s_gpu.rc.factor1[(method - 0x0A80) / 4] = param;
             break;
         }
@@ -7009,42 +7057,51 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
          * Dropped, every vertex program put its whole batch at the origin:
          * no 3D anywhere, and a black car on the garage screen. */
         if (method >= 0x0A20 && method < 0x0A30) {
+            DCLS_SET(DCLS_VP_OFFSET);
             nv2a_vsh_constant_component(59, (method - 0x0A20) / 4, param);
             break;
         }
         if (method >= 0x0AF0 && method < 0x0B00) {
+            DCLS_SET(DCLS_VP_SCALE);
             nv2a_vsh_constant_component(58, (method - 0x0AF0) / 4, param);
             break;
         }
         if (method >= 0x0480 && method < 0x0580) {    /* MODEL_VIEW_MATRIX0..3 */
+            DCLS_SET(DCLS_MV);
             uint32_t k = (method - 0x0480) / 4;
             memcpy(&s_gpu.ff_mv[k >> 4][k & 15], &param, 4);
             break;
         }
         if (method >= 0x0580 && method < 0x05C0) {    /* INVERSE_MODEL_VIEW_MATRIX0 */
+            DCLS_SET(DCLS_INV_MV0);
             memcpy(&s_gpu.ff_inv_mv0[(method - 0x0580) / 4], &param, 4);
             break;
         }
         if (method >= 0x06C0 && method < 0x07C0) {    /* TEXTURE_MATRIX0..3 */
+            DCLS_SET(DCLS_TEXMAT);
             uint32_t k = (method - 0x06C0) / 4;
             memcpy(&s_gpu.ff_texmat[k >> 4][k & 15], &param, 4);
             break;
         }
         if (method >= 0x03C0 && method < 0x0400) {    /* TEXGEN_S/T/R/Q per stage */
+            DCLS_SET(DCLS_TEXGEN);
             uint32_t k = (method - 0x03C0) / 4;
             s_gpu.ff_texgen[k >> 2][k & 3] = param;
             break;
         }
         if (method >= 0x0420 && method < 0x0430) {    /* TEXTURE_MATRIX_ENABLE */
+            DCLS_SET(DCLS_TEXMAT_ON);
             s_gpu.ff_texmat_on[(method - 0x0420) / 4] = param;
             break;
         }
         if (method >= 0x0840 && method < 0x0940) {    /* TEXGEN_SPLANE.. per stage */
+            DCLS_SET(DCLS_TEXPLANE);
             uint32_t k = (method - 0x0840) / 4;
             memcpy(&s_gpu.ff_texplane[k >> 4][(k >> 2) & 3][k & 3], &param, 4);
             break;
         }
         if (method >= 0x0680 && method < 0x06C0) {    /* COMPOSITE_MATRIX */
+            DCLS_SET(DCLS_COMPOSITE);
             memcpy(&s_gpu.ff_composite[(method - 0x0680) / 4], &param, 4);
             s_gpu.ff_composite_set = 1;
             break;

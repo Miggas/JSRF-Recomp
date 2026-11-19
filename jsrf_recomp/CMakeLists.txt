@@ -196,6 +196,15 @@ if(WIN32)
         -Wno-unused -Wno-unused-label -Wno-unused-but-set-variable)
 endif()
 
+# rb2 (from vk14): the same fast memory functions in the Zig builds on Linux
+# (glibc has fast ones, but Zig links its byte-at-a-time ones into the
+# program, and the program's win -- for the shared libraries too). See the file.
+if(UNIX AND CMAKE_C_COMPILER MATCHES "zig")
+    target_sources(${PROJECT_NAME} PRIVATE ${XBOXRECOMP_DIR}/src/platform/win_memfuncs.c)
+    set_source_files_properties(${XBOXRECOMP_DIR}/src/platform/win_memfuncs.c
+        PROPERTIES COMPILE_OPTIONS "-fno-builtin")
+endif()
+
 # ── Game-specific additions ─────────────────────────────────────
 #
 # Add any game-specific libraries, loaders, or custom renderers below.
