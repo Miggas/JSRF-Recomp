@@ -693,6 +693,41 @@ static void panel_gameplay(struct nk_context *ctx, float w)
                      "beaten) and its graffiti souls are collected. Souls only: each area's once its souls are "
                      "collected, at any point. Needs the game's v311e or newer.", C_DIM);
     }
+    /* v3g: the new boost effect (the game's v312e, Idea by Miggas):
+     * RECOMP_BOOST_EFFECT=new (the default) or original, and its strength */
+    {
+        const char *e = get_or("RECOMP_BOOST_EFFECT", "new");
+        bool fx = strcmp(e, "original") != 0 && strcmp(e, "0") != 0;
+        bool nfx = check(ctx, "New boost effect", fx);
+        if (nfx != fx) { if (nfx) off("RECOMP_BOOST_EFFECT"); else put("RECOMP_BOOST_EFFECT", "original", "game"); }
+        desc(ctx, w, "On: boosting shows a blur that is clear around your character and stronger towards the "
+                     "edges, with speed lines, at full speed. Off: the original game's boost trails. "
+                     "Needs the game's v312e or newer.", C_DIM);
+        if (!nfx) nk_widget_disable_begin(ctx);
+        {
+            float cur = (float)atof(get_or("RECOMP_BOOST_STRENGTH", "0.55")), v;
+            if (!(cur >= 0.1f)) cur = 0.55f;
+            if (cur > 1.0f) cur = 1.0f;
+            v = cur;
+            nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
+            nk_layout_row_push(ctx, 0.34f);
+            nk_label(ctx, "Boost effect strength", NK_TEXT_LEFT);
+            nk_layout_row_push(ctx, 0.54f);
+            pad_slider_float(ctx, 0.1f, &v, 1.0f, 0.05f);
+            nk_layout_row_push(ctx, 0.12f);
+            v = (float)(int)(v * 20.0f + 0.5f) / 20.0f;
+            char t[16];
+            snprintf(t, sizeof t, "%.2f", v);
+            nk_label(ctx, t, NK_TEXT_RIGHT);
+            nk_layout_row_end(ctx);
+            if (v < cur - 0.01f || v > cur + 0.01f) {
+                if (v > 0.54f && v < 0.56f) off("RECOMP_BOOST_STRENGTH");
+                else put("RECOMP_BOOST_STRENGTH", t, "game");
+            }
+        }
+        if (!nfx) nk_widget_disable_end(ctx);
+        desc(ctx, w, "How strong the blur and the speed lines are (0.55 by default).", C_DIM);
+    }
     /* v2a: the game's language (the game's v271) */
     {
         static const char *const items[] = { "English", "French", "German", "Spanish", "Italian", "Japanese" };

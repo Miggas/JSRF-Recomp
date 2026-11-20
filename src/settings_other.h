@@ -3,7 +3,9 @@
  * it does. A row: the setting, the value it is given when ticked, and a
  * description. A row with key NULL starts a group (its text is the title).
  * Made from the game's code (jsrf_recomp, xboxrecomp) at v276g; v2o: only the
- * settings this project has used (the toolkit's others, for other games, left out). */
+ * settings this project has used (the toolkit's others, for other games, left out).
+ * v3g: Miggas's list, less the settings other tabs show, the ones the game
+ * needs to run (always on) and the ones the game no longer reads (game v312g). */
 #pragma once
 
 typedef struct {
@@ -13,17 +15,6 @@ typedef struct {
 } OtherSetting;
 
 static const OtherSetting OTHER_SETTINGS[] = {
-    { NULL, NULL, "Needed for the game to run" },
-    { "RECOMP_PB_EXEC", "1", "Runs the game's graphics commands. Without it nothing is drawn." },
-    { "RECOMP_VBLANK", "1", "The 60 Hz screen refresh the game counts time with. Without it the game doesn't move." },
-    { "RECOMP_VBLANK_HZ", "60", "How many refreshes a second the game gets (10 to 240). Not a frame rate setting: the game runs faster or slower." },
-    { "RECOMP_FB_WINDOW", "1", "Opens the game's window." },
-    { "RECOMP_TITLE_KEVENTS", "1", "Lets the game's own threads wait on each other as on the Xbox. Without it the game hangs." },
-    { "RECOMP_AC97_READY", "1", "Reports the Xbox's sound hardware as ready, so the game starts its sound (and the emulated sound chip when PC sound mixing is off)." },
-    { "RECOMP_USB", "1", "The Xbox's USB ports, where the controllers are plugged in. Without it there's no controller." },
-    { "RECOMP_KEYBOARD", "1", "The keyboard plays as controller 1." },
-    { "RECOMP_KERNEL_LOG_BUDGET", "0", "How many Xbox system calls are written to the log. 0 = none (fastest)." },
-
     { NULL, NULL, "Game" },
     { "RECOMP_HOLD_SKIP", "0", "0 turns off skipping cutscenes by holding START." },
     { "RECOMP_SAVE_STRICT", "1", "Refuses saves made elsewhere (a real Xbox, emulators, save editors), as the Xbox does." },
@@ -33,8 +24,9 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_FREECAM", "1", "Free camera. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed." },
     { "RECOMP_FREECAM_SPEED", "2", "The free camera's start speed." },
     { "RECOMP_FREECAM_SENS", "0.003", "The free camera's mouse sensitivity." },
-    { "RECOMP_SHOW_MISSION", "1", "Shows the current mission number (mssnCCMM), your position and the objective in the window title. F9 writes your position to the log." },
     { "RECOMP_MISSION_SPAWN", "0451:0,0,0,0", "A mission picked in mission select starts at this spot, facing this way: CCMM:x,y,z,facing, from F9. Several missions separated by ;" },
+    { "RECOMP_FLAG_DY", "-14", "Capture the flag: how far the flag's marker is moved from its arrow, in the game's pixels (negative = up). -14 by default." },
+    { "RECOMP_TESTRUNS_RULES", "4:3:0721", "Early Test Runs: rules in place of the built-in ones, area:chapter[:flag],... (area 0 to 13; the chapter that must be finished; a save flag word, hex, that must be set)." },
 
     { NULL, NULL, "Graphics" },
     { "RECOMP_GL_VSYNC", "1", "VSync: frames wait for the monitor's refresh." },
@@ -48,11 +40,9 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_GL_MENU_DEPTH", "0", "0 turns off the menu depth fix (graffiti menu icons hidden behind their buttons)." },
     { "RECOMP_GL_NO_WINDOW_CLIP", "1", "Ignores the game's window clipping (used by split screen)." },
     { "RECOMP_CURSOR_HIDE", "0", "0 keeps the mouse pointer visible over the game." },
-    { "RECOMP_RENDERER", "sw", "sw: the software renderer instead of OpenGL. Very slow; for comparing when the GPU draws something wrong. glvk: OpenGL's calls answered on Vulkan (the reference the Vulkan backend is checked against). OpenGL or Vulkan: Settings > Video > Render API." },
     { "RECOMP_GL_DXT", "0", "0: compressed textures are unpacked on the CPU instead of by the graphics card (slower, area-entry stutters)." },
     { "RECOMP_GL_TEX_WATCH", "0", "0 turns off the texture write-watch (textures are checked for changes by reading them). Try it if the game stutters." },
     { "RECOMP_GL_TEX_FULLCHECK", "1", "Checks every texture in full each time it's used (slower; the default samples it)." },
-    { "RECOMP_GL_TEX_VERIFY", "0", "0 turns off the occasional full check behind the texture write-watch." },
     { "RECOMP_GL_TEX_PROBES", "3", "How many sample points the quick texture check reads." },
     { "RECOMP_GL_TEX_READBACK", "1", "Copies the picture back to the CPU when the game uses its last frame as a texture (old way, slower)." },
     { "RECOMP_GL_EAGER_READBACK", "1", "Copies every finished picture back to the CPU at once (old way, much slower)." },
@@ -63,12 +53,10 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_GL_ZDIRECT_CHECK", "0", "0 writes the game's depth even where it disagrees with the true depth (before v100)." },
     { "RECOMP_GL_NO_ZCULL", "1", "Keeps pixels outside the depth range (before v96)." },
     { "RECOMP_GL_XEMU_CLIP", "1", "The v94 way of placing vertices on screen (made the spotlight band worse)." },
-    { "RECOMP_GL_RC_SPECIAL", "0", "0 turns off the specialised colour shaders (one general shader for everything; slower)." },
     { "RECOMP_GL_SIMPLE_FS", "1", "Test only: colours are diffuse x texture, no texture combining (wrong colours), to measure shader cost." },
     { "RECOMP_GL_VISTEST", "0", "0 turns off the visibility tests the game uses for the sun and lights' glare." },
     { "RECOMP_TEX_ENABLE_BIT", "0", "0 ignores the texture stage enable bit (before v119: pink and teal particles)." },
     { "RECOMP_NO_PRETRANSFORMED", "1", "Turns off drawing pre-transformed vertices (the smoke particles disappear)." },
-    { "RECOMP_NO_FF", "1", "Old handling of fixed-function draws (screen-space test, else skipped)." },
     { "RECOMP_FF_SCREEN_FIRST", "1", "Fixed-function draws: the screen-space test first, then the normal path." },
     { "RECOMP_NO_FF_LIGHTING", "1", "Turns off fixed-function lighting (vertex colours as they are)." },
     { "RECOMP_NO_CONST_ATTRS", "1", "Test only: ignores constant vertex values the game sets once for many vertices." },
@@ -78,6 +66,9 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_NO_VCACHE", "1", "Test only: no vertex cache (every vertex worked out again)." },
     { "RECOMP_MAX_INDICES", "4096", "Test only: the largest batch of indices the executor takes at once." },
     { "RECOMP_GL_PASSTHROUGH_3D", "1", "Test only: 3D draws go to OpenGL without the executor's own vertex work." },
+    { "RECOMP_GL_DXT_FRINGE", "0", "0 turns off the fix for the dark rim around 2D art, the HUD and decals (see-through texels' colour mixed into their edges)." },
+    { "RECOMP_HIRES_GRAFFITI", "0", "0 turns off bigger graffiti (the mod tool's larger pictures and .grf files used at their own size)." },
+    { "RECOMP_BOOST_CENTER_Y", "0.53", "The new boost effect: how far down the screen its clear circle around your character is (0 = top, 1 = bottom). 0.53 by default." },
 
     { NULL, NULL, "Graphics: speed" },
     { "RECOMP_GL_THREAD", "0", "0: OpenGL calls are made on the graphics emulation thread instead of a thread of their own (slower)." },
@@ -85,14 +76,11 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_GL_THREAD_SPIN", "3", "How long the GL thread waits awake for more work before it sleeps, in microseconds. Default 3 on Windows, 50 on the Steam Deck." },
     { "RECOMP_GL_PERSIST", "0", "0: no persistently mapped buffers for vertex data." },
     { "RECOMP_GL_MAP", "1", "Maps the vertex buffer for each draw instead of one copy (slow on AMD)." },
-    { "RECOMP_GL_RAW_DIRECT", "1", "Writes vertex data straight into the mapped ring (slower on the Deck)." },
     { "RECOMP_GL_VAB", "0", "0: vertex attribute pointers for each draw instead of attribute binding." },
     { "RECOMP_GL_VAO_CACHE", "0", "0 turns off the cache of vertex layouts." },
     { "RECOMP_GL_FULL_CONSTS", "1", "Sends every vertex shader constant on each draw instead of only the changed ones." },
     { "RECOMP_GL_LEGACY_SUBMIT", "1", "The old (v49) way of sending draws to OpenGL. Much slower." },
-    { "RECOMP_GL_HASH", "0", "0: no CRC instructions for texture checks (a slower hash)." },
     { "RECOMP_GL_NO_SHADER_CACHE", "1", "Doesn't keep built shaders on disk (every shader is built again each start)." },
-    { "RECOMP_GL_NO_GPU_TIMING", "1", "No GPU timing queries (for drivers that misbehave with them)." },
     { "RECOMP_GL_SYNC_PRESENT", "1", "Each frame is read back and shown by the window instead of directly by OpenGL (slow)." },
     { "RECOMP_GL_PRESENT_GUEST", "1", "Shows frames through the Xbox's frame buffer instead of directly (slow)." },
     { "RECOMP_GL_WINDOW_CPU", "1", "The window shows frames copied through the CPU (Windows; slow)." },
@@ -113,6 +101,18 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_FAST_CLOCK", "0", "0: the precise system clock everywhere instead of the fast CPU counter (slower)." },
     { "RECOMP_MMCSS", "0", "0: the game's thread isn't registered with Windows' multimedia scheduler (Windows)." },
     { "RECOMP_IDLE_SPIN", "1", "The music thread spins a CPU core while waiting, as the original does (more heat and power)." },
+    { "RECOMP_ASYNC_SHADERS", "0", "0: new shaders are built at once (a short stutter) instead of in the background with a stand-in drawn meanwhile (Vulkan)." },
+    { "RECOMP_SPIN_WAIT", "0", "0: the game's waits for the graphics thread keep a CPU core busy instead of sleeping (the old way)." },
+
+    { NULL, NULL, "Vulkan" },
+    { "RECOMP_VK_RECORD_THREAD", "0", "0: draws are recorded on the renderer's thread instead of a thread of their own." },
+    { "RECOMP_VK_WORKERS", "2", "How many background threads build shaders and pipelines (1 to 8). By default a quarter of the CPU's threads, 1 to 4." },
+    { "RECOMP_VK_PIPES_AHEAD", "0", "0: the pipelines known from earlier runs (shader_cache\\vk_pipes.bin) aren't made ahead of time." },
+    { "RECOMP_VK_PRESENT_THREAD", "0", "0: frames are shown from the game's thread instead of a thread of their own." },
+    { "RECOMP_VK_RESIZE_SETTLE", "6", "While the window is resized: how many frames its size must hold before the picture is remade at the new size." },
+    { "RECOMP_VK_PUSH_UBO", "0", "0: each draw's shader values are handed over the older, slower way." },
+    { "RECOMP_VK_VB_SHIFT", "0", "0: vertex data is bound the older, slower way." },
+    { "RECOMP_VK_SOFTWARE", "1", "1: Vulkan isn't started; the game draws with the software renderer." },
 
     { NULL, NULL, "Widescreen" },
     { "RECOMP_WS_HUD", "0", "0 keeps the HUD in the middle of the screen (4:3 positions)." },
@@ -134,13 +134,10 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_DRAW_ALL_AREAS", "1", "The same as RECOMP_DRAW_AREAS=all." },
     { "RECOMP_AREA_PICKER", "1", "Finds the numbers for the skip and add lists (1 = skip, 2 = add). F6/F7 select an area, F8 toggles it, F10 clears all; the list goes to the log." },
     { "RECOMP_OBJ_DRAW_DIST", "2", "Draw distance of street objects (tanks, police, vehicles). 1 = original." },
-    { "RECOMP_BACKDROP_LOOP", "0", "0: with all areas drawn, the far backdrop isn't drawn again at the loop's other end." },
     { "RECOMP_BACKDROP_PASSES", "0", "With all areas drawn: which draw passes are pushed behind as backdrop (bit mask)." },
-    { "RECOMP_BACKDROP_FAR", "0", "0: with all areas drawn, the far backdrop isn't pushed behind the rest." },
 
     { NULL, NULL, "Sound" },
     { "RECOMP_DSOUND_LIFT", "0", "0 turns off PC sound mixing and uses the emulated Xbox sound chip instead." },
-    { "RECOMP_DSOUND_STREAM_LEAD_MS", "0", "PC sound mixing: how far ahead of the music the stream's play position is reported, in ms." },
     { "RECOMP_SND_MUTE", "52:35", "Sounds never played, as bank:sound,bank:sound. The default 52:35 mutes the Chuo Street signs' buzz heard all over the map. none plays everything." },
     { "RECOMP_SND_NEAR", "52:35", "Looping sounds played only near their nearest source (bank:sound,...), instead of muted." },
     { "RECOMP_SND_NEAR_DIST", "80", "How near, for RECOMP_SND_NEAR (default: the sound's own maximum distance)." },
@@ -157,7 +154,6 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_APU_BACKEND", "wasapi", "Sound output: wasapi (or wasapi-excl, exclusive) instead of XAudio2 (Windows)." },
     { "RECOMP_APU_WASAPI_MS", "20", "WASAPI: the output buffer in ms (3 or more) (Windows)." },
     { "RECOMP_APU_LEAD", "3", "How many sound buffers are kept queued ahead (default 3; more = fewer gaps, more delay)." },
-    { "RECOMP_DSP_ACK", "", "Guest addresses kept at zero as the sound DSP's acknowledgements (test only)." },
 
     { NULL, NULL, "Controllers" },
     { "RECOMP_SDL_PADS", "0", "0 turns off PlayStation, Switch Pro and other non-Xbox controllers." },
@@ -167,12 +163,11 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_USB_PORTMAP", "0,1,2,3", "The USB port of each of the four controllers." },
 
     { NULL, NULL, "Logs" },
+    { "RECOMP_KERNEL_LOG_BUDGET", "0", "How many Xbox system calls are written to the log. 0 = none (fastest)." },
     { "RECOMP_AUDIO_DEBUG", "1", "Audio debugging: every voice, the music and dialogue streams, timing and slow reads, and the last 30-60 s of sound to apu_capture_0.wav / apu_capture_1.wav. Very large log." },
     { "RECOMP_AUDIO_REPORT", "1", "Keeps the music report in the log even with fewer log messages on." },
     { "RECOMP_AUDIO_VOICES", "1", "Logs where each sound chip voice goes and how loud, all 8 channels." },
     { "RECOMP_APU_CAPTURE", "1", "Records the sound chip's output to WAV files." },
-    { "RECOMP_APU_TRACE", "1", "Logs every access to the sound chip's registers. Huge log." },
-    { "RECOMP_APU_GP_LOG", "1", "Logs the sound DSP's commands." },
     { "RECOMP_APU_GP_DUMP", "1", "Dumps the sound DSP's memory when it changes." },
     { "RECOMP_SND_DIST", "1", "Logs 3D sound distances: which sounds play or are cut off, and why." },
     { "RECOMP_READ_LOG", "1", "Logs every file read, with a hash of the bytes (on by default when not quiet)." },
@@ -181,24 +176,22 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_GL_DRAWLOG", "1", "Only the F9 draw list, without the call chains." },
     { "RECOMP_GL_DRAWLOG_N", "1500", "How many draws the F9 draw list logs." },
     { "RECOMP_DRAW_WHO", "1", "Only the call chains of every new draw (F9 marks a point in the log)." },
-    { "RECOMP_SPRITE_LOG", "1", "F9 logs the next 2D sprites drawn, with their positions." },
-    { "RECOMP_SPRITE_LOG_N", "1500", "How many sprites the sprite log takes." },
     { "RECOMP_TEX_WHO", "0x0106F000", "Logs which game code sets this texture (its data address)." },
     { "RECOMP_GL_EFFECTLOG", "1", "Logs the GPU time of the effect passes (glow, blur)." },
-    { "RECOMP_GL_DUMP_SPEC", "1", "Writes the first specialised shaders' source to the log." },
-    { "RECOMP_PB_EXEC_VERBOSE", "1", "Logs every graphics command batch. Huge log, slow." },
     { "RECOMP_FRAME_TRACE", "1", "Traces one whole frame: every draw, its state and how many pixels it wrote." },
     { "RECOMP_FTRACE_PROBE", "150,450 300,400", "With the frame trace: up to 8 screen points (x,y) whose colour is followed through the frame." },
     { "RECOMP_FTRACE_TEXDUMP", "0", "With the frame trace: 0 doesn't write the frame's textures to files." },
     { "RECOMP_FTRACE_VERTS", "2,3,65", "With the frame trace: every vertex of these draws (numbered from 1)." },
     { "RECOMP_FF_TRACE", "20", "Logs this many fixed-function draws: matrices and the first vertices in and out." },
-    { "RECOMP_INPUT_DIAG", "1", "Logs which keys the controller code sees held, once a second." },
-    { "RECOMP_KEY_TRACE", "1", "Logs the first 40 keys the window receives." },
     { "RECOMP_USB_STATS", "1", "Logs USB transfer counts every 5 seconds." },
     { "RECOMP_HEAPCHK", "0", "0 turns off the check of the game's memory heap after loads (the [HEAPCHK] lines)." },
+    { "RECOMP_LOG_PLAIN", "1", "1: the log keeps the name given (stderr.txt), without the renderer, date and time." },
+    { "RECOMP_BOOST_LOG", "1", "Logs what the game draws off screen around presses of B (the boost): render targets, clears and full-screen draws, with the game code behind them." },
+    { "RECOMP_TESTRUNS_LOG", "1", "Logs the Test Run menu's rows, every area's graffiti souls and the flags the rival battles set." },
+    { "RECOMP_WS_TEXT_LOG", "1", "Logs each text the HUD adds, with the widescreen place it was added in." },
+    { "RECOMP_TEX_DUMP", "texdump\\tex", "Saves each texture the game uses, the first time, as a .bmp file whose name starts with this." },
 
     { NULL, NULL, "Game window" },
-    { "RECOMP_FB_VA", "0x00084000", "The window shows this Xbox memory address instead of the game's picture." },
     { "RECOMP_FB_POLL", "1", "The window redraws on a timer instead of when a frame is ready." },
 
     { NULL, NULL, "Tests and fixes (for finding bugs)" },
@@ -211,11 +204,13 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_DEFER_APC", "0", "0: file read callbacks run at once instead of at the game's next wait, as on the Xbox." },
     { "RECOMP_IRQL_GATE", "0", "0 turns off the lock that stops the sound interrupt running while the game edits sound lists." },
     { "RECOMP_APPLY_PROTECT", "1", "Applies the game's memory protection changes." },
-    { "RECOMP_UNIMPL_TRAP", "1", "Stops at the first instruction the translation doesn't handle." },
     { "RECOMP_VBLANK_ACK", "executor", "executor: the old vblank handling, which loses vblanks (music and dialogue crackle)." },
     { "RECOMP_WATCH", "0x251F58", "Logs who writes this memory address (or a chain of pointers to it)." },
-    { "RECOMP_SAMPLE_SECS", "30", "Samples where the game's thread is after this many seconds (Windows)." },
     { "RECOMP_STALL_SAMPLE", "0", "0 turns off sampling the game's thread when frames stop (Linux)." },
+    { "RECOMP_TESTRUNS_ALL", "1", "Opens every row of the Test Run menu (to read their names)." },
+    { "RECOMP_PAD_LIVE", "pad_live.txt", "Reads controller input from this file as lines are added to it (scripted test runs)." },
+    { "RECOMP_WATCHDOG_SECS", "30", "Stops the game after this many seconds, with where it was in the log (the Debug tab's Play, stop after 30 s)." },
+    { "RECOMP_VBLANK_HZ", "60", "How many refreshes a second the game gets (10 to 240). Not a frame rate setting: the game runs faster or slower." },
 };
 
 enum { OTHER_SETTINGS_N = sizeof OTHER_SETTINGS / sizeof OTHER_SETTINGS[0] };
