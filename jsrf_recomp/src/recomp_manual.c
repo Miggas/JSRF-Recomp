@@ -1114,10 +1114,34 @@ void sub_00025390(void)                     /* start load job (thiscall, ret 8) 
     }
 }
 
+/* v312d: the step also checks the job's time: from its start ([this+0x190],
+ * the time stamp counter) to now, 15 seconds (0xE4E1C0 us) is a disc that
+ * can't be read, and the game stops with JSRF_FATAL.ERR. Shaders built before
+ * the start hold the game for as long as they take (17.6 s on Miggas's RX 6900
+ * XT with the driver's cache empty), during job 17: a black screen for good
+ * (Reported by Miggas). Time the game was held moves the job's start on by
+ * as much (g_xbox_held_tsc, kernel_hal.c); the quit window's too. */
+extern volatile uint64_t g_xbox_held_tsc;
+
 void sub_00025310(void)                     /* one step of the active job */
 {
     uint32_t self = g_ecx;
     uint32_t was = MEM32(self + 0x44), job = MEM32(self + 0x48);
+    {
+        static uint64_t held_seen;
+        uint64_t held = g_xbox_held_tsc;
+        if (held != held_seen) {
+            if (was == 1) {
+                uint64_t st = MEM32(self + 0x190) | (uint64_t)MEM32(self + 0x194) << 32;
+                st += held - held_seen;
+                MEM32(self + 0x190) = (uint32_t)st;
+                MEM32(self + 0x194) = (uint32_t)(st >> 32);
+                fprintf(stderr, "[LOAD] job %u: its time moved on by %.1f s the game was held\n",
+                        job, (double)(held - held_seen) / 733333333.0);
+            }
+            held_seen = held;
+        }
+    }
     sub_00025310_gen();
     if (was != 1) return;
     ld_steps++;

@@ -3019,8 +3019,10 @@ extern volatile LONG g_xbox_game_held;
  * brings it is held off: the game froze for good, opening and closing the
  * quit window a few times in a row (reported by Miggas). Here, at the flip,
  * no DirectSound call is in progress, so the interrupt gets through. */
+extern void xbox_HoldClock(int on);   /* v312d: kernel_hal.c, time held */
 static void game_unhold(void)
 {
+    xbox_HoldClock(0);
     InterlockedExchange(&g_xbox_game_held, 0);
     Sleep(50);                            /* ~30 APU frames: the voices run, the interrupt is taken */
 }
@@ -3029,6 +3031,7 @@ void nv2a_gl_quit_hold(void)
 {
     if (!xbox_DialogOpen() || !s_last_win || s_state != 1)
         return;
+    xbox_HoldClock(1);
     InterlockedExchange(&g_xbox_game_held, 1);
     fprintf(stderr, "[QUIT] game held\n");
     while (xbox_DialogOpen()) {
@@ -3078,6 +3081,7 @@ void nv2a_gl_prebuild_hold(void)
             s_rcp_had - s_rcp_next, (double)(TM_NOW() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency());
     if (n) {
         uint64_t sec = (uint64_t)SDL_GetPerformanceFrequency();
+        xbox_HoldClock(1);
         InterlockedExchange(&g_xbox_game_held, 1);
         last = 0;
         for (i = 0; i <= n; i++) {
