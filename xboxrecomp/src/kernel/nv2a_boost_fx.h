@@ -113,7 +113,10 @@ static void boost_run(void *p)
 
     /* and back through the effect */
     glViewport(0, 0, a->w, a->h);
-    rb_bind_draw(a->dst_fbo);
+    /* bound directly: the blit above moved the draw binding to tmp behind
+     * rb_bind_draw's back (v312f: on Vulkan the effect drew into tmp, read
+     * from it, and was left out -- Miggas's log) */
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, a->dst_fbo);
     glBindVertexArray(s_boost.vao);
     glUseProgram(s_boost.prog);
     glBindSampler(0, s_boost.samp);
