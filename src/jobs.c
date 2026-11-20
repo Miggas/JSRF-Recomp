@@ -1204,6 +1204,69 @@ static bool check_update(void)
     return true;
 }
 
+/* v3f: the commit GitHub puts in the zip's comment, read from the zip's end
+ * record ("PK\5\6", the comment's length at +20) */
+static bool zip_comment(const char *zip, char *out, size_t cap)
+{
+    size_t n = 0;
+    char *d = read_file(zip, &n);
+    bool ok = false;
+    out[0] = 0;
+    if (d && n >= 22) {
+        size_t lo = n > 65557 ? n - 65557 : 0;
+        for (size_t i = n - 22 + 1; i-- > lo;) {
+            if (d[i] == 'P' && d[i + 1] == 'K' && d[i + 2] == 5 && d[i + 3] == 6) {
+                size_t len = (unsigned char)d[i + 20] | (size_t)(unsigned char)d[i + 21] << 8;
+                if (i + 22 + len <= n && len < cap) {
+                    memcpy(out, d + i + 22, len);
+                    out[len] = 0;
+                    ok = len > 0;
+                }
+                break;
+            }
+        }
+    }
+    free(d);
+    return ok;
+}
+
+/* v3f: the project's zip unpacked without our tools when the system can
+ * (Outrunner24's issue #7: Update needed the whole toolchain only to
+ * unzip): Windows 10 and later have tar, which reads zip; Linux: unzip,
+ * Python 3, or bsdtar. Our own Python last (downloaded if it isn't there). */
+static bool unpack_zip(const char *zip, const char *dir)
+{
+#ifdef _WIN32
+    {
+        const char *argv[] = { "tar", "-xf", zip, "-C", dir, NULL };
+        if (runv(NULL, argv)) return true;
+    }
+#else
+    {
+        const char *argv[] = { "unzip", "-q", "-o", zip, "-d", dir, NULL };
+        if (runv(NULL, argv)) return true;
+    }
+    {
+        const char *argv[] = { "python3", "-c",
+            "import sys,zipfile\nzipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])\n",
+            zip, dir, NULL };
+        if (runv(NULL, argv)) return true;
+    }
+    {
+        const char *argv[] = { "bsdtar", "-xf", zip, "-C", dir, NULL };
+        if (runv(NULL, argv)) return true;
+    }
+#endif
+    logf_("Unpacking with the system's own tools did not work: with the launcher's Python.");
+    if (!setup_tools()) return false;
+    char py[LPATH];
+    py_exe(py);
+    const char *argv[] = { py, "-c",
+        "import sys,zipfile\nzipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])\n",
+        zip, dir, NULL };
+    return runv(NULL, argv);
+}
+
 static bool do_update(void)
 {
     /* the newest commit, when GitHub answers: nothing to download if it is
@@ -1212,29 +1275,29 @@ static bool do_update(void)
         status("Already the newest version (%.10s): nothing to download.", s_remote);
         return true;
     }
-    if (!setup_tools()) return false;
-    char dl[LPATH], zip[LPATH], tmp[LPATH], py[LPATH];
-    pjoin(dl, g_paths.tools, "download");
+    /* v3f: no tools needed to update (they are for Generate code and Build):
+     * the download goes next to the launcher, not into tools/ */
+    char dl[LPATH], zip[LPATH], tmp[LPATH];
+    pjoin(dl, g_paths.base, "update_download");
     remove_tree(dl);
     make_dirs(dl);
     pjoin(zip, dl, "source.zip");
     pjoin(tmp, dl, "unpacked");
-    py_exe(py);
+    make_dirs(tmp);
     PHASE("Downloading update");
     status("Downloading the newest version of the project (%s)...", update_branch());
     char url[256];
     snprintf(url, sizeof url, "https://github.com/" REPO "/archive/refs/heads/%s.zip", update_branch());
     if (!download(url, zip)) return false;
     status("Unpacking...", NULL);
-    /* GitHub puts the commit in the zip's comment */
-    const char *argv[] = { py, "-c",
-        "import sys,zipfile\n"
-        "z=zipfile.ZipFile(sys.argv[1])\n"
-        "z.extractall(sys.argv[2])\n"
-        "print(z.comment.decode('ascii','replace').strip())\n",
-        zip, tmp, NULL };
     char sha[256];
-    if (run_capture(argv, NULL, sha, sizeof sha) != 0) { logf_("Could not unpack: %s", sha); return false; }
+    if (!zip_comment(zip, sha, sizeof sha))
+        snprintf(sha, sizeof sha, "%s", s_remote);   /* what GitHub said, if it answered */
+    {
+        char *e = strpbrk(sha, "\r\n ");
+        if (e) *e = 0;
+    }
+    if (!unpack_zip(zip, tmp)) { logf_("Could not unpack the download."); return false; }
     char top[LPATH];
     /* the zip's folder: repo-branch, a / in the branch name becoming - */
     char topname[160];
