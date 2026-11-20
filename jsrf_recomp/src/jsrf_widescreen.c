@@ -872,6 +872,17 @@ static void wsm_fill_mark(int fill)
     wsm_zbias(zb);
 }
 void jsrf_RowFillMark(void) { wsm_fill_mark(1); }   /* recomp_manual.c */
+/* v312e: any mark (jsrf_boost.c: the new boost effect), the real z-bias put
+ * back at once */
+void jsrf_ZBiasMark(uint32_t v)
+{
+    uint32_t zb;
+    if (!MEM32(0x19DCE0u))
+        return;                             /* no device yet */
+    zb = MEM32(0x19E2E8u);
+    wsm_zbias(v);
+    wsm_zbias(zb);
+}
 void jsrf_RowFillOff(void) { wsm_fill_mark(3); }    /* v225: recomp_manual.c */
 
 /* v228: graffiti select's 3D scene. The garage's graffiti menu function runs

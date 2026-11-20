@@ -10,7 +10,7 @@ extern const RbOps rbgl_ops;            /* nv2a_rb_gl.c: the default */
 const RbOps *g_rb = &rbgl_ops;
 void rb_select(const RbOps *ops) { g_rb = ops; }
 
-#define RB_NCALLS 111
+#define RB_NCALLS 112
 static const char *const s_rb_names[RB_NCALLS] = {
     "fixed", "fixed_lost", "shader_options", "program_build", "program_build_async", "program_ready",
     "shader_compile", "program_stats", "use_program", "program_delete", "uniform_loc", "uniform_vec4_len",
@@ -18,19 +18,19 @@ static const char *const s_rb_names[RB_NCALLS] = {
     "u1iv", "u1uiv", "u1fv", "u2fv", "u3fv", "u4fv",
     "umat4", "bind_draw", "draw_bound", "draw_bound_set", "viewport", "scissor",
     "scissor_get", "scissor_once", "bindings_lost", "active_unit", "unit_bind", "bind_vbuf",
-    "vbuf_lost", "vbuf_bound_set", "copy_target", "present_aa", "ms_upscale", "window_present",
-    "set_overlay", "gpu_frame_stats", "window_stats", "target_shape", "depth_make", "target_depth",
-    "surface_upload", "read_pixels", "resolve", "target_scaled", "tex_new", "tex_delete",
-    "tex_image", "tex_image_dxt", "tex_param", "tex_mipmaps", "errors_clear", "no_error",
-    "max_aniso", "tex_from_target", "buf_bind", "buf_data", "buf_sub", "buf_storage",
-    "buf_map", "buf_unmap", "buf_new", "buf_delete", "fence", "fence_wait",
-    "fence_delete", "fence_signaled", "finish", "va_new", "va_bind", "attr_on",
-    "attr_off", "attr_pointer", "attr_format", "attr_binding", "vbufs", "attr_const4fv",
-    "attr_const4f", "draw_elements", "draw_arrays", "clear", "query_new", "query_begin",
-    "query_end", "query_result", "read_pixels_buf", "read_pixel", "read_depth", "init",
-    "caps", "init_state", "thread_start", "pump", "tex_bind_raw", "errors_drain",
-    "error", "overlay_init", "overlay_draw", "threaded", "frame_end", "gpu_frame_mark",
-    "call_stats", "shader_cache_on", "shader_cache_path",
+    "vbuf_lost", "vbuf_bound_set", "copy_target", "present_aa", "ms_upscale", "boost_fx",
+    "window_present", "set_overlay", "gpu_frame_stats", "window_stats", "target_shape", "depth_make",
+    "target_depth", "surface_upload", "read_pixels", "resolve", "target_scaled", "tex_new",
+    "tex_delete", "tex_image", "tex_image_dxt", "tex_param", "tex_mipmaps", "errors_clear",
+    "no_error", "max_aniso", "tex_from_target", "buf_bind", "buf_data", "buf_sub",
+    "buf_storage", "buf_map", "buf_unmap", "buf_new", "buf_delete", "fence",
+    "fence_wait", "fence_delete", "fence_signaled", "finish", "va_new", "va_bind",
+    "attr_on", "attr_off", "attr_pointer", "attr_format", "attr_binding", "vbufs",
+    "attr_const4fv", "attr_const4f", "draw_elements", "draw_arrays", "clear", "query_new",
+    "query_begin", "query_end", "query_result", "read_pixels_buf", "read_pixel", "read_depth",
+    "init", "caps", "init_state", "thread_start", "pump", "tex_bind_raw",
+    "errors_drain", "error", "overlay_init", "overlay_draw", "threaded", "frame_end",
+    "gpu_frame_mark", "call_stats", "shader_cache_on", "shader_cache_path",
 };
 static int s_prof;
 static uint64_t s_prof_n[RB_NCALLS], s_prof_t[RB_NCALLS];
@@ -109,73 +109,74 @@ void rb_vbuf_bound_set(uint32_t b) { RB_P0; g_rb->vbuf_bound_set(b); RB_P1(37); 
 void rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int dh, uint32_t filter) { RB_P0; g_rb->copy_target(src, sw, sh, dst, dw, dh, filter); RB_P1(38); }
 uint32_t rb_present_aa(uint32_t src, uint32_t src_fbo, int w, int h) { RB_P0; uint32_t r_ = g_rb->present_aa(src, src_fbo, w, h); RB_P1(39); return r_; }
 void rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h) { RB_P0; g_rb->ms_upscale(src_tex, dst_target, w, h); RB_P1(40); }
-int rb_window_present(const RbFrame *f) { RB_P0; int r_ = g_rb->window_present(f); RB_P1(41); return r_; }
-void rb_set_overlay(void (*fn)(int cw, int ch, int flip)) { RB_P0; g_rb->set_overlay(fn); RB_P1(42); }
-int rb_gpu_frame_stats(char *buf, size_t n) { RB_P0; int r_ = g_rb->gpu_frame_stats(buf, n); RB_P1(43); return r_; }
-void rb_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max, uint64_t *behind2, double *iv_max_ms, uint64_t *iv20, uint64_t *iv34) { RB_P0; g_rb->window_stats(frames, behind_avg, behind_max, behind2, iv_max_ms, iv20, iv34); RB_P1(44); }
-void rb_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples) { RB_P0; g_rb->target_shape(fbo, tex, ms_tex, w, h, alpha, samples); RB_P1(45); }
-void rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth) { RB_P0; g_rb->depth_make(buf, is_tex, w, h, samples, depth32f, clear_depth); RB_P1(46); }
-uint32_t rb_target_depth(uint32_t fbo, uint32_t buf, int is_tex) { RB_P0; uint32_t r_ = g_rb->target_depth(fbo, buf, is_tex); RB_P1(47); return r_; }
-void rb_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int sh, const uint32_t *px, int samples) { RB_P0; g_rb->surface_upload(fbo, tex, gw, gh, sw, sh, px, samples); RB_P1(48); }
-void rb_read_pixels(uint32_t fbo, int w, int h, uint32_t *px) { RB_P0; g_rb->read_pixels(fbo, w, h, px); RB_P1(49); }
-uint32_t rb_resolve(uint32_t fbo, uint32_t tex, int w, int h) { RB_P0; uint32_t r_ = g_rb->resolve(fbo, tex, w, h); RB_P1(50); return r_; }
-uint32_t rb_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh) { RB_P0; uint32_t r_ = g_rb->target_scaled(fbo, sw, sh, gw, gh); RB_P1(51); return r_; }
-void rb_tex_new(uint32_t *id) { RB_P0; g_rb->tex_new(id); RB_P1(52); }
-void rb_tex_delete(uint32_t *id) { RB_P0; g_rb->tex_delete(id); RB_P1(53); }
-void rb_tex_image(uint32_t target, int level, int ifmt, int w, int h, int border, uint32_t format, uint32_t type, const void *data) { RB_P0; g_rb->tex_image(target, level, ifmt, w, h, border, format, type, data); RB_P1(54); }
-void rb_tex_image_dxt(uint32_t target, int level, uint32_t cfmt, int w, int h, int border, int size, const void *data) { RB_P0; g_rb->tex_image_dxt(target, level, cfmt, w, h, border, size, data); RB_P1(55); }
-void rb_tex_param(uint32_t target, uint32_t pname, int v) { RB_P0; g_rb->tex_param(target, pname, v); RB_P1(56); }
-void rb_tex_mipmaps(uint32_t target) { RB_P0; g_rb->tex_mipmaps(target); RB_P1(57); }
-void rb_errors_clear(void) { RB_P0; g_rb->errors_clear(); RB_P1(58); }
-int rb_no_error(void) { RB_P0; int r_ = g_rb->no_error(); RB_P1(59); return r_; }
-int rb_max_aniso(void) { RB_P0; int r_ = g_rb->max_aniso(); RB_P1(60); return r_; }
-void rb_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int h, uint32_t src_fbo, int sh) { RB_P0; g_rb->tex_from_target(id, remake, one_alpha, w, h, src_fbo, sh); RB_P1(61); }
-void rb_buf_bind(uint32_t target, uint32_t b) { RB_P0; g_rb->buf_bind(target, b); RB_P1(62); }
-void rb_buf_data(uint32_t target, intptr_t size, const void *data, uint32_t usage) { RB_P0; g_rb->buf_data(target, size, data, usage); RB_P1(63); }
-void rb_buf_sub(uint32_t target, intptr_t off, intptr_t size, const void *data) { RB_P0; g_rb->buf_sub(target, off, size, data); RB_P1(64); }
-void rb_buf_storage(uint32_t target, intptr_t size, const void *data, uint32_t flags) { RB_P0; g_rb->buf_storage(target, size, data, flags); RB_P1(65); }
-void *rb_buf_map(uint32_t target, intptr_t off, intptr_t len, uint32_t access) { RB_P0; void * r_ = g_rb->buf_map(target, off, len, access); RB_P1(66); return r_; }
-int rb_buf_unmap(uint32_t target) { RB_P0; int r_ = g_rb->buf_unmap(target); RB_P1(67); return r_; }
-void rb_buf_new(int n, uint32_t *ids) { RB_P0; g_rb->buf_new(n, ids); RB_P1(68); }
-void rb_buf_delete(int n, const uint32_t *ids) { RB_P0; g_rb->buf_delete(n, ids); RB_P1(69); }
-void *rb_fence(uint32_t cond, uint32_t flags) { RB_P0; void * r_ = g_rb->fence(cond, flags); RB_P1(70); return r_; }
-uint32_t rb_fence_wait(void *f, uint32_t flags, uint64_t timeout_ns) { RB_P0; uint32_t r_ = g_rb->fence_wait(f, flags, timeout_ns); RB_P1(71); return r_; }
-void rb_fence_delete(void *f) { RB_P0; g_rb->fence_delete(f); RB_P1(72); }
-int rb_fence_signaled(void *f) { RB_P0; int r_ = g_rb->fence_signaled(f); RB_P1(73); return r_; }
-void rb_finish(void) { RB_P0; g_rb->finish(); RB_P1(74); }
-void rb_va_new(int n, uint32_t *ids) { RB_P0; g_rb->va_new(n, ids); RB_P1(75); }
-void rb_va_bind(uint32_t va) { RB_P0; g_rb->va_bind(va); RB_P1(76); }
-void rb_attr_on(uint32_t loc) { RB_P0; g_rb->attr_on(loc); RB_P1(77); }
-void rb_attr_off(uint32_t loc) { RB_P0; g_rb->attr_off(loc); RB_P1(78); }
-void rb_attr_pointer(uint32_t loc, int size, uint32_t type, int norm, int stride, const void *ptr) { RB_P0; g_rb->attr_pointer(loc, size, type, norm, stride, ptr); RB_P1(79); }
-void rb_attr_format(uint32_t loc, int size, uint32_t type, int norm, uint32_t rel) { RB_P0; g_rb->attr_format(loc, size, type, norm, rel); RB_P1(80); }
-void rb_attr_binding(uint32_t loc, uint32_t stream) { RB_P0; g_rb->attr_binding(loc, stream); RB_P1(81); }
-void rb_vbufs(uint32_t first, int n, const uint32_t *bufs, const intptr_t *offs, const int *strides) { RB_P0; g_rb->vbufs(first, n, bufs, offs, strides); RB_P1(82); }
-void rb_attr_const4fv(uint32_t loc, const float *v) { RB_P0; g_rb->attr_const4fv(loc, v); RB_P1(83); }
-void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w) { RB_P0; g_rb->attr_const4f(loc, x, y, z, w); RB_P1(84); }
-void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base) { RB_P0; g_rb->draw_elements(mode, count, type, off, base); RB_P1(85); }
-void rb_draw_arrays(uint32_t mode, int first, int count) { RB_P0; g_rb->draw_arrays(mode, first, count); RB_P1(86); }
-void rb_clear(int color, const float rgba[4], int alpha, int depth, double zval, int stencil, int sval) { RB_P0; g_rb->clear(color, rgba, alpha, depth, zval, stencil, sval); RB_P1(87); }
-void rb_query_new(int n, uint32_t *ids) { RB_P0; g_rb->query_new(n, ids); RB_P1(88); }
-void rb_query_begin(uint32_t id) { RB_P0; g_rb->query_begin(id); RB_P1(89); }
-void rb_query_end(void) { RB_P0; g_rb->query_end(); RB_P1(90); }
-void rb_query_result(uint32_t id, uint32_t *v) { RB_P0; g_rb->query_result(id, v); RB_P1(91); }
-void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf) { RB_P0; g_rb->read_pixels_buf(fbo, w, h, buf); RB_P1(92); }
-void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c) { RB_P0; g_rb->read_pixel(fbo, x, y, c); RB_P1(93); }
-int rb_read_depth(uint32_t fbo, int x, int y, float *z) { RB_P0; int r_ = g_rb->read_depth(fbo, x, y, z); RB_P1(94); return r_; }
-int rb_init(void) { RB_P0; int r_ = g_rb->init(); RB_P1(95); return r_; }
-const RbCaps *rb_caps(void) { RB_P0; const RbCaps * r_ = g_rb->caps(); RB_P1(96); return r_; }
-void rb_init_state(int clip_planes) { RB_P0; g_rb->init_state(clip_planes); RB_P1(97); }
-void rb_thread_start(void) { RB_P0; g_rb->thread_start(); RB_P1(98); }
-void rb_pump(void) { RB_P0; g_rb->pump(); RB_P1(99); }
-void rb_tex_bind_raw(uint32_t target, uint32_t id) { RB_P0; g_rb->tex_bind_raw(target, id); RB_P1(100); }
-void rb_errors_drain(void) { RB_P0; g_rb->errors_drain(); RB_P1(101); }
-uint32_t rb_error(void) { RB_P0; uint32_t r_ = g_rb->error(); RB_P1(102); return r_; }
-int rb_overlay_init(const unsigned char *atlas, int w, int h) { RB_P0; int r_ = g_rb->overlay_init(atlas, w, h); RB_P1(103); return r_; }
-void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font) { RB_P0; g_rb->overlay_draw(v, n, cw, ch, flip, font); RB_P1(104); }
-int rb_threaded(void) { RB_P0; int r_ = g_rb->threaded(); RB_P1(105); return r_; }
-void rb_frame_end(void) { RB_P0; g_rb->frame_end(); RB_P1(106); }
-void rb_gpu_frame_mark(void) { RB_P0; g_rb->gpu_frame_mark(); RB_P1(107); }
-int rb_call_stats(char *buf, size_t n, uint64_t draws, uint64_t layouts_new) { RB_P0; int r_ = g_rb->call_stats(buf, n, draws, layouts_new); RB_P1(108); return r_; }
-int rb_shader_cache_on(void) { RB_P0; int r_ = g_rb->shader_cache_on(); RB_P1(109); return r_; }
-void rb_shader_cache_path(char *b, size_t n, const char *vsrc, const char *fsrc) { RB_P0; g_rb->shader_cache_path(b, n, vsrc, fsrc); RB_P1(110); }
+void rb_boost_fx(uint32_t dst_target, uint32_t tmp_target, uint32_t tmp_tex, int w, int h, float strength, float t, float cx, float cy) { RB_P0; g_rb->boost_fx(dst_target, tmp_target, tmp_tex, w, h, strength, t, cx, cy); RB_P1(41); }
+int rb_window_present(const RbFrame *f) { RB_P0; int r_ = g_rb->window_present(f); RB_P1(42); return r_; }
+void rb_set_overlay(void (*fn)(int cw, int ch, int flip)) { RB_P0; g_rb->set_overlay(fn); RB_P1(43); }
+int rb_gpu_frame_stats(char *buf, size_t n) { RB_P0; int r_ = g_rb->gpu_frame_stats(buf, n); RB_P1(44); return r_; }
+void rb_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max, uint64_t *behind2, double *iv_max_ms, uint64_t *iv20, uint64_t *iv34) { RB_P0; g_rb->window_stats(frames, behind_avg, behind_max, behind2, iv_max_ms, iv20, iv34); RB_P1(45); }
+void rb_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples) { RB_P0; g_rb->target_shape(fbo, tex, ms_tex, w, h, alpha, samples); RB_P1(46); }
+void rb_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth) { RB_P0; g_rb->depth_make(buf, is_tex, w, h, samples, depth32f, clear_depth); RB_P1(47); }
+uint32_t rb_target_depth(uint32_t fbo, uint32_t buf, int is_tex) { RB_P0; uint32_t r_ = g_rb->target_depth(fbo, buf, is_tex); RB_P1(48); return r_; }
+void rb_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int sh, const uint32_t *px, int samples) { RB_P0; g_rb->surface_upload(fbo, tex, gw, gh, sw, sh, px, samples); RB_P1(49); }
+void rb_read_pixels(uint32_t fbo, int w, int h, uint32_t *px) { RB_P0; g_rb->read_pixels(fbo, w, h, px); RB_P1(50); }
+uint32_t rb_resolve(uint32_t fbo, uint32_t tex, int w, int h) { RB_P0; uint32_t r_ = g_rb->resolve(fbo, tex, w, h); RB_P1(51); return r_; }
+uint32_t rb_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh) { RB_P0; uint32_t r_ = g_rb->target_scaled(fbo, sw, sh, gw, gh); RB_P1(52); return r_; }
+void rb_tex_new(uint32_t *id) { RB_P0; g_rb->tex_new(id); RB_P1(53); }
+void rb_tex_delete(uint32_t *id) { RB_P0; g_rb->tex_delete(id); RB_P1(54); }
+void rb_tex_image(uint32_t target, int level, int ifmt, int w, int h, int border, uint32_t format, uint32_t type, const void *data) { RB_P0; g_rb->tex_image(target, level, ifmt, w, h, border, format, type, data); RB_P1(55); }
+void rb_tex_image_dxt(uint32_t target, int level, uint32_t cfmt, int w, int h, int border, int size, const void *data) { RB_P0; g_rb->tex_image_dxt(target, level, cfmt, w, h, border, size, data); RB_P1(56); }
+void rb_tex_param(uint32_t target, uint32_t pname, int v) { RB_P0; g_rb->tex_param(target, pname, v); RB_P1(57); }
+void rb_tex_mipmaps(uint32_t target) { RB_P0; g_rb->tex_mipmaps(target); RB_P1(58); }
+void rb_errors_clear(void) { RB_P0; g_rb->errors_clear(); RB_P1(59); }
+int rb_no_error(void) { RB_P0; int r_ = g_rb->no_error(); RB_P1(60); return r_; }
+int rb_max_aniso(void) { RB_P0; int r_ = g_rb->max_aniso(); RB_P1(61); return r_; }
+void rb_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int h, uint32_t src_fbo, int sh) { RB_P0; g_rb->tex_from_target(id, remake, one_alpha, w, h, src_fbo, sh); RB_P1(62); }
+void rb_buf_bind(uint32_t target, uint32_t b) { RB_P0; g_rb->buf_bind(target, b); RB_P1(63); }
+void rb_buf_data(uint32_t target, intptr_t size, const void *data, uint32_t usage) { RB_P0; g_rb->buf_data(target, size, data, usage); RB_P1(64); }
+void rb_buf_sub(uint32_t target, intptr_t off, intptr_t size, const void *data) { RB_P0; g_rb->buf_sub(target, off, size, data); RB_P1(65); }
+void rb_buf_storage(uint32_t target, intptr_t size, const void *data, uint32_t flags) { RB_P0; g_rb->buf_storage(target, size, data, flags); RB_P1(66); }
+void *rb_buf_map(uint32_t target, intptr_t off, intptr_t len, uint32_t access) { RB_P0; void * r_ = g_rb->buf_map(target, off, len, access); RB_P1(67); return r_; }
+int rb_buf_unmap(uint32_t target) { RB_P0; int r_ = g_rb->buf_unmap(target); RB_P1(68); return r_; }
+void rb_buf_new(int n, uint32_t *ids) { RB_P0; g_rb->buf_new(n, ids); RB_P1(69); }
+void rb_buf_delete(int n, const uint32_t *ids) { RB_P0; g_rb->buf_delete(n, ids); RB_P1(70); }
+void *rb_fence(uint32_t cond, uint32_t flags) { RB_P0; void * r_ = g_rb->fence(cond, flags); RB_P1(71); return r_; }
+uint32_t rb_fence_wait(void *f, uint32_t flags, uint64_t timeout_ns) { RB_P0; uint32_t r_ = g_rb->fence_wait(f, flags, timeout_ns); RB_P1(72); return r_; }
+void rb_fence_delete(void *f) { RB_P0; g_rb->fence_delete(f); RB_P1(73); }
+int rb_fence_signaled(void *f) { RB_P0; int r_ = g_rb->fence_signaled(f); RB_P1(74); return r_; }
+void rb_finish(void) { RB_P0; g_rb->finish(); RB_P1(75); }
+void rb_va_new(int n, uint32_t *ids) { RB_P0; g_rb->va_new(n, ids); RB_P1(76); }
+void rb_va_bind(uint32_t va) { RB_P0; g_rb->va_bind(va); RB_P1(77); }
+void rb_attr_on(uint32_t loc) { RB_P0; g_rb->attr_on(loc); RB_P1(78); }
+void rb_attr_off(uint32_t loc) { RB_P0; g_rb->attr_off(loc); RB_P1(79); }
+void rb_attr_pointer(uint32_t loc, int size, uint32_t type, int norm, int stride, const void *ptr) { RB_P0; g_rb->attr_pointer(loc, size, type, norm, stride, ptr); RB_P1(80); }
+void rb_attr_format(uint32_t loc, int size, uint32_t type, int norm, uint32_t rel) { RB_P0; g_rb->attr_format(loc, size, type, norm, rel); RB_P1(81); }
+void rb_attr_binding(uint32_t loc, uint32_t stream) { RB_P0; g_rb->attr_binding(loc, stream); RB_P1(82); }
+void rb_vbufs(uint32_t first, int n, const uint32_t *bufs, const intptr_t *offs, const int *strides) { RB_P0; g_rb->vbufs(first, n, bufs, offs, strides); RB_P1(83); }
+void rb_attr_const4fv(uint32_t loc, const float *v) { RB_P0; g_rb->attr_const4fv(loc, v); RB_P1(84); }
+void rb_attr_const4f(uint32_t loc, float x, float y, float z, float w) { RB_P0; g_rb->attr_const4f(loc, x, y, z, w); RB_P1(85); }
+void rb_draw_elements(uint32_t mode, int count, uint32_t type, const void *off, int base) { RB_P0; g_rb->draw_elements(mode, count, type, off, base); RB_P1(86); }
+void rb_draw_arrays(uint32_t mode, int first, int count) { RB_P0; g_rb->draw_arrays(mode, first, count); RB_P1(87); }
+void rb_clear(int color, const float rgba[4], int alpha, int depth, double zval, int stencil, int sval) { RB_P0; g_rb->clear(color, rgba, alpha, depth, zval, stencil, sval); RB_P1(88); }
+void rb_query_new(int n, uint32_t *ids) { RB_P0; g_rb->query_new(n, ids); RB_P1(89); }
+void rb_query_begin(uint32_t id) { RB_P0; g_rb->query_begin(id); RB_P1(90); }
+void rb_query_end(void) { RB_P0; g_rb->query_end(); RB_P1(91); }
+void rb_query_result(uint32_t id, uint32_t *v) { RB_P0; g_rb->query_result(id, v); RB_P1(92); }
+void rb_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf) { RB_P0; g_rb->read_pixels_buf(fbo, w, h, buf); RB_P1(93); }
+void rb_read_pixel(uint32_t fbo, int x, int y, uint32_t *c) { RB_P0; g_rb->read_pixel(fbo, x, y, c); RB_P1(94); }
+int rb_read_depth(uint32_t fbo, int x, int y, float *z) { RB_P0; int r_ = g_rb->read_depth(fbo, x, y, z); RB_P1(95); return r_; }
+int rb_init(void) { RB_P0; int r_ = g_rb->init(); RB_P1(96); return r_; }
+const RbCaps *rb_caps(void) { RB_P0; const RbCaps * r_ = g_rb->caps(); RB_P1(97); return r_; }
+void rb_init_state(int clip_planes) { RB_P0; g_rb->init_state(clip_planes); RB_P1(98); }
+void rb_thread_start(void) { RB_P0; g_rb->thread_start(); RB_P1(99); }
+void rb_pump(void) { RB_P0; g_rb->pump(); RB_P1(100); }
+void rb_tex_bind_raw(uint32_t target, uint32_t id) { RB_P0; g_rb->tex_bind_raw(target, id); RB_P1(101); }
+void rb_errors_drain(void) { RB_P0; g_rb->errors_drain(); RB_P1(102); }
+uint32_t rb_error(void) { RB_P0; uint32_t r_ = g_rb->error(); RB_P1(103); return r_; }
+int rb_overlay_init(const unsigned char *atlas, int w, int h) { RB_P0; int r_ = g_rb->overlay_init(atlas, w, h); RB_P1(104); return r_; }
+void rb_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font) { RB_P0; g_rb->overlay_draw(v, n, cw, ch, flip, font); RB_P1(105); }
+int rb_threaded(void) { RB_P0; int r_ = g_rb->threaded(); RB_P1(106); return r_; }
+void rb_frame_end(void) { RB_P0; g_rb->frame_end(); RB_P1(107); }
+void rb_gpu_frame_mark(void) { RB_P0; g_rb->gpu_frame_mark(); RB_P1(108); }
+int rb_call_stats(char *buf, size_t n, uint64_t draws, uint64_t layouts_new) { RB_P0; int r_ = g_rb->call_stats(buf, n, draws, layouts_new); RB_P1(109); return r_; }
+int rb_shader_cache_on(void) { RB_P0; int r_ = g_rb->shader_cache_on(); RB_P1(110); return r_; }
+void rb_shader_cache_path(char *b, size_t n, const char *vsrc, const char *fsrc) { RB_P0; g_rb->shader_cache_path(b, n, vsrc, fsrc); RB_P1(111); }

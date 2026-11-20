@@ -111,6 +111,12 @@ void     rb_copy_target(uint32_t src, int sw, int sh, uint32_t dst, int dw, int 
 uint32_t rb_present_aa(uint32_t src, uint32_t src_fbo, int w, int h);
 /* a single-sampled image into a multisampled target, scaled to w x h */
 void     rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h);
+/* v312e: the new boost effect over the target's picture (w x h), through a
+ * single-sampled copy (tmp_target / tmp_tex, same size): strength 0..1,
+ * t in seconds (the speed lines), the clear centre in texture coordinates
+ * (nv2a_boost_fx.h) */
+void     rb_boost_fx(uint32_t dst_target, uint32_t tmp_target, uint32_t tmp_tex, int w, int h,
+                     float strength, float t, float cx, float cy);
 
 /* ── the window ────────────────────────────────────────────────────────── */
 /* a finished frame for the window: its target and texture (and the target

@@ -43,6 +43,7 @@
 #define rb_copy_target RB_BACKEND_PREFIX(copy_target)
 #define rb_present_aa RB_BACKEND_PREFIX(present_aa)
 #define rb_ms_upscale RB_BACKEND_PREFIX(ms_upscale)
+#define rb_boost_fx RB_BACKEND_PREFIX(boost_fx)
 #define rb_window_present RB_BACKEND_PREFIX(window_present)
 #define rb_set_overlay RB_BACKEND_PREFIX(set_overlay)
 #define rb_gpu_frame_stats RB_BACKEND_PREFIX(gpu_frame_stats)
@@ -155,6 +156,7 @@
     rb_copy_target, \
     rb_present_aa, \
     rb_ms_upscale, \
+    rb_boost_fx, \
     rb_window_present, \
     rb_set_overlay, \
     rb_gpu_frame_stats, \

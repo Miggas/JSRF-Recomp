@@ -2,7 +2,7 @@
  * vk13: rbq_ops, a backend made of another (rbq_wrap): the calls that return
  * nothing are made on a thread of their own, in order; see nv2a_rb_queue_rt.h. */
 #include "nv2a_rb_ops.h"
-#define RB_NCALLS_Q 111
+#define RB_NCALLS_Q 112
 #define Q_IX_fixed 0
 #define Q_IX_fixed_lost 1
 #define Q_IX_shader_options 2
@@ -44,76 +44,77 @@
 #define Q_IX_copy_target 38
 #define Q_IX_present_aa 39
 #define Q_IX_ms_upscale 40
-#define Q_IX_window_present 41
-#define Q_IX_set_overlay 42
-#define Q_IX_gpu_frame_stats 43
-#define Q_IX_window_stats 44
-#define Q_IX_target_shape 45
-#define Q_IX_depth_make 46
-#define Q_IX_target_depth 47
-#define Q_IX_surface_upload 48
-#define Q_IX_read_pixels 49
-#define Q_IX_resolve 50
-#define Q_IX_target_scaled 51
-#define Q_IX_tex_new 52
-#define Q_IX_tex_delete 53
-#define Q_IX_tex_image 54
-#define Q_IX_tex_image_dxt 55
-#define Q_IX_tex_param 56
-#define Q_IX_tex_mipmaps 57
-#define Q_IX_errors_clear 58
-#define Q_IX_no_error 59
-#define Q_IX_max_aniso 60
-#define Q_IX_tex_from_target 61
-#define Q_IX_buf_bind 62
-#define Q_IX_buf_data 63
-#define Q_IX_buf_sub 64
-#define Q_IX_buf_storage 65
-#define Q_IX_buf_map 66
-#define Q_IX_buf_unmap 67
-#define Q_IX_buf_new 68
-#define Q_IX_buf_delete 69
-#define Q_IX_fence 70
-#define Q_IX_fence_wait 71
-#define Q_IX_fence_delete 72
-#define Q_IX_fence_signaled 73
-#define Q_IX_finish 74
-#define Q_IX_va_new 75
-#define Q_IX_va_bind 76
-#define Q_IX_attr_on 77
-#define Q_IX_attr_off 78
-#define Q_IX_attr_pointer 79
-#define Q_IX_attr_format 80
-#define Q_IX_attr_binding 81
-#define Q_IX_vbufs 82
-#define Q_IX_attr_const4fv 83
-#define Q_IX_attr_const4f 84
-#define Q_IX_draw_elements 85
-#define Q_IX_draw_arrays 86
-#define Q_IX_clear 87
-#define Q_IX_query_new 88
-#define Q_IX_query_begin 89
-#define Q_IX_query_end 90
-#define Q_IX_query_result 91
-#define Q_IX_read_pixels_buf 92
-#define Q_IX_read_pixel 93
-#define Q_IX_read_depth 94
-#define Q_IX_init 95
-#define Q_IX_caps 96
-#define Q_IX_init_state 97
-#define Q_IX_thread_start 98
-#define Q_IX_pump 99
-#define Q_IX_tex_bind_raw 100
-#define Q_IX_errors_drain 101
-#define Q_IX_error 102
-#define Q_IX_overlay_init 103
-#define Q_IX_overlay_draw 104
-#define Q_IX_threaded 105
-#define Q_IX_frame_end 106
-#define Q_IX_gpu_frame_mark 107
-#define Q_IX_call_stats 108
-#define Q_IX_shader_cache_on 109
-#define Q_IX_shader_cache_path 110
+#define Q_IX_boost_fx 41
+#define Q_IX_window_present 42
+#define Q_IX_set_overlay 43
+#define Q_IX_gpu_frame_stats 44
+#define Q_IX_window_stats 45
+#define Q_IX_target_shape 46
+#define Q_IX_depth_make 47
+#define Q_IX_target_depth 48
+#define Q_IX_surface_upload 49
+#define Q_IX_read_pixels 50
+#define Q_IX_resolve 51
+#define Q_IX_target_scaled 52
+#define Q_IX_tex_new 53
+#define Q_IX_tex_delete 54
+#define Q_IX_tex_image 55
+#define Q_IX_tex_image_dxt 56
+#define Q_IX_tex_param 57
+#define Q_IX_tex_mipmaps 58
+#define Q_IX_errors_clear 59
+#define Q_IX_no_error 60
+#define Q_IX_max_aniso 61
+#define Q_IX_tex_from_target 62
+#define Q_IX_buf_bind 63
+#define Q_IX_buf_data 64
+#define Q_IX_buf_sub 65
+#define Q_IX_buf_storage 66
+#define Q_IX_buf_map 67
+#define Q_IX_buf_unmap 68
+#define Q_IX_buf_new 69
+#define Q_IX_buf_delete 70
+#define Q_IX_fence 71
+#define Q_IX_fence_wait 72
+#define Q_IX_fence_delete 73
+#define Q_IX_fence_signaled 74
+#define Q_IX_finish 75
+#define Q_IX_va_new 76
+#define Q_IX_va_bind 77
+#define Q_IX_attr_on 78
+#define Q_IX_attr_off 79
+#define Q_IX_attr_pointer 80
+#define Q_IX_attr_format 81
+#define Q_IX_attr_binding 82
+#define Q_IX_vbufs 83
+#define Q_IX_attr_const4fv 84
+#define Q_IX_attr_const4f 85
+#define Q_IX_draw_elements 86
+#define Q_IX_draw_arrays 87
+#define Q_IX_clear 88
+#define Q_IX_query_new 89
+#define Q_IX_query_begin 90
+#define Q_IX_query_end 91
+#define Q_IX_query_result 92
+#define Q_IX_read_pixels_buf 93
+#define Q_IX_read_pixel 94
+#define Q_IX_read_depth 95
+#define Q_IX_init 96
+#define Q_IX_caps 97
+#define Q_IX_init_state 98
+#define Q_IX_thread_start 99
+#define Q_IX_pump 100
+#define Q_IX_tex_bind_raw 101
+#define Q_IX_errors_drain 102
+#define Q_IX_error 103
+#define Q_IX_overlay_init 104
+#define Q_IX_overlay_draw 105
+#define Q_IX_threaded 106
+#define Q_IX_frame_end 107
+#define Q_IX_gpu_frame_mark 108
+#define Q_IX_call_stats 109
+#define Q_IX_shader_cache_on 110
+#define Q_IX_shader_cache_path 111
 #include "nv2a_rb_queue_rt.h"
 
 static const char *const q_names[RB_NCALLS_Q] = {
@@ -123,19 +124,19 @@ static const char *const q_names[RB_NCALLS_Q] = {
     "u1iv", "u1uiv", "u1fv", "u2fv", "u3fv", "u4fv",
     "umat4", "bind_draw", "draw_bound", "draw_bound_set", "viewport", "scissor",
     "scissor_get", "scissor_once", "bindings_lost", "active_unit", "unit_bind", "bind_vbuf",
-    "vbuf_lost", "vbuf_bound_set", "copy_target", "present_aa", "ms_upscale", "window_present",
-    "set_overlay", "gpu_frame_stats", "window_stats", "target_shape", "depth_make", "target_depth",
-    "surface_upload", "read_pixels", "resolve", "target_scaled", "tex_new", "tex_delete",
-    "tex_image", "tex_image_dxt", "tex_param", "tex_mipmaps", "errors_clear", "no_error",
-    "max_aniso", "tex_from_target", "buf_bind", "buf_data", "buf_sub", "buf_storage",
-    "buf_map", "buf_unmap", "buf_new", "buf_delete", "fence", "fence_wait",
-    "fence_delete", "fence_signaled", "finish", "va_new", "va_bind", "attr_on",
-    "attr_off", "attr_pointer", "attr_format", "attr_binding", "vbufs", "attr_const4fv",
-    "attr_const4f", "draw_elements", "draw_arrays", "clear", "query_new", "query_begin",
-    "query_end", "query_result", "read_pixels_buf", "read_pixel", "read_depth", "init",
-    "caps", "init_state", "thread_start", "pump", "tex_bind_raw", "errors_drain",
-    "error", "overlay_init", "overlay_draw", "threaded", "frame_end", "gpu_frame_mark",
-    "call_stats", "shader_cache_on", "shader_cache_path",
+    "vbuf_lost", "vbuf_bound_set", "copy_target", "present_aa", "ms_upscale", "boost_fx",
+    "window_present", "set_overlay", "gpu_frame_stats", "window_stats", "target_shape", "depth_make",
+    "target_depth", "surface_upload", "read_pixels", "resolve", "target_scaled", "tex_new",
+    "tex_delete", "tex_image", "tex_image_dxt", "tex_param", "tex_mipmaps", "errors_clear",
+    "no_error", "max_aniso", "tex_from_target", "buf_bind", "buf_data", "buf_sub",
+    "buf_storage", "buf_map", "buf_unmap", "buf_new", "buf_delete", "fence",
+    "fence_wait", "fence_delete", "fence_signaled", "finish", "va_new", "va_bind",
+    "attr_on", "attr_off", "attr_pointer", "attr_format", "attr_binding", "vbufs",
+    "attr_const4fv", "attr_const4f", "draw_elements", "draw_arrays", "clear", "query_new",
+    "query_begin", "query_end", "query_result", "read_pixels_buf", "read_pixel", "read_depth",
+    "init", "caps", "init_state", "thread_start", "pump", "tex_bind_raw",
+    "errors_drain", "error", "overlay_init", "overlay_draw", "threaded", "frame_end",
+    "gpu_frame_mark", "call_stats", "shader_cache_on", "shader_cache_path",
 };
 #define Q_AL(x) (((size_t)(x) + 15) & ~(size_t)15)
 
@@ -620,18 +621,46 @@ static void q_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h)
     (void)qa_;
     q_end();
 }
-static void q_set_overlay(void (*fn)(int cw, int ch, int flip)) { if (q_on) q_drain(42); q_in->set_overlay(fn); }
+typedef struct {
+    uint32_t dst_target;
+    uint32_t tmp_target;
+    uint32_t tmp_tex;
+    int w;
+    int h;
+    float strength;
+    float t;
+    float cx;
+    float cy;
+} QA_boost_fx;
+static void q_boost_fx(uint32_t dst_target, uint32_t tmp_target, uint32_t tmp_tex, int w, int h, float strength, float t, float cx, float cy)
+{
+    QA_boost_fx *qa_;
+    if (!q_on) { q_in->boost_fx(dst_target, tmp_target, tmp_tex, w, h, strength, t, cx, cy); return; }
+    qa_ = (QA_boost_fx *)q_begin(41, sizeof *qa_);
+    qa_->dst_target = dst_target;
+    qa_->tmp_target = tmp_target;
+    qa_->tmp_tex = tmp_tex;
+    qa_->w = w;
+    qa_->h = h;
+    qa_->strength = strength;
+    qa_->t = t;
+    qa_->cx = cx;
+    qa_->cy = cy;
+    (void)qa_;
+    q_end();
+}
+static void q_set_overlay(void (*fn)(int cw, int ch, int flip)) { if (q_on) q_drain(43); q_in->set_overlay(fn); }
 static int q_gpu_frame_stats(char *buf, size_t n) { return q_in->gpu_frame_stats(buf, n); }
 static void q_window_stats(uint64_t *frames, double *behind_avg, uint64_t *behind_max, uint64_t *behind2, double *iv_max_ms, uint64_t *iv20, uint64_t *iv34) { q_in->window_stats(frames, behind_avg, behind_max, behind2, iv_max_ms, iv20, iv34); }
-static void q_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples) { if (q_on) q_drain(45); q_in->target_shape(fbo, tex, ms_tex, w, h, alpha, samples); }
-static void q_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth) { if (q_on) q_drain(46); q_in->depth_make(buf, is_tex, w, h, samples, depth32f, clear_depth); }
-static uint32_t q_target_depth(uint32_t fbo, uint32_t buf, int is_tex) { if (q_on) q_drain(47); return q_in->target_depth(fbo, buf, is_tex); }
-static void q_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int sh, const uint32_t *px, int samples) { if (q_on) q_drain(48); q_in->surface_upload(fbo, tex, gw, gh, sw, sh, px, samples); }
-static void q_read_pixels(uint32_t fbo, int w, int h, uint32_t *px) { if (q_on) q_drain(49); q_in->read_pixels(fbo, w, h, px); }
-static uint32_t q_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh) { if (q_on) q_drain(51); return q_in->target_scaled(fbo, sw, sh, gw, gh); }
-static void q_tex_new(uint32_t *id) { if (q_on) q_drain(52); q_in->tex_new(id); }
-static void q_tex_delete(uint32_t *id) { if (q_on) q_drain(53); q_in->tex_delete(id); }
-static void q_tex_image(uint32_t target, int level, int ifmt, int w, int h, int border, uint32_t format, uint32_t type, const void *data) { if (q_on) q_drain(54); q_in->tex_image(target, level, ifmt, w, h, border, format, type, data); }
+static void q_target_shape(uint32_t *fbo, uint32_t *tex, uint32_t *ms_tex, int w, int h, int alpha, int samples) { if (q_on) q_drain(46); q_in->target_shape(fbo, tex, ms_tex, w, h, alpha, samples); }
+static void q_depth_make(uint32_t *buf, int *is_tex, int w, int h, int samples, int depth32f, double clear_depth) { if (q_on) q_drain(47); q_in->depth_make(buf, is_tex, w, h, samples, depth32f, clear_depth); }
+static uint32_t q_target_depth(uint32_t fbo, uint32_t buf, int is_tex) { if (q_on) q_drain(48); return q_in->target_depth(fbo, buf, is_tex); }
+static void q_surface_upload(uint32_t fbo, uint32_t tex, int gw, int gh, int sw, int sh, const uint32_t *px, int samples) { if (q_on) q_drain(49); q_in->surface_upload(fbo, tex, gw, gh, sw, sh, px, samples); }
+static void q_read_pixels(uint32_t fbo, int w, int h, uint32_t *px) { if (q_on) q_drain(50); q_in->read_pixels(fbo, w, h, px); }
+static uint32_t q_target_scaled(uint32_t fbo, int sw, int sh, int gw, int gh) { if (q_on) q_drain(52); return q_in->target_scaled(fbo, sw, sh, gw, gh); }
+static void q_tex_new(uint32_t *id) { if (q_on) q_drain(53); q_in->tex_new(id); }
+static void q_tex_delete(uint32_t *id) { if (q_on) q_drain(54); q_in->tex_delete(id); }
+static void q_tex_image(uint32_t target, int level, int ifmt, int w, int h, int border, uint32_t format, uint32_t type, const void *data) { if (q_on) q_drain(55); q_in->tex_image(target, level, ifmt, w, h, border, format, type, data); }
 typedef struct {
     uint32_t target;
     int level;
@@ -648,8 +677,8 @@ static void q_tex_image_dxt(uint32_t target, int level, uint32_t cfmt, int w, in
     uint8_t *qd_;
     size_t z_data = data ? (size_t)((size_t)size) : 0;
     if (!q_on) { q_in->tex_image_dxt(target, level, cfmt, w, h, border, size, data); return; }
-    if (Q_AL(z_data) > RBQ_MAX_COPY) { q_drain(55); q_in->tex_image_dxt(target, level, cfmt, w, h, border, size, data); return; }
-    qa_ = (QA_tex_image_dxt *)q_begin(55, Q_AL(sizeof *qa_) + Q_AL(z_data));
+    if (Q_AL(z_data) > RBQ_MAX_COPY) { q_drain(56); q_in->tex_image_dxt(target, level, cfmt, w, h, border, size, data); return; }
+    qa_ = (QA_tex_image_dxt *)q_begin(56, Q_AL(sizeof *qa_) + Q_AL(z_data));
     qa_->target = target;
     qa_->level = level;
     qa_->cfmt = cfmt;
@@ -671,7 +700,7 @@ static void q_tex_param(uint32_t target, uint32_t pname, int v)
 {
     QA_tex_param *qa_;
     if (!q_on) { q_in->tex_param(target, pname, v); return; }
-    qa_ = (QA_tex_param *)q_begin(56, sizeof *qa_);
+    qa_ = (QA_tex_param *)q_begin(57, sizeof *qa_);
     qa_->target = target;
     qa_->pname = pname;
     qa_->v = v;
@@ -685,7 +714,7 @@ static void q_tex_mipmaps(uint32_t target)
 {
     QA_tex_mipmaps *qa_;
     if (!q_on) { q_in->tex_mipmaps(target); return; }
-    qa_ = (QA_tex_mipmaps *)q_begin(57, sizeof *qa_);
+    qa_ = (QA_tex_mipmaps *)q_begin(58, sizeof *qa_);
     qa_->target = target;
     (void)qa_;
     q_end();
@@ -697,11 +726,11 @@ static void q_errors_clear(void)
 {
     QA_errors_clear *qa_;
     if (!q_on) { q_in->errors_clear(); return; }
-    qa_ = (QA_errors_clear *)q_begin(58, sizeof *qa_);
+    qa_ = (QA_errors_clear *)q_begin(59, sizeof *qa_);
     (void)qa_;
     q_end();
 }
-static int q_no_error(void) { if (q_on) q_drain(59); return q_in->no_error(); }
+static int q_no_error(void) { if (q_on) q_drain(60); return q_in->no_error(); }
 static int q_max_aniso(void) { return q_in->max_aniso(); }
 typedef struct {
     uint32_t id;
@@ -716,7 +745,7 @@ static void q_tex_from_target(uint32_t id, int remake, int one_alpha, int w, int
 {
     QA_tex_from_target *qa_;
     if (!q_on) { q_in->tex_from_target(id, remake, one_alpha, w, h, src_fbo, sh); return; }
-    qa_ = (QA_tex_from_target *)q_begin(61, sizeof *qa_);
+    qa_ = (QA_tex_from_target *)q_begin(62, sizeof *qa_);
     qa_->id = id;
     qa_->remake = remake;
     qa_->one_alpha = one_alpha;
@@ -735,7 +764,7 @@ static void q_buf_bind(uint32_t target, uint32_t b)
 {
     QA_buf_bind *qa_;
     if (!q_on) { q_in->buf_bind(target, b); return; }
-    qa_ = (QA_buf_bind *)q_begin(62, sizeof *qa_);
+    qa_ = (QA_buf_bind *)q_begin(63, sizeof *qa_);
     qa_->target = target;
     qa_->b = b;
     (void)qa_;
@@ -753,8 +782,8 @@ static void q_buf_data(uint32_t target, intptr_t size, const void *data, uint32_
     uint8_t *qd_;
     size_t z_data = data ? (size_t)((size_t)size) : 0;
     if (!q_on) { q_in->buf_data(target, size, data, usage); return; }
-    if (Q_AL(z_data) > RBQ_MAX_COPY) { q_drain(63); q_in->buf_data(target, size, data, usage); return; }
-    qa_ = (QA_buf_data *)q_begin(63, Q_AL(sizeof *qa_) + Q_AL(z_data));
+    if (Q_AL(z_data) > RBQ_MAX_COPY) { q_drain(64); q_in->buf_data(target, size, data, usage); return; }
+    qa_ = (QA_buf_data *)q_begin(64, Q_AL(sizeof *qa_) + Q_AL(z_data));
     qa_->target = target;
     qa_->size = size;
     qa_->usage = usage;
@@ -775,8 +804,8 @@ static void q_buf_sub(uint32_t target, intptr_t off, intptr_t size, const void *
     uint8_t *qd_;
     size_t z_data = data ? (size_t)((size_t)size) : 0;
     if (!q_on) { q_in->buf_sub(target, off, size, data); return; }
-    if (Q_AL(z_data) > RBQ_MAX_COPY) { q_drain(64); q_in->buf_sub(target, off, size, data); return; }
-    qa_ = (QA_buf_sub *)q_begin(64, Q_AL(sizeof *qa_) + Q_AL(z_data));
+    if (Q_AL(z_data) > RBQ_MAX_COPY) { q_drain(65); q_in->buf_sub(target, off, size, data); return; }
+    qa_ = (QA_buf_sub *)q_begin(65, Q_AL(sizeof *qa_) + Q_AL(z_data));
     qa_->target = target;
     qa_->off = off;
     qa_->size = size;
@@ -785,13 +814,13 @@ static void q_buf_sub(uint32_t target, intptr_t off, intptr_t size, const void *
     if (data) { memcpy(qd_, data, z_data); qd_ += Q_AL(z_data); }
     q_end();
 }
-static void q_buf_storage(uint32_t target, intptr_t size, const void *data, uint32_t flags) { if (q_on) q_drain(65); q_in->buf_storage(target, size, data, flags); }
-static void *q_buf_map(uint32_t target, intptr_t off, intptr_t len, uint32_t access) { if (q_on) q_drain(66); return q_in->buf_map(target, off, len, access); }
-static int q_buf_unmap(uint32_t target) { if (q_on) q_drain(67); return q_in->buf_unmap(target); }
-static void q_buf_new(int n, uint32_t *ids) { if (q_on) q_drain(68); q_in->buf_new(n, ids); }
-static void q_buf_delete(int n, const uint32_t *ids) { if (q_on) q_drain(69); q_in->buf_delete(n, ids); }
-static void q_finish(void) { if (q_on) q_drain(74); q_in->finish(); }
-static void q_va_new(int n, uint32_t *ids) { if (q_on) q_drain(75); q_in->va_new(n, ids); }
+static void q_buf_storage(uint32_t target, intptr_t size, const void *data, uint32_t flags) { if (q_on) q_drain(66); q_in->buf_storage(target, size, data, flags); }
+static void *q_buf_map(uint32_t target, intptr_t off, intptr_t len, uint32_t access) { if (q_on) q_drain(67); return q_in->buf_map(target, off, len, access); }
+static int q_buf_unmap(uint32_t target) { if (q_on) q_drain(68); return q_in->buf_unmap(target); }
+static void q_buf_new(int n, uint32_t *ids) { if (q_on) q_drain(69); q_in->buf_new(n, ids); }
+static void q_buf_delete(int n, const uint32_t *ids) { if (q_on) q_drain(70); q_in->buf_delete(n, ids); }
+static void q_finish(void) { if (q_on) q_drain(75); q_in->finish(); }
+static void q_va_new(int n, uint32_t *ids) { if (q_on) q_drain(76); q_in->va_new(n, ids); }
 typedef struct {
     uint32_t va;
 } QA_va_bind;
@@ -799,7 +828,7 @@ static void q_va_bind(uint32_t va)
 {
     QA_va_bind *qa_;
     if (!q_on) { q_in->va_bind(va); return; }
-    qa_ = (QA_va_bind *)q_begin(76, sizeof *qa_);
+    qa_ = (QA_va_bind *)q_begin(77, sizeof *qa_);
     qa_->va = va;
     (void)qa_;
     q_end();
@@ -811,7 +840,7 @@ static void q_attr_on(uint32_t loc)
 {
     QA_attr_on *qa_;
     if (!q_on) { q_in->attr_on(loc); return; }
-    qa_ = (QA_attr_on *)q_begin(77, sizeof *qa_);
+    qa_ = (QA_attr_on *)q_begin(78, sizeof *qa_);
     qa_->loc = loc;
     (void)qa_;
     q_end();
@@ -823,7 +852,7 @@ static void q_attr_off(uint32_t loc)
 {
     QA_attr_off *qa_;
     if (!q_on) { q_in->attr_off(loc); return; }
-    qa_ = (QA_attr_off *)q_begin(78, sizeof *qa_);
+    qa_ = (QA_attr_off *)q_begin(79, sizeof *qa_);
     qa_->loc = loc;
     (void)qa_;
     q_end();
@@ -840,7 +869,7 @@ static void q_attr_pointer(uint32_t loc, int size, uint32_t type, int norm, int 
 {
     QA_attr_pointer *qa_;
     if (!q_on) { q_in->attr_pointer(loc, size, type, norm, stride, ptr); return; }
-    qa_ = (QA_attr_pointer *)q_begin(79, sizeof *qa_);
+    qa_ = (QA_attr_pointer *)q_begin(80, sizeof *qa_);
     qa_->loc = loc;
     qa_->size = size;
     qa_->type = type;
@@ -861,7 +890,7 @@ static void q_attr_format(uint32_t loc, int size, uint32_t type, int norm, uint3
 {
     QA_attr_format *qa_;
     if (!q_on) { q_in->attr_format(loc, size, type, norm, rel); return; }
-    qa_ = (QA_attr_format *)q_begin(80, sizeof *qa_);
+    qa_ = (QA_attr_format *)q_begin(81, sizeof *qa_);
     qa_->loc = loc;
     qa_->size = size;
     qa_->type = type;
@@ -878,7 +907,7 @@ static void q_attr_binding(uint32_t loc, uint32_t stream)
 {
     QA_attr_binding *qa_;
     if (!q_on) { q_in->attr_binding(loc, stream); return; }
-    qa_ = (QA_attr_binding *)q_begin(81, sizeof *qa_);
+    qa_ = (QA_attr_binding *)q_begin(82, sizeof *qa_);
     qa_->loc = loc;
     qa_->stream = stream;
     (void)qa_;
@@ -899,8 +928,8 @@ static void q_vbufs(uint32_t first, int n, const uint32_t *bufs, const intptr_t 
     size_t z_offs = offs ? (size_t)((size_t)n * sizeof(intptr_t)) : 0;
     size_t z_strides = strides ? (size_t)((size_t)n * sizeof(int)) : 0;
     if (!q_on) { q_in->vbufs(first, n, bufs, offs, strides); return; }
-    if (Q_AL(z_bufs) + Q_AL(z_offs) + Q_AL(z_strides) > RBQ_MAX_COPY) { q_drain(82); q_in->vbufs(first, n, bufs, offs, strides); return; }
-    qa_ = (QA_vbufs *)q_begin(82, Q_AL(sizeof *qa_) + Q_AL(z_bufs) + Q_AL(z_offs) + Q_AL(z_strides));
+    if (Q_AL(z_bufs) + Q_AL(z_offs) + Q_AL(z_strides) > RBQ_MAX_COPY) { q_drain(83); q_in->vbufs(first, n, bufs, offs, strides); return; }
+    qa_ = (QA_vbufs *)q_begin(83, Q_AL(sizeof *qa_) + Q_AL(z_bufs) + Q_AL(z_offs) + Q_AL(z_strides));
     qa_->first = first;
     qa_->n = n;
     qd_ = (uint8_t *)qa_ + Q_AL(sizeof *qa_);
@@ -922,8 +951,8 @@ static void q_attr_const4fv(uint32_t loc, const float *v)
     uint8_t *qd_;
     size_t z_v = v ? (size_t)(16) : 0;
     if (!q_on) { q_in->attr_const4fv(loc, v); return; }
-    if (Q_AL(z_v) > RBQ_MAX_COPY) { q_drain(83); q_in->attr_const4fv(loc, v); return; }
-    qa_ = (QA_attr_const4fv *)q_begin(83, Q_AL(sizeof *qa_) + Q_AL(z_v));
+    if (Q_AL(z_v) > RBQ_MAX_COPY) { q_drain(84); q_in->attr_const4fv(loc, v); return; }
+    qa_ = (QA_attr_const4fv *)q_begin(84, Q_AL(sizeof *qa_) + Q_AL(z_v));
     qa_->loc = loc;
     qd_ = (uint8_t *)qa_ + Q_AL(sizeof *qa_);
     qa_->z_v = v ? (uint32_t)z_v : 0xFFFFFFFFu;
@@ -941,7 +970,7 @@ static void q_attr_const4f(uint32_t loc, float x, float y, float z, float w)
 {
     QA_attr_const4f *qa_;
     if (!q_on) { q_in->attr_const4f(loc, x, y, z, w); return; }
-    qa_ = (QA_attr_const4f *)q_begin(84, sizeof *qa_);
+    qa_ = (QA_attr_const4f *)q_begin(85, sizeof *qa_);
     qa_->loc = loc;
     qa_->x = x;
     qa_->y = y;
@@ -961,7 +990,7 @@ static void q_draw_elements(uint32_t mode, int count, uint32_t type, const void 
 {
     QA_draw_elements *qa_;
     if (!q_on) { q_in->draw_elements(mode, count, type, off, base); return; }
-    qa_ = (QA_draw_elements *)q_begin(85, sizeof *qa_);
+    qa_ = (QA_draw_elements *)q_begin(86, sizeof *qa_);
     qa_->mode = mode;
     qa_->count = count;
     qa_->type = type;
@@ -979,7 +1008,7 @@ static void q_draw_arrays(uint32_t mode, int first, int count)
 {
     QA_draw_arrays *qa_;
     if (!q_on) { q_in->draw_arrays(mode, first, count); return; }
-    qa_ = (QA_draw_arrays *)q_begin(86, sizeof *qa_);
+    qa_ = (QA_draw_arrays *)q_begin(87, sizeof *qa_);
     qa_->mode = mode;
     qa_->first = first;
     qa_->count = count;
@@ -1001,8 +1030,8 @@ static void q_clear(int color, const float rgba[4], int alpha, int depth, double
     uint8_t *qd_;
     size_t z_rgba = rgba ? (size_t)(16) : 0;
     if (!q_on) { q_in->clear(color, rgba, alpha, depth, zval, stencil, sval); return; }
-    if (Q_AL(z_rgba) > RBQ_MAX_COPY) { q_drain(87); q_in->clear(color, rgba, alpha, depth, zval, stencil, sval); return; }
-    qa_ = (QA_clear *)q_begin(87, Q_AL(sizeof *qa_) + Q_AL(z_rgba));
+    if (Q_AL(z_rgba) > RBQ_MAX_COPY) { q_drain(88); q_in->clear(color, rgba, alpha, depth, zval, stencil, sval); return; }
+    qa_ = (QA_clear *)q_begin(88, Q_AL(sizeof *qa_) + Q_AL(z_rgba));
     qa_->color = color;
     qa_->alpha = alpha;
     qa_->depth = depth;
@@ -1014,7 +1043,7 @@ static void q_clear(int color, const float rgba[4], int alpha, int depth, double
     if (rgba) { memcpy(qd_, rgba, z_rgba); qd_ += Q_AL(z_rgba); }
     q_end();
 }
-static void q_query_new(int n, uint32_t *ids) { if (q_on) q_drain(88); q_in->query_new(n, ids); }
+static void q_query_new(int n, uint32_t *ids) { if (q_on) q_drain(89); q_in->query_new(n, ids); }
 typedef struct {
     uint32_t id;
 } QA_query_begin;
@@ -1022,7 +1051,7 @@ static void q_query_begin(uint32_t id)
 {
     QA_query_begin *qa_;
     if (!q_on) { q_in->query_begin(id); return; }
-    qa_ = (QA_query_begin *)q_begin(89, sizeof *qa_);
+    qa_ = (QA_query_begin *)q_begin(90, sizeof *qa_);
     qa_->id = id;
     (void)qa_;
     q_end();
@@ -1034,11 +1063,11 @@ static void q_query_end(void)
 {
     QA_query_end *qa_;
     if (!q_on) { q_in->query_end(); return; }
-    qa_ = (QA_query_end *)q_begin(90, sizeof *qa_);
+    qa_ = (QA_query_end *)q_begin(91, sizeof *qa_);
     (void)qa_;
     q_end();
 }
-static void q_query_result(uint32_t id, uint32_t *v) { if (q_on) q_drain(91); q_in->query_result(id, v); }
+static void q_query_result(uint32_t id, uint32_t *v) { if (q_on) q_drain(92); q_in->query_result(id, v); }
 typedef struct {
     uint32_t fbo;
     int w;
@@ -1049,7 +1078,7 @@ static void q_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf)
 {
     QA_read_pixels_buf *qa_;
     if (!q_on) { q_in->read_pixels_buf(fbo, w, h, buf); return; }
-    qa_ = (QA_read_pixels_buf *)q_begin(92, sizeof *qa_);
+    qa_ = (QA_read_pixels_buf *)q_begin(93, sizeof *qa_);
     qa_->fbo = fbo;
     qa_->w = w;
     qa_->h = h;
@@ -1057,12 +1086,12 @@ static void q_read_pixels_buf(uint32_t fbo, int w, int h, uint32_t buf)
     (void)qa_;
     q_end();
 }
-static void q_read_pixel(uint32_t fbo, int x, int y, uint32_t *c) { if (q_on) q_drain(93); q_in->read_pixel(fbo, x, y, c); }
-static int q_read_depth(uint32_t fbo, int x, int y, float *z) { if (q_on) q_drain(94); return q_in->read_depth(fbo, x, y, z); }
-static int q_init(void) { if (q_on) q_drain(95); return q_in->init(); }
+static void q_read_pixel(uint32_t fbo, int x, int y, uint32_t *c) { if (q_on) q_drain(94); q_in->read_pixel(fbo, x, y, c); }
+static int q_read_depth(uint32_t fbo, int x, int y, float *z) { if (q_on) q_drain(95); return q_in->read_depth(fbo, x, y, z); }
+static int q_init(void) { if (q_on) q_drain(96); return q_in->init(); }
 static const RbCaps *q_caps(void) { return q_in->caps(); }
-static void q_init_state(int clip_planes) { if (q_on) q_drain(97); q_in->init_state(clip_planes); }
-static void q_pump(void) { if (q_on) q_drain(99); q_in->pump(); }
+static void q_init_state(int clip_planes) { if (q_on) q_drain(98); q_in->init_state(clip_planes); }
+static void q_pump(void) { if (q_on) q_drain(100); q_in->pump(); }
 typedef struct {
     uint32_t target;
     uint32_t id;
@@ -1071,16 +1100,16 @@ static void q_tex_bind_raw(uint32_t target, uint32_t id)
 {
     QA_tex_bind_raw *qa_;
     if (!q_on) { q_in->tex_bind_raw(target, id); return; }
-    qa_ = (QA_tex_bind_raw *)q_begin(100, sizeof *qa_);
+    qa_ = (QA_tex_bind_raw *)q_begin(101, sizeof *qa_);
     qa_->target = target;
     qa_->id = id;
     (void)qa_;
     q_end();
 }
-static void q_errors_drain(void) { if (q_on) q_drain(101); q_in->errors_drain(); }
-static uint32_t q_error(void) { if (q_on) q_drain(102); return q_in->error(); }
-static int q_overlay_init(const unsigned char *atlas, int w, int h) { if (q_on) q_drain(103); return q_in->overlay_init(atlas, w, h); }
-static void q_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font) { if (q_on) q_drain(104); q_in->overlay_draw(v, n, cw, ch, flip, font); }
+static void q_errors_drain(void) { if (q_on) q_drain(102); q_in->errors_drain(); }
+static uint32_t q_error(void) { if (q_on) q_drain(103); return q_in->error(); }
+static int q_overlay_init(const unsigned char *atlas, int w, int h) { if (q_on) q_drain(104); return q_in->overlay_init(atlas, w, h); }
+static void q_overlay_draw(const RbOvVert *v, int n, int cw, int ch, int flip, int font) { if (q_on) q_drain(105); q_in->overlay_draw(v, n, cw, ch, flip, font); }
 typedef struct {
     uint8_t unused_;
 } QA_frame_end;
@@ -1088,7 +1117,7 @@ static void q_frame_end(void)
 {
     QA_frame_end *qa_;
     if (!q_on) { q_in->frame_end(); return; }
-    qa_ = (QA_frame_end *)q_begin(106, sizeof *qa_);
+    qa_ = (QA_frame_end *)q_begin(107, sizeof *qa_);
     (void)qa_;
     q_end();
 }
@@ -1099,7 +1128,7 @@ static void q_gpu_frame_mark(void)
 {
     QA_gpu_frame_mark *qa_;
     if (!q_on) { q_in->gpu_frame_mark(); return; }
-    qa_ = (QA_gpu_frame_mark *)q_begin(107, sizeof *qa_);
+    qa_ = (QA_gpu_frame_mark *)q_begin(108, sizeof *qa_);
     (void)qa_;
     q_end();
 }
@@ -1290,7 +1319,12 @@ static void q_exec(const RbqHdr *h)
         q_in->ms_upscale(qa_->src_tex, qa_->dst_target, qa_->w, qa_->h);
         break;
     }
-    case 55: {
+    case 41: {
+        const QA_boost_fx *qa_ = (const QA_boost_fx *)(h + 1);
+        q_in->boost_fx(qa_->dst_target, qa_->tmp_target, qa_->tmp_tex, qa_->w, qa_->h, qa_->strength, qa_->t, qa_->cx, qa_->cy);
+        break;
+    }
+    case 56: {
         const QA_tex_image_dxt *qa_ = (const QA_tex_image_dxt *)(h + 1);
         const uint8_t *qd_ = (const uint8_t *)qa_ + Q_AL(sizeof *qa_);
         const void * p_data = NULL;
@@ -1299,33 +1333,33 @@ static void q_exec(const RbqHdr *h)
         (void)qd_;
         break;
     }
-    case 56: {
+    case 57: {
         const QA_tex_param *qa_ = (const QA_tex_param *)(h + 1);
         q_in->tex_param(qa_->target, qa_->pname, qa_->v);
         break;
     }
-    case 57: {
+    case 58: {
         const QA_tex_mipmaps *qa_ = (const QA_tex_mipmaps *)(h + 1);
         q_in->tex_mipmaps(qa_->target);
         break;
     }
-    case 58: {
+    case 59: {
         const QA_errors_clear *qa_ = (const QA_errors_clear *)(h + 1);
         (void)qa_;
         q_in->errors_clear();
         break;
     }
-    case 61: {
+    case 62: {
         const QA_tex_from_target *qa_ = (const QA_tex_from_target *)(h + 1);
         q_in->tex_from_target(qa_->id, qa_->remake, qa_->one_alpha, qa_->w, qa_->h, qa_->src_fbo, qa_->sh);
         break;
     }
-    case 62: {
+    case 63: {
         const QA_buf_bind *qa_ = (const QA_buf_bind *)(h + 1);
         q_in->buf_bind(qa_->target, qa_->b);
         break;
     }
-    case 63: {
+    case 64: {
         const QA_buf_data *qa_ = (const QA_buf_data *)(h + 1);
         const uint8_t *qd_ = (const uint8_t *)qa_ + Q_AL(sizeof *qa_);
         const void * p_data = NULL;
@@ -1334,7 +1368,7 @@ static void q_exec(const RbqHdr *h)
         (void)qd_;
         break;
     }
-    case 64: {
+    case 65: {
         const QA_buf_sub *qa_ = (const QA_buf_sub *)(h + 1);
         const uint8_t *qd_ = (const uint8_t *)qa_ + Q_AL(sizeof *qa_);
         const void * p_data = NULL;
@@ -1343,37 +1377,37 @@ static void q_exec(const RbqHdr *h)
         (void)qd_;
         break;
     }
-    case 76: {
+    case 77: {
         const QA_va_bind *qa_ = (const QA_va_bind *)(h + 1);
         q_in->va_bind(qa_->va);
         break;
     }
-    case 77: {
+    case 78: {
         const QA_attr_on *qa_ = (const QA_attr_on *)(h + 1);
         q_in->attr_on(qa_->loc);
         break;
     }
-    case 78: {
+    case 79: {
         const QA_attr_off *qa_ = (const QA_attr_off *)(h + 1);
         q_in->attr_off(qa_->loc);
         break;
     }
-    case 79: {
+    case 80: {
         const QA_attr_pointer *qa_ = (const QA_attr_pointer *)(h + 1);
         q_in->attr_pointer(qa_->loc, qa_->size, qa_->type, qa_->norm, qa_->stride, qa_->ptr);
         break;
     }
-    case 80: {
+    case 81: {
         const QA_attr_format *qa_ = (const QA_attr_format *)(h + 1);
         q_in->attr_format(qa_->loc, qa_->size, qa_->type, qa_->norm, qa_->rel);
         break;
     }
-    case 81: {
+    case 82: {
         const QA_attr_binding *qa_ = (const QA_attr_binding *)(h + 1);
         q_in->attr_binding(qa_->loc, qa_->stream);
         break;
     }
-    case 82: {
+    case 83: {
         const QA_vbufs *qa_ = (const QA_vbufs *)(h + 1);
         const uint8_t *qd_ = (const uint8_t *)qa_ + Q_AL(sizeof *qa_);
         const uint32_t * p_bufs = NULL;
@@ -1386,7 +1420,7 @@ static void q_exec(const RbqHdr *h)
         (void)qd_;
         break;
     }
-    case 83: {
+    case 84: {
         const QA_attr_const4fv *qa_ = (const QA_attr_const4fv *)(h + 1);
         const uint8_t *qd_ = (const uint8_t *)qa_ + Q_AL(sizeof *qa_);
         const float * p_v = NULL;
@@ -1395,22 +1429,22 @@ static void q_exec(const RbqHdr *h)
         (void)qd_;
         break;
     }
-    case 84: {
+    case 85: {
         const QA_attr_const4f *qa_ = (const QA_attr_const4f *)(h + 1);
         q_in->attr_const4f(qa_->loc, qa_->x, qa_->y, qa_->z, qa_->w);
         break;
     }
-    case 85: {
+    case 86: {
         const QA_draw_elements *qa_ = (const QA_draw_elements *)(h + 1);
         q_in->draw_elements(qa_->mode, qa_->count, qa_->type, qa_->off, qa_->base);
         break;
     }
-    case 86: {
+    case 87: {
         const QA_draw_arrays *qa_ = (const QA_draw_arrays *)(h + 1);
         q_in->draw_arrays(qa_->mode, qa_->first, qa_->count);
         break;
     }
-    case 87: {
+    case 88: {
         const QA_clear *qa_ = (const QA_clear *)(h + 1);
         const uint8_t *qd_ = (const uint8_t *)qa_ + Q_AL(sizeof *qa_);
         const float * p_rgba = NULL;
@@ -1419,34 +1453,34 @@ static void q_exec(const RbqHdr *h)
         (void)qd_;
         break;
     }
-    case 89: {
+    case 90: {
         const QA_query_begin *qa_ = (const QA_query_begin *)(h + 1);
         q_in->query_begin(qa_->id);
         break;
     }
-    case 90: {
+    case 91: {
         const QA_query_end *qa_ = (const QA_query_end *)(h + 1);
         (void)qa_;
         q_in->query_end();
         break;
     }
-    case 92: {
+    case 93: {
         const QA_read_pixels_buf *qa_ = (const QA_read_pixels_buf *)(h + 1);
         q_in->read_pixels_buf(qa_->fbo, qa_->w, qa_->h, qa_->buf);
         break;
     }
-    case 100: {
+    case 101: {
         const QA_tex_bind_raw *qa_ = (const QA_tex_bind_raw *)(h + 1);
         q_in->tex_bind_raw(qa_->target, qa_->id);
         break;
     }
-    case 106: {
+    case 107: {
         const QA_frame_end *qa_ = (const QA_frame_end *)(h + 1);
         (void)qa_;
         q_in->frame_end();
         break;
     }
-    case 107: {
+    case 108: {
         const QA_gpu_frame_mark *qa_ = (const QA_gpu_frame_mark *)(h + 1);
         (void)qa_;
         q_in->gpu_frame_mark();
@@ -1498,7 +1532,7 @@ static int q_window_present(const RbFrame *f)
 {
     static uint64_t frames;
     int r;
-    if (q_on) q_drain(41);
+    if (q_on) q_drain(42);
     r = q_in->window_present(f);
     q_sc_forget();                     /* it forgets the bound scissor */
     if (q_on && ++frames % 600 == 0)
@@ -1553,6 +1587,7 @@ const RbOps *rbq_wrap(const RbOps *in)
     s_rbq_ops.copy_target = q_copy_target;
     s_rbq_ops.present_aa = q_present_aa;
     s_rbq_ops.ms_upscale = q_ms_upscale;
+    s_rbq_ops.boost_fx = q_boost_fx;
     s_rbq_ops.window_present = q_window_present;
     s_rbq_ops.set_overlay = q_set_overlay;
     s_rbq_ops.gpu_frame_stats = q_gpu_frame_stats;

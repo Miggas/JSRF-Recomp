@@ -1012,6 +1012,9 @@ void rb_ms_upscale(uint32_t src_tex, uint32_t dst_target, int w, int h)
     gt_call_sync(ms_up_run, &a);
 }
 
+/* v312e: the new boost effect (shared with the other backend) */
+#include "nv2a_boost_fx.h"
+
 /* ── the window: presenting (moved from the renderer) ──────────────────────────
  * WGL (the game window's DC), DXGI flip model (RECOMP_GL_PRESENT=dxgi) and
  * SDL (Linux); on the GL thread when that is on; the GPU timing of frames. */

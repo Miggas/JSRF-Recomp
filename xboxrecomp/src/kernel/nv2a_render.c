@@ -3105,6 +3105,44 @@ void nv2a_gl_prebuild_hold(void)
     s_rcp_next = s_rcp_had;                /* nothing left for the light frames */
 }
 
+/* v312e: the new boost effect (Idea by Miggas), at the place in the frame
+ * the game drew its own (jsrf_boost.c puts a mark in the command stream
+ * there: nv2a_pb_exec.c, ws_fill_mark): the 3D picture drawn so far, in the
+ * surface being drawn into, goes through a radial blur with speed lines
+ * (nv2a_boost_fx.h); the HUD is drawn over it after. strength 0..1. */
+void nv2a_gl_boost_fx(float strength)
+{
+    static GLuint tfbo, ttex, tms;
+    static int tw, th, said;
+    static unsigned frames;
+    GlSurf *c = s_cur;
+    int w, h;
+    float cy;
+    if (s_state != 1 || !c || !c->fbo || c->w < 320 || c->h < 240 || strength <= 0.0f)
+        return;
+    w = SC(c->w); h = SC(c->h);
+    if (w != tw || h != th) {
+        rb_target_shape(&tfbo, &ttex, &tms, w, h, c->alpha, 1);
+        tw = w; th = h;
+    }
+    {   /* the clear centre's height: RECOMP_BOOST_CENTER_Y (0 top .. 1 bottom
+         * of the picture), the player's place by default */
+        static float y = -1.0f;
+        if (y < 0.0f) {
+            const char *e = getenv("RECOMP_BOOST_CENTER_Y");
+            y = e && *e ? (float)atof(e) : 0.58f;
+            if (y < 0.0f || y > 1.0f) y = 0.58f;
+        }
+        cy = 1.0f - y;                  /* GL's texture rows go up */
+    }
+    if (!said++)
+        fprintf(stderr, "[BOOST] the new boost effect drawn (%dx%d)\n", w, h);
+    rb_boost_fx(c->fbo, tfbo, ttex, w, h, strength > 1.0f ? 1.0f : strength,
+                (float)(frames++) / 60.0f, 0.5f, cy);
+    c->dirty = 1;
+    c->draws++;
+}
+
 static void start_present_read(GlSurf *s, int win)
 {
     {

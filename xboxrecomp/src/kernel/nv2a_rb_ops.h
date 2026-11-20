@@ -47,6 +47,7 @@ typedef struct RbOps {
     void (*copy_target)(uint32_t src, int sw, int sh, uint32_t dst, int dw, int dh, uint32_t filter);
     uint32_t (*present_aa)(uint32_t src, uint32_t src_fbo, int w, int h);
     void (*ms_upscale)(uint32_t src_tex, uint32_t dst_target, int w, int h);
+    void (*boost_fx)(uint32_t dst_target, uint32_t tmp_target, uint32_t tmp_tex, int w, int h, float strength, float t, float cx, float cy);
     int (*window_present)(const RbFrame *f);
     void (*set_overlay)(void (*fn)(int cw, int ch, int flip));
     int (*gpu_frame_stats)(char *buf, size_t n);

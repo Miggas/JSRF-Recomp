@@ -186,7 +186,7 @@ QUEUED = {
     'bind_draw': {}, 'draw_bound_set': {}, 'viewport': {}, 'scissor': {},
     'scissor_once': {}, 'bindings_lost': {}, 'active_unit': {}, 'unit_bind': {},
     'bind_vbuf': {}, 'vbuf_lost': {}, 'vbuf_bound_set': {}, 'copy_target': {},
-    'ms_upscale': {},
+    'ms_upscale': {}, 'boost_fx': {},
     'tex_image_dxt': {'data': '(size_t)size'},
     'tex_param': {}, 'tex_mipmaps': {}, 'tex_from_target': {}, 'errors_clear': {},
     'buf_bind': {}, 'buf_data': {'data': '(size_t)size'}, 'buf_sub': {'data': '(size_t)size'},

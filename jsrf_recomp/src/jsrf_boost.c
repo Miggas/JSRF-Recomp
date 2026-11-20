@@ -37,6 +37,8 @@ extern void D3D8_D3DDevice_SetRenderTarget_gen(void);
 extern void D3D8_D3DDevice_Clear_gen(void);
 extern void D3D8_D3DDevice_Swap_gen(void);
 extern void D3D8_D3DDevice_DrawVerticesUP_gen(void);
+extern void sub_000A2960_gen(void);
+void jsrf_ZBiasMark(uint32_t v);            /* jsrf_widescreen.c */
 
 static int bl_on = -1;
 static int boost_log_on(void)
@@ -77,14 +79,14 @@ static void put(const char *fmt, ...)
 }
 
 /* the game's calls on the stack: return addresses in the game's code or the
- * engine's (below D3D, 0x18CB40) right after a call */
+ * engine's (below D3D) right after a call */
 static void chain(void)
 {
     uint32_t k, shown = 0;
     put(" from");
     for (k = 0; k < 160 && shown < 10; k++) {
         uint32_t v = MEM32(g_esp + 4 * k);
-        if (v < 0x00011008u || v >= 0x0018CB40u) continue;
+        if (v < 69640u || v >= 1625920u) continue;   /* 0x11008..0x18CB40 (decimal: not a game address to move) */
         if (MEM8(v - 5) == 0xE8                                       /* call rel32 */
             || (MEM8(v - 6) == 0xFF && (MEM8(v - 5) & 0x38) == 0x10)    /* call [reg+d32] */
             || (MEM8(v - 3) == 0xFF && (MEM8(v - 2) & 0x38) == 0x10)    /* call [reg+d8] */
@@ -212,4 +214,75 @@ void D3D8_D3DDevice_Swap(void)
         frame++;
     }
     D3D8_D3DDevice_Swap_gen();
+}
+
+/* ── v312e: the new boost effect (Idea by Miggas) ─────────────────────────
+ *
+ * v312c's log (Miggas) shows where the game draws its boost: sub_000A2960,
+ * a draw-tree object's draw (thiscall, the pass in its argument). Its owner
+ * ([this+0x24], the player) counts the boost down at +0xE60. While that is
+ * above 0, in pass 0x13 it points the following views at its 512x512 and
+ * 128x128 textures in turn ([this+0x170] / [this+0x16C], the count at
+ * [this+0x1AC]), and in pass 0x14 it lays them over the screen: the trails,
+ * a picture that moves at 30 fps (ReJet's finding, Rossybergg/ReJet).
+ *
+ * RECOMP_BOOST_EFFECT:
+ *   new       (the default) the game draws as when not boosting (its count
+ *             reads 0 for these two passes only), and where its pass 0x14
+ *             drew the trails the renderer puts our effect, a radial blur
+ *             clear around the player with speed lines, fading in and out
+ *             over a few frames (a z-bias mark: nv2a_pb_exec.c, ws_fill_mark;
+ *             nv2a_render.c, nv2a_gl_boost_fx)
+ *   smooth    the same without any effect: the plain picture at 60 fps
+ *   original  the game's own trails
+ * RECOMP_BOOST_STRENGTH (0.1..1, default 1) scales the effect. */
+static int same_word(const char *a, const char *b)
+{
+    while (*a && *b && (*a | 0x20) == (*b | 0x20)) { a++; b++; }
+    return !*a && !*b;
+}
+
+static int boost_mode(void)
+{
+    static int m = -1;
+    if (m < 0) {
+        const char *e = getenv("RECOMP_BOOST_EFFECT");
+        m = 2;
+        if (e && (same_word(e, "original") || !strcmp(e, "0"))) m = 0;
+        else if (e && same_word(e, "smooth")) m = 1;
+        fprintf(stderr, "[BOOST] boost effect: %s (RECOMP_BOOST_EFFECT)\n",
+                m == 2 ? "new" : m == 1 ? "smooth" : "original");
+    }
+    return m;
+}
+
+void sub_000A2960(void)
+{
+    uint32_t self = g_ecx, pass = MEM32(g_esp + 4), owner, saved;
+    int mode;
+    if (pass != 0x13 && pass != 0x14) { sub_000A2960_gen(); return; }
+    mode = boost_mode();
+    owner = ok(self + 0x24, 4) ? MEM32(self + 0x24) : 0;
+    if (!mode || !owner || !ok(owner + 0xE60, 4)) { sub_000A2960_gen(); return; }
+    saved = MEM32(owner + 0xE60);
+    MEM32(owner + 0xE60) = 0;               /* not boosting, for these two passes */
+    sub_000A2960_gen();
+    MEM32(owner + 0xE60) = saved;
+    if (mode == 2 && pass == 0x14) {
+        static float level, scale = -1.0f;
+        int on = (int32_t)saved > 0;
+        if (scale < 0.0f) {
+            const char *e = getenv("RECOMP_BOOST_STRENGTH");
+            scale = e && *e ? (float)atof(e) : 1.0f;
+            if (scale < 0.1f) scale = 0.1f;
+            if (scale > 1.0f) scale = 1.0f;
+        }
+        level += on ? 1.0f / 8.0f : -1.0f / 14.0f;   /* in over 8 frames, out over 14 */
+        if (level < 0.0f) level = 0.0f;
+        if (level > 1.0f) level = 1.0f;
+        if (level > 0.0f) {
+            float st = level * level * (3.0f - 2.0f * level) * scale;
+            jsrf_ZBiasMark(1300000000u + (uint32_t)(st * 500000000.0f));
+        }
+    }
 }

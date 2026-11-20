@@ -3032,6 +3032,13 @@ static void ws_fill_mark(float u)
     static int said;
     if (a < 1.0e7f || a >= 1.0e10f)
         return;
+    if (a >= 1.25e9f && a < 1.85e9f) {
+        /* v312e: the new boost effect, here, at this strength (jsrf_boost.c:
+         * 1.3e9 + strength x 5e8) */
+        extern void nv2a_gl_boost_fx(float strength);
+        nv2a_gl_boost_fx((a - 1.3e9f) / 5.0e8f);
+        return;
+    }
     if (!said++)
         fprintf(stderr, "[WS] menu side fill: marks seen in the command stream\n");
     if (a >= 1.0e9f)
