@@ -3130,8 +3130,8 @@ void nv2a_gl_boost_fx(float strength)
         static float y = -1.0f;
         if (y < 0.0f) {
             const char *e = getenv("RECOMP_BOOST_CENTER_Y");
-            y = e && *e ? (float)atof(e) : 0.58f;
-            if (y < 0.0f || y > 1.0f) y = 0.58f;
+            y = e && *e ? (float)atof(e) : 0.53f;   /* v312g: Miggas's choice */
+            if (y < 0.0f || y > 1.0f) y = 0.53f;
         }
         cy = 1.0f - y;                  /* GL's texture rows go up */
     }

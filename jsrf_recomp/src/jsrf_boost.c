@@ -235,7 +235,7 @@ void D3D8_D3DDevice_Swap(void)
  *             nv2a_render.c, nv2a_gl_boost_fx)
  *   smooth    the same without any effect: the plain picture at 60 fps
  *   original  the game's own trails
- * RECOMP_BOOST_STRENGTH (0.1..1, default 1) scales the effect. */
+ * RECOMP_BOOST_STRENGTH (0.1..1, default 0.55) scales the effect. */
 static int same_word(const char *a, const char *b)
 {
     while (*a && *b && (*a | 0x20) == (*b | 0x20)) { a++; b++; }
@@ -273,7 +273,7 @@ void sub_000A2960(void)
         int on = (int32_t)saved > 0;
         if (scale < 0.0f) {
             const char *e = getenv("RECOMP_BOOST_STRENGTH");
-            scale = e && *e ? (float)atof(e) : 1.0f;
+            scale = e && *e ? (float)atof(e) : 0.55f;   /* v312g: Miggas's choice */
             if (scale < 0.1f) scale = 0.1f;
             if (scale > 1.0f) scale = 1.0f;
         }
