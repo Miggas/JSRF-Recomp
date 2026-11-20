@@ -90,6 +90,7 @@ set(JSRF_OWN_SOURCES
     src/jsrf_chapter_select.c  # v276: chapter select (RECOMP_CHAPTER_SELECT)
     src/jsrf_graffiti.c     # v310: bigger graffiti
     src/jsrf_testruns.c     # v311: Early Test Runs
+    src/jsrf_boost.c        # v312c: the boost's render targets (RECOMP_BOOST_LOG)
 )
 if(NOT JSRF_RELEASE STREQUAL "usa")
     find_package(Python3 COMPONENTS Interpreter)

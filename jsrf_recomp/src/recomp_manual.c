@@ -1821,6 +1821,8 @@ extern void sub_001BD5FF_gen(void);   /* XGetDevices(type)                      
 extern void sub_001BD621_gen(void);   /* XGetDeviceChanges(type, *ins, *rem)     */
 extern void sub_001C3BA1_gen(void);   /* XInputOpen(type, port, slot, poll)      */
 extern void sub_001C3E14_gen(void);   /* XInputGetState(h, *state)               */
+void boost_note_buttons(uint32_t ps);   /* v312c: jsrf_boost.c */
+void boost_note_texture(uint32_t stage, uint32_t tex);
 
 static unsigned xi_gd, xi_gdc, xi_open, xi_get;
 static uint32_t xi_last_buttons = 0xFFFFFFFFu;
@@ -1895,6 +1897,7 @@ void sub_001C3E14(void)
 {
     uint32_t h = MEM32(g_esp + 4), ps = MEM32(g_esp + 8);
     sub_001C3E14_gen();
+    if (g_eax == 0) boost_note_buttons(ps);     /* v312c: jsrf_boost.c */
     xi_get++;
     if (ps && GetTickCount() - xi_report > 3000) {
         xi_report = GetTickCount();
@@ -2051,6 +2054,7 @@ void D3D8_D3DDevice_SetTexture(void)
             last_ms = now;
         }
     }
+    boost_note_texture(stage, tex);             /* v312c: jsrf_boost.c */
     D3D8_D3DDevice_SetTexture_gen();
 }
 
