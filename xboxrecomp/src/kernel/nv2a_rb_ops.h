@@ -13,6 +13,7 @@ typedef struct RbOps {
     uint32_t (*program_build_async)(const char *vsrc, const char *fsrc, uint32_t like);
     int (*program_ready)(uint32_t *id);
     uint32_t (*program_gen)(void);
+    void (*pipes_ahead)(unsigned *made, unsigned *total);
     uint32_t (*shader_compile)(int vertex, const char *src);
     void (*program_stats)(unsigned *hits, unsigned *misses, uint64_t *ticks);
     void (*use_program)(uint32_t p);

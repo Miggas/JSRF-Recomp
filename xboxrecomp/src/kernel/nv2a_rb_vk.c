@@ -1192,6 +1192,16 @@ uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t lik
 }
 
 uint32_t rb_program_gen(void) { return (uint32_t)SDL_AtomicGet(&s_vkp_gen); }
+void rb_pipes_ahead(unsigned *made, unsigned *total)
+{
+    *made = *total = 0;
+    if (!s_vkp_mu || !s_vkp_threads)
+        return;                            /* no workers: nothing is made ahead */
+    SDL_LockMutex(s_vkp_mu);
+    *made = (unsigned)s_vkp_made;
+    *total = (unsigned)s_vkp_nahead;
+    SDL_UnlockMutex(s_vkp_mu);
+}
 
 int rb_program_ready(uint32_t *id)
 {

@@ -9,6 +9,7 @@
 #define rb_program_build_async RB_BACKEND_PREFIX(program_build_async)
 #define rb_program_ready RB_BACKEND_PREFIX(program_ready)
 #define rb_program_gen RB_BACKEND_PREFIX(program_gen)
+#define rb_pipes_ahead RB_BACKEND_PREFIX(pipes_ahead)
 #define rb_shader_compile RB_BACKEND_PREFIX(shader_compile)
 #define rb_program_stats RB_BACKEND_PREFIX(program_stats)
 #define rb_use_program RB_BACKEND_PREFIX(use_program)
@@ -123,6 +124,7 @@
     rb_program_build_async, \
     rb_program_ready, \
     rb_program_gen, \
+    rb_pipes_ahead, \
     rb_shader_compile, \
     rb_program_stats, \
     rb_use_program, \

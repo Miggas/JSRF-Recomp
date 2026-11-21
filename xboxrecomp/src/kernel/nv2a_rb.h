@@ -59,6 +59,9 @@ int  rb_program_ready(uint32_t *id);
  * from any thread without waiting: while it stays the same, an answer of 0
  * from rb_program_ready stays 0 (0 always: a backend that builds at once) */
 uint32_t rb_program_gen(void);
+/* v312i: of the pipelines made ahead at start-up (Vulkan: vk_pipes.bin),
+ * how many are made so far, and of how many; from any thread (0 and 0: none) */
+void rb_pipes_ahead(unsigned *made, unsigned *total);
 /* one shader on its own, for programs put together by the caller (AA) */
 uint32_t rb_shader_compile(int vertex, const char *src);
 /* programs loaded from the cache, built, and the time building took (TM ticks) */

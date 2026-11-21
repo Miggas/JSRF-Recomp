@@ -3053,6 +3053,45 @@ void nv2a_gl_quit_hold(void)
  * Without the game-window path (where the text is drawn) they are built on
  * light frames as before. RECOMP_GL_PREBUILD=0 turns both off. */
 char g_gl_build_msg[64];   /* drawn by nv2a_gl_quit.h while not empty */
+/* v312i: Vulkan's "Building Shaders" (Idea by Miggas). Vulkan has no
+ * recipes.bin build (its programs come from vk_pipes.bin, made at start-up
+ * from the SPIR-V cache); the pipelines listed there are made on the
+ * workers while the game boots, and one the game needs before it is made
+ * is waited for at that draw, a hitch in the first level. Here, at the
+ * game's first frame in the window, the game is held (as for OpenGL's
+ * build) until they are all made, with the count on screen.
+ * RECOMP_VK_PIPES_WAIT=0: not waited for (made while playing, as before). */
+static void pipes_ahead_wait(void)
+{
+    unsigned made, total;
+    uint64_t t0, sec = (uint64_t)SDL_GetPerformanceFrequency();
+    const char *e = getenv("RECOMP_VK_PIPES_WAIT");
+    if (e && e[0] == '0')
+        return;
+    rb_pipes_ahead(&made, &total);
+    if (!total || made >= total)
+        return;
+    t0 = TM_NOW();
+    xbox_HoldClock(1);
+    InterlockedExchange(&g_xbox_game_held, 1);
+    fprintf(stderr, "[VK] pipelines to make before the start: %u of %u (RECOMP_VK_PIPES_WAIT=0: while playing)\n",
+            total - made, total);
+    for (;;) {
+        rb_pipes_ahead(&made, &total);
+        if (made >= total || TM_NOW() - t0 > sec * 180)
+            break;                         /* all made (or 3 minutes: the rest while playing) */
+        snprintf(g_gl_build_msg, sizeof g_gl_build_msg,
+                 "Building Shaders (%u out of %u built)", made, total);
+        if (!gl_window_present(s_last_win))
+            break;
+        Sleep(16);
+    }
+    g_gl_build_msg[0] = 0;
+    game_unhold();
+    fprintf(stderr, "[VK] pipelines made before the start: %u of %u, waited %.1f s\n", made, total,
+            (double)(TM_NOW() - t0) / (double)sec);
+}
+
 void nv2a_gl_prebuild_hold(void)
 {
     static int frames;
@@ -3066,6 +3105,7 @@ void nv2a_gl_prebuild_hold(void)
         return;
     }
     s_pre_done = 1;
+    pipes_ahead_wait();                    /* v312i: Vulkan's */
     if (s_rcp_state == 0)
         rcp_read();
     if (s_rcp_state != 1 || s_rcp_next >= s_rcp_had)
