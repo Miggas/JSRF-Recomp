@@ -1773,7 +1773,7 @@ static void stage_list(void)
     if (is_dir(dir)) list_dir(dir, stage_list_cb, NULL);
     qsort(s_stages, (size_t)s_nstages, sizeof s_stages[0], cmp_stage);
 }
-static const char *stage_title(const char *name)   /* the maps, by number (Miggas) */
+static const char *stage_title(const char *name, int custom)   /* the maps, by number (Miggas) */
 {
     static const struct { const char *n, *t; } T[] = {
         { "Stg00", "Garage" }, { "Stg10", "Shibuya Terminal" }, { "Stg11", "Chuo Street" },
@@ -1787,7 +1787,16 @@ static const char *stage_title(const char *name)   /* the maps, by number (Migga
         { "Stg53", "Tokyo Underground Sewage Facility Regulatory District" },
         { "Stg54", "Secondary Stadium of Rokkaku Expo" },
     };
+    /* Stage/Custom: two maps seen once in the story; the others are partly
+     * copies of Shibuya Terminal or two maps together (cutscenes?) */
+    static const struct { const char *n, *t; } C[] = {
+        { "Stg40", "Gouji's Tower" }, { "Stg41", "The Site of Tokyo Line" },
+    };
     size_t i;
+    if (custom) {
+        for (i = 0; i < sizeof C / sizeof C[0]; i++) if (!strcmp(name, C[i].n)) return C[i].t;
+        return NULL;
+    }
     for (i = 0; i < sizeof T / sizeof T[0]; i++) if (!strcmp(name, T[i].n)) return T[i].t;
     return NULL;
 }
@@ -1959,7 +1968,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
             if (s_nstages < 0 && !busy) stage_list();
             for (i = 0; i < s_nstages; i++) {          /* one entry a stage (Miggas), as the graffiti */
                 char lb[128];
-                const char *tt = s_stages[i].custom ? NULL : stage_title(s_stages[i].name);
+                const char *tt = stage_title(s_stages[i].name, s_stages[i].custom);
                 int sel = 0;
                 if (s_stages[i].custom && (!i || !s_stages[i - 1].custom)) {   /* Media/Stage/Custom's, after */
                     nk_layout_row_dynamic(ctx, row - 4, 1);
