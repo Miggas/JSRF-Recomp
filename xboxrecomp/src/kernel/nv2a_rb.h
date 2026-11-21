@@ -55,6 +55,10 @@ uint32_t rb_program_build(const char *vsrc, const char *fsrc);
  * the program), 0 not yet, -1 it failed. rb_program_delete takes either. */
 uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t like);
 int  rb_program_ready(uint32_t *id);
+/* v312h: a count that grows each time a background build finishes, read
+ * from any thread without waiting: while it stays the same, an answer of 0
+ * from rb_program_ready stays 0 (0 always: a backend that builds at once) */
+uint32_t rb_program_gen(void);
 /* one shader on its own, for programs put together by the caller (AA) */
 uint32_t rb_shader_compile(int vertex, const char *src);
 /* programs loaded from the cache, built, and the time building took (TM ticks) */

@@ -313,6 +313,30 @@ static void q_fence_delete(void *h)
  * the first, it is known here and the resolve itself goes in the queue (it
  * waited for the recording thread twice a frame with MSAA). */
 typedef struct { uint32_t fbo, tex; int w, h; } QA_qresolve;
+/* v312h: rb_program_ready, asked for at most draws while a shader is being
+ * built in the background, waited each time for the recording thread to
+ * catch up (an HD 620 laptop: 0.5 a draw, 1-2 ms each, so 3-14 fps while
+ * its one builder worked through 40 shaders). Its answer of 0 can only
+ * change once a build finishes, so while rb_program_gen stays the same, a
+ * handle last answered 0 is answered 0 again here, without waiting. */
+#define Q_PR_N 512u
+static struct { uint32_t id, gen; } q_pr[Q_PR_N];
+static int q_program_ready(uint32_t *id)
+{
+    uint32_t was = *id, k = (was * 2654435761u) >> 23, g;
+    int r;
+    if (!q_on)
+        return q_in->program_ready(id);
+    g = q_in->program_gen();             /* before the wait: a build done meanwhile is asked again */
+    if (was && q_pr[k].id == was && q_pr[k].gen == g)
+        return 0;
+    q_drain(Q_IX_program_ready);
+    r = q_in->program_ready(id);
+    if (r == 0) { q_pr[k].id = was; q_pr[k].gen = g; }
+    else if (q_pr[k].id == was) q_pr[k].id = 0;
+    return r;
+}
+
 static uint32_t q_resolve_fbo;
 static uint32_t q_resolve(uint32_t fbo, uint32_t tex, int w, int h)
 {

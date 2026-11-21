@@ -699,6 +699,7 @@ typedef struct { uint64_t h; GLuint id; int handed; } VkpReady;
 static GLuint vkp_link(const char *vsrc, const char *fsrc);
 
 static SDL_mutex *s_vkp_mu;
+static SDL_atomic_t s_vkp_gen;          /* v312h: background builds finished (rb_program_gen) */
 static SDL_cond *s_vkp_cv;             /* a job done */
 static SDL_cond *s_vkp_work;           /* a job to do */
 static VkpJob **s_vkp_job;
@@ -903,6 +904,7 @@ static int SDLCALL vkp_worker(void *arg)
         vkp_do(j);
         SDL_LockMutex(s_vkp_mu);
         j->state = 2;
+        SDL_AtomicAdd(&s_vkp_gen, 1);   /* v312h */
         if (j->ahead && ++s_vkp_made == s_vkp_nahead) s_vkp_t1 = TM_NOW();
         SDL_CondBroadcast(s_vkp_cv);
     }
@@ -918,6 +920,7 @@ static void vkp_finish_locked(VkpJob *j)
         vkp_do(j);
         SDL_LockMutex(s_vkp_mu);
         j->state = 2;
+        SDL_AtomicAdd(&s_vkp_gen, 1);   /* v312h */
         if (j->ahead && ++s_vkp_made == s_vkp_nahead) s_vkp_t1 = TM_NOW();
         SDL_CondBroadcast(s_vkp_cv);
     }
@@ -1187,6 +1190,8 @@ uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t lik
     s_vka_started++;
     return a->handle;
 }
+
+uint32_t rb_program_gen(void) { return (uint32_t)SDL_AtomicGet(&s_vkp_gen); }
 
 int rb_program_ready(uint32_t *id)
 {
@@ -1496,6 +1501,9 @@ static void vkp_start(void)
     nthreads = SDL_GetCPUCount() / 4;
     if (nthreads > 4) nthreads = 4;
     if (nthreads < 1) nthreads = 1;
+    /* v312h: 4 (a 2-core laptop) gave 1, and an HD 620 one took minutes over
+     * the 40 shaders a level asks for: 2 there (they run at low priority) */
+    if (nthreads < 2 && SDL_GetCPUCount() >= 4) nthreads = 2;
     {
         const char *e = getenv("RECOMP_VK_WORKERS");
         if (e && atoi(e) > 0) nthreads = atoi(e) > 8 ? 8 : atoi(e);

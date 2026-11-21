@@ -329,6 +329,7 @@ uint32_t rb_program_build_async(const char *vsrc, const char *fsrc, uint32_t lik
     return 0;
 }
 int rb_program_ready(uint32_t *id) { (void)id; return 1; }
+uint32_t rb_program_gen(void) { return 0; }
 
 void rb_program_stats(unsigned *hits, unsigned *misses, uint64_t *ticks)
 {

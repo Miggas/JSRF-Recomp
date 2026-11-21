@@ -203,13 +203,15 @@ QUEUED = {
 # straight to the backend, from whatever thread, without waiting: constants
 # and counters (some are asked for from the [PERF] thread, as before)
 DIRECT = {'caps', 'shader_cache_on', 'shader_cache_path', 'max_aniso', 'window_stats',
-          'gpu_frame_stats', 'program_stats', 'call_stats'}
+          'gpu_frame_stats', 'program_stats', 'call_stats', 'program_gen'}
 OWN = {'threaded', 'thread_start', 'window_present',
        # vk17: answered without waiting for the recording thread
        # (nv2a_rb_queue_rt.h): fences made in the queue, known passed from
        # G.done; the scissor the renderer last set, mirrored here
        'fence', 'fence_wait', 'fence_delete', 'fence_signaled', 'scissor_get',
-       'resolve'}
+       'resolve',
+       # v312h: a 0 answered again without waiting while no build finished
+       'program_ready'}
 # vk17: run on the renderer's side before a queued call is written
 PRE = {'scissor': 'q_sc_note(x, y, w, h);', 'scissor_once': 'q_sc_forget();',
        'bindings_lost': 'q_sc_forget();'}      # written in nv2a_rb_queue_rt.h's terms below
