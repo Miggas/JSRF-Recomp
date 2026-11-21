@@ -54,7 +54,12 @@ downloads it, puts it in place of this one and starts it. From a terminal:
   `xboxrecomp/tools`.
 - **Build** runs only when the source, the generated code or the compiler
   changed. It asks for Generate code first when the code is missing or old.
-- **Play → Build** does both, staying on Play. **Force Generate/Build** (Debug tab) forces them.
+- **Play → Build** does it all in one click, staying on Play: updates the
+  project (when there is a newer one; downloads it when it isn't there yet),
+  downloads the tools (when they aren't there yet), then Generate code and
+  Build (each only when needed). Without an answer from GitHub it builds what
+  is there. The Play tab's lines say what is missing: "not ... yet: click
+  Build or go to ...". **Force Generate/Build** (Debug tab) forces them.
 
 ## The Debug tab
 

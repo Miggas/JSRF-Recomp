@@ -180,11 +180,12 @@ static void spacer(struct nk_context *ctx, float h)
     nk_spacing(ctx, 1);
 }
 
-/* Play's Build: generate (if needed) and build (if needed); v2i: it stays
- * on Play, where the progress shows (Miggas) */
+/* Play's Build: v3h: one click for it all (Miggas): the project updated
+ * (if newer), the tools downloaded (if missing), Generate code and Build (if
+ * needed); v2i: it stays on Play, where the progress shows */
 static void start_build(void)
 {
-    job_start(JOB_ALL, false);
+    job_start(JOB_EVERYTHING, false);
 }
 
 /* v2i: the running step and how far it is. A step whose length is not known
@@ -509,15 +510,15 @@ static void tab_play(struct nk_context *ctx)
             req_line_m(ctx, "Launcher", checking ? M_WORKING : M_OK, t, "");
         }
         if (!g_paths.have_source) {
-            if (req_line_m(ctx, "Project source", M_NO, "", "not downloaded yet: go to Update")) s_tab = TAB_UPDATE;
+            if (req_line_m(ctx, "Project source", M_NO, "", "not downloaded yet: click Build or go to Update")) s_tab = TAB_UPDATE;
         } else if (*r && strcmp(r, source_id())) {
-            if (req_line_m(ctx, "Project source", M_WARN, "", "update available: go to Update")) s_tab = TAB_UPDATE;
+            if (req_line_m(ctx, "Project source", M_WARN, "", "update available: click Build or go to Update")) s_tab = TAB_UPDATE;
         } else {
             req_line_m(ctx, "Project source", checking ? M_WORKING : M_OK,
                        checking ? "checking for updates..." : known ? "up to date" : "downloaded", "");
         }
     }
-    if (req_line(ctx, "Build tools", tools, "downloaded", "not downloaded yet: go to Build (about 150 MB)"))
+    if (req_line(ctx, "Build tools", tools, "downloaded", "not downloaded yet: click Build or go to Build (about 150 MB)"))
         s_tab = TAB_BUILD;
     {
         /* from the last check (req_refresh), or what the running job is doing */
@@ -527,14 +528,14 @@ static void tab_play(struct nk_context *ctx)
         if (busy && !strcmp(ph, "Generating code")) {
             req_line_m(ctx, "Generated code", M_WORKING, "being generated...", "");
         } else if (req_line_m(ctx, "Generated code", g == 2 ? M_OK : M_NO, "up to date",
-                              g == 1 ? "out of date (the project or default.xbe changed): go to Build"
-                                     : "not generated yet: go to Build")) {
+                              g == 1 ? "out of date (the project or default.xbe changed): click Build or go to Build"
+                                     : "not generated yet: click Build or go to Build")) {
             s_tab = TAB_BUILD;
         }
         if (busy && !strcmp(ph, "Building game")) {
             req_line_m(ctx, "Recompiled game", M_WORKING, "being built...", "");
         } else if (req_line_m(ctx, "Recompiled game", b == 2 ? M_OK : M_NO, "up to date",
-                              b == 1 ? "older than the code: go to Build" : "not built yet: go to Build")) {
+                              b == 1 ? "older than the code: click Build or go to Build" : "not built yet: click Build or go to Build")) {
             s_tab = TAB_BUILD;
         }
     }
@@ -545,7 +546,9 @@ static void tab_play(struct nk_context *ctx)
     static char vdir[LPATH];
     static int vres = -2;                       /* -2: not checked; -1: couldn't; else missing */
     if (strcmp(vdir, g_paths.game)) { vres = -2; snprintf(vdir, sizeof vdir, "%s", g_paths.game); }
-    bool need_build = !exe || req_gen() != 2 || req_build() != 2;
+    /* v3h: Build also when the project or the tools are missing or the project has an update */
+    bool need_build = !exe || req_gen() != 2 || req_build() != 2 || !g_paths.have_source || !tools
+                      || (*update_remote() && strcmp(update_remote(), source_id()));
     spacer(ctx, 10);
     nk_layout_row_dynamic(ctx, s_row * 1.8f, 4);
     if (button(ctx, "PLAY", exe && free_or_checking()) || (s_pad_play && exe && free_or_checking())) {
@@ -556,7 +559,7 @@ static void tab_play(struct nk_context *ctx)
             s_quit_after_play = close_on_play_pref();
         }
     }
-    if (button(ctx, "Build", need_build && xbe && g_paths.have_source && free_or_checking())) {
+    if (button(ctx, "Build", need_build && xbe && free_or_checking())) {
         stop_check();
         start_build();
     }
@@ -1447,7 +1450,7 @@ static void style(struct nk_context *ctx)
     ctx->style.button.rounding = 6;
 }
 
-/* jsrf_launcher --tools | --generate | --build | --all | --update | --check
+/* jsrf_launcher --tools | --generate | --build | --all | --everything | --update | --check
  * [--force]: the job without the window, its log printed */
 static void open_log_file(void)
 {
@@ -1489,6 +1492,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--generate")) job = JOB_GENERATE;
         else if (!strcmp(argv[i], "--build")) job = JOB_BUILD;
         else if (!strcmp(argv[i], "--all")) job = JOB_ALL;
+        else if (!strcmp(argv[i], "--everything")) job = JOB_EVERYTHING;   /* v3h: as Play's Build */
         else if (!strcmp(argv[i], "--update")) job = JOB_UPDATE;
         else if (!strcmp(argv[i], "--check")) job = JOB_CHECK;
         else if (!strcmp(argv[i], "--self-update")) job = JOB_SELF;   /* v1r */

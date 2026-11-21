@@ -52,7 +52,9 @@ const char *update_branch(void);          /* BRANCH= in launcher.ini, else main 
 /* JOB_GENERATE and JOB_BUILD first check whether anything changed (force:
  * do it anyway); JOB_ALL is both; JOB_UPDATE only downloads. */
 enum { JOB_NONE, JOB_TOOLS, JOB_GENERATE, JOB_BUILD, JOB_ALL, JOB_UPDATE, JOB_CHECK, JOB_PYTOOL,
-       JOB_SELF };                          /* v1r: the launcher updates itself */
+       JOB_SELF,                            /* v1r: the launcher updates itself */
+       JOB_EVERYTHING };                    /* v3h: Play's Build: update the project (if newer), the tools
+                                             * (if missing), Generate code and Build (if needed) */
 /* the debug menu's checks: Python scripts in the project's tools folder */
 enum { TOOL_CHECK_GEN, TOOL_CHECK_XBE, TOOL_COMPARE_CACHE };
 bool job_start_tool(int tool);

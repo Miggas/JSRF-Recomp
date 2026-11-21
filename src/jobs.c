@@ -1353,6 +1353,26 @@ static bool do_update(void)
     return true;
 }
 
+/* v3h: Play's Build, one click for it all (Miggas): the project updated
+ * when GitHub has a newer one (downloaded when it isn't here), the tools
+ * downloaded when they aren't, then Generate code and Build, each only when
+ * needed. No answer from GitHub: what's here is built. */
+static bool do_everything(void)
+{
+    if (!g_paths.have_source) {
+        if (!do_update()) return false;
+    } else if (check_update()) {
+        if (strcmp(s_remote, source_id()) && !do_update()) return false;
+    } else
+        status("Could not check for a project update: building what is here.", NULL);
+    if (cancelled()) return false;
+    if (!have_tools() || !wrappers_ok()) {
+        if (!setup_tools()) return false;
+        if (cancelled()) return false;
+    }
+    return do_generate() && !cancelled() && do_build();
+}
+
 /* the debug menu's checks */
 static int s_tool;
 
@@ -1398,6 +1418,7 @@ static int job_thread(void *u)
     case JOB_GENERATE: ok = do_generate(); break;
     case JOB_BUILD:    ok = do_build(); break;
     case JOB_ALL:      ok = do_generate() && !cancelled() && do_build(); break;
+    case JOB_EVERYTHING: ok = do_everything(); break;
     case JOB_UPDATE: ok = do_update(); break;
     case JOB_CHECK:  ok = check_update(); check_launcher(); break;
     case JOB_SELF:   ok = do_self_update(); break;
@@ -1429,7 +1450,8 @@ bool job_start(int job, bool force)
     {
         static const char *const names[] = { "", "Download tools", "Generate code", "Build",
                                              "Generate code + Build", "Update", "Check for updates",
-                                             "Check", "Update the launcher" };
+                                             "Check", "Update the launcher",
+                                             "Build (update, tools, Generate code, Build: what's needed)" };
         char tm[32];
         time_t now = time(NULL);
         strftime(tm, sizeof tm, "%H:%M:%S", localtime(&now));
