@@ -526,6 +526,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         nk_labelf(ctx, NK_TEXT_LEFT, "%s: %d .dat files", G.s.name, G.s.ndat);
         nk_labelf(ctx, NK_TEXT_LEFT, "%d stage models, %d props", G.s.nmodels, G.s.nprops);
         nk_labelf(ctx, NK_TEXT_LEFT, "%d triangles, %d textures", G.s.nt, G.s.ntex);
+        if (!G.s.has_bin) nk_label_colored(ctx, "No .bin: no collision, rails, props", NK_TEXT_LEFT, nk_rgb(230, 170, 90));
         nk_layout_row_dynamic(ctx, row, 1);
         nk_label(ctx, "Show", NK_TEXT_LEFT);
         nk_layout_row_dynamic(ctx, row - 4, 1);

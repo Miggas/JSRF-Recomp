@@ -388,12 +388,8 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     }
     (void)binat;
     free(found);
-    if (!bin || binsz < 0x40) {
-        snprintf(err, errn, "%s_.bin was not found in %s.", name, dir);
-        for (i = 0; i < ndat; i++) free(dats[i].buf);
-        free(bin);
-        return -1;
-    }
+    if (bin && binsz < 0x40) { free(bin); bin = NULL; }
+    s->has_bin = bin != NULL;                    /* without it: the models only (no collision, rails, props) */
     if (!ndat) {
         snprintf(err, errn, "No %s_NN.dat files in %s.", name, dir);
         free(bin);
@@ -427,7 +423,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
             if (!add_stage_model(s, &b, &ms[i])) { s->nmodels++; if (ms[i].kind == 2) s->nsee++; }
         }
     /* the .bin: collision, rails, placements */
-    {
+    if (bin) {
         uint32_t o0 = u32(bin), s0 = u32(bin + 4), o1 = u32(bin + 8), m26 = u32(bin + 12), o2 = u32(bin + 16), s2 = u32(bin + 20);
         if ((size_t)o0 + s0 <= binsz) read_collision(&b, bin + o0, s0, &s->ncmodels);
         if ((size_t)o1 + m26 <= binsz) read_rails(&b, bin + o1, m26);

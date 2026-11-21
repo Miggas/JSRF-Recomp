@@ -63,6 +63,7 @@ typedef struct {
     float *rp, *rnrm;
     float lo[3], hi[3];                 /* the stage's box */
     int ndat;                           /* .dat files read */
+    int has_bin;                        /* m26: its StgNN_.bin was found (else no collision, rails, props) */
 } JStage;
 
 /* stage `name` ("Stg30") from the folder dir (Media/Stage): 0 done; else err */

@@ -1737,33 +1737,58 @@ static char *s_dropped;                  /* a file dropped on the window */
 #define LW_FILES 240.0f
 #define LW_TEX 180.0f
 
-/* m26: the stage viewer. The stages in Media/Stage (a StgNN_.bin each), listed at the top of the Stages tab */
+/* m26: the stage viewer. The stages in Media/Stage and Media/Stage/Custom
+ * (a StgNN_YY.dat at least), listed at the top of the Stages tab */
 static int s_stage_view;
-static char s_stages[100][8];
+typedef struct { char name[8]; int custom; } StageEnt;
+static StageEnt s_stages[200];
+static int s_list_custom;
 static void stage_list_cb(const char *nm, bool isdir, void *u)
 {
     char name[16];
     size_t l = strlen(nm);
     int i;
     (void)u;
-    if (isdir || l != 10 || SDL_strcasecmp(nm + 6, ".bin") || !jst_name_of(nm, name, sizeof name) || s_nstages >= 100) return;
-    for (i = 0; i < s_nstages; i++) if (!strcmp(s_stages[i], name)) return;
-    snprintf(s_stages[s_nstages++], sizeof s_stages[0], "%s", name);
+    if (isdir || l < 12 || SDL_strcasecmp(nm + l - 4, ".dat") || !SDL_strncasecmp(nm + l - 6, "_t", 2)
+        || !jst_name_of(nm, name, sizeof name) || s_nstages >= 200) return;
+    for (i = 0; i < s_nstages; i++) if (!strcmp(s_stages[i].name, name) && s_stages[i].custom == s_list_custom) return;
+    snprintf(s_stages[s_nstages].name, sizeof s_stages[0].name, "%s", name);
+    s_stages[s_nstages++].custom = s_list_custom;
 }
-static int cmp_stage(const void *a, const void *b) { return strcmp((const char *)a, (const char *)b); }
+static int cmp_stage(const void *a, const void *b)
+{
+    const StageEnt *x = (const StageEnt *)a, *y = (const StageEnt *)b;
+    if (x->custom != y->custom) return x->custom - y->custom;
+    return strcmp(x->name, y->name);
+}
 static void stage_list(void)
 {
     char dir[LPATH];
     s_nstages = 0;
     game_path(dir, "Media/Stage");
+    s_list_custom = 0;
     list_dir(dir, stage_list_cb, NULL);
+    game_path(dir, "Media/Stage/Custom");
+    s_list_custom = 1;
+    if (is_dir(dir)) list_dir(dir, stage_list_cb, NULL);
     qsort(s_stages, (size_t)s_nstages, sizeof s_stages[0], cmp_stage);
 }
-static const char *stage_title(const char *name)
+static const char *stage_title(const char *name)   /* the maps, by number (Miggas) */
 {
-    if (!strcmp(name, "Stg00")) return "Garage";
-    if (!strcmp(name, "Stg10")) return "Dogenzaka Hill";
-    if (!strcmp(name, "Stg30")) return "99th Street";
+    static const struct { const char *n, *t; } T[] = {
+        { "Stg00", "Garage" }, { "Stg10", "Shibuya Terminal" }, { "Stg11", "Chuo Street" },
+        { "Stg12", "Dogenzaka Hill" }, { "Stg13", "Hikage Street" }, { "Stg20", "Rokkaku-dai Heights" },
+        { "Stg21", "Tokyo Underground Sewage Facility" }, { "Stg22", "Kibogaoka Hill" },
+        { "Stg23", "The Bottom Point of Sewage Facility" }, { "Stg24", "The Fortified Residential Zone" },
+        { "Stg30", "99th Street" }, { "Stg31", "Sky Dinosaurian Square" },
+        { "Stg32", "The Future Site of Rokkaku Expo Stadium" }, { "Stg33", "Highway Zero" },
+        { "Stg34", "The Skyscraper District and Pharaoh Park" }, { "Stg50", "Showa Park" },
+        { "Stg51", "Raden Park" }, { "Stg52", "Showa Park" },
+        { "Stg53", "Tokyo Underground Sewage Facility Regulatory District" },
+        { "Stg54", "Secondary Stadium of Rokkaku Expo" },
+    };
+    size_t i;
+    for (i = 0; i < sizeof T / sizeof T[0]; i++) if (!strcmp(name, T[i].n)) return T[i].t;
     return NULL;
 }
 static int s_stage_file = -1;             /* m26: a stage's file picked in the viewer, to open for its textures */
@@ -1786,10 +1811,10 @@ static void stage_files_ui(struct nk_context *ctx, float row)
     SDL_UnlockMutex(s_mx);
 }
 
-static void open_stage(const char *name)
+static void open_stage(const char *name, int custom)
 {
     char dir[LPATH], err[600];
-    game_path(dir, "Media/Stage");
+    game_path(dir, custom ? "Media/Stage/Custom" : "Media/Stage");
     if (may_leave_paint() && !s3d_open(dir, name, err, sizeof err)) {
         const JStage *st = s3d_stage();
         s_stage_view = 1;
@@ -1933,13 +1958,17 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         if (s_tab == CAT_STAGE && s_game[0]) {        /* m26: whole stages, in 3D */
             if (s_nstages < 0 && !busy) stage_list();
             for (i = 0; i < s_nstages; i++) {          /* one entry a stage (Miggas), as the graffiti */
-                char lb[64];
-                const char *tt = stage_title(s_stages[i]);
+                char lb[128];
+                const char *tt = s_stages[i].custom ? NULL : stage_title(s_stages[i].name);
                 int sel = 0;
-                if (tt) snprintf(lb, sizeof lb, "%s  %s", s_stages[i], tt);
-                else snprintf(lb, sizeof lb, "%s", s_stages[i]);
+                if (s_stages[i].custom && (!i || !s_stages[i - 1].custom)) {   /* Media/Stage/Custom's, after */
+                    nk_layout_row_dynamic(ctx, row - 4, 1);
+                    nk_label_colored(ctx, "In Stage/Custom:", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+                }
+                if (tt) snprintf(lb, sizeof lb, "%s  %s", s_stages[i].name, tt);
+                else snprintf(lb, sizeof lb, "%s", s_stages[i].name);
                 nk_layout_row_dynamic(ctx, row - 6, 1);
-                if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && !busy) open_stage(s_stages[i]);
+                if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && !busy) open_stage(s_stages[i].name, s_stages[i].custom);
             }
         }
         SDL_LockMutex(s_mx);
@@ -2318,7 +2347,8 @@ int main(int argc, char **argv)
             static int tried;                          /* m26 (tests): a stage in the viewer, MT_CAM "x,y,z,yaw,pitch", MT_LAYERS "vpcr" */
             if (!tried) {
                 tried = 1;
-                open_stage(getenv("MT_STAGE"));
+                if (!strncmp(getenv("MT_STAGE"), "Custom/", 7)) open_stage(getenv("MT_STAGE") + 7, 1);
+                else open_stage(getenv("MT_STAGE"), 0);
                 if (getenv("MT_CAM")) {
                     float c[5] = { 0, 0, 0, 0, 0 };
                     sscanf(getenv("MT_CAM"), "%f,%f,%f,%f,%f", &c[0], &c[1], &c[2], &c[3], &c[4]);
