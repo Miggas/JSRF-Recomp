@@ -51,6 +51,7 @@
 #include "jtex.h"
 #include "paint.h"
 #include "view3d.h"
+#include "stage3d.h"   /* m26: the stage viewer */
 #include "jsnd.h"
 #include "jadx.h"
 #include "jcont.h"
@@ -229,6 +230,7 @@ static int16_t *s_snd_pcm;
 static int s_snd_frames;
 static SDL_AudioDeviceID s_audio;
 static char s_filter[64];
+static int s_nstages = -1;             /* m26: the stages found (-1: look again) */
 
 static int want_ext(const char *n)
 {
@@ -403,6 +405,7 @@ static void start_scan(void)
 {
     char media[LPATH];
     if (SDL_AtomicGet(&s_scan_busy)) return;
+    s_nstages = -1;                             /* m26 */
     pjoin(media, s_game, "Media");
     if (!is_dir(media)) {
         snprintf(s_msg, sizeof s_msg, "No Media folder in %s: choose the game folder (the one with default.xbe and Media).", s_game);
@@ -1734,6 +1737,67 @@ static char *s_dropped;                  /* a file dropped on the window */
 #define LW_FILES 240.0f
 #define LW_TEX 180.0f
 
+/* m26: the stage viewer. The stages in Media/Stage (a StgNN_.bin each), listed at the top of the Stages tab */
+static int s_stage_view;
+static char s_stages[100][8];
+static void stage_list_cb(const char *nm, bool isdir, void *u)
+{
+    char name[16];
+    size_t l = strlen(nm);
+    int i;
+    (void)u;
+    if (isdir || l != 10 || SDL_strcasecmp(nm + 6, ".bin") || !jst_name_of(nm, name, sizeof name) || s_nstages >= 100) return;
+    for (i = 0; i < s_nstages; i++) if (!strcmp(s_stages[i], name)) return;
+    snprintf(s_stages[s_nstages++], sizeof s_stages[0], "%s", name);
+}
+static int cmp_stage(const void *a, const void *b) { return strcmp((const char *)a, (const char *)b); }
+static void stage_list(void)
+{
+    char dir[LPATH];
+    s_nstages = 0;
+    game_path(dir, "Media/Stage");
+    list_dir(dir, stage_list_cb, NULL);
+    qsort(s_stages, (size_t)s_nstages, sizeof s_stages[0], cmp_stage);
+}
+static const char *stage_title(const char *name)
+{
+    if (!strcmp(name, "Stg00")) return "Garage";
+    if (!strcmp(name, "Stg10")) return "Dogenzaka Hill";
+    if (!strcmp(name, "Stg30")) return "99th Street";
+    return NULL;
+}
+static int s_stage_file = -1;             /* m26: a stage's file picked in the viewer, to open for its textures */
+static void stage_files_ui(struct nk_context *ctx, float row)
+{
+    const JStage *st = s3d_stage();
+    int i;
+    if (!st) return;
+    nk_layout_row_dynamic(ctx, row, 1);
+    nk_label(ctx, "Its files (for their textures)", NK_TEXT_LEFT);
+    SDL_LockMutex(s_mx);
+    for (i = 0; i < s_nfiles; i++) {
+        char nm[16], lb[160];
+        const char *b = strrchr(s_files[i].rel, '/');
+        if (!jst_name_of(s_files[i].rel, nm, sizeof nm) || strcmp(nm, st->name)) continue;
+        snprintf(lb, sizeof lb, "%s  (%d)", b ? b + 1 : s_files[i].rel, s_files[i].ntex ? s_files[i].ntex : s_files[i].nsnd);
+        nk_layout_row_dynamic(ctx, row - 6, 1);
+        if (nk_button_label(ctx, lb)) s_stage_file = i;
+    }
+    SDL_UnlockMutex(s_mx);
+}
+
+static void open_stage(const char *name)
+{
+    char dir[LPATH], err[600];
+    game_path(dir, "Media/Stage");
+    if (may_leave_paint() && !s3d_open(dir, name, err, sizeof err)) {
+        const JStage *st = s3d_stage();
+        s_stage_view = 1;
+        snprintf(s_msg, sizeof s_msg, "%s: %d stage models, %d props, %d collision triangles, %d grind rails.",
+                 name, st->nmodels, st->nprops, st->nct, st->nrail);
+    } else if (!s3d_is_open()) snprintf(s_msg, sizeof s_msg, "%s", err);
+}
+
 static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
 {
     const float row = 30, top = 128;
@@ -1749,6 +1813,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         snprintf(s_msg, sizeof s_msg, "%s%s%d files with textures or sounds (of %d looked at).", s_restore_msg,
                  s_restore_msg[0] ? " " : "", s_nfiles, SDL_AtomicGet(&s_scan_seen));
         s_restore_msg[0] = 0;
+        if (s_game[0]) stage_list();                 /* m26 */
     }
     if (s_dropped) {
         if (s_raw && s_sel_file >= 0) {             /* m13: any file, as the picked item */
@@ -1815,7 +1880,12 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         {                                           /* m3: the tabs, with their counts */
             int cnt[CAT_N] = { 0 }, c;
             SDL_LockMutex(s_mx);
-            for (i = 0; i < s_nfiles; i++) cnt[s_files[i].cat]++;
+            for (i = 0; i < s_nfiles; i++) {
+                char nm[16];
+                if (s_files[i].cat == CAT_STAGE && jst_name_of(s_files[i].rel, nm, sizeof nm)) continue;   /* m26: counted as stages */
+                cnt[s_files[i].cat]++;
+            }
+            if (s_nstages > 0) cnt[CAT_STAGE] += s_nstages;
             SDL_UnlockMutex(s_mx);
             nk_layout_row_dynamic(ctx, row, NTABS);
             for (c = 0; c < NTABS; c++) {
@@ -1831,6 +1901,27 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
     }
     nk_end(ctx);
 
+    if (s_stage_view && s3d_is_open()) {           /* m26: the stage viewer takes the rest */
+        char ex[LPATH];
+        pjoin(ex, s_game, "stage_exports");
+        if (s3d_draw(ctx, ren, 0, top, (float)ww, (float)wh - top, row, s_msg, sizeof s_msg, ex, stage_files_ui)) {
+            s3d_close();
+            s_stage_view = 0;
+        }
+        if (s_stage_file >= 0) {                     /* one of its files, for its textures */
+            int k = s_stage_file;
+            s_stage_file = -1;
+            s3d_close();
+            s_stage_view = 0;
+            if (may_leave_paint() && !open_file(k)) {
+                if (s_cur.ntex) show_texture(ren, 0);
+                else if (s_snd.n) show_sound(0);
+            }
+        }
+        return;
+    }
+    s_stage_view = 0;
+
     /* the files: the tab's, in collapsible sections */
     thumbs_new_frame();                              /* m22 */
     if (nk_begin(ctx, "Files", nk_rect(0, top, LW_FILES, (float)wh - top), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
@@ -1839,6 +1930,18 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         int nview = 0, k;
         nk_layout_row_dynamic(ctx, row, 1);
         nk_edit_string_zero_terminated(ctx, NK_EDIT_FIELD, s_filter, sizeof s_filter, nk_filter_default);
+        if (s_tab == CAT_STAGE && s_game[0]) {        /* m26: whole stages, in 3D */
+            if (s_nstages < 0 && !busy) stage_list();
+            for (i = 0; i < s_nstages; i++) {          /* one entry a stage (Miggas), as the graffiti */
+                char lb[64];
+                const char *tt = stage_title(s_stages[i]);
+                int sel = 0;
+                if (tt) snprintf(lb, sizeof lb, "%s  %s", s_stages[i], tt);
+                else snprintf(lb, sizeof lb, "%s", s_stages[i]);
+                nk_layout_row_dynamic(ctx, row - 6, 1);
+                if (nk_selectable_label(ctx, lb, NK_TEXT_LEFT, &sel) && !busy) open_stage(s_stages[i]);
+            }
+        }
         SDL_LockMutex(s_mx);
         if (capview < s_nfiles) {
             capview = s_nfiles + 64;
@@ -1847,6 +1950,10 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
         for (i = 0; i < s_nfiles; i++) {
             const Entry *e = &s_files[i];
             if (e->cat != s_tab) continue;
+            if (e->cat == CAT_STAGE) {                 /* m26: a stage's files are under its one entry */
+                char nm[16];
+                if (jst_name_of(e->rel, nm, sizeof nm)) continue;
+            }
             if (s_filter[0] && !SDL_strcasestr(e->rel, s_filter) && !SDL_strcasestr(e->label, s_filter)) continue;
             view[nview++] = i;
         }
@@ -1898,7 +2005,7 @@ static void draw(struct nk_context *ctx, SDL_Renderer *ren, int ww, int wh)
                 nk_tree_pop(ctx);
             }
         }
-        if (!nview && s_nfiles) {
+        if (!nview && s_nfiles && !(s_tab == CAT_STAGE && s_nstages > 0)) {
             nk_layout_row_dynamic(ctx, row, 1);
             nk_label(ctx, "Nothing here.", NK_TEXT_LEFT);
         }
@@ -2207,6 +2314,20 @@ int main(int argc, char **argv)
             printf("%s\n", s_msg);
             break;
         }
+        if (shot && getenv("MT_STAGE") && !s_stage_view && !SDL_AtomicGet(&s_scan_busy) && !SDL_AtomicGet(&s_scan_done) && s_nfiles) {
+            static int tried;                          /* m26 (tests): a stage in the viewer, MT_CAM "x,y,z,yaw,pitch", MT_LAYERS "vpcr" */
+            if (!tried) {
+                tried = 1;
+                open_stage(getenv("MT_STAGE"));
+                if (getenv("MT_CAM")) {
+                    float c[5] = { 0, 0, 0, 0, 0 };
+                    sscanf(getenv("MT_CAM"), "%f,%f,%f,%f,%f", &c[0], &c[1], &c[2], &c[3], &c[4]);
+                    s3d_set_camera(c[0], c[1], c[2], c[3], c[4]);
+                }
+                if (getenv("MT_LAYERS")) s3d_set_layers(getenv("MT_LAYERS"));
+                if (!s_stage_view) { printf("%s\n", s_msg); break; }
+            }
+        } else
         if (shot && !SDL_AtomicGet(&s_scan_busy) && !SDL_AtomicGet(&s_scan_done) && s_nfiles && s_sel_file < 0) {
             int k = 0;
             if (shot_pick) for (k = 0; k < s_nfiles - 1 && strcmp(s_files[k].rel, shot_pick); k++) ;
@@ -2267,7 +2388,7 @@ int main(int argc, char **argv)
             }
             if (f < 42) goto present;
         }
-        if (shot && (s_preview || s_sel_snd >= 0)) {   /* m7: or a sound */
+        if (shot && (s_preview || s_sel_snd >= 0 || s_stage_view)) {   /* m7: or a sound; m26: or a stage */
             static int frames;
             if (++frames == 5) {
                 SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, ww, wh, 32, SDL_PIXELFORMAT_ABGR8888);

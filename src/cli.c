@@ -1,8 +1,10 @@
 /* jsrf_modtool_cli: the texture work without the window (tests, scripts).
  *   list FILE...            the textures in each file
  *   export FILE DIR         every texture to DIR/<file>_<n>.png
- *   import FILE N PNG OUT   texture N replaced by PNG (the same size), saved as OUT */
+ *   import FILE N PNG OUT   texture N replaced by PNG (the same size), saved as OUT
+ *   stage DIR StgXX [OUT]   m26: a stage read whole (counts); with OUT, written there as .obj */
 #include "jtex.h"
+#include "jstage.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +34,23 @@ int main(int argc, char **argv)
     if (argc < 3) {
         fprintf(stderr, "usage: %s list FILE... | export FILE DIR | import FILE N PNG OUT\n", argv[0]);
         return 2;
+    }
+    if (!strcmp(argv[1], "stage") && argc >= 4) {   /* m26 */
+        JStage st;
+        char err[512];
+        int k, sc[JST_NSURF] = { 0 };
+        if (jst_load(argv[2], argv[3], &st, err, sizeof err)) { printf("%s\n", err); return 1; }
+        for (k = 0; k < st.nct; k++) sc[jst_surf_index(st.csurf[k])]++;
+        printf("%s: %d .dat files, %d textures; %d stage models (%d see-through), %d props: %d vertices, %d triangles\n",
+               st.name, st.ndat, st.ntex, st.nmodels, st.nsee, st.nprops, st.nv, st.nt);
+        printf("collision: %d models, %d triangles;", st.ncmodels, st.nct);
+        for (k = 0; k < JST_NSURF; k++) if (sc[k]) printf(" %s %d", jst_surf[k].name, sc[k]);
+        printf("\nrails: %d, %d points; box %.0f %.0f %.0f .. %.0f %.0f %.0f\n", st.nrail, st.nrp,
+               st.lo[0], st.lo[1], st.lo[2], st.hi[0], st.hi[1], st.hi[2]);
+        { int nn = 0; for (k = 0; k < st.nt; k++) nn += st.ttex[k] < 0; printf("triangles without a known texture: %d\n", nn); }
+        if (argc >= 5 && jst_write_obj(&st, argv[4], err, sizeof err)) { printf("%s\n", err); return 1; }
+        jst_free(&st);
+        return 0;
     }
     if (!strcmp(argv[1], "list")) {
         for (i = 2; i < argc; i++) {

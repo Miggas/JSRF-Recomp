@@ -110,7 +110,7 @@ static int data_is_last(const uint8_t *m, size_t len, uint32_t p, uint32_t parts
 }
 
 /* the visible parts of the MDLB at m (len bytes) into one mesh; 0 done */
-static int parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
+int jm_parse_mdlb(const uint8_t *m, size_t len, JMesh *out)
 {
     uint32_t parts, p;
     int any_visible = 0, pass, vis_n = 0, vis_p = -1, q3;
@@ -291,7 +291,7 @@ int jm_load(const uint8_t *b, size_t size, JModels *out)
             JMesh m;
             if (it->e <= it->s || it->e - it->s < 16 || memcmp(b + it->s, "MDLB", 4)) continue;
             count++;
-            if (parse_mdlb(b + it->s, it->e - it->s, &m)) {
+            if (jm_parse_mdlb(b + it->s, it->e - it->s, &m)) {
                 free(m.p); free(m.n); free(m.t); free(m.ix); free(m.tmat); free(m.bi); free(m.bw); free(m.bonepos);
                 continue;
             }

@@ -44,6 +44,8 @@ typedef struct {
 } JModels;
 
 int jm_load(const uint8_t *buf, size_t size, JModels *out);
+/* m26: one MDLB (m, len bytes): its visible parts as one mesh; 0 done */
+int jm_parse_mdlb(const uint8_t *m, size_t len, JMesh *out);
 
 /* m8: m as a Wavefront .obj at obj_path (as the 3D view shows it, texture
  * coordinates up the image as Blender has them), its material in
