@@ -39,7 +39,7 @@ static struct {
     float pos[3], yaw, pitch, speed;
     int cam_set;
     /* the layers */
-    int vis, see, prop, coll, rail, shadow, surf[JST_NSURF], scount[JST_NSURF];
+    int vis, see, prop, coll, rail, shadow, shadows, surf[JST_NSURF], scount[JST_NSURF];
     /* the picture */
     SDL_Texture *rt;
     int tw, th;                            /* the texture's size */
@@ -47,6 +47,8 @@ static struct {
     uint8_t *fb;
     float *zb;
     uint32_t *idb;
+    int8_t *sb;                            /* m26e: the shadow volumes' count */
+    int shadow_on_surf;                    /* this picture has shadows cast */
     int need, moving, still;
     float *vv, *cv;                        /* the vertices in the camera's space */
     STri *st;
@@ -123,6 +125,7 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     make_mips();
     G.vis = G.see = G.prop = 1;
     G.shadow = 0;
+    G.shadows = 1;                              /* m26e: cast on the surfaces, as in the game */
     G.coll = 0;
     G.rail = 1;
     memset(G.scount, 0, sizeof G.scount);
@@ -166,6 +169,7 @@ void s3d_set_layers(const char *l)
     G.coll = !!strchr(l, 'c');
     G.rail = !!strchr(l, 'r');
     G.shadow = !!strchr(l, 's');
+    G.shadows = !strchr(l, 'n');   /* n: no shadows cast */
     G.need = 1;
 }
 
@@ -265,14 +269,32 @@ typedef struct { int y0, y1; } Band;
 static int raster_band(void *u)
 {
     const Band *bd = (const Band *)u;
-    int i;
+    int i, pass;
+    /* pass 0: the surfaces; 1: the shadow volumes, counted in front of them
+     * (a front face up, a back face down: a pixel left counted is in the
+     * shadow, and is darkened); 2: what is laid over (the collision) */
+    for (pass = 0; pass < 3; pass++) {
+    if (pass == 2 && G.shadow_on_surf) {
+        int x, y;
+        for (y = bd->y0; y < bd->y1; y++)
+            for (x = 0; x < G.rw; x++) {
+                size_t pi = (size_t)y * G.rw + x;
+                if (G.sb[pi]) {
+                    uint8_t *o = G.fb + pi * 4;
+                    o[0] = (uint8_t)(o[0] * 11 / 20); o[1] = (uint8_t)(o[1] * 11 / 20); o[2] = (uint8_t)(o[2] * 12 / 20);
+                    G.sb[pi] = 0;
+                }
+            }
+    }
     for (i = 0; i < G.nst; i++) {
         const STri *t = &G.st[i];
         float area, inv, minx, maxx;
-        int x0, x1, y0, y1, x, y;
+        int x0, x1, y0, y1, x, y, sgn;
+        if ((pass == 0) != (t->mode <= 1) || (pass == 1) != (t->mode == 3) || (pass == 2) != (t->mode == 2)) continue;
         if (t->maxy < (float)bd->y0 || t->miny >= (float)bd->y1) continue;
         area = (t->x[1] - t->x[0]) * (t->y[2] - t->y[0]) - (t->y[1] - t->y[0]) * (t->x[2] - t->x[0]);
         if (fabsf(area) < 1e-8f) continue;
+        sgn = area > 0 ? 1 : -1;
         inv = 1.0f / area;
         minx = fminf(t->x[0], fminf(t->x[1], t->x[2]));
         maxx = fmaxf(t->x[0], fmaxf(t->x[1], t->x[2]));
@@ -293,6 +315,7 @@ static int raster_band(void *u)
                 uint8_t *o, cr, cg, cb;
                 if (w0 < 0 || w1 < 0 || w2 < 0) continue;
                 iz = w0 * t->iz[0] + w1 * t->iz[1] + w2 * t->iz[2];
+                if (t->mode == 3) { if (iz > G.zb[pi]) G.sb[pi] = (int8_t)(G.sb[pi] + sgn); continue; }
                 if (t->mode == 2) { if (iz * 1.004f < G.zb[pi]) continue; }
                 else if (iz <= G.zb[pi]) continue;
                 if (t->px) {
@@ -323,6 +346,7 @@ static int raster_band(void *u)
                 G.idb[pi] = t->id;
             }
         }
+    }
     }
     return 0;
 }
@@ -413,7 +437,7 @@ static void render(void)
             float l;
             int cr = 0, cg = 0, cb = 0;
             if ((kind == JST_T_STAGE && !G.vis) || (kind == JST_T_SEE && !G.see) || (kind == JST_T_PROP && !G.prop)
-                || (kind == JST_T_SHADOW && !G.shadow)) continue;
+                || (kind == JST_T_SHADOW && !G.shadow && !G.shadows)) continue;
             for (k = 0; k < 3; k++) {
                 const float *p = G.vv + ix[k] * 3;
                 c[k].x = p[0]; c[k].y = p[1]; c[k].z = p[2];
@@ -428,8 +452,10 @@ static void render(void)
                 int rr = (int)(cr / 3 * l), gg = (int)(cg / 3 * l), bb = (int)(cb / 3 * l);
                 emit(c, m, (uint8_t)(rr > 255 ? 255 : rr), (uint8_t)(gg > 255 ? 255 : gg), (uint8_t)(bb > 255 ? 255 : bb),
                      kind == JST_T_STAGE ? 0 : 1, ID_OF(kind == JST_T_STAGE ? ID_STAGE : kind == JST_T_SEE ? ID_SEE : ID_PROP, i));
-            } else if (kind == JST_T_SHADOW)        /* laid over, dark */
-                emit(c, NULL, 20, 20, 30, 2, ID_OF(ID_SHADOW, i));
+            } else if (kind == JST_T_SHADOW) {      /* m26e: cast on the surfaces; and/or the volumes laid over, dark */
+                if (G.shadows) emit(c, NULL, 0, 0, 0, 3, 0);
+                if (G.shadow) emit(c, NULL, 20, 20, 30, 2, ID_OF(ID_SHADOW, i));
+            }
             else
                 emit(c, NULL, (uint8_t)(150 * l), (uint8_t)(150 * l), (uint8_t)(155 * l), 0,
                      ID_OF(kind == JST_T_STAGE ? ID_STAGE : kind == JST_T_SEE ? ID_SEE : ID_PROP, i));
@@ -453,6 +479,7 @@ static void render(void)
                      over ? 2 : 0, ID_OF(ID_COLL, i));
             }
     }
+    G.shadow_on_surf = G.shadows && G.s.nshadow && G.sb;
     /* the triangles, a band of rows a thread (the laid-over ones last in each) */
     {
         SDL_Thread *th[16];
@@ -540,6 +567,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         check(ctx, "See-through parts", &G.see);
         check(ctx, "Props", &G.prop);
         if (G.s.nshadow) {
+            check(ctx, "Shadows", &G.shadows);
             snprintf(t, sizeof t, "Shadow volumes (%d)", G.s.nshadow);
             check(ctx, t, &G.shadow);
         }
@@ -622,10 +650,11 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             if (bw != G.tw || bh != G.th || !G.rt) {
                 if (G.rt) SDL_DestroyTexture(G.rt);
                 G.rt = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, bw, bh);
-                free(G.fb); free(G.zb); free(G.idb);
+                free(G.fb); free(G.zb); free(G.idb); free(G.sb);
                 G.fb = (uint8_t *)malloc((size_t)bw * bh * 4);
                 G.zb = (float *)malloc(sizeof(float) * (size_t)bw * bh);
                 G.idb = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)bw * bh);
+                G.sb = (int8_t *)calloc((size_t)bw * bh, 1);
                 G.tw = bw; G.th = bh;
                 G.need = 1;
             }
