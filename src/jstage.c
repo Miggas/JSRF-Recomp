@@ -187,7 +187,7 @@ static int add_stage_model(JStage *s, Build *b, const Model *m)
                     if (!t || !tt || !tk) return -1;
                     t[0] = (uint32_t)v0 + a; t[1] = (uint32_t)v0 + bb; t[2] = (uint32_t)v0 + c;
                     *tt = tex;
-                    *tk = m->kind == 2 ? JST_T_SEE : JST_T_STAGE;
+                    *tk = m->kind == 2 ? (uv < 0 ? JST_T_SHADOW : JST_T_SEE) : JST_T_STAGE;
                 }
             }
         }
@@ -420,7 +420,15 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     for (i = 0; i < ndat; i++) dat_models(&dats[i], &ms, &nm, &cm);
     for (i = 0; i < nm; i++)
         if (ms[i].kind == 1 || ms[i].kind == 2) {
-            if (!add_stage_model(s, &b, &ms[i])) { s->nmodels++; if (ms[i].kind == 2) s->nsee++; }
+            if (!add_stage_model(s, &b, &ms[i])) {
+                int col, uv;
+                s->nmodels++;
+                if (ms[i].kind == 2) {
+                    const uint8_t *mh = ms[i].d + 0x10 + u32(ms[i].d + 0x10);
+                    fvf_layout(u32(mh + 8), (int)u32(mh + 12), &col, &uv);
+                    if (uv < 0) s->nshadow++; else s->nsee++;
+                }
+            }
         }
     /* the .bin: collision, rails, placements */
     if (bin) {
@@ -523,10 +531,10 @@ int jst_write_obj(const JStage *s, const char *dir, char *err, size_t errn)
     for (i = 0; i < s->nv; i++) fprintf(f, "v %.4f %.4f %.4f\n", s->p[i * 3], s->p[i * 3 + 1], s->p[i * 3 + 2]);
     for (i = 0; i < s->nv; i++) fprintf(f, "vt %.6f %.6f\n", s->uv[i * 2], 1.0f - s->uv[i * 2 + 1]);
     for (k = -1; k < s->ntex; k++) {
-        static const char *kn[3] = { "stage", "see_through", "props" };
+        static const char *kn[4] = { "stage", "see_through", "props", "shadows" };
         int kind;
         if (k >= 0 && !used[k]) continue;
-        for (kind = 0; kind < 3; kind++) {
+        for (kind = 0; kind < 4; kind++) {
             int any = 0;
             for (i = 0; i < s->nt; i++) {
                 uint32_t a, b, c;

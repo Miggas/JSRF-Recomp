@@ -17,7 +17,7 @@
 #include "util.h"
 
 /* what is under a pixel: the layer in the top bits, the triangle below */
-enum { ID_NONE = 0, ID_STAGE = 1, ID_SEE = 2, ID_PROP = 3, ID_COLL = 4 };
+enum { ID_NONE = 0, ID_STAGE = 1, ID_SEE = 2, ID_PROP = 3, ID_COLL = 4, ID_SHADOW = 5 };
 #define ID_OF(l, i) ((uint32_t)(l) << 28 | ((uint32_t)(i) & 0x0FFFFFFFu))
 
 typedef struct { int n; int w[14], h[14]; uint8_t *px[14]; } Mip;
@@ -39,7 +39,7 @@ static struct {
     float pos[3], yaw, pitch, speed;
     int cam_set;
     /* the layers */
-    int vis, see, prop, coll, rail, surf[JST_NSURF], scount[JST_NSURF];
+    int vis, see, prop, coll, rail, shadow, surf[JST_NSURF], scount[JST_NSURF];
     /* the picture */
     SDL_Texture *rt;
     int tw, th;                            /* the texture's size */
@@ -122,6 +122,7 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     G.open = 1;
     make_mips();
     G.vis = G.see = G.prop = 1;
+    G.shadow = 0;
     G.coll = 0;
     G.rail = 1;
     memset(G.scount, 0, sizeof G.scount);
@@ -164,6 +165,7 @@ void s3d_set_layers(const char *l)
     G.prop = !!strchr(l, 'p');
     G.coll = !!strchr(l, 'c');
     G.rail = !!strchr(l, 'r');
+    G.shadow = !!strchr(l, 's');
     G.need = 1;
 }
 
@@ -410,7 +412,8 @@ static void render(void)
             uint32_t col = 0;
             float l;
             int cr = 0, cg = 0, cb = 0;
-            if ((kind == JST_T_STAGE && !G.vis) || (kind == JST_T_SEE && !G.see) || (kind == JST_T_PROP && !G.prop)) continue;
+            if ((kind == JST_T_STAGE && !G.vis) || (kind == JST_T_SEE && !G.see) || (kind == JST_T_PROP && !G.prop)
+                || (kind == JST_T_SHADOW && !G.shadow)) continue;
             for (k = 0; k < 3; k++) {
                 const float *p = G.vv + ix[k] * 3;
                 c[k].x = p[0]; c[k].y = p[1]; c[k].z = p[2];
@@ -425,7 +428,9 @@ static void render(void)
                 int rr = (int)(cr / 3 * l), gg = (int)(cg / 3 * l), bb = (int)(cb / 3 * l);
                 emit(c, m, (uint8_t)(rr > 255 ? 255 : rr), (uint8_t)(gg > 255 ? 255 : gg), (uint8_t)(bb > 255 ? 255 : bb),
                      kind == JST_T_STAGE ? 0 : 1, ID_OF(kind == JST_T_STAGE ? ID_STAGE : kind == JST_T_SEE ? ID_SEE : ID_PROP, i));
-            } else
+            } else if (kind == JST_T_SHADOW)        /* laid over, dark */
+                emit(c, NULL, 20, 20, 30, 2, ID_OF(ID_SHADOW, i));
+            else
                 emit(c, NULL, (uint8_t)(150 * l), (uint8_t)(150 * l), (uint8_t)(155 * l), 0,
                      ID_OF(kind == JST_T_STAGE ? ID_STAGE : kind == JST_T_SEE ? ID_SEE : ID_PROP, i));
         }
@@ -501,7 +506,8 @@ static void hover_text(char *out, size_t n)
         const char *what = l == ID_STAGE ? "Stage model" : l == ID_SEE ? "Stage model (see-through)" : "Prop";
         if (t >= 0) snprintf(out, n, "%s, texture %08X (%dx%d)", what, G.s.tex[t].id, G.s.tex[t].w, G.s.tex[t].h);
         else snprintf(out, n, "%s, no texture known", what);
-    } else out[0] = 0;
+    } else if (l == ID_SHADOW) snprintf(out, n, "Shadow volume (the game darkens what is inside it)");
+    else out[0] = 0;
 }
 
 static int check(struct nk_context *ctx, const char *label, int *v)
@@ -533,6 +539,10 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         check(ctx, "Stage models", &G.vis);
         check(ctx, "See-through parts", &G.see);
         check(ctx, "Props", &G.prop);
+        if (G.s.nshadow) {
+            snprintf(t, sizeof t, "Shadow volumes (%d)", G.s.nshadow);
+            check(ctx, t, &G.shadow);
+        }
         snprintf(t, sizeof t, "Grind rails (%d)", G.s.nrail);
         check(ctx, t, &G.rail);
         snprintf(t, sizeof t, "Collision (%d triangles)", G.s.nct);

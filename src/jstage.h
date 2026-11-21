@@ -35,7 +35,10 @@ typedef struct { uint16_t flag; const char *name; uint8_t r, g, b; } JSSurf;
 extern const JSSurf jst_surf[JST_NSURF];   /* the last: anything else */
 int jst_surf_index(uint16_t flag);
 
-enum { JST_T_STAGE = 0, JST_T_SEE = 1, JST_T_PROP = 2 };
+/* m26d: JST_T_SHADOW: see-through models with no texture coordinates (Direct3D
+ * format 0x42: position and colour, white, texture id 0): not drawn as they
+ * are in the game; the buildings' shadow volumes, stretched along the light: the game darkens what is inside them, the shapes themselves aren't seen (Miggas) */
+enum { JST_T_STAGE = 0, JST_T_SEE = 1, JST_T_PROP = 2, JST_T_SHADOW = 3 };
 
 typedef struct { uint32_t id; int w, h; uint8_t *rgba; } JSTex;
 
@@ -50,7 +53,7 @@ typedef struct {
     uint8_t *tkind;                     /* JS_T_* */
     int ntex;
     JSTex *tex;
-    int nmodels, nprops, nsee;
+    int nmodels, nprops, nsee, nshadow;
     /* collision, in place */
     int ncv, nct;
     float *cp;
