@@ -39,6 +39,8 @@ extern void D3D8_D3DDevice_Swap_gen(void);
 extern void D3D8_D3DDevice_DrawVerticesUP_gen(void);
 extern void sub_000A2960_gen(void);
 void jsrf_ZBiasMark(uint32_t v);            /* jsrf_widescreen.c */
+void jsrf_photo_place(uint32_t cam);        /* v313: jsrf_photo.c */
+int  jsrf_photo_holding(void);
 
 static int bl_on = -1;
 static int boost_log_on(void)
@@ -260,6 +262,7 @@ void sub_000A2960(void)
 {
     uint32_t self = g_ecx, pass = MEM32(g_esp + 4), owner, saved;
     int mode;
+    jsrf_photo_place(self);                 /* v313: photo mode's eye, while it holds the world */
     if (pass != 0x13 && pass != 0x14) { sub_000A2960_gen(); return; }
     mode = boost_mode();
     owner = ok(self + 0x24, 4) ? MEM32(self + 0x24) : 0;
@@ -278,6 +281,7 @@ void sub_000A2960(void)
             if (scale > 1.0f) scale = 1.0f;
         }
         level += on ? 1.0f / 8.0f : -1.0f / 14.0f;   /* in over 8 frames, out over 14 */
+        if (jsrf_photo_holding()) level = 0.0f;       /* v313: not in a photo */
         if (level < 0.0f) level = 0.0f;
         if (level > 1.0f) level = 1.0f;
         if (level > 0.0f) {

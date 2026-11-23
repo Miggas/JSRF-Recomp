@@ -3658,6 +3658,8 @@ static double xbox_WidescreenK(void)    /* no presenter here: the harness */
     return e ? atof(e) : 1.0;
 }
 #endif
+/* v313: the squeeze, for the renderer's photos (nv2a_render.c) */
+double nv2a_pb_ws_k(void) { return xbox_WidescreenK(); }
 /* v187b-e: the x span (guest pixels) of a batch of at most maxn vertices.
  * 0 when it has more, or a position cannot be read. */
 /* v187u: position (screen x, y, z, w) of index i of the batch, as ws_span */

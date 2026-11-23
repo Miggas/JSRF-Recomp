@@ -97,9 +97,12 @@ static int ws_hold_on(void)
  * a sprite or string lies (above or below the middle), or, for the 3D
  * ones, from the table below. In widescreen with the HUD at the edges, the
  * corners are the wide screen's. Not in split screen. */
+int jsrf_photo_holding(void);       /* v313: jsrf_photo.c */
 static float hud_scale(void)
 {
     static float s = -1.0f;
+    if (jsrf_photo_holding())
+        return 0.0f;                    /* v313: photo mode hides the HUD */
     if (s < 0.0f) {
         const char *e = getenv("RECOMP_HUD_SCALE"), *h = getenv("RECOMP_HUD");
         s = e && *e ? (float)atof(e) : 1.0f;

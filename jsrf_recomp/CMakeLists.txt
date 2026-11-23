@@ -92,6 +92,7 @@ set(JSRF_OWN_SOURCES
     src/jsrf_testruns.c     # v311: Early Test Runs
     src/jsrf_boost.c        # v312c: the boost's render targets (RECOMP_BOOST_LOG)
     src/jsrf_camwall.c      # v312z: the camera kept out of walls (RECOMP_CAM_WALLS)
+    src/jsrf_photo.c        # v313: photo mode (R3)
 )
 if(NOT JSRF_RELEASE STREQUAL "usa")
     find_package(Python3 COMPONENTS Interpreter)

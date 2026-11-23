@@ -41,7 +41,7 @@ ANALYSIS = os.path.join(JR, "analysis")
 # The files whose game addresses are moved for another release.
 SOURCES = ["src/recomp_manual.c", "src/jsrf_widescreen.c", "src/jsrf_dsound_lift.c",
            "src/jsrf_chapter_select.c", "src/jsrf_graffiti.c", "src/jsrf_testruns.c",
-           "src/jsrf_camwall.c",
+           "src/jsrf_camwall.c", "src/jsrf_photo.c",
            "tools/wrap_dsound.py",
            "tools/generate_code.py"]
 

@@ -3277,6 +3277,7 @@ void sub_001BAF70(void)
 extern void sub_000A5070_gen(void);
 extern void sub_000A28B0_gen(void);
 int jsrf_camwall_apply(uint32_t cam, int own_line);   /* v312z: jsrf_camwall.c */
+void jsrf_photo_follow_seen(uint32_t cam);            /* v313: jsrf_photo.c */
 extern void (*g_xbox_pad_filter)(int pad, short *rx, short *ry, unsigned char lt);
 
 #define RCAM_DEAD    0.20f
@@ -3608,6 +3609,11 @@ void sub_000A28B0(void)
         int turned = on && s_rcam.applied && s_rcam.cam == cam;
         if (jsrf_camwall_apply(cam, turned) && turned)
             memcpy(s_rcam.our_eye, (const void *)XBOX_PTR(cam + 0x44), 12);
+    }
+    {   /* v313: photo mode may start from this camera (jsrf_photo.c) */
+        uint32_t mode = MEM32(cam + 0x208);
+        if (mode == 3u || mode == 4u || mode == 5u || mode == 9u)
+            jsrf_photo_follow_seen(cam);
     }
 }
 

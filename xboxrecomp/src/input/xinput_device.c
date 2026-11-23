@@ -491,6 +491,7 @@ static volatile LONG s_qd_open;           /* 0 closed, 1 open (v276f: no state 2
 static WORD s_qd_prev_btn[QD_IDX];
 static BYTE s_qd_prev_ab[QD_IDX];
 static signed char s_qd_prev_x[QD_IDX];   /* left stick: -1 left, 0, 1 right */
+static BYTE s_qd_prev_y_btn[QD_IDX];      /* v313: Y down (photo mode) */
 static BYTE s_qd_held[QD_IDX];            /* v276d: a button down on this device */
 static volatile BYTE s_qd_block[QD_IDX];  /* v276f: closed with a button down: the game gets nothing from it yet */
 static volatile LONG s_qd_sel = 2;        /* v278b: 0 Quit Game, 1 Quit to Title, 2 Return */
@@ -612,6 +613,94 @@ static int s_lm_last_dir;
  * it at its next frame), its sound too (apu/apu_core.c) */
 volatile LONG g_xbox_game_held;
 
+/* v313: photo mode (Idea by Miggas). Clicking the right stick and letting go
+ * of it (R3, on release, so the quit window's L3 + R3 never sets it off)
+ * opens it, while the game says it may (xbox_PhotoAllow: in play, the camera
+ * following the player); R3 again, or B, closes it. While it is open
+ * (s_qd_open 4) the game gets a controller at rest, as for the quit window,
+ * but it isn't held here: the game holds its own world (jsrf_photo.c) and
+ * goes on drawing it, from the camera the pads fly (xbox_PhotoPad). A takes
+ * a photo (xbox_PhotoShotTake: the renderer saves the next frame), Y puts
+ * the camera back where photo mode started (xbox_PhotoResetTake). The
+ * controls are listed at the window's top-left (g_xbox_legend, drawn by
+ * kernel/nv2a_gl_quit.h, never in a photo). */
+char g_xbox_legend[10][40];
+static volatile LONG s_ph_allowed, s_ph_shots, s_ph_resets;
+static BYTE s_ph_r3[QD_IDX], s_ph_l3[QD_IDX];
+static XBOX_GAMEPAD s_ph_pad[QD_IDX];
+static DWORD s_ph_pad_t[QD_IDX];
+static DWORD s_ph_last_toggle, s_ph_last_shot, s_ph_last_reset;
+
+void xbox_PhotoAllow(int ok) { InterlockedExchange(&s_ph_allowed, ok ? 1 : 0); }
+int xbox_PhotoOpen(void) { return s_qd_open == 4; }
+int xbox_PhotoShotTake(void) { return (int)InterlockedExchange(&s_ph_shots, 0); }
+int xbox_PhotoResetTake(void) { return (int)InterlockedExchange(&s_ph_resets, 0); }
+
+static void photo_legend(int on)
+{
+    static const char *const lines[] = {
+        "PHOTO MODE",
+        "Left stick: move",
+        "Right stick: look",
+        "RT / LT: up / down",
+        "RB: fast   LB: slow",
+        "A: take a photo",
+        "Y: back to the start",
+        "R3 or B: exit",
+    };
+    int i;
+    memset(g_xbox_legend, 0, sizeof g_xbox_legend);
+    if (on)
+        for (i = 0; i < (int)(sizeof lines / sizeof lines[0]); i++)
+            snprintf(g_xbox_legend[i], sizeof g_xbox_legend[i], "%s", lines[i]);
+}
+
+/* every device that has a button down gives the game nothing until it lets go */
+static void qd_block_held(int idx, int held)
+{
+    int any = 0, k;
+    s_qd_held[idx] = (BYTE)held;
+    for (k = 8; k < QD_IDX; k++) { s_qd_block[k] = s_qd_held[k]; any |= s_qd_held[k]; }
+    for (k = 0; k < 8; k++) s_qd_block[k] = (BYTE)(s_qd_held[k] | any);
+    memset(s_qd_held, 0, sizeof s_qd_held);
+}
+
+static void photo_close(const char *why)
+{
+    if (s_qd_open != 4) return;
+    photo_legend(0);
+    InterlockedExchange(&s_qd_open, 0);
+    fprintf(stderr, "[PHOTO] photo mode closed (%s)\n", why);
+}
+
+/* the game ends it (it couldn't hold its world, or left play) */
+void xbox_PhotoClose(void)
+{
+    if (s_qd_open != 4) return;
+    qd_block_held(0, 0);
+    photo_close("by the game");
+}
+
+/* the pads' sticks, triggers and buttons now, all devices together (each
+ * axis from whichever device pushes it furthest) */
+void xbox_PhotoPad(XBOX_GAMEPAD *out)
+{
+    DWORD now = GetTickCount();
+    int i, k;
+    memset(out, 0, sizeof *out);
+    for (i = 0; i < QD_IDX; i++) {
+        const XBOX_GAMEPAD *p = &s_ph_pad[i];
+        if (!s_ph_pad_t[i] || now - s_ph_pad_t[i] > 200u) continue;
+        out->wButtons |= p->wButtons;
+        for (k = 0; k < 8; k++)
+            if (p->bAnalogButtons[k] > out->bAnalogButtons[k]) out->bAnalogButtons[k] = p->bAnalogButtons[k];
+        if (abs(p->sThumbLX) > abs(out->sThumbLX)) out->sThumbLX = p->sThumbLX;
+        if (abs(p->sThumbLY) > abs(out->sThumbLY)) out->sThumbLY = p->sThumbLY;
+        if (abs(p->sThumbRX) > abs(out->sThumbRX)) out->sThumbRX = p->sThumbRX;
+        if (abs(p->sThumbRY) > abs(out->sThumbRY)) out->sThumbRY = p->sThumbRY;
+    }
+}
+
 static void quit_filter(int idx, XBOX_INPUT_STATE *st);
 static DWORD source_get(int src, XBOX_INPUT_STATE *pState);
 /* the game is held and reads no input: the window reads every device */
@@ -645,7 +734,8 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
         s_qd_off = e && e[0] == '0';
     }
     if (idx < 0 || idx >= QD_IDX) return;
-    if (s_qd_off && s_lm_n <= 0 && s_qd_open == 0 && !s_qd_block[idx]) return;   /* v278: the menu works without the quit combo */
+    if (s_qd_off && s_lm_n <= 0 && s_qd_open == 0 && !s_qd_block[idx] && !s_ph_allowed && !s_ph_r3[idx])
+        return;   /* v278: the menu works without the quit combo (v313: and photo mode) */
     WORD b = g->wButtons;
     BYTE ab = (BYTE)((g->bAnalogButtons[XBOX_BUTTON_A] > 30 ? 1 : 0) |
                      (g->bAnalogButtons[XBOX_BUTTON_B] > 30 ? 2 : 0));
@@ -664,7 +754,7 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
     s_qd_prev_ab[idx] = ab;
     s_qd_prev_x[idx] = (signed char)sx;
     int held = b != 0 || ab != 0 || wb != 0 || g->bAnalogButtons[XBOX_BUTTON_X] > 30 || g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
-    if (s_qd_open == 1 || s_qd_open == 3) s_qd_held[idx] = (BYTE)held;   /* v276d: every device, while open */
+    if (s_qd_open == 1 || s_qd_open == 3 || s_qd_open == 4) s_qd_held[idx] = (BYTE)held;   /* v276d: every device, while open */
 
     if (s_qd_open == 0 && s_qd_block[idx]) {
         if (held) {                         /* v276f: still the button that closed it */
@@ -673,6 +763,31 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
             return;
         }
         s_qd_block[idx] = 0;                /* let go: this device is the game's again */
+    }
+    /* v313: R3 on its own, let go: photo mode opened or closed */
+    if (s_qd_open == 0 || s_qd_open == 4) {
+        if ((b & XBOX_GAMEPAD_RIGHT_THUMB) && !(pb & XBOX_GAMEPAD_RIGHT_THUMB)) {
+            s_ph_r3[idx] = 1;
+            s_ph_l3[idx] = 0;
+        }
+        if (s_ph_r3[idx] && (b & XBOX_GAMEPAD_LEFT_THUMB))
+            s_ph_l3[idx] = 1;                 /* the quit window's L3 + R3: not photo mode */
+        if (s_ph_r3[idx] && !(b & XBOX_GAMEPAD_RIGHT_THUMB)) {
+            DWORD now = GetTickCount();
+            s_ph_r3[idx] = 0;
+            if (!s_ph_l3[idx] && now - s_ph_last_toggle > 300u) {   /* one pad seen twice: one toggle */
+                s_ph_last_toggle = now;
+                if (s_qd_open == 4) {
+                    qd_block_held(idx, 0);
+                    photo_close("R3");
+                } else if (s_ph_allowed) {
+                    memset(s_ph_pad_t, 0, sizeof s_ph_pad_t);
+                    photo_legend(1);
+                    InterlockedExchange(&s_qd_open, 4);
+                    fprintf(stderr, "[PHOTO] photo mode open (A: photo, Y: back to the start, R3 or B: exit)\n");
+                }
+            }
+        }
     }
     if (s_qd_open == 0) {
         if (!s_qd_off && (b & sticks) == sticks && (pb & sticks) != sticks) {
@@ -687,6 +802,24 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
             fprintf(stderr, "[MENU] %s open (%ld entries)\n", xbox_ListMenuTitle(), (long)s_lm_n);
         } else {
             return;                         /* the game's input, untouched */
+        }
+    } else if (s_qd_open == 4) {
+        /* v313: photo mode: the pads fly the camera */
+        DWORD now = GetTickCount();
+        s_ph_pad[idx] = *g;
+        s_ph_pad_t[idx] = now;
+        if ((ab & 1) && !(pab & 1) && now - s_ph_last_shot > 300u) {
+            s_ph_last_shot = now;
+            InterlockedIncrement(&s_ph_shots);
+        }
+        if (g->bAnalogButtons[XBOX_BUTTON_Y] > 30 && !(s_qd_prev_y_btn[idx]) && now - s_ph_last_reset > 300u) {
+            s_ph_last_reset = now;
+            InterlockedIncrement(&s_ph_resets);
+        }
+        s_qd_prev_y_btn[idx] = g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
+        if ((ab & 2) && !(pab & 2)) {
+            qd_block_held(idx, held);
+            photo_close("B");
         }
     } else if (s_qd_open == 3) {
         /* v278: the list menu */

@@ -2964,6 +2964,124 @@ static int gl_window_present(GlSurf *s)
 
 static GlSurf *s_last_win;   /* v252: the frame last shown in the game window */
 
+/* ── v313: photo mode's photos (Idea by Miggas) ──
+ * A (input/xinput_device.c, xbox_PhotoShotTake) saves the next frame the
+ * game shows: the game's own picture at the renderer's resolution, read from
+ * its surface (so never the legend, which is drawn on the window only; the
+ * HUD is hidden by the game side, jsrf_photo.c), widened back to the
+ * window's shape in widescreen (the surface holds the wide view squeezed into
+ * 4:3), as a PNG in the Screenshots folder (made if missing), named by the
+ * date and time. Written on a thread of its own (stb_image_write, public
+ * domain), so the game doesn't wait; "Photo saved: ..." shows at the bottom
+ * for two seconds. */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_STATIC
+#include "../third_party/stb/stb_image_write.h"
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+#include <time.h>
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
+extern int xbox_PhotoShotTake(void);      /* input/xinput_device.c */
+extern char g_xbox_note[96];
+double nv2a_pb_ws_k(void);                /* nv2a_pb_exec.c */
+typedef struct { unsigned char *rgb; int w, h; char path[96]; } PhotoJob;
+static volatile LONG s_photo_note_until;  /* GetTickCount when the note goes */
+
+static int SDLCALL photo_write(void *arg)
+{
+    PhotoJob *j = (PhotoJob *)arg;
+    int ok = stbi_write_png(j->path, j->w, j->h, 3, j->rgb, j->w * 3);
+    fprintf(stderr, "[PHOTO] %s %s (%dx%d)\n", ok ? "saved" : "could not save", j->path, j->w, j->h);
+    if (ok) {
+        snprintf(g_xbox_note, sizeof g_xbox_note, "Photo saved: %s", j->path);
+        InterlockedExchange(&s_photo_note_until, (LONG)(GetTickCount() + 2000u));
+    }
+    free(j->rgb);
+    free(j);
+    return 0;
+}
+
+static void photo_save(GlSurf *s)
+{
+    int w = SC(s->w), h = SC(s->h), ow = w, x, y;
+    double k = nv2a_pb_ws_k();
+    uint32_t *px;
+    PhotoJob *j;
+    if (k > 0.2 && k < 0.9999)
+        ow = (int)(w / k + 0.5);          /* the wide view, unsqueezed */
+    px = (uint32_t *)malloc((size_t)w * h * 4);
+    j = (PhotoJob *)calloc(1, sizeof *j);
+    if (!px || !j || !(j->rgb = (unsigned char *)malloc((size_t)ow * h * 3))) {
+        free(px);
+        if (j) free(j->rgb);
+        free(j);
+        return;
+    }
+    surf_resolve(s);
+    rb_read_pixels(s_msaa > 1 ? s_resolve_fbo : s->fbo, w, h, px);
+    for (y = 0; y < h; y++) {
+        const uint32_t *src = px + (size_t)(h - 1 - y) * w;      /* GL rows: bottom-up */
+        unsigned char *dst = j->rgb + (size_t)y * ow * 3;
+        for (x = 0; x < ow; x++) {
+            double sx = (x + 0.5) * w / ow - 0.5;
+            int x0 = sx < 0 ? 0 : (int)sx, x1 = x0 + 1 < w ? x0 + 1 : x0, c;
+            double f = sx - x0;
+            if (f < 0) f = 0;
+            for (c = 0; c < 3; c++) {     /* BGRA in memory: blue first */
+                int sh = 16 - 8 * c;
+                double a = (src[x0] >> sh) & 0xFF, b = (src[x1] >> sh) & 0xFF;
+                dst[x * 3 + c] = (unsigned char)(a + (b - a) * f + 0.5);
+            }
+        }
+    }
+    free(px);
+    {
+        time_t t = time(NULL);
+        struct tm *lt = localtime(&t);
+        static int same_second;
+        static time_t last;
+        same_second = t == last ? same_second + 1 : 0;
+        last = t;
+#if defined(_WIN32)
+        CreateDirectoryA("Screenshots", NULL);
+#else
+        mkdir("Screenshots", 0755);
+#endif
+        if (lt)
+            snprintf(j->path, sizeof j->path, "Screenshots/JSRF_%04d-%02d-%02d_%02d-%02d-%02d%s%.0d.png",
+                     lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min,
+                     lt->tm_sec, same_second ? "_" : "", same_second);
+        else
+            snprintf(j->path, sizeof j->path, "Screenshots/JSRF_%lld.png", (long long)t);
+    }
+    j->w = ow;
+    j->h = h;
+    {
+        SDL_Thread *th = SDL_CreateThread(photo_write, "photo", j);
+        if (th) SDL_DetachThread(th);
+        else photo_write(j);
+    }
+}
+
+static void photo_frame(GlSurf *s)
+{
+    if (s_photo_note_until && (LONG)(GetTickCount() - (DWORD)s_photo_note_until) >= 0) {
+        InterlockedExchange(&s_photo_note_until, 0);
+        if (!strncmp(g_xbox_note, "Photo saved", 11)) g_xbox_note[0] = 0;
+    }
+    if (s && xbox_PhotoShotTake())
+        photo_save(s);
+}
+
 uint32_t nv2a_gl_present(uint32_t surf_va)
 {
     static int sync = -1;
@@ -2979,6 +3097,7 @@ uint32_t nv2a_gl_present(uint32_t surf_va)
     for (i = 0; i < NV_GL_SURFS; i++)
         if (s_surf[i].fbo && s_surf[i].va == surf_va)
             s = &s_surf[i];
+    photo_frame(s);                       /* v313 */
     {
         int win = !sync && s && s->host && s->dirty && present_direct()
                && xbox_FramebufferWindowAccepts((uint32_t)SC(s->w), (uint32_t)SC(s->h));

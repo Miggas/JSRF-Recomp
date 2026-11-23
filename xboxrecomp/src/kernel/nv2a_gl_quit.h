@@ -38,6 +38,7 @@ extern char g_xbox_note[96];
 extern char g_xbox_timer[24];   /* v300 */
 extern int g_xbox_timer_big;    /* v301d: the clear screen's place */
 extern char g_xbox_side_title[32], g_xbox_side_rows[5][48];   /* v301: a panel beside the list menu */
+extern char g_xbox_legend[10][40];   /* v313: photo mode's controls, top-left */
 
 typedef RbOvVert QdVert;        /* u < 0: no texture */
 #define QD_MAX (6 * 6000)
@@ -251,7 +252,8 @@ static void present_overlay_f(int cw, int ch, int flip)
 {
     int quit = xbox_QuitDialogOpen(), menu = xbox_ListMenuOpen();
     if (!quit) s_qd_last_sel = -1;
-    if ((!quit && !menu && !g_gl_build_msg[0] && !g_xbox_note[0] && !g_xbox_timer[0]) || cw <= 0 || ch <= 0) return;
+    if ((!quit && !menu && !g_gl_build_msg[0] && !g_xbox_note[0] && !g_xbox_timer[0] && !g_xbox_legend[0][0])
+            || cw <= 0 || ch <= 0) return;
     if (!s_qd_state) {
         s_qd_state = qd_setup() ? 1 : -1;
         if (s_qd_state < 0) fprintf(stderr, "[QUIT] the quit window cannot be drawn\n");
@@ -321,6 +323,41 @@ static void present_overlay_f(int cw, int ch, int flip)
                 float w = qd_text_w("00:00.00", 1.6f) + 18.0f;
                 qd_frame(x0, y0, x0 + w, y0 + 24.0f, 1.6f, 0.9f, edge, box);
                 qd_text(x0 + w / 2 + 0.5f, y0 + 12.0f, 1.6f, 1.9f, 0.45f, 0.22f, m, white);
+            }
+        }
+        if (g_xbox_legend[0][0] && !menu && !quit) {
+            /* v313: photo mode's controls, the window's top-left: the first
+             * line a title, the rest one control each (on the window only:
+             * a photo is saved from the game's picture, which never has it) */
+            static const float white[4] = { 0.94f, 0.95f, 0.94f, 1 }, title[4] = { 0.40f, 0.85f, 0.86f, 1 };
+            const float x0 = 10.0f - s_qx / s_qs, y0 = 10.0f - s_qy / s_qs, row = 15.0f;
+            float w = 0.0f, k = 1.0f;
+            int i, n = 0;
+            for (i = 0; i < 10 && g_xbox_legend[i][0]; i++) n++;
+            if (s_qd_font) {
+                k = qd_ttf_scale("Ag", 7.0f, 0.0f);
+                for (i = 0; i < n; i++) {
+                    float wi = qd_ttf_w(g_xbox_legend[i]) * k;
+                    if (wi > w) w = wi;
+                }
+            } else {
+                for (i = 0; i < n; i++) {
+                    float wi = qd_text_w(g_xbox_legend[i], 1.2f);
+                    if (wi > w) w = wi;
+                }
+            }
+            w += 18.0f;
+            qd_frame(x0, y0, x0 + w, y0 + 8.0f + row * n, 1.6f, 0.9f, edge, box);
+            for (i = 0; i < n; i++) {
+                char m[40];
+                const float *col = i ? white : title;
+                float cy = y0 + 4.0f + row * i + row / 2;
+                memcpy(m, g_xbox_legend[i], sizeof m);
+                m[39] = 0;
+                if (s_qd_font)
+                    qd_ttf_text(x0 + 9.0f + qd_ttf_w(m) * k / 2, cy, k, m, col);   /* from the left */
+                else
+                    qd_text(x0 + 9.0f + qd_text_w(m, 1.2f) / 2, cy, 1.2f, 1.6f, 0.4f, 0.2f, m, col);
             }
         }
         if (g_xbox_note[0] && !g_gl_build_msg[0] && !menu) {
