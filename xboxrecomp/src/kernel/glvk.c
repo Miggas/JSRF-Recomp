@@ -2259,14 +2259,19 @@ static int draw_setup(void)
     VkCommandBuffer c;
     VkBuffer vbufs[NATTR];
     VkDeviceSize voffs[NATTR];
-    int i;
+    int i, tries = 0;
+    VkCommandBuffer c0;
+    uint64_t s0;
     if (!g || !g->linked || !v)
         return 0;
     if (S.vp[2] <= 0 || S.vp[3] <= 0)
         return 0;
     sampling_ready(g);
+again:                                  /* v312j: from here again when a ring filled up (below) */
     if (!rendering_begin())
         return 0;
+    c0 = G.b[G.cur].cmd;
+    s0 = G.b[G.cur].serial;
     fbo_tex(S.draw_fbo, &col, &ds, &ci, &di);
     if (col && col->bc) col = NULL;
     if (R.ds == 0) ds = NULL;
@@ -2289,6 +2294,10 @@ static int draw_setup(void)
         if (nconst) {
             co = ring_take(0, (VkDeviceSize)nconst * 16, 16, &r);
             if (!r) return 0;
+            if (G.b[G.cur].cmd != c0 || G.b[G.cur].serial != s0) {   /* v312j: the ring filled: a new batch */
+                if (++tries < 3) goto again;
+                return 0;
+            }
         }
         for (i = 0; i < NATTR; i++) {
             if (!(g->inputs & (1u << i))) continue;
@@ -2383,6 +2392,10 @@ static int draw_setup(void)
                 Ring *r;
                 VkDeviceSize o = ring_take(0, g->ubo_size ? g->ubo_size : 16, G.ubo_align, &r);
                 if (!r) return 0;
+            if (G.b[G.cur].cmd != c0 || G.b[G.cur].serial != s0) {   /* v312j: the ring filled: a new batch */
+                if (++tries < 3) goto again;
+                return 0;
+            }
                 memcpy(r->map + o, g->shadow, g->ubo_size);
                 g->ubo_off = o;
                 g->ubo_buf = r->b;
