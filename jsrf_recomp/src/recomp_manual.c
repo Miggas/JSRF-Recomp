@@ -4077,8 +4077,7 @@ void sub_00118A60(void)
  * object kinds use it (the tanks, the police, the vehicles...); the map
  * itself does not. b and c are scaled by RECOMP_OBJ_DRAW_DIST (default 2;
  * 1 = as on the Xbox), so they are drawn and fade in further away. */
-extern void sub_000C1340_gen(void);
-void sub_000C1340(void)
+static float obj_dist_k(void)
 {
     static float k = -1.0f;
     if (k < 0.0f) {
@@ -4086,9 +4085,16 @@ void sub_000C1340(void)
         k = e && *e ? (float)atof(e) : 2.0f;
         if (!(k >= 1.0f && k <= 20.0f))
             k = 1.0f;
-        fprintf(stderr, "[OBJDIST] objects drawn up to %g x the game's distance "
-                "(RECOMP_OBJ_DRAW_DIST)\n", k);
+        fprintf(stderr, "[OBJDIST] objects, crowds, spray cans, props and checkpoints drawn up to "
+                "%g x the game's distance (RECOMP_OBJ_DRAW_DIST)\n", k);
     }
+    return k;
+}
+
+extern void sub_000C1340_gen(void);
+void sub_000C1340(void)
+{
+    float k = obj_dist_k();
     if (k != 1.0f) {
         float a = MEMF(g_esp + 0x0C), b = MEMF(g_esp + 0x10), c = MEMF(g_esp + 0x14);
         if (a > 0.0f && b >= a && c > b && c < 1.0e8f) {
@@ -4097,6 +4103,101 @@ void sub_000C1340(void)
         }
     }
     sub_000C1340_gen();
+}
+
+/* ── v312l: the draw distance of the rest of the street (Idea by Miggas) ──
+ * The other gates the game decides by whether to draw a thing, found by
+ * JSRF-PC (spriteice/JSRF-PC, its port/draw_distance.h and recomp_manual.c;
+ * the findings only, this is our own code): each compares the thing's depth
+ * in front of the eye with constants of the game's own. For the length of
+ * the gate's call, those constants are set to RECOMP_OBJ_DRAW_DIST times
+ * theirs (a fade's 1 / length, divided by it), then put back; nothing the
+ * gates call reads them (JSRF-PC: the transform, fabs and the device's
+ * on-screen test).
+ *   sub_000435B0  the pickups (spray cans): drawn to 500, faded from 450
+ *   sub_0003BCD0  the race's checkpoints: drawn to 400, faded from 300
+ *   sub_000B9B50  props and the car sets' objects: near to 400 and 500;
+ *   sub_000B9C70  ...their fade, from 400 (1 / 100 a unit)
+ *   sub_000E3930, sub_000E3BB0  a part fixed to a police or tank: to 600
+ *   sub_000C29C0  a person in a crowd: drawn to 400, fading past 300. Its
+ *                 caller fades it by (400 - depth) / 100 and draws the model,
+ *                 and the crowd's updates (sub_000C39E0, sub_000C3A20) move
+ *                 only people nearer than 400, both from the depth the gate
+ *                 keeps at +0x48: kept divided by the factor instead, they
+ *                 fade and walk as far out as the gate draws them (the
+ *                 model's detail and shadow, which read it too, as if nearer). */
+static void od_with(void (*gen)(void), const uint32_t *at, const int *inv, int n)
+{
+    float k = obj_dist_k(), was[4];
+    int i;
+    if (k == 1.0f) { gen(); return; }
+    for (i = 0; i < n; i++) {
+        was[i] = MEMF(at[i]);
+        MEMF(at[i]) = inv[i] ? was[i] / k : was[i] * k;
+    }
+    gen();
+    for (i = 0; i < n; i++)
+        MEMF(at[i]) = was[i];
+}
+
+extern void sub_000435B0_gen(void);
+void sub_000435B0(void)
+{
+    static const uint32_t at[3] = { 0x001CA6C0u, 0x001CA6BCu, 0x001CA6B8u };   /* 500, 450, 1 / 50 */
+    static const int inv[3] = { 0, 0, 1 };
+    od_with(sub_000435B0_gen, at, inv, 3);
+}
+
+extern void sub_0003BCD0_gen(void);
+void sub_0003BCD0(void)
+{
+    static const uint32_t at[3] = { 0x001CA43Cu, 0x001CA438u, 0x001CA434u };   /* 400, 300, 1 / 100 */
+    static const int inv[3] = { 0, 0, 1 };
+    od_with(sub_0003BCD0_gen, at, inv, 3);
+}
+
+extern void sub_000B9B50_gen(void);
+void sub_000B9B50(void)
+{
+    static const uint32_t at[2] = { 0x001CA43Cu, 0x001CA6C0u };                /* 400, 500 */
+    static const int inv[2] = { 0, 0 };
+    od_with(sub_000B9B50_gen, at, inv, 2);
+}
+
+extern void sub_000B9C70_gen(void);
+void sub_000B9C70(void)
+{
+    static const uint32_t at[2] = { 0x001CA43Cu, 0x001CA434u };                /* 400, 1 / 100 */
+    static const int inv[2] = { 0, 1 };
+    od_with(sub_000B9C70_gen, at, inv, 2);
+}
+
+extern void sub_000E3930_gen(void);
+void sub_000E3930(void)
+{
+    static const uint32_t at[1] = { 0x001CED60u };                             /* 600 */
+    static const int inv[1] = { 0 };
+    od_with(sub_000E3930_gen, at, inv, 1);
+}
+
+extern void sub_000E3BB0_gen(void);
+void sub_000E3BB0(void)
+{
+    static const uint32_t at[1] = { 0x001CED60u };
+    static const int inv[1] = { 0 };
+    od_with(sub_000E3BB0_gen, at, inv, 1);
+}
+
+extern void sub_000C29C0_gen(void);
+void sub_000C29C0(void)
+{
+    static const uint32_t at[2] = { 0x001CA43Cu, 0x001CA438u };                /* 400, 300 */
+    static const int inv[2] = { 0, 0 };
+    uint32_t self = g_ecx;
+    float k = obj_dist_k();
+    od_with(sub_000C29C0_gen, at, inv, 2);
+    if (k != 1.0f)
+        MEMF(self + 0x48) /= k;
 }
 
 
