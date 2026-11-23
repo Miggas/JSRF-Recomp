@@ -797,6 +797,62 @@ static void panel_video(struct nk_context *ctx, float w)
         }
         desc(ctx, w, "Auto uses your screen's shape. The HUD moves to the screen edges; a few menus stay 4:3.", C_DIM);
     }
+    /* v3i: the HUD (the game's v312k, Idea by Miggas): RECOMP_HUD=0 hides
+     * it, RECOMP_HUD_SCALE 0.5..1.5 sizes it */
+    {
+        bool shown = strcmp(get_or("RECOMP_HUD", "1"), "0") != 0;
+        bool ns = check(ctx, "Show the HUD", shown);
+        if (ns != shown) { if (ns) off("RECOMP_HUD"); else put("RECOMP_HUD", "0", "display"); }
+        if (!ns) nk_widget_disable_begin(ctx);
+        {
+            float cur = (float)atof(get_or("RECOMP_HUD_SCALE", "1")), v;
+            if (!(cur >= 0.5f && cur <= 1.5f)) cur = 1.0f;
+            v = cur;
+            nk_layout_row_begin(ctx, NK_DYNAMIC, s_row, 3);
+            nk_layout_row_push(ctx, 0.34f);
+            nk_label(ctx, "HUD size", NK_TEXT_LEFT);
+            nk_layout_row_push(ctx, 0.54f);
+            pad_slider_float(ctx, 0.5f, &v, 1.5f, 0.05f);
+            nk_layout_row_push(ctx, 0.12f);
+            v = (float)(int)(v * 20.0f + 0.5f) / 20.0f;
+            char t[16];
+            snprintf(t, sizeof t, "%.2f", v);
+            nk_label(ctx, t, NK_TEXT_RIGHT);
+            nk_layout_row_end(ctx);
+            if (v < cur - 0.01f || v > cur + 0.01f) {
+                if (v > 0.99f && v < 1.01f) off("RECOMP_HUD_SCALE");
+                else put("RECOMP_HUD_SCALE", t, "display");
+            }
+        }
+        if (!ns) nk_widget_disable_end(ctx);
+        desc(ctx, w, "Off hides the HUD (health, spray cans, trick score...). The size scales it about the screen's "
+                     "corners, 1.00 as the original. Needs the game's v312k or newer.", C_DIM);
+    }
+    /* v3i: draw distances (Idea by Miggas): the stage's (RECOMP_DRAW_AREAS:
+     * the game's v201e "hops" by default, "game" as on the Xbox) and the
+     * street objects' (RECOMP_OBJ_DRAW_DIST: the game's v233, 2 by default) */
+    {
+        static const char *const items[] = { "Original", "Increased" };
+        const char *v = get_or("RECOMP_DRAW_AREAS", "hops");
+        int cur = (!strcmp(v, "game") || !strcmp(v, "off") || !strcmp(v, "0")) ? 0 : 1;
+        int sel = combo(ctx, "Stage draw distance", items, 2, cur);
+        if (sel != cur) { if (sel) off("RECOMP_DRAW_AREAS"); else put("RECOMP_DRAW_AREAS", "game", "display"); }
+        desc(ctx, w, "Original: buildings appear as you get near, as on the Xbox. Increased: the stage's far "
+                     "buildings are drawn too, so almost nothing pops in (a little heavier). Needs the game's v201e "
+                     "or newer.", C_DIM);
+    }
+    {
+        static const char *const items[] = { "Original", "x2", "x3", "x4" };
+        double d = atof(get_or("RECOMP_OBJ_DRAW_DIST", "2"));
+        int cur = d < 1.5 ? 0 : d < 2.5 ? 1 : d < 3.5 ? 2 : 3;
+        int sel = combo(ctx, "Object draw distance", items, 4, cur);
+        if (sel != cur) {
+            static const char *const vals[] = { "1", "", "3", "4" };
+            if (sel == 1) off("RECOMP_OBJ_DRAW_DIST"); else put("RECOMP_OBJ_DRAW_DIST", vals[sel], "display");
+        }
+        desc(ctx, w, "How far away the street objects are drawn and fade in: tanks, police, vehicles. Original "
+                     "is the Xbox's distance; x2 (the default) twice as far. Needs the game's v233 or newer.", C_DIM);
+    }
     /* window: RECOMP_FULLSCREEN (a borderless full-screen window), and on
      * Windows RECOMP_GL_PRESENT=dxgi on top of it */
     {

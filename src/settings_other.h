@@ -126,14 +126,12 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_WS_PROBE", "1", "Logs the camera's field of view settings, for finding widescreen fixes." },
 
     { NULL, NULL, "Draw distance" },
-    { "RECOMP_DRAW_AREAS", "hops", "Pop-in fix. hops (default) fixes almost all of it; hops3, hops4... reach further; game = as on the Xbox; all = draw everything." },
     { "RECOMP_DRAW_AREAS_SKIP", "EE7A:96,105", "Map pieces never to draw (MapID:area,area;MapID:area; a map ID alone = no fix on that map)." },
     { "RECOMP_DRAW_AREAS_ADD", "", "Map pieces always to draw. Same format as the skip list." },
     { "RECOMP_DRAW_AREAS_PASSES", "11", "Which of the map's four draw passes get the extra areas (bit mask: 1, 2, 4, 8)." },
     { "RECOMP_DRAW_AREAS_RADIUS", "500", "Draws the map pieces within this distance of you (an older version of the pop-in fix)." },
     { "RECOMP_DRAW_ALL_AREAS", "1", "The same as RECOMP_DRAW_AREAS=all." },
     { "RECOMP_AREA_PICKER", "1", "Finds the numbers for the skip and add lists (1 = skip, 2 = add). F6/F7 select an area, F8 toggles it, F10 clears all; the list goes to the log." },
-    { "RECOMP_OBJ_DRAW_DIST", "2", "Draw distance of street objects (tanks, police, vehicles). 1 = original." },
     { "RECOMP_BACKDROP_PASSES", "0", "With all areas drawn: which draw passes are pushed behind as backdrop (bit mask)." },
 
     { NULL, NULL, "Sound" },
