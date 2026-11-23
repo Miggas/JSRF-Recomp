@@ -193,10 +193,10 @@ static const OtherSetting OTHER_SETTINGS[] = {
     { "RECOMP_FB_POLL", "1", "The window redraws on a timer instead of when a frame is ready." },
 
     { NULL, NULL, "Tests and fixes (for finding bugs)" },
-    { "RECOMP_SSE", "p3", "How two CPU instructions (fast reciprocals) are worked out: p3 = as the Xbox's CPU, host = this PC's, exact." },
+    { "RECOMP_SSE", "exact", "How two CPU instructions (fast reciprocals) are worked out: p3 = as the Xbox's CPU (the default since the game's v312m), host = this PC's, exact." },
     { "RECOMP_SSE_EXACT", "1", "The same as RECOMP_SSE=exact." },
     { "RECOMP_SSE_EXACT_SITES", "3,7,20", "These code sites exact, the rest as RECOMP_SSE." },
-    { "RECOMP_SSE_ONLY_SITES", "3,7,20", "Only these code sites like the Xbox's CPU, the rest exact." },
+    { "RECOMP_SSE_ONLY_SITES", "4", "Only these code sites like the Xbox's CPU, the rest exact (4: the default before the game's v312m)." },
     { "RECOMP_NO_E9C30", "1", "Test only: a call the game makes when a mission starts does nothing." },
     { "RECOMP_HEAP_RECLAIM", "0", "0: memory the game frees isn't given back to it as on the Xbox." },
     { "RECOMP_DEFER_APC", "0", "0: file read callbacks run at once instead of at the game's next wait, as on the Xbox." },
