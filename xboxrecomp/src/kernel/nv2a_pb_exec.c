@@ -3026,12 +3026,49 @@ static int s_scene_open, s_scene_draws, s_frame_draws;
  * drew most of the frame: the create and edit screens draw their 3D scene
  * from other functions while the menu's function still runs (Miggas) */
 static int s_menu_open, s_menu_draws;
+static int s_hud_on, s_hud_corner;          /* v312k: the HUD's scale (ws_fill_mark) */
+static float s_hud_s = 1.0f;
+/* the HUD's scale for this draw: about the corner, in NDC before the squeeze
+ * (at the widescreen edges: where the squeeze puts the screen's edges) */
+static void hud_for(NvGlState *st)
+{
+    float k = st->ws_k > 0.0f && st->ws_k < 1.0f ? st->ws_k : 1.0f, sx, sy;
+    st->hud[2] = 1.0f;
+    st->hud[0] = st->hud[1] = 0.0f;
+    if (!s_hud_on || s_hud_s == 1.0f)
+        return;
+    sx = (s_hud_corner & 1) ? 1.0f : -1.0f;
+    sy = (s_hud_corner & 2) ? -1.0f : 1.0f;            /* NDC y up: the top is +1 */
+    if (s_hud_corner & 4)
+        sx = (sx - st->ws_c * (1.0f - k)) / k;
+    st->hud[0] = sx;
+    st->hud[1] = sy;
+    st->hud[2] = s_hud_s;
+}
+
 static void ws_fill_mark(float u)
 {
     float a = fabsf(u);
     static int said;
     if (a < 1.0e7f || a >= 1.0e10f)
         return;
+    if (a >= 2.15e9f && a < 3.8e9f) {
+        /* v312k: the HUD's scale (jsrf_widescreen.c): 2.2e9 + corner x 1e8 +
+         * scale x 20 x 1e6 begins it (corner: bit 0 right, bit 1 bottom, bit
+         * 2 at the widescreen edges; scale 0: hidden), 3.5e9 ends it */
+        if (a >= 3.0e9f)
+            s_hud_on = 0;
+        else {
+            double v = (double)a - 2.2e9;
+            int c = (int)(v / 1.0e8 + 0.001), si = (int)((v - c * 1.0e8) / 1.0e6 + 0.5);
+            if (c < 0) c = 0;
+            if (c > 7) c = 7;
+            s_hud_corner = c;
+            s_hud_s = (float)si / 20.0f;
+            s_hud_on = 1;
+        }
+        return;
+    }
     if (a >= 1.25e9f && a < 1.85e9f) {
         /* v312e: the new boost effect, here, at this strength (jsrf_boost.c:
          * 1.3e9 + strength x 5e8) */
@@ -3216,6 +3253,7 @@ static void gl_submit(uint32_t n)
     st.ws_c = ws_centre(&st);                              /* v187l */
     st.ws_edge = ws_edge_for(s_fog_direct ? XK_PRE
                              : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
+    hud_for(&st);                                          /* v312k */
     drawlog(s_fog_direct ? XK_PRE : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
     nv2a_gl_draw(&st, s_xf, s_gl_fog, s_gl_idx, m);
     s_gpu.tris_drawn += m / 3;
@@ -4534,6 +4572,7 @@ static void gl_draw_batch(void)
         st.ws_cut = ws_cut_for(s_vx.kind, &st);           /* v217c */
     st.ws_c = ws_centre(&st);                              /* v187l */
         st.ws_edge = ws_edge_for(s_vx.kind, &st);         /* v191 */
+        hud_for(&st);                                     /* v312k */
         fast_qpc_li(&q1);
         s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
         if (s_ftrace == 2)

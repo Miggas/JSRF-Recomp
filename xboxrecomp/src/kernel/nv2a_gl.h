@@ -69,6 +69,8 @@ typedef struct {
                                       * left/right edge stay there (fades) */
     uint32_t ws_edge;                /* v191: a full-screen layer: corners at the
                                       * surface edge pushed one pixel past it */
+    float    hud[3];                 /* v312k: HUD scale: positions (NDC, before the
+                                      * squeeze) scaled by hud[2] about hud[0..1]; 1 = none */
 
     int          rc_seen;
     Nv2aCombiner rc;
