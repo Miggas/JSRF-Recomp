@@ -2133,7 +2133,8 @@ void sub_001A2E2E(void)
  *
  * wrap_dsound.py rewrites the 27 sites to recomp_rcpss_at / recomp_rsqrtss_at
  * with a site number. Settings:
- *   default: Pentium III values at site 4 (sub_0014C410) only, exact elsewhere
+ *   default (v312m, Miggas): Pentium III values at every site, as RECOMP_SSE=p3
+ *   (v127..v312l: at site 4, sub_0014C410, only: RECOMP_SSE_ONLY_SITES=4)
  *   RECOMP_SSE=p3 | host | exact  every site    (RECOMP_SSE_EXACT=1 = exact)
  *   RECOMP_SSE_EXACT_SITES=3,7,20   these sites exact, the rest per RECOMP_SSE
  *   RECOMP_SSE_ONLY_SITES=3,7,20    only these sites approximate, the rest exact
@@ -2167,11 +2168,11 @@ static void sse_setup(void)
     if (m && !strcmp(m, "host")) d = SSE_HOST;
     else if (m && !strcmp(m, "exact")) d = SSE_EXACT;
     if (x && x[0] == '1') d = SSE_EXACT;
-    /* v127 default (no RECOMP_SSE*): console values at site 4 only
-     * (sub_0014C410, the one the brake sparks need), exact everywhere else.
-     * Approximating all 27 broke geometry and shading. RECOMP_SSE=p3 gives
-     * console values at every site. */
-    if (!m && !x && !on && !ex) { d = SSE_EXACT; on = "4"; }
+    /* v127..v312l default (no RECOMP_SSE*): console values at site 4 only
+     * (sub_0014C410, the one the brake sparks need), exact everywhere else
+     * (v125's host values at every site had broken geometry on AMD). v312m
+     * (Miggas): the console's values at every site, as RECOMP_SSE=p3, are
+     * the default; RECOMP_SSE_ONLY_SITES=4 gives the old one. */
     for (i = 0; i < SSE_SITES; i++) s_sse_mode[i] = (signed char)(on ? SSE_EXACT : d);
     if (on) sse_list(on, d == SSE_EXACT ? SSE_P3 : d);
     if (ex) sse_list(ex, SSE_EXACT);
