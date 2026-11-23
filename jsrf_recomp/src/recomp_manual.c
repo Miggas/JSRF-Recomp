@@ -3276,6 +3276,7 @@ void sub_001BAF70(void)
  * RECOMP_CAM_LOG=1: its state twice a second. */
 extern void sub_000A5070_gen(void);
 extern void sub_000A28B0_gen(void);
+int jsrf_camwall_apply(uint32_t cam, int own_line);   /* v312z: jsrf_camwall.c */
 extern void (*g_xbox_pad_filter)(int pad, short *rx, short *ry, unsigned char lt);
 
 #define RCAM_DEAD    0.20f
@@ -3601,6 +3602,13 @@ void sub_000A28B0(void)
     if (on) rcam_restore(cam);
     sub_000A28B0_gen();
     if (on) rcam_apply(cam);
+    {   /* v312z: the drawn eye kept out of walls (jsrf_camwall.c); the right
+         * stick's eye, when it turned it, is the one kept, so the turn is
+         * put back as it should be next frame */
+        int turned = on && s_rcam.applied && s_rcam.cam == cam;
+        if (jsrf_camwall_apply(cam, turned) && turned)
+            memcpy(s_rcam.our_eye, (const void *)XBOX_PTR(cam + 0x44), 12);
+    }
 }
 
 
