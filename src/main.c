@@ -850,8 +850,9 @@ static void panel_video(struct nk_context *ctx, float w)
             static const char *const vals[] = { "1", "", "3", "4" };
             if (sel == 1) off("RECOMP_OBJ_DRAW_DIST"); else put("RECOMP_OBJ_DRAW_DIST", vals[sel], "display");
         }
-        desc(ctx, w, "How far away the street objects are drawn and fade in: tanks, police, vehicles. Original "
-                     "is the Xbox's distance; x2 (the default) twice as far. Needs the game's v233 or newer.", C_DIM);
+        desc(ctx, w, "How far away things are drawn and fade in: crowds, spray cans, props, race checkpoints, "
+                     "police, tanks and vehicles. Original is the Xbox's distance; x2 (the default) twice as far. "
+                     "Crowds, spray cans, props and checkpoints need the game's v312l or newer.", C_DIM);
     }
     /* window: RECOMP_FULLSCREEN (a borderless full-screen window), and on
      * Windows RECOMP_GL_PRESENT=dxgi on top of it */
