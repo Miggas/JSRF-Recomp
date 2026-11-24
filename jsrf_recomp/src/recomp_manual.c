@@ -4053,6 +4053,47 @@ void sub_001192E0(void)
  * player's (0x329F7, loader in ebp) and the other characters' (0x337A4,
  * loader in ebx); v298 only covered the first, and the garage's
  * characters go through the second. */
+/* v313d: NT 3000's own voice in every release (Idea by Miggas). PAL's
+ * YoyoB (NT 3000) speaks from bank 38, pv_yoyob.dat: Yoyo's lines with the
+ * slightly robotic voice NT 3000 is meant to have. The file is on every
+ * disc, but the NTSC releases (US, Japan, the Sega GT 2002 combo) give YoyoB
+ * Yoyo's bank 19 (pv_yoyo.dat), so NT 3000 sounds just like Yoyo; there,
+ * bank 38 is e_haya_b.dat (e_hysb_j.dat in the Japanese voices' list), which
+ * nothing loads: the enemy voice table (0x1EC3D0) never names 38 and no
+ * load asks for it, which is why PAL could give the slot to YoyoB. So, once
+ * at start, in a release whose tables are still as NTSC has them, bank 38's
+ * file in both voice lists (0x2227D0, 0x2228B4: a pointer to each bank's
+ * file name) is renamed pv_yoyob.dat in place (the same length) and YoyoB's
+ * entry in the character -> voice bank table (0x1EE6B8, character 7) is set
+ * to 38, as in PAL. RECOMP_NT3000_VOICE=0 keeps Yoyo's voice for him. */
+static void nt3000_name(uint32_t list, const char *was)
+{
+    uint32_t p = MEM32(list + 38u * 4u);
+    if (p >= 0x10000u && p < 0x00300000u && !memcmp((const char *)XBOX_PTR(p), was, 13))
+        memcpy((char *)XBOX_PTR(p), "pv_yoyob.dat", 13);
+}
+
+void jsrf_nt3000_voice(void)
+{
+    static int done;
+    const char *e;
+    if (done) return;
+    done = 1;
+    e = getenv("RECOMP_NT3000_VOICE");
+    if (e && e[0] == '0') {
+        fprintf(stderr, "[VOICE] NT 3000 keeps Yoyo's voice (RECOMP_NT3000_VOICE=0)\n");
+        return;
+    }
+    if (MEM32(0x001EE6B8u + 6u * 4u) != 19u || MEM32(0x001EE6B8u + 7u * 4u) != 19u)
+        return;                         /* PAL: his own already */
+    if (memcmp((const char *)XBOX_PTR(MEM32(0x002227D0u + 38u * 4u)), "e_haya_b.dat", 13))
+        return;                         /* not the list this was made for */
+    nt3000_name(0x002227D0u, "e_haya_b.dat");
+    nt3000_name(0x002228B4u, "e_hysb_j.dat");
+    MEM32(0x001EE6B8u + 7u * 4u) = 38u;
+    fprintf(stderr, "[VOICE] NT 3000 speaks from bank 38, pv_yoyob.dat, as in the PAL release\n");
+}
+
 extern void sub_00118BA0_gen(void);
 void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
 {

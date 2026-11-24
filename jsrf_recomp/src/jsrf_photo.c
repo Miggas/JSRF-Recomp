@@ -248,10 +248,12 @@ void jsrf_photo_place(uint32_t cam)
 
 /* The frame's draw (thiscall on the game manager): photo mode's step, then
  * the draw, with our hold down for its length while photo mode has it. */
+void jsrf_nt3000_voice(void);          /* recomp_manual.c (v313d) */
 void sub_000131F0(void)
 {
     uint32_t gm = g_ecx, holds = 0, i;
     int ours = 0;
+    if (!ph_frame) jsrf_nt3000_voice();   /* v313d: once, at the first frame */
     ph_frame++;
     if (ph_enabled() && ph_ok(gm, GM_HOLDS + 16)) {
         for (i = 0; i < 4; i++) holds |= MEM32(gm + GM_HOLDS + 4 * i);
