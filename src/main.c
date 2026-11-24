@@ -58,7 +58,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m25"
+#define MODTOOL_VERSION "m26f"
 
 /* ---- the files ---- */
 

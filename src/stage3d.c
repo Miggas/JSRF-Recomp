@@ -195,38 +195,63 @@ static STri *new_tri(void)
 /* a triangle in the camera's space, cut at the near plane, onto the screen */
 static void emit(const CV *in, const Mip *mip, uint8_t r, uint8_t g, uint8_t b, int mode, uint32_t id)
 {
-    CV poly[4];
-    int n = 0, i, k, level = 0;
-    for (i = 0; i < 3; i++) {                   /* Sutherland-Hodgman against z >= NEAR_Z */
-        const CV *a = &in[i], *c = &in[(i + 1) % 3];
-        int ain = a->z >= NEAR_Z, cin = c->z >= NEAR_Z;
-        if (ain) poly[n++] = *a;
-        if (ain != cin) {
-            float t = (NEAR_Z - a->z) / (c->z - a->z);
-            CV q;
-            q.x = a->x + (c->x - a->x) * t; q.y = a->y + (c->y - a->y) * t; q.z = NEAR_Z;
-            q.u = a->u + (c->u - a->u) * t; q.v = a->v + (c->v - a->v) * t;
-            poly[n++] = q;
+    /* m26f: cut at the near plane and at a band around the screen's edges
+     * (four times its size). Before, only the near plane: a triangle close
+     * by reached screen coordinates past 1e5 and was dropped whole, so
+     * surfaces flickered out up close (and the ground showed the sky), and a
+     * shadow volume's face dropped that way left its count off (Miggas) */
+    CV poly[2][12];
+    int n = 3, i, k, level = 0, pl, cur = 0;
+    float gx = s_cx * 4.0f / s_focal, gy = s_cy * 4.0f / s_focal;
+    for (i = 0; i < 3; i++) poly[0][i] = in[i];
+    for (pl = 0; pl < 5 && n >= 3; pl++) {
+        const CV *src = poly[cur];
+        CV *dst = poly[cur ^ 1];
+        int m = 0;
+        for (i = 0; i < n; i++) {
+            const CV *a = &src[i], *c = &src[(i + 1) % n];
+            /* d >= 0: inside this plane */
+            float da = pl == 0 ? a->z - NEAR_Z : pl == 1 ? gx * a->z - a->x : pl == 2 ? gx * a->z + a->x
+                     : pl == 3 ? gy * a->z - a->y : gy * a->z + a->y;
+            float dc = pl == 0 ? c->z - NEAR_Z : pl == 1 ? gx * c->z - c->x : pl == 2 ? gx * c->z + c->x
+                     : pl == 3 ? gy * c->z - c->y : gy * c->z + c->y;
+            if (da >= 0) dst[m++] = *a;
+            if ((da >= 0) != (dc >= 0) && m < 12) {
+                float t = da / (da - dc);
+                CV q;
+                q.x = a->x + (c->x - a->x) * t; q.y = a->y + (c->y - a->y) * t; q.z = a->z + (c->z - a->z) * t;
+                q.u = a->u + (c->u - a->u) * t; q.v = a->v + (c->v - a->v) * t;
+                if (pl == 0) q.z = NEAR_Z;
+                dst[m++] = q;
+            }
+            if (m >= 11) break;
         }
+        n = m;
+        cur ^= 1;
     }
     if (n < 3) return;
     {
-        float sx[4], sy[4], iz[4], minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
+        float sx[12], sy[12], iz[12], minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
         for (i = 0; i < n; i++) {
-            iz[i] = 1.0f / poly[i].z;
-            sx[i] = s_cx + poly[i].x * s_focal * iz[i];
-            sy[i] = s_cy - poly[i].y * s_focal * iz[i];
+            iz[i] = 1.0f / poly[cur][i].z;
+            sx[i] = s_cx + poly[cur][i].x * s_focal * iz[i];
+            sy[i] = s_cy - poly[cur][i].y * s_focal * iz[i];
             if (sx[i] < minx) minx = sx[i];
             if (sx[i] > maxx) maxx = sx[i];
             if (sy[i] < miny) miny = sy[i];
             if (sy[i] > maxy) maxy = sy[i];
         }
         if (maxx < 0 || minx >= (float)G.rw || maxy < 0 || miny >= (float)G.rh) return;
-        if (maxx - minx > 1e5f || maxy - miny > 1e5f) return;
         if (mip && mip->n) {                    /* the level: texels per pixel */
-            float sa = fabsf((sx[1] - sx[0]) * (sy[2] - sy[0]) - (sy[1] - sy[0]) * (sx[2] - sx[0]));
-            float ta = fabsf((poly[1].u - poly[0].u) * (poly[2].v - poly[0].v) - (poly[1].v - poly[0].v) * (poly[2].u - poly[0].u))
-                       * (float)mip->w[0] * (float)mip->h[0];
+            /* m26f: the whole cut polygon's areas (its first three corners can be a sliver) */
+            float sa = 0, ta = 0;
+            for (i = 0; i < n; i++) {
+                int j = (i + 1) % n;
+                sa += sx[i] * sy[j] - sx[j] * sy[i];
+                ta += poly[cur][i].u * poly[cur][j].v - poly[cur][j].u * poly[cur][i].v;
+            }
+            sa = fabsf(sa);
+            ta = fabsf(ta) * (float)mip->w[0] * (float)mip->h[0];
             if (sa > 1e-3f && ta > 0) {
                 float r2 = ta / sa;
                 level = r2 > 1 ? (int)floorf(0.5f * log2f(r2)) : 0;
@@ -240,7 +265,7 @@ static void emit(const CV *in, const Mip *mip, uint8_t r, uint8_t g, uint8_t b, 
             if (!t) return;
             for (i = 0; i < 3; i++) {
                 t->x[i] = sx[vi[i]]; t->y[i] = sy[vi[i]]; t->iz[i] = iz[vi[i]];
-                t->u[i] = poly[vi[i]].u * iz[vi[i]]; t->v[i] = poly[vi[i]].v * iz[vi[i]];
+                t->u[i] = poly[cur][vi[i]].u * iz[vi[i]]; t->v[i] = poly[cur][vi[i]].v * iz[vi[i]];
             }
             t->miny = fminf(t->y[0], fminf(t->y[1], t->y[2]));
             t->maxy = fmaxf(t->y[0], fmaxf(t->y[1], t->y[2]));
@@ -270,9 +295,10 @@ static int raster_band(void *u)
 {
     const Band *bd = (const Band *)u;
     int i, pass;
-    /* pass 0: the surfaces; 1: the shadow volumes, counted in front of them
-     * (a front face up, a back face down: a pixel left counted is in the
-     * shadow, and is darkened); 2: what is laid over (the collision) */
+    /* pass 0: the surfaces; 1: the shadow volumes, counted behind them
+     * (m26f, z-fail: a pixel left counted is in the shadow, and is
+     * darkened; counting in front went wrong with the camera inside a
+     * volume, whose near faces are cut away); 2: what is laid over (the collision) */
     for (pass = 0; pass < 3; pass++) {
     if (pass == 2 && G.shadow_on_surf) {
         int x, y;
@@ -315,7 +341,7 @@ static int raster_band(void *u)
                 uint8_t *o, cr, cg, cb;
                 if (w0 < 0 || w1 < 0 || w2 < 0) continue;
                 iz = w0 * t->iz[0] + w1 * t->iz[1] + w2 * t->iz[2];
-                if (t->mode == 3) { if (iz > G.zb[pi]) G.sb[pi] = (int8_t)(G.sb[pi] + sgn); continue; }
+                if (t->mode == 3) { if (iz < G.zb[pi]) G.sb[pi] = (int8_t)(G.sb[pi] + sgn); continue; }   /* m26f: faces behind the surface (z-fail): right with the camera inside a volume too */
                 if (t->mode == 2) { if (iz * 1.004f < G.zb[pi]) continue; }
                 else if (iz <= G.zb[pi]) continue;
                 if (t->px) {
