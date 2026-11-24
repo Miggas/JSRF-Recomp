@@ -56,6 +56,28 @@ typedef struct {
 
 typedef struct { uint32_t id; int w, h; uint8_t *rgba; } JSTex;
 
+/* m29: a stage model (kinds 1, 2): where it is in its .dat file (the data D
+ * at doff), its vertices and triangles in the stage */
+typedef struct { int id, kind, dat; size_t doff; int v0, nv, t0, nt; } JSModel;
+
+/* m29: a piece of the map: one connected part of a stage model (a building,
+ * a pillar, a sign...): its vertices and triangles, its box and middle as
+ * read; how it's been moved (turned yaw degrees about its middle, then
+ * moved by t) or removed; the collision models moving with it */
+typedef struct {
+    int model;
+    int *v, nv, *t, nt;
+    float c[3], lo[3], hi[3];
+    float pv[3];                        /* the point it turns about (its middle, or a group's) */
+    float yaw, t3[3];
+    int removed, touched;
+    int *cm, ncm;
+    int *rail, nrail;                   /* m29: the grind rails moving with it */
+} JSPiece;
+
+/* m29: a collision model as read: its vertices and triangles in the stage */
+typedef struct { int area, v0, nv, t0, nt; } JSCModel;
+
 typedef struct {
     char name[16];                      /* "Stg30" */
     /* what is drawn: stage models and props, in place */
@@ -82,6 +104,16 @@ typedef struct {
     int ndat;                           /* .dat files read */
     int has_bin;                        /* m26: its StgNN_.bin was found (else no collision, rails, props) */
     char binfile[260];                  /* m28: its name as on disk */
+    char datfile[64][64];               /* m29: the .dat files' names, by number */
+    JSModel *models; int nmodel;        /* m29 */
+    JSPiece *pieces; int npiece;
+    int *tpiece;                        /* a triangle's piece (-1: a prop's) */
+    int *vpiece;                        /* a vertex's piece (-1) */
+    float *p0, *cp0;                    /* positions as read (pieces, collision) */
+    JSCModel *cmodels; int ncmodel;
+    int *cpiece;                        /* a collision model's piece (-1: none) */
+    float *rp0, *rnrm0;                 /* rail points and normals as read */
+    int *rpiece;                        /* a rail's piece (-1) */
     JSProp *props; int nprop;           /* m28 */
 } JStage;
 
@@ -92,6 +124,8 @@ void jst_free(JStage *s);
 void jst_prop_update(JStage *s, int k);
 /* m28: a copy of prop k (in the same area, a new entry); its index, -1 out of memory */
 int  jst_prop_dup(JStage *s, int k);
+/* m29: piece k placed again from its yaw and t3 (or hidden when removed), its collision with it */
+void jst_piece_update(JStage *s, int k);
 /* m28: the prop a triangle belongs to, -1 none */
 int  jst_prop_of_tri(const JStage *s, int tri);
 /* the stage's name from one of its files' names ("stg30_02.dat" -> "Stg30"); 0 not a stage file */

@@ -65,6 +65,8 @@ typedef struct {
     int id, kind, ntex;
     const uint8_t *ids;                 /* ntex texture ids */
     const uint8_t *d;                   /* its data */
+    int dat;                            /* m29: its file */
+    size_t doff;                        /* m29: d's offset in it */
     size_t len;
 } Model;
 
@@ -78,7 +80,7 @@ static int tex_index(const JStage *s, uint32_t id)
 }
 
 /* the blocks of an indexed file (jtex.c's walk); models listed */
-static void dat_models(const Dat *f, Model **ms, int *n, int *cap)
+static void dat_models(const Dat *f, int fi, Model **ms, int *n, int *cap)
 {
     size_t off = 0;
     int guard = 0;
@@ -97,6 +99,8 @@ static void dat_models(const Dat *f, Model **ms, int *n, int *cap)
                 m->ntex = (int)nt;
                 m->ids = f->buf + off + 20;
                 m->d = f->buf + off + 20 + nt * 4;
+                m->dat = fi;
+                m->doff = off + 20 + nt * 4;
                 m->len = sz;
             }
         } else if (t == 0) end = off + u32(f->buf + off + 4) + 8;
@@ -233,9 +237,11 @@ static int add_prop(JStage *s, Build *b, const Model *m, const float *r, float *
     return 0;
 }
 
+static void build_pieces(JStage *s);
+
 /* ---- the .bin ---- */
 
-static void read_collision(Build *b, const uint8_t *B, size_t n, int *nmodels)
+static void read_collision(JStage *s, Build *b, const uint8_t *B, size_t n, int *nmodels)
 {
     uint32_t toff, tcnt, i, j, k;
     if (n < 8) return;
@@ -249,8 +255,14 @@ static void read_collision(Build *b, const uint8_t *B, size_t n, int *nmodels)
             const uint8_t *m = B + mo + (size_t)j * 112;
             float r[12];
             uint32_t vo = u32(m + 88), vc = u32(m + 92), to = u32(m + 96), tc = u32(m + 100);
-            int v0 = (int)(b->cp.n);
+            int v0 = (int)(b->cp.n), t0c = (int)(b->cix.n / 3);
             float *p;
+            JSCModel *cmr;
+            /* m29: every model recorded, in the file's order (the editor's numbering) */
+            s->cmodels = (JSCModel *)realloc(s->cmodels, sizeof(JSCModel) * (size_t)(s->ncmodel + 1));
+            if (!s->cmodels) { s->ncmodel = 0; return; }
+            cmr = &s->cmodels[s->ncmodel++];
+            cmr->area = (int)i; cmr->v0 = v0; cmr->nv = 0; cmr->t0 = t0c; cmr->nt = 0;
             if ((size_t)vo + (size_t)vc * 16 > n || (size_t)to + (size_t)tc * 8 > n || vc > 1024) continue;
             for (k = 0; k < 3; k++) {          /* rows at 24, 40, 56; the position at 72 */
                 r[k * 3] = f32(m + 24 + 16 * k); r[k * 3 + 1] = f32(m + 28 + 16 * k); r[k * 3 + 2] = f32(m + 32 + 16 * k);
@@ -277,6 +289,8 @@ static void read_collision(Build *b, const uint8_t *B, size_t n, int *nmodels)
                 t[0] = (uint32_t)v0 + i0; t[1] = (uint32_t)v0 + i1; t[2] = (uint32_t)v0 + i2;
                 *cs = (uint16_t)(o & 0xFFFF);
             }
+            cmr->nv = (int)(b->cp.n) - v0;
+            cmr->nt = (int)(b->cix.n / 3) - t0c;
             (*nmodels)++;
         }
     }
@@ -386,6 +400,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
         } else if (l == strlen(prefix) + 6 && !ci_cmp(nmf + l - 4, ".dat") && isdigit((unsigned char)nmf[l - 6]) && ndat < 64) {
             Dat *d = &dats[ndat];
             snprintf(d->path, sizeof d->path, "%s", path);
+            snprintf(s->datfile[ndat], sizeof s->datfile[ndat], "%s", nmf);
             d->buf = (uint8_t *)read_file(path, &d->size);
             if (d->buf) ndat++;
         }
@@ -421,10 +436,18 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
         jf_free(&f);
     }
     /* the models, by id */
-    for (i = 0; i < ndat; i++) dat_models(&dats[i], &ms, &nm, &cm);
+    for (i = 0; i < ndat; i++) dat_models(&dats[i], i, &ms, &nm, &cm);
     for (i = 0; i < nm; i++)
         if (ms[i].kind == 1 || ms[i].kind == 2) {
+            int v0m = (int)b.p.n, t0m = (int)(b.ix.n / 3);
             if (!add_stage_model(s, &b, &ms[i])) {
+                JSModel *mm;
+                s->models = (JSModel *)realloc(s->models, sizeof(JSModel) * (size_t)(s->nmodel + 1));
+                if (s->models) {
+                    mm = &s->models[s->nmodel++];
+                    mm->id = ms[i].id; mm->kind = ms[i].kind; mm->dat = ms[i].dat; mm->doff = ms[i].doff;
+                    mm->v0 = v0m; mm->nv = (int)b.p.n - v0m; mm->t0 = t0m; mm->nt = (int)(b.ix.n / 3) - t0m;
+                } else s->nmodel = 0;
                 int col, uv;
                 s->nmodels++;
                 if (ms[i].kind == 2) {
@@ -437,7 +460,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     /* the .bin: collision, rails, placements */
     if (bin) {
         uint32_t o0 = u32(bin), s0 = u32(bin + 4), o1 = u32(bin + 8), m26 = u32(bin + 12), o2 = u32(bin + 16), s2 = u32(bin + 20);
-        if ((size_t)o0 + s0 <= binsz) read_collision(&b, bin + o0, s0, &s->ncmodels);
+        if ((size_t)o0 + s0 <= binsz) read_collision(s, &b, bin + o0, s0, &s->ncmodels);
         if ((size_t)o1 + m26 <= binsz) read_rails(&b, bin + o1, m26);
         if ((size_t)o2 + s2 <= binsz && s2 >= 12) {
             /* m28: the areas' placement lists: (offset, count) an area from +12, as many as the areas (+8);
@@ -498,6 +521,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
                 if (v < s->lo[j]) s->lo[j] = v;
                 if (v > s->hi[j]) s->hi[j] = v;
             }
+    build_pieces(s);                             /* m29 */
     if (!s->nt && !s->nct) {
         snprintf(err, errn, "Nothing could be read from %s's files.", name);
         jst_free(s);
@@ -514,7 +538,215 @@ void jst_free(JStage *s)
     free(s->cp); free(s->cix); free(s->csurf); free(s->rs); free(s->rn); free(s->rp); free(s->rnrm);
     for (i = 0; i < s->nprop; i++) free(s->props[i].local);
     free(s->props);
+    for (i = 0; i < s->npiece; i++) { free(s->pieces[i].v); free(s->pieces[i].t); free(s->pieces[i].cm); free(s->pieces[i].rail); }
+    free(s->rp0); free(s->rnrm0); free(s->rpiece);
+    free(s->pieces); free(s->models); free(s->tpiece); free(s->vpiece); free(s->p0); free(s->cp0);
+    free(s->cmodels); free(s->cpiece);
     memset(s, 0, sizeof *s);
+}
+
+
+/* ---- m29: the map in pieces ---- */
+
+static const float *s_sortp;
+static int cmp_pos(const void *a, const void *b)
+{
+    const float *x = s_sortp + (size_t)*(const int *)a * 3, *y = s_sortp + (size_t)*(const int *)b * 3;
+    int k;
+    for (k = 0; k < 3; k++) if (x[k] != y[k]) return x[k] < y[k] ? -1 : 1;
+    return 0;
+}
+static int uf_find(int *par, int x)
+{
+    while (par[x] != x) { par[x] = par[par[x]]; x = par[x]; }
+    return x;
+}
+static void uf_join(int *par, int a, int b)
+{
+    a = uf_find(par, a); b = uf_find(par, b);
+    if (a != b) par[a] = b;
+}
+
+/* each stage model split into its connected parts (vertices at the same
+ * place count as joined); each collision model given to the smallest
+ * opaque piece whose box holds it */
+static void build_pieces(JStage *s)
+{
+    int m, i, k, *par = NULL, *ord = NULL, *slot = NULL;
+    s->p0 = (float *)malloc(sizeof(float) * 3 * (size_t)(s->nv + 1));
+    s->cp0 = (float *)malloc(sizeof(float) * 3 * (size_t)(s->ncv + 1));
+    s->tpiece = (int *)malloc(sizeof(int) * (size_t)(s->nt + 1));
+    s->vpiece = (int *)malloc(sizeof(int) * (size_t)(s->nv + 1));
+    s->cpiece = (int *)malloc(sizeof(int) * (size_t)(s->ncmodel + 1));
+    if (!s->p0 || !s->cp0 || !s->tpiece || !s->vpiece || !s->cpiece) return;
+    memcpy(s->p0, s->p, sizeof(float) * 3 * (size_t)s->nv);
+    memcpy(s->cp0, s->cp, sizeof(float) * 3 * (size_t)s->ncv);
+    for (i = 0; i < s->nt; i++) s->tpiece[i] = -1;
+    for (i = 0; i < s->nv; i++) s->vpiece[i] = -1;
+    for (i = 0; i < s->ncmodel; i++) s->cpiece[i] = -1;
+    for (m = 0; m < s->nmodel; m++) {
+        const JSModel *md = &s->models[m];
+        int nv = md->nv, first = s->npiece;
+        if (nv <= 0) continue;
+        par = (int *)realloc(par, sizeof(int) * (size_t)nv);
+        ord = (int *)realloc(ord, sizeof(int) * (size_t)nv);
+        slot = (int *)realloc(slot, sizeof(int) * (size_t)nv);
+        if (!par || !ord || !slot) break;
+        for (i = 0; i < nv; i++) { par[i] = i; ord[i] = i; slot[i] = -1; }
+        s_sortp = s->p + (size_t)md->v0 * 3;
+        qsort(ord, (size_t)nv, sizeof(int), cmp_pos);
+        for (i = 1; i < nv; i++) if (!cmp_pos(&ord[i - 1], &ord[i])) uf_join(par, ord[i - 1], ord[i]);
+        for (i = 0; i < md->nt; i++) {
+            const uint32_t *t = s->ix + (size_t)(md->t0 + i) * 3;
+            uf_join(par, (int)t[0] - md->v0, (int)t[1] - md->v0);
+            uf_join(par, (int)t[1] - md->v0, (int)t[2] - md->v0);
+        }
+        for (i = 0; i < nv; i++) {               /* a piece a root */
+            int r = uf_find(par, i);
+            if (slot[r] < 0) {
+                JSPiece *np = (JSPiece *)realloc(s->pieces, sizeof(JSPiece) * (size_t)(s->npiece + 1));
+                if (!np) break;
+                s->pieces = np;
+                memset(&np[s->npiece], 0, sizeof(JSPiece));
+                np[s->npiece].model = m;
+                for (k = 0; k < 3; k++) { np[s->npiece].lo[k] = 1e30f; np[s->npiece].hi[k] = -1e30f; }
+                slot[r] = s->npiece++;
+            }
+            s->vpiece[md->v0 + i] = slot[r];
+            s->pieces[slot[r]].nv++;
+        }
+        for (i = 0; i < md->nt; i++) {
+            int pk = s->vpiece[s->ix[(size_t)(md->t0 + i) * 3]];
+            s->tpiece[md->t0 + i] = pk;
+            if (pk >= 0) s->pieces[pk].nt++;
+        }
+        for (k = first; k < s->npiece; k++) {
+            JSPiece *pc = &s->pieces[k];
+            pc->v = (int *)malloc(sizeof(int) * (size_t)(pc->nv + 1));
+            pc->t = (int *)malloc(sizeof(int) * (size_t)(pc->nt + 1));
+            pc->nv = pc->nt = 0;
+        }
+        for (i = 0; i < nv; i++) {
+            JSPiece *pc = &s->pieces[s->vpiece[md->v0 + i]];
+            const float *q = s->p + (size_t)(md->v0 + i) * 3;
+            if (!pc->v) continue;
+            pc->v[pc->nv++] = md->v0 + i;
+            for (k = 0; k < 3; k++) { if (q[k] < pc->lo[k]) pc->lo[k] = q[k]; if (q[k] > pc->hi[k]) pc->hi[k] = q[k]; }
+        }
+        for (i = 0; i < md->nt; i++) {
+            JSPiece *pc = &s->pieces[s->tpiece[md->t0 + i]];
+            if (pc->t) pc->t[pc->nt++] = md->t0 + i;
+        }
+        for (k = first; k < s->npiece; k++) {
+            JSPiece *pc = &s->pieces[k];
+            int q;
+            for (q = 0; q < 3; q++) pc->pv[q] = pc->c[q] = (pc->lo[q] + pc->hi[q]) * 0.5f;
+        }
+    }
+    free(par); free(ord); free(slot);
+    /* the rails: to the smallest opaque piece holding all their points */
+    s->rp0 = (float *)malloc(sizeof(float) * 3 * (size_t)(s->nrp + 1));
+    s->rnrm0 = (float *)malloc(sizeof(float) * 3 * (size_t)(s->nrp + 1));
+    s->rpiece = (int *)malloc(sizeof(int) * (size_t)(s->nrail + 1));
+    if (s->rp0 && s->rnrm0 && s->rpiece) {
+        memcpy(s->rp0, s->rp, sizeof(float) * 3 * (size_t)s->nrp);
+        memcpy(s->rnrm0, s->rnrm, sizeof(float) * 3 * (size_t)s->nrp);
+        for (i = 0; i < s->nrail; i++) {
+            float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f }, best = 1e38f;
+            int q, j, bk = -1;
+            for (j = 0; j < s->rn[i]; j++)
+                for (q = 0; q < 3; q++) {
+                    float v = s->rp[(size_t)(s->rs[i] + j) * 3 + q];
+                    if (v < lo[q]) lo[q] = v;
+                    if (v > hi[q]) hi[q] = v;
+                }
+            for (k = 0; k < s->npiece; k++) {
+                const JSPiece *pc = &s->pieces[k];
+                float vol;
+                if (s->models[pc->model].kind != 1) continue;
+                for (q = 0; q < 3; q++) if (lo[q] < pc->lo[q] - 1.0f || hi[q] > pc->hi[q] + 1.0f) break;
+                if (q < 3) continue;
+                vol = (pc->hi[0] - pc->lo[0] + 1) * (pc->hi[1] - pc->lo[1] + 1) * (pc->hi[2] - pc->lo[2] + 1);
+                if (vol < best) { best = vol; bk = k; }
+            }
+            s->rpiece[i] = bk;
+            if (bk >= 0) {
+                JSPiece *pc = &s->pieces[bk];
+                int *nr = (int *)realloc(pc->rail, sizeof(int) * (size_t)(pc->nrail + 1));
+                if (nr) { pc->rail = nr; pc->rail[pc->nrail++] = i; }
+            }
+        }
+    }
+    /* the collision: to the smallest opaque piece holding its box */
+    for (i = 0; i < s->ncmodel; i++) {
+        const JSCModel *cm = &s->cmodels[i];
+        float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f }, best = 1e38f;
+        int q, j, bk = -1;
+        if (cm->nv <= 0) continue;
+        for (j = 0; j < cm->nv; j++)
+            for (q = 0; q < 3; q++) {
+                float v = s->cp[(size_t)(cm->v0 + j) * 3 + q];
+                if (v < lo[q]) lo[q] = v;
+                if (v > hi[q]) hi[q] = v;
+            }
+        for (k = 0; k < s->npiece; k++) {
+            const JSPiece *pc = &s->pieces[k];
+            float vol;
+            if (s->models[pc->model].kind != 1) continue;
+            for (q = 0; q < 3; q++) if (lo[q] < pc->lo[q] - 0.5f || hi[q] > pc->hi[q] + 0.5f) break;
+            if (q < 3) continue;
+            vol = (pc->hi[0] - pc->lo[0] + 1) * (pc->hi[1] - pc->lo[1] + 1) * (pc->hi[2] - pc->lo[2] + 1);
+            if (vol < best) { best = vol; bk = k; }
+        }
+        s->cpiece[i] = bk;
+        if (bk >= 0) {
+            JSPiece *pc = &s->pieces[bk];
+            int *nc = (int *)realloc(pc->cm, sizeof(int) * (size_t)(pc->ncm + 1));
+            if (nc) { pc->cm = nc; pc->cm[pc->ncm++] = i; }
+        }
+    }
+}
+
+/* piece k's vertices (and its collision) placed again: turned about its middle, then moved */
+void jst_piece_update(JStage *s, int k)
+{
+    JSPiece *pc;
+    float a, c, sn;
+    int i, j;
+    if (k < 0 || k >= s->npiece || !s->p0) return;
+    pc = &s->pieces[k];
+    a = pc->yaw * 3.14159265f / 180.0f; c = cosf(a); sn = sinf(a);
+    for (i = 0; i < pc->nv; i++) {
+        const float *q = s->p0 + (size_t)pc->v[i] * 3;
+        float *o = s->p + (size_t)pc->v[i] * 3, dx = q[0] - pc->pv[0], dz = q[2] - pc->pv[2];
+        o[0] = pc->pv[0] + dx * c + dz * sn + pc->t3[0];
+        o[1] = q[1] + pc->t3[1];
+        o[2] = pc->pv[2] - dx * sn + dz * c + pc->t3[2];
+    }
+    for (j = 0; j < pc->nrail && s->rp0; j++) {    /* its rails, points and normals */
+        int r = pc->rail[j];
+        for (i = 0; i < s->rn[r]; i++) {
+            size_t q = (size_t)(s->rs[r] + i) * 3;
+            const float *a0 = s->rp0 + q, *n0 = s->rnrm0 + q;
+            float dx = a0[0] - pc->pv[0], dz = a0[2] - pc->pv[2];
+            s->rp[q] = pc->pv[0] + dx * c + dz * sn + pc->t3[0];
+            s->rp[q + 1] = a0[1] + pc->t3[1];
+            s->rp[q + 2] = pc->pv[2] - dx * sn + dz * c + pc->t3[2];
+            s->rnrm[q] = n0[0] * c + n0[2] * sn;
+            s->rnrm[q + 1] = n0[1];
+            s->rnrm[q + 2] = -n0[0] * sn + n0[2] * c;
+        }
+    }
+    for (j = 0; j < pc->ncm; j++) {
+        const JSCModel *cm = &s->cmodels[pc->cm[j]];
+        for (i = 0; i < cm->nv; i++) {
+            const float *q = s->cp0 + (size_t)(cm->v0 + i) * 3;
+            float *o = s->cp + (size_t)(cm->v0 + i) * 3, dx = q[0] - pc->pv[0], dz = q[2] - pc->pv[2];
+            o[0] = pc->pv[0] + dx * c + dz * sn + pc->t3[0];
+            o[1] = q[1] + pc->t3[1];
+            o[2] = pc->pv[2] - dx * sn + dz * c + pc->t3[2];
+        }
+    }
 }
 
 /* ---- m28: props moved, removed, copied ---- */

@@ -64,6 +64,8 @@ int main(int argc, char **argv)
         printf("\nrails: %d, %d points; box %.0f %.0f %.0f .. %.0f %.0f %.0f\n", st.nrail, st.nrp,
                st.lo[0], st.lo[1], st.lo[2], st.hi[0], st.hi[1], st.hi[2]);
         { int nn = 0; for (k = 0; k < st.nt; k++) nn += st.ttex[k] < 0; printf("triangles without a known texture: %d\n", nn); }
+        { int cl = 0, pw = 0; for (k = 0; k < st.ncmodel; k++) cl += st.cpiece[k] >= 0; for (k = 0; k < st.npiece; k++) pw += st.pieces[k].ncm > 0;
+          printf("pieces: %d (%d with collision); collision models with a piece: %d of %d\n", st.npiece, pw, cl, st.ncmodel); }
         if (argc >= 5 && jst_write_obj(&st, argv[4], err, sizeof err)) { printf("%s\n", err); return 1; }
         jst_free(&st);
         return 0;

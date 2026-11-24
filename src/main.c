@@ -59,7 +59,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m28"
+#define MODTOOL_VERSION "m29"
 
 /* ---- the files ---- */
 
@@ -1860,8 +1860,8 @@ static void stage_rebuild(int moved)
         if (c.same == c.n)
             snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files came out identical to the game's: every part of the stage is understood.", c.same, c.n);
         else if (c.tested == c.n - c.same)
-            snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files identical; %s is the test's file with its parts moved "
-                     "(put the originals back, then check again).", c.same, c.n, c.diff);
+            snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files identical; %s has changes saved over the original "
+                     "(the test's or the editor's; the original is in mod_backups).", c.same, c.n, c.diff);
         else
             snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files identical; different: %s (tell Claude).", c.same, c.n, c.diff);
     else {
