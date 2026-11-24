@@ -4078,6 +4078,24 @@ static int surf_overwritten(GlSurf *g)
     return 1;
 }
 
+/* v313f: RECOMP_TEX_FILTER=nearest (Idea by Miggas: the textures are crisp
+ * in the mod tool, blurred in the game). The game asks for bilinear and the
+ * NV2A smooths, as here; with this every texture the game binds is sampled
+ * nearest, its pixels sharp up close (mipmapped ones still blend between
+ * levels, so the distance doesn't shimmer). Our own passes (AA, upscaling,
+ * the boost blur's final pass) keep their own samplers. */
+static int tex_nearest(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_TEX_FILTER");
+        on = e && (!strcmp(e, "nearest") || !strcmp(e, "point") || !strcmp(e, "1"));
+        fprintf(stderr, "[GL] texture filter: %s (RECOMP_TEX_FILTER)\n",
+                on ? "nearest (sharp pixels)" : "as the game asks");
+    }
+    return on;
+}
+
 static void bind_texture(int stage, const NvGlTexture *t)
 {
     const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
@@ -4417,6 +4435,10 @@ uploaded:
                                             : GL_LINEAR_MIPMAP_LINEAR)
                               : (linear ? GL_LINEAR : GL_NEAREST);
         GLint ws = (GLint)gl_wrap(t->addr_u), wt = (GLint)gl_wrap(t->addr_v);
+        if (tex_nearest()) {
+            want_mag = GL_NEAREST;
+            want_min = mips ? GL_NEAREST_MIPMAP_LINEAR : GL_NEAREST;
+        }
         if (e->p_mag != want_mag) {
             rb_active_unit(bt_unit); rb_tex_param(target, GL_TEXTURE_MAG_FILTER, want_mag);
             e->p_mag = want_mag;
