@@ -29,6 +29,7 @@ code on your computer, and compiled into a normal program. The Xbox's hardware
 
 ## Contents
 
+- [What's new compared to the Xbox](#whats-new-compared-to-the-xbox)
 1. [What you need](#1-what-you-need)
 2. [Install and play](#2-install-and-play)
 3. [Steam Deck](#3-steam-deck)
@@ -41,6 +42,66 @@ code on your computer, and compiled into a normal program. The Xbox's hardware
 10. [Credits and licences](#10-credits-and-licences)
 
 Debug and advanced settings: [DEBUG.md](DEBUG.md).
+
+---
+
+## What's new compared to the Xbox
+
+Everything below is added by the recomp. The game itself plays as it did on the
+Xbox. Most additions can be turned off in the launcher or `jsrf.ini`.
+
+### Platforms and setup
+- Native **Windows 10/11, Linux and Steam Deck** builds (no Proton needed on the Deck).
+- **Every retail release:** US, Europe (PAL), Japan, and the JSRF on the Sega GT 2002 combo discs (US, Europe, Asia).
+- **Launcher:** Play, Build, Update and every setting in one window, with no command line.
+- **Language choice** on any release. Options depend on the release.
+
+### Graphics
+- **Higher internal resolution**, up to 8x the Xbox's 640x480 (4K and above).
+- **Widescreen** at any aspect ratio (16:9, 16:10, 21:9...). The HUD sits in the screen corners, and the menus are laid out wide.
+- **Anti-aliasing:** FXAA, SMAA (four levels) and MSAA (2x/4x/8x).
+- **Anisotropic filtering** (2x to 16x).
+- **No pop-in:** buildings and level geometry are drawn further ahead. On by default, with per-map extra areas.
+- **Longer object draw distance:** police, tanks, vehicles, crowds, spray cans, props and race checkpoints show up from further away.
+- **Vulkan renderer** beside OpenGL.
+- **Shaders built ahead**, before play.
+- **HUD scale** (0.5x to 1.5x) or **no HUD** at all.
+- **Cutscene black bars** can be turned off.
+- **New boost effect:** a radial blur, sharp around the skater, in place of the game's trails (strength adjustable).
+- **No dark rim around 2D art** (HUD, menus, text and decals at high resolution).
+- **Bigger graffiti:** stages and the graffiti select take higher-resolution graffiti made with the mod tool.
+- **Display:** VSync, borderless fullscreen (F11 toggles it), and a mouse pointer that hides itself.
+
+### Camera
+- **Right-stick camera:** turn the view while skating or standing still, with invert and sensitivity settings.
+- **Camera kept out of walls:** it slides along or moves in instead of going through walls.
+- **Photo mode:** click R3. The world freezes, the HUD hides, the camera flies freely, and A saves a PNG to `Screenshots/`.
+
+### Gameplay and quality of life
+- **Skip any cutscene** by holding START.
+- **Quit window** (click both sticks, or Shift + Ctrl): pauses the game, then Return, Quit to Title or Quit Game.
+- **Mission select** (LB + RB in the title): 29 missions under chapter headings, each with its objective.
+  - Start with no spray cans, 20, or the maximum.
+  - The cutscenes around each mission are skipped.
+  - A **timer**, plus your five **personal best** times for each mission.
+- **Early Test Runs:** open Roboy's test runs as you reach their areas, or with your graffiti souls, instead of only at the end.
+
+### Controls
+- **Any controller:** Xbox, PlayStation (DualSense/DualShock), Switch and others. Buttons go by position, as on an Xbox pad.
+- **Keyboard** play.
+- **Up to 4 players** on one PC, with players assigned in the order they press a button.
+- **Rumble**, with a strength setting.
+
+### Sound
+- **PC sound mixing:** the game's sound runs on the PC instead of emulated Xbox audio hardware.
+
+### Saves
+- **Saves from anywhere:** saves from a real Xbox or an emulator load, whatever their signature.
+- **Portable saves** in a `UDATA` folder beside the game.
+
+### Fixes for the game's own bugs
+- **Yoyo keeps his voice:** in the US and Japanese releases he shares a voice file with NT 3000, and after the chapter 7 garage he could lose it.
+- **NT 3000 gets his own robotic voice:** only the PAL release used his voice file, though every release has it.
 
 ---
 
