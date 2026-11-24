@@ -23,5 +23,8 @@ int  s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float
 /* (tests) the camera: position, turn and tilt in degrees; layers as "vpcr" letters */
 void s3d_set_camera(float x, float y, float z, float yaw_deg, float pitch_deg);
 void s3d_set_layers(const char *letters);
+/* m28: how an edited stage file is written (the original kept first): 0 done */
+void s3d_test_edit(const char *script, char *msg, size_t msgn);   /* m28 (tests) */
+void s3d_set_saver(int (*save)(const char *file, const uint8_t *data, size_t n, void *u), void *u);
 
 #endif

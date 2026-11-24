@@ -59,7 +59,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m27b"
+#define MODTOOL_VERSION "m28"
 
 /* ---- the files ---- */
 
@@ -1833,6 +1833,15 @@ static int rb_cb(const char *file, const uint8_t *d, size_t n, int same, void *u
     return 0;
 }
 
+/* m28: the stage editor's saves: over the game's file, its original kept, its cached copy too */
+static int stage_save(const char *file, const uint8_t *d, size_t n, void *u)
+{
+    char rel[512];
+    (void)u;
+    stage_rel(rel, sizeof rel, file);
+    return store_rel(rel, d, n);
+}
+
 static void stage_rebuild(int moved)
 {
     const JStage *st = s3d_stage();
@@ -1929,6 +1938,7 @@ static void open_stage(const char *name, int custom)
     char dir[LPATH], err[600];
     s_stage_custom = custom;
     game_path(dir, custom ? "Media/Stage/Custom" : "Media/Stage");
+    s3d_set_saver(stage_save, NULL);
     if (may_leave_paint() && !s3d_open(dir, name, err, sizeof err)) {
         const JStage *st = s3d_stage();
         s_stage_view = 1;
@@ -2469,6 +2479,7 @@ int main(int argc, char **argv)
                     s3d_set_camera(c[0], c[1], c[2], c[3], c[4]);
                 }
                 if (getenv("MT_LAYERS")) s3d_set_layers(getenv("MT_LAYERS"));
+                if (getenv("MT_EDIT")) { s3d_test_edit(getenv("MT_EDIT"), s_msg, sizeof s_msg); printf("%s\n", s_msg); }   /* m28 (tests) */
                 if (getenv("MT_REBUILD")) {          /* m27 (tests): check, moved or back */
                     const char *r = getenv("MT_REBUILD");
                     if (!strcmp(r, "back")) stage_put_back();

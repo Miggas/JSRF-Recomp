@@ -14,6 +14,7 @@
 #include "nuklear.h"
 
 #include "stage3d.h"
+#include "jsbuild.h"
 #include "util.h"
 
 /* what is under a pixel: the layer in the top bits, the triangle below */
@@ -57,7 +58,27 @@ static struct {
     uint64_t last_t;
     uint32_t hover;
     float ms;                              /* the last picture's time */
+    /* m28: the editor (stage editor, level 3: props) */
+    char dir[2048];
+    JSBin ed;                              /* the .bin as read, its placements kept */
+    int ed_ok;
+    int sel, grab, dirty, leave_ask;
+    float grab_r[12], grab_dy;
+    int press, pmoved;
+    float px0, py0;
+    uint8_t kprev[SDL_NUM_SCANCODES];
+    struct Undo { int n; float (*r)[12]; uint8_t *rm; } undo[64];
+    int nundo;
 } G;
+
+static void ed_box(int k, float lo[3], float hi[3]);
+static int (*s_saver)(const char *file, const uint8_t *data, size_t n, void *u);
+static void *s_saver_u;
+void s3d_set_saver(int (*save)(const char *file, const uint8_t *data, size_t n, void *u), void *u)
+{
+    s_saver = save;
+    s_saver_u = u;
+}
 
 /* ---- textures: smaller levels, so far surfaces don't shimmer ---- */
 
@@ -122,6 +143,18 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     s3d_close();
     if (jst_load(dir, name, &G.s, err, errn)) return -1;
     G.open = 1;
+    snprintf(G.dir, sizeof G.dir, "%s", dir);
+    G.sel = -1; G.grab = 0; G.dirty = 0; G.leave_ask = 0; G.nundo = 0;
+    G.ed_ok = 0;
+    if (G.s.binfile[0]) {                       /* m28: the .bin in its parts, for saving edits */
+        char p[2048], e2[300];
+        size_t n = 0;
+        uint8_t *b;
+        pjoin(p, dir, G.s.binfile);
+        b = (uint8_t *)read_file(p, &n);
+        if (b && !jsb_parse(b, n, &G.ed, e2, sizeof e2)) G.ed_ok = 1;
+        free(b);
+    }
     make_mips();
     G.vis = G.see = G.prop = 1;
     G.shadow = 0;
@@ -144,6 +177,13 @@ void s3d_close(void)
 {
     if (!G.open) return;
     free_mips();
+    {
+        int k;
+        for (k = 0; k < G.nundo; k++) { free(G.undo[k].r); free(G.undo[k].rm); }
+        G.nundo = 0;
+    }
+    if (G.ed_ok) jsb_free(&G.ed);
+    G.ed_ok = 0;
     jst_free(&G.s);
     free(G.vv); free(G.cv); free(G.st);
     G.vv = G.cv = NULL; G.st = NULL; G.cst = G.nst = 0;
@@ -462,6 +502,7 @@ static void render(void)
             uint32_t col = 0;
             float l;
             int cr = 0, cg = 0, cb = 0;
+            if (kind == JST_T_GONE) continue;          /* m28: deleted in the editor */
             if ((kind == JST_T_STAGE && !G.vis) || (kind == JST_T_SEE && !G.see) || (kind == JST_T_PROP && !G.prop)
                 || (kind == JST_T_SHADOW && !G.shadow && !G.shadows)) continue;
             for (k = 0; k < 3; k++) {
@@ -476,6 +517,9 @@ static void render(void)
             l = shade(G.s.p + ix[0] * 3, G.s.p + ix[1] * 3, G.s.p + ix[2] * 3, 0.78f, 1.0f);
             if (m) {
                 int rr = (int)(cr / 3 * l), gg = (int)(cg / 3 * l), bb = (int)(cb / 3 * l);
+                if (G.sel >= 0 && i >= G.s.props[G.sel].t0 && i < G.s.props[G.sel].t0 + G.s.props[G.sel].nt) {
+                    rr = rr / 2 + 150; gg = gg / 2 + 110; bb = bb / 3 + 20;   /* m28: the picked prop, orange */
+                }
                 emit(c, m, (uint8_t)(rr > 255 ? 255 : rr), (uint8_t)(gg > 255 ? 255 : gg), (uint8_t)(bb > 255 ? 255 : bb),
                      kind == JST_T_STAGE ? 0 : 1, ID_OF(kind == JST_T_STAGE ? ID_STAGE : kind == JST_T_SEE ? ID_SEE : ID_PROP, i));
             } else if (kind == JST_T_SHADOW) {      /* m26e: cast on the surfaces; and/or the volumes laid over, dark */
@@ -530,6 +574,14 @@ static void render(void)
                 line3(a, a + 3, f, r, u, 255, 196, 30, thick);
             }
     }
+    if (G.sel >= 0 && G.sel < G.s.nprop && !G.s.props[G.sel].removed) {   /* m28: the picked prop's box */
+        float lo[3], hi[3], c[8][3];
+        static const int e[12][2] = { {0,1},{1,3},{3,2},{2,0},{4,5},{5,7},{7,6},{6,4},{0,4},{1,5},{2,6},{3,7} };
+        int q;
+        ed_box(G.sel, lo, hi);
+        for (q = 0; q < 8; q++) { c[q][0] = q & 1 ? hi[0] : lo[0]; c[q][1] = q & 2 ? hi[1] : lo[1]; c[q][2] = q & 4 ? hi[2] : lo[2]; }
+        for (q = 0; q < 12; q++) line3(c[e[q][0]], c[e[q][1]], f, r, u, 80, 230, 255, G.rw >= 900 ? 2 : 1);
+    }
     G.ms = (float)((double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency());
     if (getenv("MT_WINDING")) {                  /* (tests) which way the triangles seen turn on the screen */
         int pos = 0, neg = 0, q;
@@ -544,6 +596,222 @@ static void render(void)
         }
         fprintf(stderr, "[winding] seen stage triangles: %d clockwise on the screen, %d anticlockwise\n", pos, neg);
     }
+}
+
+
+/* ---- m28: the editor (stage editor, level 3): props picked, moved,
+ * turned, copied, deleted, with undo; saved through the rebuild (m27) ---- */
+
+static void ed_snap(void)                       /* the props as they are, before a change */
+{
+    struct Undo *u;
+    int k;
+    if (G.nundo == 64) {                        /* the oldest goes */
+        free(G.undo[0].r); free(G.undo[0].rm);
+        memmove(&G.undo[0], &G.undo[1], sizeof G.undo[0] * 63);
+        G.nundo--;
+    }
+    u = &G.undo[G.nundo];
+    u->n = G.s.nprop;
+    u->r = (float (*)[12])malloc(sizeof(float) * 12 * (size_t)(u->n + 1));
+    u->rm = (uint8_t *)malloc((size_t)u->n + 1);
+    if (!u->r || !u->rm) { free(u->r); free(u->rm); return; }
+    for (k = 0; k < u->n; k++) { memcpy(u->r[k], G.s.props[k].r, sizeof u->r[k]); u->rm[k] = (uint8_t)G.s.props[k].removed; }
+    G.nundo++;
+}
+
+static void ed_changed(int k)
+{
+    jst_prop_update(&G.s, k);
+    G.dirty = 1;
+    G.leave_ask = 0;
+    G.need = 1;
+}
+
+static int ed_undo(void)
+{
+    struct Undo *u;
+    int k;
+    if (!G.nundo) return 0;
+    u = &G.undo[--G.nundo];
+    for (k = 0; k < G.s.nprop; k++) {
+        JSProp *pp = &G.s.props[k];
+        if (k < u->n) { memcpy(pp->r, u->r[k], sizeof pp->r); pp->removed = u->rm[k]; }
+        else pp->removed = 1;                   /* a copy made after: gone again */
+        jst_prop_update(&G.s, k);
+    }
+    free(u->r); free(u->rm);
+    if (G.sel >= 0 && G.s.props[G.sel].removed) G.sel = -1;
+    G.grab = 0;
+    G.dirty = 1;
+    G.need = 1;
+    return 1;
+}
+
+static void ed_turn(int k, float deg)           /* about the world's up, round its own place */
+{
+    JSProp *pp = &G.s.props[k];
+    float a = deg * 3.14159265f / 180.0f, c = cosf(a), sn = sinf(a);
+    int i;
+    for (i = 0; i < 3; i++) {
+        float x = pp->r[i * 3], z = pp->r[i * 3 + 2];
+        pp->r[i * 3] = x * c + z * sn;
+        pp->r[i * 3 + 2] = -x * sn + z * c;
+    }
+    ed_changed(k);
+}
+
+static float ed_heading(int k)                  /* the way its x row points, degrees */
+{
+    const float *r = G.s.props[k].r;
+    return atan2f(-r[2], r[0]) * 180.0f / 3.14159265f;
+}
+
+/* the point on the level y under the mouse (mx, my in the view's pixels); 0 found */
+static int ed_ray_y(float mx, float my, float y, float out[3])
+{
+    float f[3], r[3], u[3], d[3], foc = (float)G.th * 0.5f / tanf(0.6f), t;
+    int k;
+    basis(f, r, u);
+    for (k = 0; k < 3; k++) d[k] = f[k] + r[k] * ((mx - (float)G.tw * 0.5f) / foc) - u[k] * ((my - (float)G.th * 0.5f) / foc);
+    if (fabsf(d[1]) < 1e-5f) return -1;
+    t = (y - G.pos[1]) / d[1];
+    if (t <= 0 || t > 1e6f) return -1;
+    for (k = 0; k < 3; k++) out[k] = G.pos[k] + d[k] * t;
+    return 0;
+}
+
+static void ed_box(int k, float lo[3], float hi[3])
+{
+    const JSProp *pp = &G.s.props[k];
+    int i, q;
+    for (q = 0; q < 3; q++) { lo[q] = 1e30f; hi[q] = -1e30f; }
+    for (i = 0; i < pp->nv; i++)
+        for (q = 0; q < 3; q++) {
+            float v = G.s.p[(size_t)(pp->v0 + i) * 3 + q];
+            if (v < lo[q]) lo[q] = v;
+            if (v > hi[q]) hi[q] = v;
+        }
+}
+
+static void ed_delete(int k)
+{
+    ed_snap();
+    G.s.props[k].removed = 1;
+    ed_changed(k);
+    if (G.sel == k) G.sel = -1;
+    G.grab = 0;
+}
+
+static int ed_copy(int k)                       /* a copy beside it, picked and grabbed */
+{
+    int n, nv0 = G.s.nv;
+    float lo[3], hi[3];
+    ed_snap();
+    n = jst_prop_dup(&G.s, k);
+    if (n < 0) return -1;
+    if (G.s.nv > nv0) {                         /* the camera-space buffer grows with it */
+        float *vv = (float *)realloc(G.vv, sizeof(float) * 3 * (size_t)(G.s.nv + 1));
+        if (vv) G.vv = vv;
+    }
+    ed_box(k, lo, hi);
+    G.s.props[n].r[9] += (hi[0] - lo[0]) + 2.0f;   /* beside the first */
+    ed_changed(n);
+    G.sel = n;
+    return n;
+}
+
+/* the edits into the .bin's placements, written by the saver; 0 done */
+static int ed_save(char *msg, size_t msgn)
+{
+    int a, k, moved = 0, removed = 0, added = 0;
+    uint8_t *w;
+    size_t wn = 0;
+    JBytes *npl;
+    int *newe;
+    if (!G.ed_ok || !s_saver) { snprintf(msg, msgn, "This stage's .bin couldn't be read in its parts: can't save."); return -1; }
+    npl = (JBytes *)calloc((size_t)G.ed.nva + 1, sizeof(JBytes));
+    newe = (int *)malloc(sizeof(int) * (size_t)(G.s.nprop + 1));
+    if (!npl || !newe) { free(npl); free(newe); return -1; }
+    for (k = 0; k < G.s.nprop; k++) newe[k] = -2;
+    for (a = 0; a < G.ed.nva; a++) {
+        size_t ne = G.ed.pl[a].n / 80, j;
+        uint8_t *o = (uint8_t *)malloc((ne + (size_t)G.s.nprop) * 80 + 80);
+        size_t on = 0;
+        if (!o) { for (k = 0; k < a; k++) free(npl[k].p); free(npl); free(newe); return -1; }
+        for (j = 0; j < ne; j++) {
+            const uint8_t *e = G.ed.pl[a].p + j * 80;
+            int pk = -1;
+            for (k = 0; k < G.s.nprop; k++)
+                if (G.s.props[k].area == a && G.s.props[k].entry == (int)j) { pk = k; break; }
+            if (pk < 0) { memcpy(o + on, e, 80); on += 80; continue; }   /* a stage model's, as it was */
+            if (G.s.props[pk].removed) { removed++; continue; }
+            newe[pk] = (int)(on / 80);
+            memcpy(o + on, e, 80);
+            for (k = 0; k < 3; k++) memcpy(o + on + 16 * k, &G.s.props[pk].r[k * 3], 12);
+            memcpy(o + on + 48, &G.s.props[pk].r[9], 12);
+            if (memcmp(o + on, e, 80)) moved++;
+            on += 80;
+        }
+        for (k = 0; k < G.s.nprop; k++) {          /* copies made here, at the end of their area's list */
+            JSProp *pp = &G.s.props[k];
+            int q;
+            if (pp->area != a || pp->entry >= 0 || pp->removed) continue;
+            newe[k] = (int)(on / 80);
+            memcpy(o + on, pp->bytes, 80);
+            for (q = 0; q < 3; q++) memcpy(o + on + 16 * q, &pp->r[q * 3], 12);
+            memcpy(o + on + 48, &pp->r[9], 12);
+            on += 80;
+            added++;
+        }
+        npl[a].p = o;
+        npl[a].n = on;
+    }
+    {
+        JBytes *old = G.ed.pl;
+        G.ed.pl = npl;
+        w = jsb_write(&G.ed, 0, &wn);
+        if (!w || s_saver(G.s.binfile, w, wn, s_saver_u)) {
+            G.ed.pl = old;
+            for (a = 0; a < G.ed.nva; a++) free(npl[a].p);
+            free(npl);
+            free(w);
+            free(newe);
+            snprintf(msg, msgn, "Couldn't write %s.", G.s.binfile);
+            return -1;
+        }
+        for (a = 0; a < G.ed.nva; a++) free(old[a].p);
+        free(old);
+        free(w);
+    }
+    /* the props' entries as now written (a deleted one has none: -2; undone, it's added as a copy) */
+    for (k = 0; k < G.s.nprop; k++) G.s.props[k].entry = newe[k];
+    free(newe);
+    snprintf(msg, msgn, "%s saved: %d prop%s moved, %d deleted, %d copied (the original in mod_backups).",
+             G.s.binfile, moved, moved == 1 ? "" : "s", removed, added);
+    G.dirty = 0;
+    return 0;
+}
+
+/* m28 (tests): edits by script: "move K dx dy dz; turn K deg; del K; copy K; undo; save" */
+void s3d_test_edit(const char *script, char *msg, size_t msgn)
+{
+    char buf[512], *tok, *save = NULL;
+    snprintf(buf, sizeof buf, "%s", script);
+    for (tok = strtok_r(buf, ";", &save); tok; tok = strtok_r(NULL, ";", &save)) {
+        int k = -1;
+        float a = 0, b2 = 0, c = 0;
+        while (*tok == ' ') tok++;
+        if (sscanf(tok, "move %d %f %f %f", &k, &a, &b2, &c) == 4 && k >= 0 && k < G.s.nprop) {
+            ed_snap(); G.s.props[k].r[9] += a; G.s.props[k].r[10] += b2; G.s.props[k].r[11] += c; ed_changed(k); G.sel = k;
+        } else if (sscanf(tok, "turn %d %f", &k, &a) == 2 && k >= 0 && k < G.s.nprop) { ed_snap(); ed_turn(k, a); G.sel = k; }
+        else if (sscanf(tok, "del %d", &k) == 1 && k >= 0 && k < G.s.nprop) ed_delete(k);
+        else if (sscanf(tok, "copy %d", &k) == 1 && k >= 0 && k < G.s.nprop) ed_copy(k);
+        else if (!strncmp(tok, "undo", 4)) ed_undo();
+        else if (!strncmp(tok, "save", 4)) ed_save(msg, msgn);
+        else if (sscanf(tok, "pick %d", &k) == 1) G.sel = k;
+    }
+    G.need = 1;
 }
 
 /* ---- the panel ---- */
@@ -580,7 +848,12 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
     if (!G.open) return 1;
     if (nk_begin(ctx, "Stage", nk_rect(x, y, cw, h), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         nk_layout_row_dynamic(ctx, row, 1);
-        if (nk_button_label(ctx, "Back to the stages")) back = 1;
+        if (nk_button_label(ctx, "Back to the stages")) {
+            if (G.dirty && !G.leave_ask) {       /* m28: not without asking */
+                G.leave_ask = 1;
+                snprintf(msg, msgn, "Unsaved changes to %s: Save them, or press Back again to leave without saving.", G.s.name);
+            } else back = 1;
+        }
         nk_layout_row_dynamic(ctx, row - 6, 1);
         nk_labelf(ctx, NK_TEXT_LEFT, "%s: %d .dat files", G.s.name, G.s.ndat);
         nk_labelf(ctx, NK_TEXT_LEFT, "%d stage models, %d props", G.s.nmodels, G.s.nprops);
@@ -617,6 +890,44 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 check(ctx, t, &G.surf[k]);
             }
         }
+        /* m28: the editor */
+        nk_layout_row_dynamic(ctx, row, 1);
+        nk_label(ctx, G.dirty ? "Edit (unsaved changes)" : "Edit", NK_TEXT_LEFT);
+        if (G.sel >= 0 && G.sel < G.s.nprop && !G.s.props[G.sel].removed) {
+            JSProp *pp = &G.s.props[G.sel];
+            float v[3] = { pp->r[9], pp->r[10], pp->r[11] }, hd = ed_heading(G.sel), hd2;
+            int q;
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            nk_labelf(ctx, NK_TEXT_LEFT, "Prop %d: model %d, area %d", G.sel, pp->model_id, pp->area);
+            for (q = 0; q < 3; q++) {
+                static const char *nmx[3] = { "#X:", "#Y:", "#Z:" };
+                float before = v[q];
+                nk_property_float(ctx, nmx[q], -100000.0f, &v[q], 100000.0f, 1.0f, 0.5f);
+                if (v[q] != before) {
+                    if (!G.grab) ed_snap();
+                    pp->r[9 + q] = v[q];
+                    ed_changed(G.sel);
+                }
+            }
+            hd2 = hd;
+            nk_property_float(ctx, "#Facing:", -360.0f, &hd2, 360.0f, 15.0f, 1.0f);
+            if (hd2 != hd) { ed_snap(); ed_turn(G.sel, hd2 - hd); }
+            nk_layout_row_dynamic(ctx, row - 4, 2);
+            if (nk_button_label(ctx, G.grab ? "Grabbed: click to drop" : "Grab (G)")) {
+                if (!G.grab) { ed_snap(); memcpy(G.grab_r, pp->r, sizeof G.grab_r); G.grab = 1; }
+            }
+            if (nk_button_label(ctx, "Copy (Ctrl+D)")) { if (ed_copy(G.sel) >= 0) { memcpy(G.grab_r, G.s.props[G.sel].r, sizeof G.grab_r); } }
+            if (nk_button_label(ctx, "Turn -15 ([)")) { ed_snap(); ed_turn(G.sel, -15); }
+            if (nk_button_label(ctx, "Turn +15 (])")) { ed_snap(); ed_turn(G.sel, 15); }
+            if (nk_button_label(ctx, "Delete (Del)")) ed_delete(G.sel);
+            if (nk_button_label(ctx, "Unpick (Esc)")) { G.sel = -1; G.grab = 0; G.need = 1; }
+        } else {
+            nk_layout_row_dynamic(ctx, row - 8, 1);
+            nk_label_colored(ctx, "Click a prop to pick it.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+        }
+        nk_layout_row_dynamic(ctx, row - 4, 2);
+        if (nk_button_label(ctx, G.nundo ? "Undo (Ctrl+Z)" : "Undo (nothing)")) ed_undo();
+        if (nk_button_label(ctx, G.dirty ? "Save the stage" : "Saved")) { if (G.dirty) ed_save(msg, msgn); }
         nk_layout_row_dynamic(ctx, row, 1);
         nk_label(ctx, "Camera", NK_TEXT_LEFT);
         nk_layout_row_dynamic(ctx, row, 2);
@@ -685,7 +996,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 G.need = 1;
             }
             basis(f, r, u);
-            if (nk_input_has_mouse_click_down_in_rect(in, NK_BUTTON_LEFT, b, nk_true) && (in->mouse.delta.x || in->mouse.delta.y)) {
+            if (!G.grab && nk_input_has_mouse_click_down_in_rect(in, NK_BUTTON_LEFT, b, nk_true) && (in->mouse.delta.x || in->mouse.delta.y)) {
                 G.yaw += in->mouse.delta.x * 0.005f;
                 G.pitch -= in->mouse.delta.y * 0.005f;
                 if (G.pitch > 1.56f) G.pitch = 1.56f;
@@ -718,6 +1029,63 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                     moved = 1;
                 }
             }
+            /* m28: the editor's keys and clicks */
+            if (hover) {
+                const Uint8 *ks = SDL_GetKeyboardState(NULL);
+                int ctrl = ks[SDL_SCANCODE_LCTRL] || ks[SDL_SCANCODE_RCTRL], shift = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
+                int sel_ok = G.sel >= 0 && G.sel < G.s.nprop && !G.s.props[G.sel].removed;
+#define KEYHIT(sc) (ks[sc] && !G.kprev[sc])
+                if (ctrl && KEYHIT(SDL_SCANCODE_Z)) ed_undo();
+                if (sel_ok && ctrl && KEYHIT(SDL_SCANCODE_D)) ed_copy(G.sel);
+                if (sel_ok && !ctrl && KEYHIT(SDL_SCANCODE_G) && !G.grab) { ed_snap(); memcpy(G.grab_r, G.s.props[G.sel].r, sizeof G.grab_r); G.grab = 1; }
+                if (sel_ok && KEYHIT(SDL_SCANCODE_DELETE)) ed_delete(G.sel);
+                if (sel_ok && KEYHIT(SDL_SCANCODE_LEFTBRACKET)) { ed_snap(); ed_turn(G.sel, shift ? -90.0f : -15.0f); }
+                if (sel_ok && KEYHIT(SDL_SCANCODE_RIGHTBRACKET)) { ed_snap(); ed_turn(G.sel, shift ? 90.0f : 15.0f); }
+                if (sel_ok && (KEYHIT(SDL_SCANCODE_PAGEUP) || KEYHIT(SDL_SCANCODE_PAGEDOWN))) {
+                    ed_snap();
+                    G.s.props[G.sel].r[10] += (ks[SDL_SCANCODE_PAGEUP] ? 1.0f : -1.0f) * (shift ? 10.0f : 1.0f);
+                    ed_changed(G.sel);
+                }
+                if (KEYHIT(SDL_SCANCODE_ESCAPE)) {
+                    if (G.grab && sel_ok) {           /* back where it was */
+                        memcpy(G.s.props[G.sel].r, G.grab_r, sizeof G.grab_r);
+                        jst_prop_update(&G.s, G.sel);
+                        if (G.nundo) { G.nundo--; free(G.undo[G.nundo].r); free(G.undo[G.nundo].rm); }
+                        G.grab = 0;
+                    } else G.sel = -1;
+                    G.need = 1;
+                }
+#undef KEYHIT
+                memcpy(G.kprev, ks, sizeof G.kprev);
+                if (G.grab && sel_ok) {               /* it follows the mouse, at its height */
+                    float pt[3];
+                    if (!ed_ray_y(in->mouse.pos.x - b.x, in->mouse.pos.y - b.y, G.s.props[G.sel].r[10], pt)
+                            && (pt[0] != G.s.props[G.sel].r[9] || pt[2] != G.s.props[G.sel].r[11])) {
+                        G.s.props[G.sel].r[9] = pt[0];
+                        G.s.props[G.sel].r[11] = pt[2];
+                        ed_changed(G.sel);
+                    }
+                    if (nk_input_is_mouse_pressed(in, NK_BUTTON_RIGHT)) {   /* cancelled */
+                        memcpy(G.s.props[G.sel].r, G.grab_r, sizeof G.grab_r);
+                        jst_prop_update(&G.s, G.sel);
+                        if (G.nundo) { G.nundo--; free(G.undo[G.nundo].r); free(G.undo[G.nundo].rm); }
+                        G.grab = 0;
+                        G.need = 1;
+                    }
+                }
+                if (nk_input_is_mouse_pressed(in, NK_BUTTON_LEFT)) { G.press = 1; G.pmoved = 0; G.px0 = in->mouse.pos.x; G.py0 = in->mouse.pos.y; }
+                if (G.press && (fabsf(in->mouse.pos.x - G.px0) > 4 || fabsf(in->mouse.pos.y - G.py0) > 4)) G.pmoved = 1;
+                if (G.press && nk_input_is_mouse_released(in, NK_BUTTON_LEFT)) {
+                    G.press = 0;
+                    if (G.grab) G.grab = 0;          /* dropped there */
+                    else if (!G.pmoved) {             /* a click: the prop under it, or none */
+                        uint32_t id = G.hover, l = id >> 28, ti = id & 0x0FFFFFFFu;
+                        int pk = l == ID_PROP ? jst_prop_of_tri(&G.s, (int)ti) : -1;
+                        G.sel = pk;
+                        G.need = 1;
+                    }
+                }
+            } else G.press = 0;
             if (moved) { G.need = 1; G.moving = 1; G.still = 0; }
             else if (G.moving && ++G.still > 2) { G.moving = 0; G.need = 1; }   /* sharp again once it stops */
             scale = G.moving ? 2 : 1;

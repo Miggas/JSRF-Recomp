@@ -38,7 +38,21 @@ int jst_surf_index(uint16_t flag);
 /* m26d: JST_T_SHADOW: see-through models with no texture coordinates (Direct3D
  * format 0x42: position and colour, white, texture id 0): not drawn as they
  * are in the game; the buildings' shadow volumes, stretched along the light: the game darkens what is inside them, the shapes themselves aren't seen (Miggas) */
-enum { JST_T_STAGE = 0, JST_T_SEE = 1, JST_T_PROP = 2, JST_T_SHADOW = 3 };
+enum { JST_T_STAGE = 0, JST_T_SEE = 1, JST_T_PROP = 2, JST_T_SHADOW = 3, JST_T_GONE = 4 /* m28: a deleted prop's */ };
+
+/* m28: a prop as placed (stage editor, level 3): its placement in the .bin's
+ * block 2 (area's list, entry; entry -1: a copy made in the editor), the
+ * entry's 80 bytes, its rows and position (r: three rows, the position), and
+ * where its vertices and triangles are in the stage, with its own
+ * (unplaced) vertex positions to place it again */
+typedef struct {
+    int area, entry, model_id;
+    uint8_t bytes[80];
+    float r[12];
+    int v0, nv, t0, nt;
+    float *local;
+    int removed;
+} JSProp;
 
 typedef struct { uint32_t id; int w, h; uint8_t *rgba; } JSTex;
 
@@ -67,11 +81,19 @@ typedef struct {
     float lo[3], hi[3];                 /* the stage's box */
     int ndat;                           /* .dat files read */
     int has_bin;                        /* m26: its StgNN_.bin was found (else no collision, rails, props) */
+    char binfile[260];                  /* m28: its name as on disk */
+    JSProp *props; int nprop;           /* m28 */
 } JStage;
 
 /* stage `name` ("Stg30") from the folder dir (Media/Stage): 0 done; else err */
 int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t errn);
 void jst_free(JStage *s);
+/* m28: prop k placed again from its r (or hidden when removed) */
+void jst_prop_update(JStage *s, int k);
+/* m28: a copy of prop k (in the same area, a new entry); its index, -1 out of memory */
+int  jst_prop_dup(JStage *s, int k);
+/* m28: the prop a triangle belongs to, -1 none */
+int  jst_prop_of_tri(const JStage *s, int tri);
 /* the stage's name from one of its files' names ("stg30_02.dat" -> "Stg30"); 0 not a stage file */
 int jst_name_of(const char *file, char *name, size_t n);
 

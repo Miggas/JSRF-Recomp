@@ -196,7 +196,7 @@ static int add_stage_model(JStage *s, Build *b, const Model *m)
 }
 
 /* a prop (kind 0, an MDLB) placed by a placement's rows r (12 floats: three rows, the position) */
-static int add_prop(JStage *s, Build *b, const Model *m, const float *r)
+static int add_prop(JStage *s, Build *b, const Model *m, const float *r, float **local, int *nvl)
 {
     JMesh me;
     int i, v0 = (int)b->p.n;
@@ -226,7 +226,10 @@ static int add_prop(JStage *s, Build *b, const Model *m, const float *r)
         *tt = mt >= 0 && mt < m->ntex ? tex_index(s, u32(m->ids + 4 * mt)) : (m->ntex ? tex_index(s, u32(m->ids)) : -1);
         *tk = JST_T_PROP;
     }
-    free(me.p); free(me.n); free(me.t); free(me.ix); free(me.tmat); free(me.bi); free(me.bw); free(me.bonepos);
+    *local = me.p;                              /* m28: kept, to place it again */
+    *nvl = me.nv;
+    free(me.n); free(me.t); free(me.ix); free(me.tmat); free(me.bi); free(me.bw); free(me.bonepos);
+    (void)v0;
     return 0;
 }
 
@@ -378,6 +381,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
         pjoin(path, dir, nmf);
         if (l == strlen(prefix) + 4 && !ci_cmp(nmf + l - 4, ".bin")) {
             bin = (uint8_t *)read_file(path, &binsz);
+            snprintf(s->binfile, sizeof s->binfile, "%s", nmf);
             binat = i;
         } else if (l == strlen(prefix) + 6 && !ci_cmp(nmf + l - 4, ".dat") && isdigit((unsigned char)nmf[l - 6]) && ndat < 64) {
             Dat *d = &dats[ndat];
@@ -435,23 +439,40 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
         uint32_t o0 = u32(bin), s0 = u32(bin + 4), o1 = u32(bin + 8), m26 = u32(bin + 12), o2 = u32(bin + 16), s2 = u32(bin + 20);
         if ((size_t)o0 + s0 <= binsz) read_collision(&b, bin + o0, s0, &s->ncmodels);
         if ((size_t)o1 + m26 <= binsz) read_rails(&b, bin + o1, m26);
-        if ((size_t)o2 + s2 <= binsz && s2 >= 4 + 24 * 4) {
+        if ((size_t)o2 + s2 <= binsz && s2 >= 12) {
+            /* m28: the areas' placement lists: (offset, count) an area from +12, as many as the areas (+8);
+             * m26 read only the first 12 (props in later areas were missing) */
             const uint8_t *B = bin + o2;
-            int blk;
-            for (blk = 0; blk < 12; blk++) {
+            uint32_t na = u32(B + 8), blk;
+            if (na > 4096 || 12 + (size_t)na * 8 > s2) na = 0;
+            for (blk = 0; blk < na; blk++) {
                 uint32_t so = u32(B + 12 + 8 * blk), cnt = u32(B + 16 + 8 * blk), k;
-                if (cnt > 90000 || (int32_t)so < 0) continue;
+                if (cnt > 90000) continue;
                 for (k = 0; k < cnt; k++) {
                     const uint8_t *e = B + so + (size_t)k * 80;
-                    float r[12];
-                    int id, q;
+                    float r[12], *local = NULL;
+                    int id, q, nvl = 0, v0 = (int)b.p.n, t0 = (int)(b.ix.n / 3);
                     if ((size_t)so + (size_t)(k + 1) * 80 > s2) break;
                     id = (int)u32(e + 64);
                     for (q = 0; q < nm && ms[q].id != id; q++) ;
                     if (q == nm || ms[q].kind != 0) continue;   /* stage models are in place already */
                     for (j = 0; j < 3; j++) { r[j * 3] = f32(e + 16 * j); r[j * 3 + 1] = f32(e + 16 * j + 4); r[j * 3 + 2] = f32(e + 16 * j + 8); }
                     r[9] = f32(e + 48); r[10] = f32(e + 52); r[11] = f32(e + 56);
-                    if (!add_prop(s, &b, &ms[q], r)) s->nprops++;
+                    if (!add_prop(s, &b, &ms[q], r, &local, &nvl)) {
+                        JSProp *pp;
+                        s->nprops++;
+                        s->props = (JSProp *)realloc(s->props, sizeof(JSProp) * (size_t)(s->nprop + 1));
+                        if (!s->props) { s->nprop = 0; free(local); continue; }
+                        pp = &s->props[s->nprop++];
+                        memset(pp, 0, sizeof *pp);
+                        pp->area = (int)blk; pp->entry = (int)k; pp->model_id = id;
+                        memcpy(pp->bytes, e, 80);
+                        memcpy(pp->r, r, sizeof r);
+                        pp->v0 = v0; pp->nv = (int)b.p.n - v0;
+                        pp->t0 = t0; pp->nt = (int)(b.ix.n / 3) - t0;
+                        pp->local = local;
+                        if (nvl != pp->nv) pp->nv = 0;          /* not placeable again */
+                    }
                 }
             }
         }
@@ -491,7 +512,82 @@ void jst_free(JStage *s)
     for (i = 0; i < s->ntex; i++) free(s->tex[i].rgba);
     free(s->tex); free(s->p); free(s->uv); free(s->col); free(s->ix); free(s->ttex); free(s->tkind);
     free(s->cp); free(s->cix); free(s->csurf); free(s->rs); free(s->rn); free(s->rp); free(s->rnrm);
+    for (i = 0; i < s->nprop; i++) free(s->props[i].local);
+    free(s->props);
     memset(s, 0, sizeof *s);
+}
+
+/* ---- m28: props moved, removed, copied ---- */
+
+void jst_prop_update(JStage *s, int k)
+{
+    JSProp *pp;
+    int i;
+    if (k < 0 || k >= s->nprop) return;
+    pp = &s->props[k];
+    for (i = 0; i < pp->nt; i++) s->tkind[pp->t0 + i] = (uint8_t)(pp->removed ? JST_T_GONE : JST_T_PROP);
+    if (!pp->local || !pp->nv) return;
+    for (i = 0; i < pp->nv; i++) {
+        const float *q = pp->local + i * 3, *r = pp->r;
+        float *o = s->p + (size_t)(pp->v0 + i) * 3;
+        o[0] = r[9] + q[0] * r[0] + q[1] * r[3] + q[2] * r[6];
+        o[1] = r[10] + q[0] * r[1] + q[1] * r[4] + q[2] * r[7];
+        o[2] = r[11] + q[0] * r[2] + q[1] * r[5] + q[2] * r[8];
+    }
+}
+
+int jst_prop_dup(JStage *s, int k)
+{
+    JSProp *src, *pp, *np;
+    int nv, nt, i;
+    float *p, *uv, *loc;
+    uint32_t *col, *ix;
+    int *tt;
+    uint8_t *tk;
+    if (k < 0 || k >= s->nprop || !s->props[k].nv || !s->props[k].local) return -1;
+    src = &s->props[k];
+    nv = s->nv + src->nv;
+    nt = s->nt + src->nt;
+    p = (float *)realloc(s->p, sizeof(float) * 3 * (size_t)nv); if (p) s->p = p;
+    uv = (float *)realloc(s->uv, sizeof(float) * 2 * (size_t)nv); if (uv) s->uv = uv;
+    col = (uint32_t *)realloc(s->col, sizeof(uint32_t) * (size_t)nv); if (col) s->col = col;
+    ix = (uint32_t *)realloc(s->ix, sizeof(uint32_t) * 3 * (size_t)nt); if (ix) s->ix = ix;
+    tt = (int *)realloc(s->ttex, sizeof(int) * (size_t)nt); if (tt) s->ttex = tt;
+    tk = (uint8_t *)realloc(s->tkind, (size_t)nt); if (tk) s->tkind = tk;
+    np = (JSProp *)realloc(s->props, sizeof(JSProp) * (size_t)(s->nprop + 1)); if (np) s->props = np;
+    loc = (float *)malloc(sizeof(float) * 3 * (size_t)s->props[k].nv);
+    if (!p || !uv || !col || !ix || !tt || !tk || !np || !loc) { free(loc); return -1; }
+    src = &s->props[k];
+    pp = &s->props[s->nprop];
+    *pp = *src;
+    pp->entry = -1;                             /* a new entry, in the same area */
+    pp->removed = 0;
+    pp->v0 = s->nv;
+    pp->t0 = s->nt;
+    memcpy(loc, src->local, sizeof(float) * 3 * (size_t)src->nv);
+    pp->local = loc;
+    memcpy(s->p + (size_t)pp->v0 * 3, s->p + (size_t)src->v0 * 3, sizeof(float) * 3 * (size_t)src->nv);
+    memcpy(s->uv + (size_t)pp->v0 * 2, s->uv + (size_t)src->v0 * 2, sizeof(float) * 2 * (size_t)src->nv);
+    memcpy(s->col + pp->v0, s->col + src->v0, sizeof(uint32_t) * (size_t)src->nv);
+    for (i = 0; i < src->nt; i++) {
+        int q;
+        for (q = 0; q < 3; q++) s->ix[(size_t)(pp->t0 + i) * 3 + q] = s->ix[(size_t)(src->t0 + i) * 3 + q] - (uint32_t)src->v0 + (uint32_t)pp->v0;
+        s->ttex[pp->t0 + i] = s->ttex[src->t0 + i];
+        s->tkind[pp->t0 + i] = JST_T_PROP;
+    }
+    s->nv = nv;
+    s->nt = nt;
+    s->nprop++;
+    s->nprops++;
+    return s->nprop - 1;
+}
+
+int jst_prop_of_tri(const JStage *s, int tri)
+{
+    int i;
+    for (i = 0; i < s->nprop; i++)
+        if (tri >= s->props[i].t0 && tri < s->props[i].t0 + s->props[i].nt) return i;
+    return -1;
 }
 
 /* ---- .obj export ---- */
