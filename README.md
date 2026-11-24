@@ -409,10 +409,19 @@ co-author.
   built on.
 - Piaka for the borderless window tip, skipping the intro logos, and the HUD
   placement from his widescreen work.
-- mstan's JSRFRecomp for the idea of holding START to skip cutscenes.
+- mstan's JSRFRecomp for the ideas of holding START to skip cutscenes and
+  Early Test Runs.
+- [spriteice's JSRF-PC](https://github.com/spriteice/JSRF-PC) for findings
+  (no code taken): keeping the camera out of walls follows its "Default cam fix",
+  photo mode uses the game's holds and camera draw as JSRF-PC found them, the
+  HUD scale came after its own, and the draw distances for crowds, spray cans,
+  props and checkpoints are the ones it found.
+- [Rossybergg's ReJet](https://github.com/Rossybergg/ReJet) for the finding
+  behind the fix for the dark rim around 2D art (no code taken).
 - The quit window and the "Building Shaders" message use the
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"; its V, X and K redrawn here),
-  drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
+  drawn with [stb_truetype](https://github.com/nothings/stb), and photo mode saves
+  its PNGs with stb_image_write (both public domain).
 - s-ilent for MSAA (`RECOMP_GL_MSAA`, [pull request #4](https://github.com/Miggas/JSRF-Recomp/pull/4)).
 - [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)
   for the DirectSound lift (PC sound mixing, `RECOMP_DSOUND_LIFT`) and chapter
