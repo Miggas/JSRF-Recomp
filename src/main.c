@@ -59,7 +59,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m27"
+#define MODTOOL_VERSION "m27b"
 
 /* ---- the files ---- */
 
@@ -1805,7 +1805,7 @@ static int s_stage_file = -1;             /* m26: a stage's file picked in the v
 /* m27: the stage editor, level 2: the stage's files rebuilt from their parts */
 static void open_stage(const char *name, int custom);
 static int s_stage_custom;                     /* the stage shown is in Stage/Custom */
-typedef struct { int n, same, wrote, bad; int moved; } RbCount;
+typedef struct { int n, same, wrote, bad; int moved, tested; char diff[200]; } RbCount;
 
 static void stage_rel(char *out, size_t n, const char *file)
 {
@@ -1817,6 +1817,13 @@ static int rb_cb(const char *file, const uint8_t *d, size_t n, int same, void *u
     RbCount *c = (RbCount *)u;
     c->n++;
     c->same += same;
+    if (!same && !c->moved) {                  /* m27b: which, and whether it's the test's own */
+        char rel[512], bak[LPATH];
+        stage_rel(rel, sizeof rel, file);
+        backup_path(bak, rel);
+        if (is_file(bak)) c->tested++;
+        snprintf(c->diff + strlen(c->diff), sizeof c->diff - strlen(c->diff), "%s%s", c->diff[0] ? ", " : "", file);
+    }
     if (c->moved && !same) {                   /* only what changed is written */
         char rel[512];
         stage_rel(rel, sizeof rel, file);
@@ -1841,8 +1848,13 @@ static void stage_rebuild(int moved)
         return;
     }
     if (!moved)
-        snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files came out identical to the game's%s", c.same, c.n,
-                 c.same == c.n ? ": every part of the stage is understood." : " (the others differ: tell Claude which).");
+        if (c.same == c.n)
+            snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files came out identical to the game's: every part of the stage is understood.", c.same, c.n);
+        else if (c.tested == c.n - c.same)
+            snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files identical; %s is the test's file with its parts moved "
+                     "(put the originals back, then check again).", c.same, c.n, c.diff);
+        else
+            snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files identical; different: %s (tell Claude).", c.same, c.n, c.diff);
     else {
         open_stage(name, s_stage_custom);       /* read back from what was written */
         snprintf(s_msg, sizeof s_msg, "%s: %d file%s written with every part moved (the original in mod_backups). "
