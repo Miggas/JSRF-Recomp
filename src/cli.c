@@ -2,9 +2,13 @@
  *   list FILE...            the textures in each file
  *   export FILE DIR         every texture to DIR/<file>_<n>.png
  *   import FILE N PNG OUT   texture N replaced by PNG (the same size), saved as OUT
- *   stage DIR StgXX [OUT]   m26: a stage read whole (counts); with OUT, written there as .obj */
+ *   stage DIR StgXX [OUT]   m26: a stage read whole (counts); with OUT, written there as .obj
+ *   rebuild DIR StgXX [moved] [OUT]  m27: a stage's files rebuilt from their parts: same or not;
+ *                           with OUT, written there */
 #include "jtex.h"
 #include "jstage.h"
+#include "jsbuild.h"
+#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +29,18 @@ static const char *base(const char *p)
     const char *a = strrchr(p, '/'), *b = strrchr(p, '\\');
     if (b > a) a = b;
     return a ? a + 1 : p;
+}
+
+static int rb_out(const char *file, const uint8_t *d, size_t n, int same, void *u)
+{
+    const char *dir = (const char *)u;
+    printf("  %-16s %9zu bytes  %s\n", file, n, same ? "identical" : "different");
+    if (dir) {
+        char p[2048];
+        snprintf(p, sizeof p, "%s/%s", dir, file);
+        if (!write_file(p, d, n)) return -1;
+    }
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -50,6 +66,14 @@ int main(int argc, char **argv)
         { int nn = 0; for (k = 0; k < st.nt; k++) nn += st.ttex[k] < 0; printf("triangles without a known texture: %d\n", nn); }
         if (argc >= 5 && jst_write_obj(&st, argv[4], err, sizeof err)) { printf("%s\n", err); return 1; }
         jst_free(&st);
+        return 0;
+    }
+    if (!strcmp(argv[1], "rebuild") && argc >= 4) {   /* m27 */
+        char err[512];
+        int moved = argc >= 5 && !strcmp(argv[4], "moved");
+        const char *outdir = argc >= 5 + moved ? argv[4 + moved] : NULL;
+        printf("%s%s:\n", argv[3], moved ? " (moved)" : "");
+        if (jsb_rebuild(argv[2], argv[3], moved, rb_out, (void *)outdir, err, sizeof err)) { printf("%s\n", err); return 1; }
         return 0;
     }
     if (!strcmp(argv[1], "list")) {

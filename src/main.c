@@ -52,13 +52,14 @@
 #include "paint.h"
 #include "view3d.h"
 #include "stage3d.h"   /* m26: the stage viewer */
+#include "jsbuild.h"   /* m27: the stage rebuilt from its parts */
 #include "jsnd.h"
 #include "jadx.h"
 #include "jcont.h"
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m26f"
+#define MODTOOL_VERSION "m27"
 
 /* ---- the files ---- */
 
@@ -1801,11 +1802,102 @@ static const char *stage_title(const char *name, int custom)   /* the maps, by n
     return NULL;
 }
 static int s_stage_file = -1;             /* m26: a stage's file picked in the viewer, to open for its textures */
+/* m27: the stage editor, level 2: the stage's files rebuilt from their parts */
+static void open_stage(const char *name, int custom);
+static int s_stage_custom;                     /* the stage shown is in Stage/Custom */
+typedef struct { int n, same, wrote, bad; int moved; } RbCount;
+
+static void stage_rel(char *out, size_t n, const char *file)
+{
+    snprintf(out, n, "%s/%s", s_stage_custom ? "Media/Stage/Custom" : "Media/Stage", file);
+}
+
+static int rb_cb(const char *file, const uint8_t *d, size_t n, int same, void *u)
+{
+    RbCount *c = (RbCount *)u;
+    c->n++;
+    c->same += same;
+    if (c->moved && !same) {                   /* only what changed is written */
+        char rel[512];
+        stage_rel(rel, sizeof rel, file);
+        if (store_rel(rel, d, n)) { c->bad++; return -1; }
+        c->wrote++;
+    }
+    return 0;
+}
+
+static void stage_rebuild(int moved)
+{
+    const JStage *st = s3d_stage();
+    char dir[LPATH], err[600], name[16];
+    RbCount c;
+    if (!st) return;
+    snprintf(name, sizeof name, "%s", st->name);
+    memset(&c, 0, sizeof c);
+    c.moved = moved;
+    game_path(dir, s_stage_custom ? "Media/Stage/Custom" : "Media/Stage");
+    if (jsb_rebuild(dir, name, moved, rb_cb, &c, err, sizeof err)) {
+        snprintf(s_msg, sizeof s_msg, "Rebuild: %s", err);
+        return;
+    }
+    if (!moved)
+        snprintf(s_msg, sizeof s_msg, "Rebuild: %d of %d files came out identical to the game's%s", c.same, c.n,
+                 c.same == c.n ? ": every part of the stage is understood." : " (the others differ: tell Claude which).");
+    else {
+        open_stage(name, s_stage_custom);       /* read back from what was written */
+        snprintf(s_msg, sizeof s_msg, "%s: %d file%s written with every part moved (the original in mod_backups). "
+                 "Play the stage: it should be just the same. Put the originals back with the button below.",
+                 name, c.wrote, c.wrote == 1 ? "" : "s");
+    }
+}
+
+static void stage_put_back(void)
+{
+    const JStage *st = s3d_stage();
+    char name[16];
+    int n = 0, bad = 0;
+    if (!st) return;
+    snprintf(name, sizeof name, "%s", st->name);
+    {   /* the stage's files with an original kept */
+        static const char *ext[] = { "_.bin", "_00.dat", "_01.dat", "_02.dat", "_03.dat", "_04.dat", "_05.dat",
+                                     "_06.dat", "_07.dat", "_08.dat", "_09.dat" };
+        int k, lc;
+        for (lc = 0; lc < 2; lc++)
+            for (k = 0; k < (int)(sizeof ext / sizeof ext[0]); k++) {
+                char file[64], rel[512], bak[LPATH], p[LPATH], cp[LPATH];
+                snprintf(file, sizeof file, "%s%s%s", lc ? "stg" : "Stg", name + 3, ext[k]);
+                stage_rel(rel, sizeof rel, file);
+                backup_path(bak, rel);
+                if (!is_file(bak)) continue;
+                game_path(p, rel);
+                if (!copy_file(bak, p)) { bad++; continue; }
+                cache_path(cp, rel);
+                if (is_file(cp)) {
+                    size_t sz = 0;
+                    char *b = read_file(bak, &sz);
+                    if (b) write_cache(cp, (const uint8_t *)b, sz);
+                    free(b);
+                }
+                remove_file(bak);
+                n++;
+            }
+    }
+    open_stage(name, s_stage_custom);
+    snprintf(s_msg, sizeof s_msg, n ? "%s: %d original file%s put back%s." : "%s: no changed files to put back.",
+             name, n, n == 1 ? "" : "s", bad ? " (some couldn't be)" : "");
+}
+
 static void stage_files_ui(struct nk_context *ctx, float row)
 {
     const JStage *st = s3d_stage();
     int i;
     if (!st) return;
+    nk_layout_row_dynamic(ctx, row, 1);
+    nk_label(ctx, "Rebuild (stage editor, step 2)", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(ctx, row - 6, 1);
+    if (nk_button_label(ctx, "Check: rebuild, compare")) stage_rebuild(0);
+    if (nk_button_label(ctx, "Test: write it, parts moved")) stage_rebuild(1);
+    if (nk_button_label(ctx, "Put the originals back")) stage_put_back();
     nk_layout_row_dynamic(ctx, row, 1);
     nk_label(ctx, "Its files (for their textures)", NK_TEXT_LEFT);
     SDL_LockMutex(s_mx);
@@ -1823,6 +1915,7 @@ static void stage_files_ui(struct nk_context *ctx, float row)
 static void open_stage(const char *name, int custom)
 {
     char dir[LPATH], err[600];
+    s_stage_custom = custom;
     game_path(dir, custom ? "Media/Stage/Custom" : "Media/Stage");
     if (may_leave_paint() && !s3d_open(dir, name, err, sizeof err)) {
         const JStage *st = s3d_stage();
@@ -2364,6 +2457,12 @@ int main(int argc, char **argv)
                     s3d_set_camera(c[0], c[1], c[2], c[3], c[4]);
                 }
                 if (getenv("MT_LAYERS")) s3d_set_layers(getenv("MT_LAYERS"));
+                if (getenv("MT_REBUILD")) {          /* m27 (tests): check, moved or back */
+                    const char *r = getenv("MT_REBUILD");
+                    if (!strcmp(r, "back")) stage_put_back();
+                    else stage_rebuild(!strcmp(r, "moved"));
+                    printf("%s\n", s_msg);
+                }
                 if (!s_stage_view) { printf("%s\n", s_msg); break; }
             }
         } else
