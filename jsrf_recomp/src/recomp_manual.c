@@ -4065,7 +4065,7 @@ void sub_001192E0(void)
  * file in both voice lists (0x2227D0, 0x2228B4: a pointer to each bank's
  * file name) is renamed pv_yoyob.dat in place (the same length) and YoyoB's
  * entry in the character -> voice bank table (0x1EE6B8, character 7) is set
- * to 38, as in PAL. RECOMP_NT3000_VOICE=0 keeps Yoyo's voice for him. */
+ * to 38, as in PAL. Always on (v313e, Miggas: the fix shouldn't be turned off). */
 static void nt3000_name(uint32_t list, const char *was)
 {
     uint32_t p = MEM32(list + 38u * 4u);
@@ -4076,14 +4076,8 @@ static void nt3000_name(uint32_t list, const char *was)
 void jsrf_nt3000_voice(void)
 {
     static int done;
-    const char *e;
     if (done) return;
     done = 1;
-    e = getenv("RECOMP_NT3000_VOICE");
-    if (e && e[0] == '0') {
-        fprintf(stderr, "[VOICE] NT 3000 keeps Yoyo's voice (RECOMP_NT3000_VOICE=0)\n");
-        return;
-    }
     if (MEM32(0x001EE6B8u + 6u * 4u) != 19u || MEM32(0x001EE6B8u + 7u * 4u) != 19u)
         return;                         /* PAL: his own already */
     if (memcmp((const char *)XBOX_PTR(MEM32(0x002227D0u + 38u * 4u)), "e_haya_b.dat", 13))

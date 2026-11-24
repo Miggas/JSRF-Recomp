@@ -113,7 +113,7 @@ Xbox. Most additions can be turned off in the launcher or `jsrf.ini`.
   release, as its files or as a disc image (`.iso`).
 - **About 3 GB of free disk space.**
 - **An internet connection** the first time, for the launcher's tools.
-- **A graphics card with OpenGL 3.3** or newer.
+- **A graphics card with OpenGL 3.3 or Vulkan.**
 
 Nothing else has to be installed: the launcher brings its own tools.
 
@@ -233,7 +233,8 @@ controller. The keyboard works as controller 1:
 
 - **Quit:** click both sticks (`Shift` + `Ctrl`): **Quit Game**, **Quit to Title** (while in a level) or **Return**, then **A**.
   Closing the window or `Alt+F4` works too.
-- **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
+- **Skip a cutscene:** hold **START** (`Enter`) for about 1.3 seconds.
+- **Photo mode:** click the right stick (**R3**; `Ctrl` on the keyboard). The game freezes and the HUD hides. Left stick moves the camera, right stick looks, **RT / LT** go up / down, **RB / LB** fast / slow. **A** takes the photo (saved in the `Screenshots` folder), **Y** puts the camera back where it started, **R3** or **B** goes back to the game. *Idea by Miggas.*
 - **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of the story's races, boss fights and challenges by chapter. Pick one and how many spray cans to start with (none, 20 or as many as your character carries), then choose **NEW GAME**: pick your character (all are unlocked) and the mission starts. Refight a boss or redo a race without touching your save (just don't save afterwards): when the mission ends, the game goes back to the title. *Idea by Miggas.*
 
 ---
@@ -258,11 +259,16 @@ override the file.
 | `RECOMP_HOLD_SKIP=0` | Turns off skipping cutscenes by holding START. |
 | `RECOMP_LANGUAGE=french` | The game's language: `english` (default), `french`, `german`, `spanish`, `italian`, `japanese`. Which ones each release has: see [section 1](#1-what-you-need). |
 | `RECOMP_SAVE_STRICT=1` | Refuse saves from other sources (a real Xbox, emulators, save editors), as the Xbox does. |
+| `RECOMP_LETTERBOX=0` | No black bars in cutscenes. |
+| `RECOMP_BOOST_EFFECT=original` | The game's own boost trails instead of the new boost effect (a blur, clear around your character). |
+| `RECOMP_BOOST_STRENGTH=0.55` | Strength of the new boost effect, `0.1` to `1`. |
+| `RECOMP_EARLY_TESTRUNS=story` | Early Test Runs: Roboy's test runs open as you finish each area's chapter (`story`) or by graffiti souls only (`souls`), instead of at the end of the story. Off by default. *Idea by Miggas.* |
 
 **`[display]`**
 
 | Setting | What it does |
 |---|---|
+| `RECOMP_RENDERER=vulkan` | Vulkan instead of OpenGL. |
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920, `5` = 3200×2400, `6` = 3840×2880 (4K) (up to `8`, if the graphics card allows). |
 | `RECOMP_GL_ANISO=16` | Anisotropic filtering: `2`, `4`, `8` or `16`. |
 | `RECOMP_GL_AA=smaa_high` | Anti-aliasing: `fxaa`, `smaa_low`, `smaa_medium`, `smaa_high` or `smaa_ultra`. |
@@ -271,7 +277,9 @@ override the file.
 | `RECOMP_GL_PRESENT=dxgi` | Borderless window (Windows only). May lower performance. |
 | `RECOMP_WIDESCREEN=auto` | Widescreen: `1` = 16:9, `auto` = your monitor's shape, or `RECOMP_ASPECT=21:9` for others. |
 | `RECOMP_GL_VSYNC=1` | VSync. |
-| `RECOMP_GL_PREBUILD=0` | Don't build the shaders at start; build them during play instead. |
+| `RECOMP_HUD=0` | Hide the HUD. |
+| `RECOMP_HUD_SCALE=1.0` | HUD size, `0.5` to `1.5`. |
+| `RECOMP_GL_PREBUILD=0` | OpenGL: don't build the shaders at start ("Building Shaders"); build them during play instead. On Vulkan the same is `RECOMP_VK_PIPES_WAIT=0`. |
 | `RECOMP_CURSOR_HIDE=0` | Keep the mouse pointer visible over the game. |
 
 **`[input]`**
@@ -307,15 +315,12 @@ override the file.
 | `RECOMP_DRAW_AREAS_SKIP=EE7A:96,105` | Map pieces never to draw (`MapID:area,area;MapID:area`; a map ID alone = no fix on that map). |
 | `RECOMP_DRAW_AREAS_ADD=` | Map pieces always to draw. Same format. |
 | `RECOMP_AREA_PICKER=1` | Finds the numbers for the two lists above (`1` = skip, `2` = add). F6/F7 select an area, F8 toggles it, F10 clears all; the list goes to the log. |
-| `RECOMP_OBJ_DRAW_DIST=2` | Draw distance of street objects (tanks, police, vehicles). `1` = original. |
+| `RECOMP_OBJ_DRAW_DIST=2` | How far away things are drawn: crowds, spray cans, props, race checkpoints, police, tanks and vehicles. `1` = original, `2` (default) twice as far, `3`, `4` further. |
 
 **`[tools]`**
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_FREECAM=1` | Free camera. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed. |
-| `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
-| `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
 | `RECOMP_CHAPTER_SELECT=2` | Chapter select: a new game starts at chapter 2's opening; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the game's save points save over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
 | `RECOMP_SHOW_MISSION=1` | The window title shows the current mission (`mssnCCMM`), your position and the objective. F9 writes your position to the log. |
 | `RECOMP_MISSION_SPAWN=CCMM:x,y,z,facing` | A mission picked in mission select starts at that spot, facing that way (from F9: it logs the way you were skating). Several missions on one line, separated by `;`. |
@@ -353,8 +358,8 @@ leave it out when copying the game somewhere.
 | A download fails | Check the internet connection and try again. |
 | A build fails | **Open log file** (under the buttons), find the first line with `error`, and report it. |
 | `Could not copy the game … is the game still running?` | Close the game and **Build** again. |
+| Short stutters the first time something appears (weaker PCs, Steam Deck) | Let **Building Shaders** finish at the start. It gets better as the shader cache fills. |
 | The game is slow or stutters | Lower **Settings → Video → resolution scale**; turn **Settings → Debug → Logging** off. |
-| A black screen at start | Add `RECOMP_GL_CPU_VERTEX=1` to `jsrf.ini`. A known bug on NVIDIA systems; a fix is in the works. |
 
 **Reporting a problem:** turn on **Settings → Debug → Logging**, play until
 it happens, close the game and send `stderr.txt` from the game folder (for a
