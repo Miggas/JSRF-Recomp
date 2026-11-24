@@ -80,6 +80,7 @@ static struct {
     float *pyaw_saved;                     /* a piece's turn as last saved (normals in the .dat) */
     int *rmap;                             /* m29: a rail's number in G.ed (-1) */
     int **list0, *nlist0;                  /* G.ed's rail lists as read */
+    int slot0[1024], nlists0;              /* G.ed's slots as read */
     int nundo;
 } G;
 
@@ -191,6 +192,8 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
                 if ((int)(G.ed.rail[j].pts.n / 24) == G.s.rn[i] && G.s.rn[i] > 0
                         && !memcmp(G.ed.rail[j].pts.p, G.s.rp0 + (size_t)G.s.rs[i] * 3, 12)) { G.rmap[i] = j; break; }
         }
+        memcpy(G.slot0, G.ed.slot, sizeof G.slot0);
+        G.nlists0 = G.ed.nlists;
         G.list0 = (int **)calloc((size_t)G.ed.nlists + 1, sizeof(int *));
         G.nlist0 = (int *)calloc((size_t)G.ed.nlists + 1, sizeof(int));
         for (i = 0; G.list0 && G.nlist0 && i < G.ed.nlists; i++) {
@@ -235,7 +238,7 @@ void s3d_close(void)
         int k;
         for (k = 0; k < G.nundo; k++) { free(G.undo[k].r); free(G.undo[k].rm); free(G.undo[k].pc); free(G.undo[k].prm); }
         free(G.ctm); free(G.cm0); free(G.tset0); free(G.cabox0); free(G.pyaw_saved); free(G.rmap);
-        if (G.list0) for (k = 0; k < G.ed.nlists; k++) free(G.list0[k]);
+        if (G.list0) for (k = 0; k < G.nlists0; k++) free(G.list0[k]);
         free(G.list0); free(G.nlist0);
         G.rmap = NULL; G.list0 = NULL; G.nlist0 = NULL;
         free(G.pset); free(G.inset); G.pset = NULL; G.inset = NULL; G.npset = G.cpset = 0;
@@ -832,6 +835,76 @@ static void piece_changed(int k)
     G.need = 1;
 }
 
+/* m29b: what lies inside the picked pieces together goes with them: a
+ * collision model or rail (as read) inside their boxes taken together, not
+ * yet with one of them, is given to the first one, when none of them has
+ * moved yet (Miggas: a platform's ramp kept its collision and its rails
+ * where they were; each was bigger than any one of the platform's pieces) */
+static void pset_claim(void)
+{
+    float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
+    int j, i, q, to;
+    if (G.npset < 1) return;
+    for (j = 0; j < G.npset; j++) {
+        const JSPiece *pc = &G.s.pieces[G.pset[j]];
+        if (pc->touched && (pc->yaw != 0 || pc->t3[0] != 0 || pc->t3[1] != 0 || pc->t3[2] != 0)) return;
+        for (q = 0; q < 3; q++) { if (pc->lo[q] < lo[q]) lo[q] = pc->lo[q]; if (pc->hi[q] > hi[q]) hi[q] = pc->hi[q]; }
+    }
+    to = G.pset[0];
+    for (i = 0; i < G.s.ncmodel; i++) {
+        const JSCModel *cm = &G.s.cmodels[i];
+        float clo[3] = { 1e30f, 1e30f, 1e30f }, chi[3] = { -1e30f, -1e30f, -1e30f };
+        int k, owner = G.s.cpiece[i];
+        if (cm->nv <= 0 || (owner >= 0 && G.inset[owner])) continue;
+        if (owner >= 0 && G.s.pieces[owner].touched) continue;
+        for (k = 0; k < cm->nv; k++)
+            for (q = 0; q < 3; q++) {
+                float v = G.s.cp0[(size_t)(cm->v0 + k) * 3 + q];
+                if (v < clo[q]) clo[q] = v;
+                if (v > chi[q]) chi[q] = v;
+            }
+        for (q = 0; q < 3; q++) if (clo[q] < lo[q] - 1.0f || chi[q] > hi[q] + 1.0f) break;
+        if (q < 3) continue;
+        if (owner >= 0) {                        /* out of its old piece's list */
+            JSPiece *op = &G.s.pieces[owner];
+            for (k = 0; k < op->ncm; k++) if (op->cm[k] == i) { op->cm[k] = op->cm[--op->ncm]; break; }
+        }
+        {
+            JSPiece *tp = &G.s.pieces[to];
+            int *nc = (int *)realloc(tp->cm, sizeof(int) * (size_t)(tp->ncm + 1));
+            if (!nc) continue;
+            tp->cm = nc;
+            tp->cm[tp->ncm++] = i;
+            G.s.cpiece[i] = to;
+        }
+    }
+    for (i = 0; i < G.s.nrail && G.s.rpiece; i++) {
+        float rlo[3] = { 1e30f, 1e30f, 1e30f }, rhi[3] = { -1e30f, -1e30f, -1e30f };
+        int k, owner = G.s.rpiece[i];
+        if (owner >= 0 && (G.inset[owner] || G.s.pieces[owner].touched)) continue;
+        for (k = 0; k < G.s.rn[i]; k++)
+            for (q = 0; q < 3; q++) {
+                float v = G.s.rp0[(size_t)(G.s.rs[i] + k) * 3 + q];
+                if (v < rlo[q]) rlo[q] = v;
+                if (v > rhi[q]) rhi[q] = v;
+            }
+        for (q = 0; q < 3; q++) if (rlo[q] < lo[q] - 1.0f || rhi[q] > hi[q] + 1.0f) break;
+        if (q < 3) continue;
+        if (owner >= 0) {
+            JSPiece *op = &G.s.pieces[owner];
+            for (k = 0; k < op->nrail; k++) if (op->rail[k] == i) { op->rail[k] = op->rail[--op->nrail]; break; }
+        }
+        {
+            JSPiece *tp = &G.s.pieces[to];
+            int *nr = (int *)realloc(tp->rail, sizeof(int) * (size_t)(tp->nrail + 1));
+            if (!nr) continue;
+            tp->rail = nr;
+            tp->rail[tp->nrail++] = i;
+            G.s.rpiece[i] = to;
+        }
+    }
+}
+
 /* the pieces picked: a set (m29) */
 static void pset_clear(void)
 {
@@ -918,6 +991,7 @@ static void obj_set(const float pos[3], float yaw)
         else ed_changed(G.sel);
     } else if (obj_ok() == 2) {
         float cur[3], cy, d[3], a, c, sn;
+        pset_claim();                           /* m29b: before the first move */
         obj_get(cur, &cy);
         for (k = 0; k < 3; k++) d[k] = pos[k] - cur[k];
         a = (yaw - cy) * 3.14159265f / 180.0f; c = cosf(a); sn = sinf(a);
@@ -948,6 +1022,7 @@ static void obj_delete(void)
     if (obj_ok() == 1) { ed_delete(G.sel); return; }
     if (obj_ok() == 2) {
         ed_snap();
+        pset_claim();                           /* m29b: what's inside them goes too */
         for (j = 0; j < G.npset; j++) {
             G.s.pieces[G.pset[j]].removed = 1;
             piece_changed(G.pset[j]);
@@ -1000,6 +1075,7 @@ static int obj_add_touching(void)
     }
     for (j = 0; j < n; j++) pset_add(add[j]);
     free(add);
+    pset_claim();
     G.need = 1;
     return n;
 }
@@ -1025,6 +1101,7 @@ static void obj_add_inside(void)                /* the parts inside the picked p
         for (q = 0; q < 3; q++) if (plo[q] < lo[q] - 1.0f || phi[q] > hi[q] + 1.0f) break;
         if (q == 3) { pset_add(k); n++; }
     }
+    pset_claim();
     G.need = 1;
 }
 
@@ -1234,15 +1311,55 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
             memcpy(G.ed.rail[ri].rest + 4, lo, 12);   /* its box, after its flags */
             memcpy(G.ed.rail[ri].rest + 16, hi, 12);
         }
-        for (i = 0; i < G.ed.nlists; i++) {
-            int n = 0;
-            for (j = 0; j < G.nlist0[i]; j++) {
-                int ri = G.list0[i][j], gone = 0;
-                for (r = 0; r < G.s.nrail && !gone; r++)
-                    if (G.rmap[r] == ri && G.s.rpiece && G.s.rpiece[r] >= 0 && G.s.pieces[G.s.rpiece[r]].removed) gone = 1;
-                if (!gone) G.ed.list[i][n++] = ri;
+        /* m29b: the 1024 slots are a grid of 128-unit squares (x, z; wrapping every 32): a rail is
+         * listed in every square its box (a unit wider) covers, which is how the game finds what to
+         * grind (Miggas: moved rails couldn't be ground). The slots are made again: as read, less the
+         * rails that changed, plus those (not removed) in the squares where they are now */
+        {
+            int *chg = (int *)calloc((size_t)G.ed.nrail + 1, sizeof(int));   /* 1 changed, 2 removed */
+            int **nl = (int **)calloc(1025, sizeof(int *)), *nn = (int *)calloc(1025, sizeof(int)), nlists = 0, sl;
+            int *cap = (int *)calloc(1025, sizeof(int)), *tmp = (int *)malloc(sizeof(int) * (size_t)(G.ed.nrail + 1));
+            if (chg && nl && nn && cap && tmp) {
+                for (r = 0; r < G.s.nrail; r++) {
+                    int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ri = G.rmap[r];
+                    if (pk < 0 || ri < 0 || !G.s.pieces[pk].touched) continue;
+                    chg[ri] = G.s.pieces[pk].removed ? 2 : 1;
+                }
+                for (sl = 0; sl < 1024; sl++) {
+                    int n = 0, l0 = G.slot0[sl], cx = sl & 31, cz = sl >> 5, a2, b2;
+                    if (l0 >= 0) for (j = 0; j < G.nlist0[l0]; j++) if (!chg[G.list0[l0][j]]) tmp[n++] = G.list0[l0][j];
+                    for (r = 0; r < G.ed.nrail; r++) {
+                        float bx[6];
+                        int x0, x1, z0, z1, xx, zz, in = 0;
+                        if (chg[r] != 1) continue;
+                        memcpy(bx, G.ed.rail[r].rest + 4, 24);
+                        x0 = (int)floorf((bx[0] - 1.0f) / 128.0f); x1 = (int)floorf((bx[3] + 1.0f) / 128.0f);
+                        z0 = (int)floorf((bx[2] - 1.0f) / 128.0f); z1 = (int)floorf((bx[5] + 1.0f) / 128.0f);
+                        for (xx = x0; xx <= x1 && !in; xx++)
+                            for (zz = z0; zz <= z1 && !in; zz++)
+                                if ((xx & 31) == cx && (zz & 31) == cz) in = 1;
+                        if (in) tmp[n++] = r;
+                    }
+                    for (a2 = 1; a2 < n; a2++)          /* in rail order, as the game's are */
+                        for (b2 = a2; b2 > 0 && tmp[b2 - 1] > tmp[b2]; b2--) { int t = tmp[b2]; tmp[b2] = tmp[b2 - 1]; tmp[b2 - 1] = t; }
+                    if (!n) { G.ed.slot[sl] = -1; continue; }
+                    for (j = 0; j < nlists; j++)        /* the same list as another slot's: shared */
+                        if (nn[j] == n && !memcmp(nl[j], tmp, sizeof(int) * (size_t)n)) break;
+                    if (j == nlists) {
+                        nl[j] = (int *)malloc(sizeof(int) * (size_t)n);
+                        if (!nl[j]) continue;
+                        memcpy(nl[j], tmp, sizeof(int) * (size_t)n);
+                        nn[j] = n;
+                        nlists++;
+                    }
+                    G.ed.slot[sl] = j;
+                }
+                for (j = 0; j < G.ed.nlists; j++) free(G.ed.list[j]);
+                free(G.ed.list); free(G.ed.nlist);
+                G.ed.list = nl; G.ed.nlist = nn; G.ed.nlists = nlists;
+                nl = NULL; nn = NULL;
             }
-            G.ed.nlist[i] = n;
+            free(chg); free(nl); free(nn); free(cap); free(tmp);
         }
     }
     for (k = 0; k < 64; k++)
@@ -1375,7 +1492,21 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
         }
         else if (sscanf(tok, "gmove %f %f %f", &a, &b2, &c) == 3 && obj_ok()) { float p[3], y; ed_snap(); obj_get(p, &y); p[0] += a; p[1] += b2; p[2] += c; obj_set(p, y); }
         else if (sscanf(tok, "gturn %f", &a) == 1 && obj_ok()) { ed_snap(); obj_turn(a); }
-        else if (!strncmp(tok, "count", 5)) printf("picked: %d pieces\n", G.npset);
+        else if (!strncmp(tok, "count", 5)) {
+            int nc = 0, nr = 0, j2;
+            for (j2 = 0; j2 < G.npset; j2++) { nc += G.s.pieces[G.pset[j2]].ncm; nr += G.s.pieces[G.pset[j2]].nrail; }
+            printf("picked: %d pieces, %d collision models, %d rails\n", G.npset, nc, nr);
+        }
+        else if (!strncmp(tok, "ramps", 5)) {     /* (tests) the pieces round the ramps' collision */
+            int t2;
+            for (t2 = 0; t2 < G.s.nct; t2++)
+                if (G.s.csurf[t2] == 8192) {
+                    int cmi = G.ctm[t2];
+                    printf("ramp tri %d: collision model %d, piece %d, at %.0f %.0f %.0f\n", t2, cmi, cmi >= 0 ? G.s.cpiece[cmi] : -1,
+                           G.s.cp[(size_t)G.s.cix[t2 * 3] * 3], G.s.cp[(size_t)G.s.cix[t2 * 3] * 3 + 1], G.s.cp[(size_t)G.s.cix[t2 * 3] * 3 + 2]);
+                    t2 += 3;
+                }
+        }
         else if (!strncmp(tok, "plist", 5)) {     /* the biggest pieces with collision */
             int q;
             for (q = 0; q < G.s.npiece; q++)
@@ -1669,10 +1800,12 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                         if (shift && pk >= 0) {         /* m29: more pieces, or fewer */
                             G.sel = -1;
                             if (G.inset[pk]) pset_remove(pk); else pset_add(pk);
+                            pset_claim();
                         } else {
                             G.sel = l == ID_PROP ? jst_prop_of_tri(&G.s, (int)ti) : -1;
                             pset_clear();
                             if (pk >= 0) pset_add(pk);
+                            pset_claim();
                         }
                         G.need = 1;
                     }
