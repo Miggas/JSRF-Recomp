@@ -12,8 +12,12 @@
  *     own call (sub_00012730, thiscall on the game manager, on or off). While
  *     a hold is on, the game's update walks the tasks with that hold's own
  *     do-nothing slots, so nothing moves, and the frame's draw (sub_000131F0)
- *     goes on; it is run here with the hold down for its length, so every
- *     object is drawn by its usual draw, as in play (nothing has moved since).
+ *     goes on, each object drawn by that hold's draw (v313c: as the game
+ *     draws a held frame; v313 lowered the hold for the frame's draw, every
+ *     object drawn as in play, and the skates' trail, built from the camera
+ *     of the moment it was last updated, followed the flying camera -- Miggas:
+ *     drawn the game's way only the trail goes; RECOMP_PHOTO_HELD_DRAW=0 for
+ *     v313's way).
  *   - The camera flies: the camera's draw (sub_000A2960) builds the view
  *     from the eye (+0x44) and the point looked at (+0x5C), which are placed
  *     before it from photo mode's own eye and direction (the point 64 ahead,
@@ -27,10 +31,9 @@
  * as the game had them and lets the hold go. The controls are the pads'
  * (xbox_PhotoPad): the left stick moves along the view, the right stick
  * turns it (RECOMP_CAM_INVERT_X / _Y as for the right stick's camera), RT and
- * LT go straight up and down, RB four times as fast, LB a quarter, X and Y
- * roll it (v313b: the renderer turns the picture about its middle,
- * nv2a_gl_set_roll), Back to where photo mode started. A takes a photo: the
- * renderer saves the next frame (kernel/nv2a_render.c), without the legend.
+ * LT go straight up and down, RB four times as fast, LB a quarter, Y back to
+ * where photo mode started. A takes a photo: the renderer saves the next
+ * frame (kernel/nv2a_render.c), without the legend.
  *
  * RECOMP_PHOTO=0 turns photo mode off; [PHOTO] lines say what it does.
  */
@@ -54,8 +57,6 @@ typedef struct {
     BYTE  bAnalogButtons[8];    /* A, B, X, Y, Black, White, LTrig, RTrig */
     SHORT sThumbLX, sThumbLY, sThumbRX, sThumbRY;
 } XBOX_GAMEPAD;
-#define XBOX_BUTTON_X           2
-#define XBOX_BUTTON_Y           3
 #define XBOX_BUTTON_BLACK       4
 #define XBOX_BUTTON_WHITE       5
 #define XBOX_BUTTON_LTRIGGER    6
@@ -67,7 +68,6 @@ extern int  xbox_PhotoOpen(void);
 extern void xbox_PhotoClose(void);
 extern void xbox_PhotoPad(XBOX_GAMEPAD *out);
 extern int  xbox_PhotoResetTake(void);
-extern void nv2a_gl_set_roll(float rad);        /* kernel/nv2a_render.c (v313b) */
 extern void sub_000131F0_gen(void);             /* the frame's draw */
 extern void sub_00012730(void);                 /* the game manager's fourth hold, on or off */
 
@@ -83,7 +83,7 @@ enum { PH_IDLE, PH_HOLDING };
 static int ph_state, ph_off = -1, ph_inv_x, ph_inv_y;
 static uint32_t ph_frame, ph_follow_frame, ph_follow_cam, ph_cam, ph_asked_frame;
 static float ph_game_eye[3], ph_game_look[3], ph_game_dist;
-static double ph_pos[3], ph_yaw, ph_pitch, ph_roll; /* the flying eye; the view's roll */
+static double ph_pos[3], ph_yaw, ph_pitch;          /* the flying eye */
 static double ph_start_pos[3], ph_start_yaw, ph_start_pitch;
 
 static int ph_ok(uint32_t va, uint32_t n)
@@ -176,7 +176,6 @@ static void ph_start(uint32_t gm)
     ph_yaw = atan2(d[0], d[2]);
     ph_pitch = atan2(d[1], h > 1e-6 ? h : 1e-6);
     memcpy(ph_start_pos, ph_pos, sizeof ph_pos);
-    ph_roll = 0;
     ph_start_yaw = ph_yaw;
     ph_start_pitch = ph_pitch;
     xbox_PhotoResetTake();
@@ -195,8 +194,6 @@ static void ph_stop(uint32_t gm)
     }
     ph_hold(gm, 0);
     ph_state = PH_IDLE;
-    ph_roll = 0;
-    nv2a_gl_set_roll(0.0f);
     fprintf(stderr, "[PHOTO] the world goes on; the camera is the game's again\n");
 }
 
@@ -210,17 +207,8 @@ static void ph_fly(void)
         memcpy(ph_pos, ph_start_pos, sizeof ph_pos);
         ph_yaw = ph_start_yaw;
         ph_pitch = ph_start_pitch;
-        ph_roll = 0;
-        nv2a_gl_set_roll(0.0f);
         return;
     }
-    /* v313b: X rolls the camera anticlockwise, Y clockwise (a turn in about
-     * four seconds), so the picture turns the other way */
-    if (p.bAnalogButtons[XBOX_BUTTON_X] > 30) ph_roll += 0.025;
-    if (p.bAnalogButtons[XBOX_BUTTON_Y] > 30) ph_roll -= 0.025;
-    if (ph_roll > 3.14159265) ph_roll -= 6.2831853;
-    if (ph_roll < -3.14159265) ph_roll += 6.2831853;
-    nv2a_gl_set_roll((float)-ph_roll);
     lx = ph_axis(p.sThumbLX);
     ly = ph_axis(p.sThumbLY);
     rx = ph_axis(p.sThumbRX) * (ph_inv_x ? -1 : 1);
@@ -291,18 +279,16 @@ void sub_000131F0(void)
         }
         ours = ph_state == PH_HOLDING && MEM32(gm + GM_HOLD_OURS);
     }
-    {   /* v313b (test): RECOMP_PHOTO_HELD_DRAW=1 leaves the hold up for the
-         * frame's draw, so each object draws as the game's own hold has it
-         * (the skates' trail, built from the camera of the moment it was
-         * updated, follows the flying camera otherwise) */
-        static int held_draw = -1;
-        if (held_draw < 0) {
+    {   /* v313c: the frame drawn as the game's hold draws it, unless
+         * RECOMP_PHOTO_HELD_DRAW=0 */
+        static int lower = -1;
+        if (lower < 0) {
             const char *e = getenv("RECOMP_PHOTO_HELD_DRAW");
-            held_draw = e && e[0] == '1';
-            if (held_draw)
-                fprintf(stderr, "[PHOTO] RECOMP_PHOTO_HELD_DRAW=1: the frame drawn as the game's hold draws it\n");
+            lower = e && e[0] == '0';
+            if (lower)
+                fprintf(stderr, "[PHOTO] RECOMP_PHOTO_HELD_DRAW=0: the frame drawn as in play (the trail shows)\n");
         }
-        if (held_draw) ours = 0;
+        if (!lower) ours = 0;
     }
     if (ours) {
         uint32_t was = MEM32(gm + GM_HOLD_OURS);

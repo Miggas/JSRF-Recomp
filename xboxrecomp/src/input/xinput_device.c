@@ -491,7 +491,7 @@ static volatile LONG s_qd_open;           /* 0 closed, 1 open (v276f: no state 2
 static WORD s_qd_prev_btn[QD_IDX];
 static BYTE s_qd_prev_ab[QD_IDX];
 static signed char s_qd_prev_x[QD_IDX];   /* left stick: -1 left, 0, 1 right */
-static BYTE s_qd_prev_y_btn[QD_IDX];      /* v313: Back down (photo mode's reset; v313: was Y) */
+static BYTE s_qd_prev_y_btn[QD_IDX];      /* v313: Y down (photo mode) */
 static BYTE s_qd_held[QD_IDX];            /* v276d: a button down on this device */
 static volatile BYTE s_qd_block[QD_IDX];  /* v276f: closed with a button down: the game gets nothing from it yet */
 static volatile LONG s_qd_sel = 2;        /* v278b: 0 Quit Game, 1 Quit to Title, 2 Return */
@@ -620,9 +620,8 @@ volatile LONG g_xbox_game_held;
  * (s_qd_open 4) the game gets a controller at rest, as for the quit window,
  * but it isn't held here: the game holds its own world (jsrf_photo.c) and
  * goes on drawing it, from the camera the pads fly (xbox_PhotoPad). A takes
- * a photo (xbox_PhotoShotTake: the renderer saves the next frame), Back puts
- * the camera back where photo mode started (xbox_PhotoResetTake; v313b: was
- * Y, which rolls the view now, with X). The
+ * a photo (xbox_PhotoShotTake: the renderer saves the next frame), Y puts
+ * the camera back where photo mode started (xbox_PhotoResetTake). The
  * controls are listed at the window's top-left (g_xbox_legend, drawn by
  * kernel/nv2a_gl_quit.h, never in a photo). */
 char g_xbox_legend[10][40];
@@ -645,9 +644,8 @@ static void photo_legend(int on)
         "Right stick: look",
         "RT / LT: up / down",
         "RB: fast   LB: slow",
-        "X / Y: roll left / right",
         "A: take a photo",
-        "Back: back to the start",
+        "Y: back to the start",
         "R3 or B: exit",
     };
     int i;
@@ -786,7 +784,7 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
                     memset(s_ph_pad_t, 0, sizeof s_ph_pad_t);
                     photo_legend(1);
                     InterlockedExchange(&s_qd_open, 4);
-                    fprintf(stderr, "[PHOTO] photo mode open (A: photo, X / Y: roll, Back: back to the start, R3 or B: exit)\n");
+                    fprintf(stderr, "[PHOTO] photo mode open (A: photo, Y: back to the start, R3 or B: exit)\n");
                 }
             }
         }
@@ -814,11 +812,11 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
             s_ph_last_shot = now;
             InterlockedIncrement(&s_ph_shots);
         }
-        if ((b & XBOX_GAMEPAD_BACK) && !s_qd_prev_y_btn[idx] && now - s_ph_last_reset > 300u) {
-            s_ph_last_reset = now;                  /* v313b: Back (Y rolls now) */
+        if (g->bAnalogButtons[XBOX_BUTTON_Y] > 30 && !(s_qd_prev_y_btn[idx]) && now - s_ph_last_reset > 300u) {
+            s_ph_last_reset = now;
             InterlockedIncrement(&s_ph_resets);
         }
-        s_qd_prev_y_btn[idx] = (b & XBOX_GAMEPAD_BACK) != 0;
+        s_qd_prev_y_btn[idx] = g->bAnalogButtons[XBOX_BUTTON_Y] > 30;
         if ((ab & 2) && !(pab & 2)) {
             qd_block_held(idx, held);
             photo_close("B");
