@@ -889,6 +889,17 @@ static void panel_video(struct nk_context *ctx, float w)
         if (sel != cur) { if (sel == 0) off("RECOMP_GL_ANISO"); else put("RECOMP_GL_ANISO", vals[sel], "display"); }
         desc(ctx, w, "Sharper textures on surfaces seen at an angle (roads, walls). Costs very little.", C_DIM);
     }
+    /* v3m: sharp texture pixels, RECOMP_TEX_FILTER=nearest (the game's
+     * v313f, Idea by Miggas) */
+    {
+        static const char *const items[] = { "Off", "On" };
+        const char *v = get_or("RECOMP_TEX_FILTER", "");
+        int cur = (!strcmp(v, "nearest") || !strcmp(v, "all") || !strcmp(v, "point") || !strcmp(v, "1")) ? 1 : 0;
+        int sel = combo(ctx, "Sharp texture pixels", items, 2, cur);
+        if (sel != cur) { if (sel) put("RECOMP_TEX_FILTER", "nearest", "display"); else off("RECOMP_TEX_FILTER"); }
+        desc(ctx, w, "Off: textures are smoothed, as on the Xbox. On: every texture shows its pixels sharp up "
+                     "close, as in the mod tool (the HUD and menus too). Needs the game's v313f or newer.", C_DIM);
+    }
     /* anti-aliasing: RECOMP_GL_AA */
     {
         static const char *const items[] = { "Off", "FXAA", "SMAA Low", "SMAA Medium", "SMAA High", "SMAA Ultra" };
