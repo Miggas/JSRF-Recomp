@@ -1742,10 +1742,13 @@ rails:
                     memcpy(nd + 0x20, sp, 16);
                 }
             }
-            /* into the last models' .dat: its earlier version out, this one after the last block */
+            /* into the last models' .dat: its earlier version out, this one after the file's last model,
+             * before its textures (m29h: Miggas: copies saved after the textures never showed in the
+             * game, which reads a file's models up to the first block that isn't one) */
             {
                 uint8_t *tb = buf[G.lastdat];
                 size_t tn = bn[G.lastdat], end = 0, cut0 = 0, cut1 = 0;
+                int found = 0;
                 off = 0;
                 while (off + 8 <= tn) {
                     uint32_t t = RD32(tb + off);
@@ -1755,9 +1758,10 @@ rails:
                     else e2 = off + 4 + (size_t)t;
                     if (e2 <= off || e2 > tn) break;
                     if (t == 1 && (int)RD32(tb + off + 4) == id) { cut0 = off; cut1 = e2; }
+                    if (t != 1 && !found) { end = off; found = 1; }   /* m29h: the models come first, then the textures */
                     off = e2;
                 }
-                end = off;
+                if (!found) end = off;
                 if (cut1 > cut0) {
                     memmove(tb + cut0, tb + cut1, tn - cut1);
                     tn -= cut1 - cut0;
