@@ -421,6 +421,13 @@ static void dn_report(uint32_t who)
                 o += 8;
             }
         if (ptr >= 0x10000u && ph_ok(ptr, 0x100u)) dn_dump("+2D0 ->", ptr, 0, 48);
+        dn_dump("+11D4", who + 0x11D4u, 16, 48);   /* v313l: round the two turns */
+        dn_dump("+1484", who + 0x1484u, 16, 48);
+        fprintf(stderr, "[DANCE]   the skater's table %08X: %08X %08X %08X %08X %08X %08X %08X\n", MEM32(who),
+                MEM32(who) >= 0x10000u && ph_ok(MEM32(who), 32) ? MEM32(MEM32(who)) : 0, ph_ok(MEM32(who), 32) ? MEM32(MEM32(who) + 4) : 0,
+                ph_ok(MEM32(who), 32) ? MEM32(MEM32(who) + 8) : 0, ph_ok(MEM32(who), 32) ? MEM32(MEM32(who) + 12) : 0,
+                ph_ok(MEM32(who), 32) ? MEM32(MEM32(who) + 16) : 0, ph_ok(MEM32(who), 32) ? MEM32(MEM32(who) + 20) : 0,
+                ph_ok(MEM32(who), 32) ? MEM32(MEM32(who) + 24) : 0);
     }
 }
 
@@ -472,7 +479,9 @@ static void dn_before(void)
         float sy = 1.0f - dn_stretch * cosf(ph * 2.0f * 3.14159265f), sw = 1.0f / sqrtf(sy);
         int wp, i, rr, best;
         dn_nm = dn_find_turns(who, dn_mat, dn_mst, DN_MMAX, &wp);
-        if (!wp && dn_nm > 1) dn_nm = 1;   /* no world matrix: only the first turn (the log lists them all) */
+        /* v313l: no world matrix: every unit turn (v313k took the first only, +0x11D4, and only a
+         * tiny part of the skater stretched; +0x1484 holds the same turn) */
+        (void)wp;
         for (i = 0; i < dn_nm; i++) {
             float *r[3];
             for (rr = 0; rr < 3; rr++) r[rr] = (float *)XBOX_PTR(dn_mat[i] + rr * dn_mst[i]);
