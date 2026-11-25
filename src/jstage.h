@@ -78,7 +78,7 @@ typedef struct {
 } JSPiece;
 
 /* m29: a collision model as read: its vertices and triangles in the stage */
-typedef struct { int area, v0, nv, t0, nt, src; } JSCModel;   /* m29g: src a copy's source (-1) */
+typedef struct { int area, v0, nv, t0, nt, src, part; } JSCModel;   /* m29g: src a copy's source (-1); m29i: part 1 once split */
 
 typedef struct {
     char name[16];                      /* "Stg30" */
@@ -98,6 +98,7 @@ typedef struct {
     float *cp;
     uint32_t *cix;
     uint16_t *csurf;
+    int *ctsi;                          /* m29i: a collision triangle's place in its model's triangle set as read */
     int ncmodels;
     /* grind rails: rail k's points are rp[rs[k] .. rs[k] + rn[k]) (3 floats each) */
     int nrail, nrp;
@@ -115,6 +116,7 @@ typedef struct {
     float *p0, *cp0;                    /* positions as read (pieces, collision) */
     JSCModel *cmodels; int ncmodel;
     int *cpiece;                        /* a collision model's piece (-1: none) */
+    int *ctpiece;                       /* m29i: a collision triangle's piece: the smallest round it (-1) */
     float *rp0, *rnrm0;                 /* rail points and normals as read */
     int *rpiece;                        /* a rail's piece (-1) */
     int *rsrc;                          /* m29g: a copied rail's source (-1) */
@@ -134,6 +136,7 @@ void jst_piece_update(JStage *s, int k);
  * the source is now), with their collision and rails; the first copy's
  * index, -1 out of memory */
 int  jst_piece_copy(JStage *s, const int *set, int n);
+int  jst_cmodel_split(JStage *s, int ci, const uint8_t *take, int to);   /* m29i */
 /* m28: the prop a triangle belongs to, -1 none */
 int  jst_prop_of_tri(const JStage *s, int tri);
 /* the stage's name from one of its files' names ("stg30_02.dat" -> "Stg30"); 0 not a stage file */

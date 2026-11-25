@@ -873,6 +873,30 @@ static void piece_changed(int k)
     G.need = 1;
 }
 
+static void cur_head(int ci, float h[22]);
+/* m29i: the viewer's collision buffers grown for the models from ncm_before on (copied or split
+ * off): their triangles' model, own triangle set (none yet), head where they start. 0 done */
+static int cm_view_grow(int ncm_before)
+{
+    int k, j;
+    float *cv = (float *)realloc(G.cv, sizeof(float) * 3 * (size_t)(G.s.ncv + 1));
+    int *ctm = (int *)realloc(G.ctm, sizeof(int) * (size_t)(G.s.nct + 1));
+    int *to = G.tset_own ? (int *)realloc(G.tset_own, sizeof(int) * (size_t)(G.s.ncmodel + 1)) : NULL;
+    float (*cb)[22] = (float (*)[22])realloc(G.chbase, sizeof(float) * 22 * (size_t)(G.s.ncmodel + 1));
+    if (cv) G.cv = cv;
+    if (ctm) {
+        G.ctm = ctm;
+        for (k = ncm_before; k < G.s.ncmodel; k++)
+            for (j = 0; j < G.s.cmodels[k].nt; j++) G.ctm[G.s.cmodels[k].t0 + j] = k;
+    }
+    if (to) { G.tset_own = to; for (k = ncm_before; k < G.s.ncmodel; k++) G.tset_own[k] = -1; }
+    if (cb) {                                   /* it starts where its source is now */
+        G.chbase = cb;
+        for (k = ncm_before; k < G.s.ncmodel; k++) cur_head(G.s.cmodels[k].src, G.chbase[k]);
+    }
+    return cv && ctm && cb ? 0 : -1;
+}
+
 /* m29b: what lies inside the picked pieces together goes with them: a
  * collision model or rail (as read) inside their boxes taken together, not
  * yet with one of them, is given to the first one, when none of them has
@@ -916,6 +940,57 @@ static void pset_claim(void)
             tp->cm[tp->ncm++] = i;
             G.s.cpiece[i] = to;
         }
+    }
+    /* m29i: then triangle by triangle. Most of the map's collision models span several pieces
+     * (a flight of stairs: its steps, its sides; Miggas: stairs left most of their collision
+     * behind), so a model's triangles lying in the picked pieces (the smallest piece round each
+     * is one of them, or none is and it's inside their joint box) go with them, split off into a
+     * model of their own when the rest stays */
+    if (G.s.ctpiece && G.s.ctsi && G.tset_own) {
+        int ncm_before = G.s.ncmodel, n = G.s.ncmodel;
+        uint8_t *take = NULL;
+        for (i = 0; i < n; i++) {
+            JSCModel *cm = &G.s.cmodels[i];
+            int k, owner = G.s.cpiece[i], nt = 0;
+            if (cm->nv <= 0 || cm->nt <= 0 || (owner >= 0 && (G.inset[owner] || G.s.pieces[owner].touched))) continue;
+            if (owner >= 0 && G.s.pieces[owner].src >= 0) continue;
+            {
+                uint8_t *nb = (uint8_t *)realloc(take, (size_t)cm->nt + 1);
+                if (!nb) break;
+                take = nb;
+            }
+            for (k = 0; k < cm->nt; k++) {
+                int t = cm->t0 + k, tp = G.s.ctpiece[t], c2;
+                take[k] = 0;
+                if (tp >= 0) { if (G.inset[tp]) take[k] = 1; }
+                else {
+                    for (c2 = 0; c2 < 3; c2++) {
+                        const float *v = G.s.cp0 + (size_t)G.s.cix[t * 3 + c2] * 3;
+                        for (q = 0; q < 3; q++) if (v[q] < lo[q] - 1.0f || v[q] > hi[q] + 1.0f) break;
+                        if (q < 3) break;
+                    }
+                    if (c2 == 3) take[k] = 1;
+                }
+                nt += take[k];
+            }
+            if (!nt) continue;
+            if (nt == cm->nt) {                  /* all of it: the model itself */
+                if (owner >= 0) {
+                    JSPiece *op = &G.s.pieces[owner];
+                    for (k = 0; k < op->ncm; k++) if (op->cm[k] == i) { op->cm[k] = op->cm[--op->ncm]; break; }
+                }
+                {
+                    JSPiece *tp = &G.s.pieces[to];
+                    int *nc = (int *)realloc(tp->cm, sizeof(int) * (size_t)(tp->ncm + 1));
+                    if (!nc) continue;
+                    tp->cm = nc;
+                    tp->cm[tp->ncm++] = i;
+                    G.s.cpiece[i] = to;
+                }
+            } else jst_cmodel_split(&G.s, i, take, to);
+        }
+        free(take);
+        if (G.s.ncmodel > ncm_before) { cm_view_grow(ncm_before); G.dirty = 1; }
     }
     for (i = 0; i < G.s.nrail && G.s.rpiece; i++) {
         float rlo[3] = { 1e30f, 1e30f, 1e30f }, rhi[3] = { -1e30f, -1e30f, -1e30f };
@@ -1247,37 +1322,25 @@ static int root_piece(int k)
 /* the picked pieces copied, with their collision and rails, beside them */
 static void obj_copy_pieces(void)
 {
-    int first, n0 = G.s.npiece, ncm_before = G.s.ncmodel, nr_before = G.s.nrail, j, k;
+    int first, n0, ncm_before, nr_before, j, k;
     float lo[3], hi[3], p[3], y;
     if (obj_ok() != 2) return;
     ed_snap();
+    pset_claim();                               /* m29i: what goes with them is copied with them */
+    n0 = G.s.npiece; ncm_before = G.s.ncmodel; nr_before = G.s.nrail;
     first = jst_piece_copy(&G.s, G.pset, G.npset);
     if (first < 0) return;
     {                                           /* the viewer's buffers grow with it */
         float *vv = (float *)realloc(G.vv, sizeof(float) * 3 * (size_t)(G.s.nv + 1));
-        float *cv = (float *)realloc(G.cv, sizeof(float) * 3 * (size_t)(G.s.ncv + 1));
         uint8_t *in = (uint8_t *)realloc(G.inset, (size_t)G.s.npiece + 1);
-        int *ctm = (int *)realloc(G.ctm, sizeof(int) * (size_t)(G.s.nct + 1));
         float *py = (float *)realloc(G.pyaw_saved, sizeof(float) * (size_t)(G.s.npiece + 1));
-        int *to = G.tset_own ? (int *)realloc(G.tset_own, sizeof(int) * (size_t)(G.s.ncmodel + 1)) : NULL;
-        float (*cb)[22] = (float (*)[22])realloc(G.chbase, sizeof(float) * 22 * (size_t)(G.s.ncmodel + 1));
         int *rf = (int *)realloc(G.rfile, sizeof(int) * (size_t)(G.s.nrail + 1));
+        int cg = cm_view_grow(ncm_before);
         if (vv) G.vv = vv;
-        if (cv) G.cv = cv;
         if (in) { G.inset = in; memset(G.inset + n0, 0, (size_t)(G.s.npiece - n0) + 1); }
-        if (ctm) {
-            G.ctm = ctm;
-            for (k = ncm_before; k < G.s.ncmodel; k++)
-                for (j = 0; j < G.s.cmodels[k].nt; j++) G.ctm[G.s.cmodels[k].t0 + j] = k;
-        }
         if (py) { G.pyaw_saved = py; for (k = n0; k < G.s.npiece; k++) G.pyaw_saved[k] = 0; }
-        if (to) { G.tset_own = to; for (k = ncm_before; k < G.s.ncmodel; k++) G.tset_own[k] = -1; }
-        if (cb) {                               /* a copied collision model starts where its source is now */
-            G.chbase = cb;
-            for (k = ncm_before; k < G.s.ncmodel; k++) cur_head(G.s.cmodels[k].src, G.chbase[k]);
-        }
         if (rf) { G.rfile = rf; for (k = 0; k < G.s.nrail; k++) if (k >= nr_before || k < G.nrail0) G.rfile[k] = -1; }
-        if (!vv || !cv || !in || !ctm || !py || !cb || !rf) return;
+        if (!vv || cg || !in || !py || !rf) return;
     }
     pset_clear();
     for (k = first; k < G.s.npiece; k++) pset_add(k);
@@ -1416,31 +1479,43 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
                     if (nt) { G.ed.ts = nt; nt[G.ed.nts].p = (uint8_t *)malloc(1); nt[G.ed.nts].n = 0; empty = G.ed.nts++; }
                 }
                 if (empty >= 0) ctset[i] = empty;
-            } else if (moved && G.tset_own) {
+            } else if ((moved || G.s.cmodels[i].part) && G.tset_own && G.s.ctsi) {
                 /* m29d: each triangle notes which corner is lowest and highest on each axis, from its
                  * world place (bits 16..27 of its second word: min x, max x, min y, max y, min z,
                  * max z, two bits each, the first corner on a tie). The game builds the triangle's box
                  * from it, so a moved or turned model's own copy of its triangles gets them again */
+                /* m29i: its own set holds its triangles (by their places in the set as read): all
+                 * of them, or what's left after a split, or what was split off */
                 int own = G.tset_own[i];
+                const JSCModel *cmi = &G.s.cmodels[i];
                 const JBytes *src = &G.ed.ts[G.tset0[ri]], *vsb = &G.ed.vs[G.vset0[ri]];
                 if (own < 0) {
                     JBytes *nt = (JBytes *)realloc(G.ed.ts, sizeof(JBytes) * (size_t)(G.ed.nts + 1));
                     if (nt) {
                         G.ed.ts = nt;
-                        src = &G.ed.ts[G.tset0[ri]];
-                        nt[G.ed.nts].n = src->n;
-                        nt[G.ed.nts].p = (uint8_t *)malloc(src->n + 1);
+                        nt[G.ed.nts].n = 0;
+                        nt[G.ed.nts].p = (uint8_t *)malloc(1);
                         if (nt[G.ed.nts].p) own = G.tset_own[i] = G.ed.nts++;
                     }
                 }
                 if (own >= 0) {
                     JBytes *tb = &G.ed.ts[own];
                     const float *head = cur[i];
-                    size_t t, nv;
+                    size_t t, nv, tn = 0;
+                    uint8_t *np = (uint8_t *)realloc(tb->p, (size_t)cmi->nt * 8 + 1);
+                    int j3;
+                    if (!np) continue;
+                    tb->p = np;
                     src = &G.ed.ts[G.tset0[ri]];
                     vsb = &G.ed.vs[G.vset0[ri]];
                     nv = vsb->n / 16;
-                    memcpy(tb->p, src->p, tb->n);
+                    for (j3 = 0; j3 < cmi->nt; j3++) {
+                        size_t e = (size_t)G.s.ctsi[cmi->t0 + j3] * 8;
+                        if (e + 8 > src->n) continue;
+                        memcpy(tb->p + tn, src->p + e, 8);
+                        tn += 8;
+                    }
+                    tb->n = tn;
                     ctset[i] = own;
                     for (t = 0; t + 8 <= tb->n; t += 8) {
                         uint32_t w0 = tb->p[t] | tb->p[t + 1] << 8 | tb->p[t + 2] << 16 | (uint32_t)tb->p[t + 3] << 24;
@@ -1946,6 +2021,110 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
                            G.s.cp[(size_t)G.s.cix[t2 * 3] * 3], G.s.cp[(size_t)G.s.cix[t2 * 3] * 3 + 1], G.s.cp[(size_t)G.s.cix[t2 * 3] * 3 + 2]);
                     t2 += 3;
                 }
+        }
+        else if (!strncmp(tok, "stairs", 6)) {    /* (tests) the collision models with stairs, and the pieces round them */
+            int ci, t2, q, q2;
+            for (ci = 0; ci < G.s.ncmodel; ci++) {
+                const JSCModel *cm = &G.s.cmodels[ci];
+                int ns = 0, hold[8] = { 0 }, nh = 0, h, nin = 0;
+                float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
+                for (t2 = cm->t0; t2 < cm->t0 + cm->nt; t2++) if (G.s.csurf[t2] & 16) ns++;
+                if (!ns) continue;
+                for (t2 = 0; t2 < cm->nv; t2++)
+                    for (q2 = 0; q2 < 3; q2++) { float v = G.s.cp0[(size_t)(cm->v0 + t2) * 3 + q2]; if (v < lo[q2]) lo[q2] = v; if (v > hi[q2]) hi[q2] = v; }
+                for (t2 = cm->t0; t2 < cm->t0 + cm->nt; t2++) {   /* each triangle: the smallest piece round it */
+                    int bk = -1, v2; float best = 1e38f;
+                    for (q = 0; q < G.s.npiece; q++) {
+                        const JSPiece *pc = &G.s.pieces[q];
+                        float vol; int in = 1;
+                        if (G.s.models[pc->model].kind != 1) continue;
+                        for (v2 = 0; v2 < 3 && in; v2++)
+                            for (q2 = 0; q2 < 3; q2++) {
+                                float v = G.s.cp0[(size_t)G.s.cix[t2 * 3 + v2] * 3 + q2];
+                                if (v < pc->lo[q2] - 1 || v > pc->hi[q2] + 1) { in = 0; break; }
+                            }
+                        if (!in) continue;
+                        vol = (pc->hi[0] - pc->lo[0] + 1) * (pc->hi[1] - pc->lo[1] + 1) * (pc->hi[2] - pc->lo[2] + 1);
+                        if (vol < best) { best = vol; bk = q; }
+                    }
+                    if (bk >= 0) nin++;
+                    for (h = 0; h < nh && hold[h] != bk; h++) ;
+                    if (h == nh && nh < 8) hold[nh++] = bk;
+                }
+                printf("cm %d: %d tris (%d stairs, %d inside a piece), owner %d, box %.0f %.0f %.0f .. %.0f %.0f %.0f; pieces:", ci, cm->nt, ns, nin,
+                       G.s.cpiece[ci], lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+                for (h = 0; h < nh; h++) printf(" %d", hold[h]);
+                printf("\n");
+            }
+        }
+        else if (!strncmp(tok, "tris ", 5)) {     /* (tests) collision triangles (as now) inside a box; stairs ones */
+            float b[6]; int t2, c2, q2, n2 = 0, ns = 0;
+            if (sscanf(tok + 5, "%f %f %f %f %f %f", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) == 6) {
+                for (t2 = 0; t2 < G.s.nct; t2++) {
+                    for (c2 = 0; c2 < 3; c2++) {
+                        const float *v = G.s.cp + (size_t)G.s.cix[t2 * 3 + c2] * 3;
+                        for (q2 = 0; q2 < 3; q2++) if (v[q2] < b[q2] || v[q2] > b[3 + q2]) break;
+                        if (q2 < 3) break;
+                    }
+                    if (c2 == 3) { n2++; if (G.s.csurf[t2] & 16) ns++; }
+                }
+                printf("tris in %s: %d (%d stairs)\n", tok + 5, n2, ns);
+            }
+        }
+        else if (!strncmp(tok, "cbox", 4)) {      /* (tests) collision triangles inside the picked pieces' box: going with them or not */
+            float lo[3], hi[3]; int t2, c2, q2, go = 0, stay = 0, gonet = 0;
+            obj_box(lo, hi);
+            for (t2 = 0; t2 < G.s.nct; t2++) {
+                int cmi = G.ctm[t2], pk = cmi >= 0 ? G.s.cpiece[cmi] : -1;
+                for (c2 = 0; c2 < 3; c2++) {
+                    const float *v = G.s.cp0 + (size_t)G.s.cix[t2 * 3 + c2] * 3;
+                    for (q2 = 0; q2 < 3; q2++) if (v[q2] < lo[q2] - 1 || v[q2] > hi[q2] + 1) break;
+                    if (q2 < 3) break;
+                }
+                if (pk >= 0 && G.inset[pk]) gonet++;
+                if (c2 < 3) continue;
+                if (pk >= 0 && G.inset[pk]) go++; else stay++;
+            }
+            printf("collision in the box: %d going, %d staying; %d going in all; %d models\n", go, stay, gonet, G.s.ncmodel);
+        }
+        else if (!strncmp(tok, "votes", 5)) {     /* (tests) each collision model: its owner, and its triangles' pieces */
+            int ci, t2, h;
+            for (ci = 0; ci < G.ncm0; ci++) {
+                const JSCModel *cm = &G.s.cmodels[ci];
+                int pk[16], pn[16], np2 = 0, none = 0, bw = -1;
+                for (t2 = cm->t0; t2 < cm->t0 + cm->nt; t2++) {
+                    int v = G.s.ctpiece[t2];
+                    if (v < 0) { none++; continue; }
+                    for (h = 0; h < np2 && pk[h] != v; h++) ;
+                    if (h == np2) { if (np2 == 16) continue; pk[np2] = v; pn[np2++] = 0; }
+                    pn[h]++;
+                }
+                for (h = 0; h < np2; h++) if (bw < 0 || pn[h] > pn[bw]) bw = h;
+                printf("cm %d nt %d owner %d best %d (%d) none %d pieces %d\n", ci, cm->nt, G.s.cpiece[ci], bw >= 0 ? pk[bw] : -1, bw >= 0 ? pn[bw] : 0, none, np2);
+            }
+        }
+        else if (!strncmp(tok, "cleft", 5)) {     /* (tests) per piece: collision triangles in its box it doesn't own */
+            int q, t2, q2;
+            for (q = 0; q < G.s.npiece; q++) {
+                const JSPiece *pc = &G.s.pieces[q];
+                int own = 0, other = 0, oc = -1, nbig = 0;
+                if (G.s.models[pc->model].kind != 1) continue;
+                for (t2 = 0; t2 < G.s.nct; t2++) {
+                    int in = 1, v2;
+                    for (v2 = 0; v2 < 3 && in; v2++)
+                        for (q2 = 0; q2 < 3; q2++) {
+                            float v = G.s.cp0[(size_t)G.s.cix[t2 * 3 + v2] * 3 + q2];
+                            if (v < pc->lo[q2] - 0.5f || v > pc->hi[q2] + 0.5f) { in = 0; break; }
+                        }
+                    if (!in) continue;
+                    if (G.ctm[t2] >= 0 && G.s.cpiece[G.ctm[t2]] == q) own++;
+                    else { other++; if (oc != G.ctm[t2]) { oc = G.ctm[t2]; nbig++; } }
+                }
+                if (other >= 8)
+                    printf("piece %d model %d tris %d: coll in box own %d other %d (in ~%d models, last cm %d nt %d owner %d) at %.0f %.0f %.0f size %.0f %.0f %.0f\n",
+                           q, G.s.models[pc->model].id, pc->nt, own, other, nbig, oc, oc >= 0 ? G.s.cmodels[oc].nt : 0, oc >= 0 ? G.s.cpiece[oc] : -9,
+                           pc->c[0], pc->c[1], pc->c[2], pc->hi[0] - pc->lo[0], pc->hi[1] - pc->lo[1], pc->hi[2] - pc->lo[2]);
+            }
         }
         else if (!strncmp(tok, "plist", 5)) {     /* the biggest pieces with collision */
             int q;

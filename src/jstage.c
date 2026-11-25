@@ -55,7 +55,7 @@ static void *arr_add(Arr *a, size_t k)
 
 typedef struct {
     Arr p, uv, col, ix, ttex, tkind, tg;    /* m29g: tg a triangle's group in its model (-1 a prop's) */
-    Arr cp, cix, cs;
+    Arr cp, cix, cs, cts;
     Arr rs, rn, rp, rnrm;
 } Build;
 
@@ -266,7 +266,7 @@ static void read_collision(JStage *s, Build *b, const uint8_t *B, size_t n, int 
             s->cmodels = (JSCModel *)realloc(s->cmodels, sizeof(JSCModel) * (size_t)(s->ncmodel + 1));
             if (!s->cmodels) { s->ncmodel = 0; return; }
             cmr = &s->cmodels[s->ncmodel++];
-            cmr->area = (int)i; cmr->v0 = v0; cmr->nv = 0; cmr->t0 = t0c; cmr->nt = 0; cmr->src = -1;
+            cmr->area = (int)i; cmr->v0 = v0; cmr->nv = 0; cmr->t0 = t0c; cmr->nt = 0; cmr->src = -1; cmr->part = 0;
             if ((size_t)vo + (size_t)vc * 16 > n || (size_t)to + (size_t)tc * 8 > n || vc > 1024) continue;
             for (k = 0; k < 3; k++) {          /* rows at 24, 40, 56; the position at 72 */
                 r[k * 3] = f32(m + 24 + 16 * k); r[k * 3 + 1] = f32(m + 28 + 16 * k); r[k * 3 + 2] = f32(m + 32 + 16 * k);
@@ -286,10 +286,13 @@ static void read_collision(JStage *s, Build *b, const uint8_t *B, size_t n, int 
                 uint32_t i0 = a & 0x3FF, i1 = (a >> 10) & 0x3FF, i2 = (a >> 20) & 0x3FF;
                 uint32_t *t;
                 uint16_t *cs;
+                int *cts;
                 if (i0 >= vc || i1 >= vc || i2 >= vc) continue;
                 t = (uint32_t *)arr_add(&b->cix, 3);
                 cs = (uint16_t *)arr_add(&b->cs, 1);
-                if (!t || !cs) return;
+                cts = (int *)arr_add(&b->cts, 1);
+                if (!t || !cs || !cts) return;
+                *cts = (int)k;                  /* m29i: its place in the model's triangle set */
                 t[0] = (uint32_t)v0 + i0; t[1] = (uint32_t)v0 + i1; t[2] = (uint32_t)v0 + i2;
                 *cs = (uint16_t)(o & 0xFFFF);
             }
@@ -386,7 +389,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     memset(s, 0, sizeof *s);
     memset(&b, 0, sizeof b);
     b.p.sz = 12; b.uv.sz = 8; b.col.sz = 4; b.ix.sz = 4; b.ttex.sz = sizeof(int); b.tkind.sz = 1; b.tg.sz = sizeof(int);
-    b.cp.sz = 12; b.cix.sz = 4; b.cs.sz = 2; b.rs.sz = sizeof(int); b.rn.sz = sizeof(int); b.rp.sz = 12; b.rnrm.sz = 12;
+    b.cp.sz = 12; b.cix.sz = 4; b.cs.sz = 2; b.cts.sz = sizeof(int); b.rs.sz = sizeof(int); b.rn.sz = sizeof(int); b.rp.sz = 12; b.rnrm.sz = 12;
     snprintf(s->name, sizeof s->name, "%s", name);
     snprintf(prefix, sizeof prefix, "%s_", name);
     fd.name = prefix; fd.found = found; fd.n = 0; fd.cap = 128;
@@ -509,7 +512,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     free(bin);
     s->nv = (int)b.p.n; s->p = (float *)b.p.p; s->uv = (float *)b.uv.p; s->col = (uint32_t *)b.col.p;
     s->nt = (int)b.ix.n / 3; s->ix = (uint32_t *)b.ix.p; s->ttex = (int *)b.ttex.p; s->tkind = (uint8_t *)b.tkind.p; s->tgroup = (int *)b.tg.p;
-    s->ncv = (int)b.cp.n; s->cp = (float *)b.cp.p; s->nct = (int)b.cix.n / 3; s->cix = (uint32_t *)b.cix.p; s->csurf = (uint16_t *)b.cs.p;
+    s->ncv = (int)b.cp.n; s->cp = (float *)b.cp.p; s->nct = (int)b.cix.n / 3; s->cix = (uint32_t *)b.cix.p; s->csurf = (uint16_t *)b.cs.p; s->ctsi = (int *)b.cts.p;
     s->nrail = (int)b.rs.n; s->rs = (int *)b.rs.p; s->rn = (int *)b.rn.p; s->nrp = (int)b.rp.n; s->rp = (float *)b.rp.p; s->rnrm = (float *)b.rnrm.p;
     for (i = 0; i < 3; i++) { s->lo[i] = 1e30f; s->hi[i] = -1e30f; }
     for (i = 0; i < s->ncv; i++)                 /* the box: the collision's (the skyline's far pieces aside) */
@@ -539,13 +542,13 @@ void jst_free(JStage *s)
     int i;
     for (i = 0; i < s->ntex; i++) free(s->tex[i].rgba);
     free(s->tex); free(s->p); free(s->uv); free(s->col); free(s->ix); free(s->ttex); free(s->tkind); free(s->tgroup);
-    free(s->cp); free(s->cix); free(s->csurf); free(s->rs); free(s->rn); free(s->rp); free(s->rnrm);
+    free(s->cp); free(s->cix); free(s->csurf); free(s->ctsi); free(s->rs); free(s->rn); free(s->rp); free(s->rnrm);
     for (i = 0; i < s->nprop; i++) free(s->props[i].local);
     free(s->props);
     for (i = 0; i < s->npiece; i++) { free(s->pieces[i].v); free(s->pieces[i].t); free(s->pieces[i].cm); free(s->pieces[i].rail); }
     free(s->rp0); free(s->rnrm0); free(s->rpiece); free(s->rsrc);
     free(s->pieces); free(s->models); free(s->tpiece); free(s->vpiece); free(s->p0); free(s->cp0);
-    free(s->cmodels); free(s->cpiece);
+    free(s->cmodels); free(s->cpiece); free(s->ctpiece);
     memset(s, 0, sizeof *s);
 }
 
@@ -683,6 +686,37 @@ static void build_pieces(JStage *s)
                 if (nr) { pc->rail = nr; pc->rail[pc->nrail++] = i; }
             }
         }
+    }
+    /* m29i: each collision triangle: the smallest opaque piece holding its corners */
+    s->ctpiece = (int *)malloc(sizeof(int) * (size_t)(s->nct + 1));
+    if (s->ctpiece) {
+        int *op = (int *)malloc(sizeof(int) * (size_t)(s->npiece + 1)), nop = 0, t;
+        float *ovol = (float *)malloc(sizeof(float) * (size_t)(s->npiece + 1));
+        for (k = 0; op && ovol && k < s->npiece; k++) {
+            const JSPiece *pc = &s->pieces[k];
+            if (s->models[pc->model].kind != 1) continue;
+            ovol[nop] = (pc->hi[0] - pc->lo[0] + 1) * (pc->hi[1] - pc->lo[1] + 1) * (pc->hi[2] - pc->lo[2] + 1);
+            op[nop++] = k;
+        }
+        for (t = 0; t < s->nct; t++) {
+            float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f }, best = 1e38f;
+            int q, j, bk = -1;
+            for (j = 0; j < 3; j++)
+                for (q = 0; q < 3; q++) {
+                    float v = s->cp[(size_t)s->cix[t * 3 + j] * 3 + q];
+                    if (v < lo[q]) lo[q] = v;
+                    if (v > hi[q]) hi[q] = v;
+                }
+            for (j = 0; op && ovol && j < nop; j++) {
+                const JSPiece *pc = &s->pieces[op[j]];
+                if (ovol[j] >= best) continue;
+                for (q = 0; q < 3; q++) if (lo[q] < pc->lo[q] - 1.0f || hi[q] > pc->hi[q] + 1.0f) break;
+                if (q < 3) continue;
+                best = ovol[j]; bk = op[j];
+            }
+            s->ctpiece[t] = bk;
+        }
+        free(op); free(ovol);
     }
     /* the collision: to the smallest opaque piece holding its box */
     for (i = 0; i < s->ncmodel; i++) {
@@ -838,15 +872,19 @@ int jst_piece_copy(JStage *s, const int *set, int n)
             JSCModel *ncm;
             if (grow(&s->cp, sizeof(float) * 3 * (size_t)(ncv0 + cm->nv)) || grow(&s->cp0, sizeof(float) * 3 * (size_t)(ncv0 + cm->nv))
                 || grow(&s->cix, sizeof(uint32_t) * 3 * (size_t)(nct0 + cm->nt)) || grow(&s->csurf, sizeof(uint16_t) * (size_t)(nct0 + cm->nt))
-                || grow(&s->cmodels, sizeof(JSCModel) * (size_t)(nci + 1)) || grow(&s->cpiece, sizeof(int) * (size_t)(nci + 1)))
+                || grow(&s->cmodels, sizeof(JSCModel) * (size_t)(nci + 1)) || grow(&s->cpiece, sizeof(int) * (size_t)(nci + 1))
+                || (s->ctpiece && grow(&s->ctpiece, sizeof(int) * (size_t)(nct0 + cm->nt)))
+                || grow(&s->ctsi, sizeof(int) * (size_t)(nct0 + cm->nt)))
                 return -1;
             cm = &s->cmodels[ci];
             memcpy(s->cp + (size_t)ncv0 * 3, s->cp + (size_t)cm->v0 * 3, sizeof(float) * 3 * (size_t)cm->nv);
             memcpy(s->cp0 + (size_t)ncv0 * 3, s->cp + (size_t)cm->v0 * 3, sizeof(float) * 3 * (size_t)cm->nv);
             for (q = 0; q < cm->nt * 3; q++) s->cix[(size_t)nct0 * 3 + q] = s->cix[(size_t)cm->t0 * 3 + q] - (uint32_t)cm->v0 + (uint32_t)ncv0;
             memcpy(s->csurf + nct0, s->csurf + cm->t0, sizeof(uint16_t) * (size_t)cm->nt);
+            if (s->ctpiece) for (q = 0; q < cm->nt; q++) s->ctpiece[nct0 + q] = np;
+            memcpy(s->ctsi + nct0, s->ctsi + cm->t0, sizeof(int) * (size_t)cm->nt);
             ncm = &s->cmodels[nci];
-            ncm->area = cm->area; ncm->v0 = ncv0; ncm->nv = cm->nv; ncm->t0 = nct0; ncm->nt = cm->nt; ncm->src = ci;
+            ncm->area = cm->area; ncm->v0 = ncv0; ncm->nv = cm->nv; ncm->t0 = nct0; ncm->nt = cm->nt; ncm->src = ci; ncm->part = cm->part;
             s->ncv = ncv0 + cm->nv;
             s->nct = nct0 + cm->nt;
             s->ncmodel = nci + 1;
@@ -1054,4 +1092,56 @@ int jst_write_obj(const JStage *s, const char *dir, char *err, size_t errn)
     }
     fclose(f);
     return 0;
+}
+
+/* m29i: collision model ci split: its triangles marked in take[] (by place in its range) become a
+ * new model of their own (its own copy of the vertices), given to piece `to`; the rest stay. The
+ * new model's number, or -1 (none taken, all taken, or no room) */
+int jst_cmodel_split(JStage *s, int ci, const uint8_t *take, int to)
+{
+    JSCModel *cm = &s->cmodels[ci];
+    int n = 0, i, j, nv0 = s->ncv, nci = s->ncmodel, nt0;
+    for (i = 0; i < cm->nt; i++) n += take[i] != 0;
+    if (n == 0 || n == cm->nt) return -1;
+    if (grow(&s->cp, sizeof(float) * 3 * (size_t)(nv0 + cm->nv)) || grow(&s->cp0, sizeof(float) * 3 * (size_t)(nv0 + cm->nv))
+        || grow(&s->cmodels, sizeof(JSCModel) * (size_t)(nci + 1)) || grow(&s->cpiece, sizeof(int) * (size_t)(nci + 1)))
+        return -1;
+    cm = &s->cmodels[ci];
+    /* the kept ones first in the range, the taken ones after (in their order) */
+    {
+        uint32_t *ix = (uint32_t *)malloc(sizeof(uint32_t) * 3 * (size_t)cm->nt);
+        uint16_t *sf = (uint16_t *)malloc(sizeof(uint16_t) * (size_t)cm->nt);
+        int *tp = (int *)malloc(sizeof(int) * (size_t)cm->nt), *ts = (int *)malloc(sizeof(int) * (size_t)cm->nt), o = 0, pass;
+        if (!ix || !sf || !tp || !ts) { free(ix); free(sf); free(tp); free(ts); return -1; }
+        for (pass = 0; pass < 2; pass++)
+            for (i = 0; i < cm->nt; i++) {
+                int t = cm->t0 + i;
+                if ((take[i] != 0) != pass) continue;
+                memcpy(ix + o * 3, s->cix + (size_t)t * 3, sizeof(uint32_t) * 3);
+                sf[o] = s->csurf[t];
+                tp[o] = s->ctpiece ? s->ctpiece[t] : -1;
+                ts[o] = s->ctsi[t];
+                o++;
+            }
+        memcpy(s->cix + (size_t)cm->t0 * 3, ix, sizeof(uint32_t) * 3 * (size_t)cm->nt);
+        memcpy(s->csurf + cm->t0, sf, sizeof(uint16_t) * (size_t)cm->nt);
+        if (s->ctpiece) memcpy(s->ctpiece + cm->t0, tp, sizeof(int) * (size_t)cm->nt);
+        memcpy(s->ctsi + cm->t0, ts, sizeof(int) * (size_t)cm->nt);
+        free(ix); free(sf); free(tp); free(ts);
+    }
+    nt0 = cm->t0 + cm->nt - n;
+    memcpy(s->cp + (size_t)nv0 * 3, s->cp + (size_t)cm->v0 * 3, sizeof(float) * 3 * (size_t)cm->nv);
+    memcpy(s->cp0 + (size_t)nv0 * 3, s->cp0 + (size_t)cm->v0 * 3, sizeof(float) * 3 * (size_t)cm->nv);
+    for (i = nt0; i < nt0 + n; i++)
+        for (j = 0; j < 3; j++) s->cix[(size_t)i * 3 + j] = s->cix[(size_t)i * 3 + j] - (uint32_t)cm->v0 + (uint32_t)nv0;
+    s->cmodels[nci].area = cm->area; s->cmodels[nci].v0 = nv0; s->cmodels[nci].nv = cm->nv;
+    s->cmodels[nci].t0 = nt0; s->cmodels[nci].nt = n; s->cmodels[nci].src = ci; s->cmodels[nci].part = 1;
+    cm->nt -= n;
+    cm->part = 1;
+    s->ncv = nv0 + cm->nv;
+    s->ncmodel = nci + 1;
+    s->cpiece[nci] = to;
+    if (to >= 0 && grow(&s->pieces[to].cm, sizeof(int) * (size_t)(s->pieces[to].ncm + 1)) == 0)
+        s->pieces[to].cm[s->pieces[to].ncm++] = nci;
+    return nci;
 }
