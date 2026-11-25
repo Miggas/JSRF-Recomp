@@ -525,6 +525,14 @@ static uint32_t rail_flags(int r);
 /* m29k: a rail type's colour: as the list in the panel has them */
 static const uint8_t s_tcol[12][3] = { {255,196,30}, {255,90,90}, {80,170,255}, {200,110,255}, {255,140,200}, {120,255,240},
                                        {255,255,140}, {170,120,60}, {255,150,60}, {150,150,255}, {200,200,200}, {120,200,90} };
+/* m29k: what a type is known to be (Miggas, in the game: type 0 grinds give 10 points, type 1 500) */
+static const char *type_note(uint32_t v)
+{
+    if (v == 0) return ": 10 points";
+    if (v == 1) return ": 500 points";
+    if (v & 1) return ": 500 points?";
+    return "";
+}
 static int type_index(uint32_t v) { int i; for (i = 0; i < G.ntval; i++) if (G.tval[i] == v) return i; return -1; }
 
 static void basis(float f[3], float r[3], float u[3])
@@ -2428,7 +2436,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                     b = nk_widget_bounds(ctx);
                     nk_fill_rect(nk_window_get_canvas(ctx), nk_rect(b.x + 10, b.y + 5, 10, b.h - 10), 2, nk_rgb(s_tcol[k][0], s_tcol[k][1], s_tcol[k][2]));
                     nk_spacing(ctx, 1);
-                    nk_labelf(ctx, NK_TEXT_LEFT, "Type %X: %d rail%s", G.tval[k], G.tcount[k], G.tcount[k] == 1 ? "" : "s");
+                    nk_labelf(ctx, NK_TEXT_LEFT, "Type %X%s (%d)", G.tval[k], type_note(G.tval[k]), G.tcount[k]);
                 }
             }
         }
@@ -2469,19 +2477,19 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             }
             {                                           /* m29k: the type new rails get */
                 const char *items[13];
-                char lab[13][24];
+                char lab[13][40];
                 int cur = 0, n2, k3;
                 types_count();
                 n2 = G.ntval;
                 for (k3 = 0; k3 < n2; k3++) {
-                    snprintf(lab[k3], sizeof lab[k3], "Type %X (%d)", G.tval[k3], G.tcount[k3]);
+                    snprintf(lab[k3], sizeof lab[k3], "Type %X%s", G.tval[k3], type_note(G.tval[k3]));
                     items[k3] = lab[k3];
                     if (G.tval[k3] == G.drawflag) cur = k3;
                 }
                 nk_layout_row_dynamic(ctx, row - 6, 2);
                 nk_label(ctx, "New rails' type:", NK_TEXT_LEFT);
                 if (n2 > 0) {
-                    int sel2 = nk_combo(ctx, items, n2, cur, (int)row - 6, nk_vec2(170, 260));
+                    int sel2 = nk_combo(ctx, items, n2, cur, (int)row - 6, nk_vec2(230, 260));
                     if (sel2 != cur) G.drawflag = G.tval[sel2];
                 }
             }
