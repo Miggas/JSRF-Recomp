@@ -300,25 +300,71 @@ static int dn_is_turn(uint32_t a, int st)
     return 1;
 }
 
-/* the turns in the skater's object: those with the position just after them
- * (a world matrix) first, else every one */
+/* v313k: a turn that may be scaled: three rows square to each other, of
+ * about the same length (not too small) */
+static int dn_is_turn_scaled(uint32_t a, int st)
+{
+    const float *r[3];
+    float l[3];
+    int i, j;
+    for (i = 0; i < 3; i++) {
+        r[i] = (const float *)XBOX_PTR(a + i * st);
+        l[i] = sqrtf(r[i][0] * r[i][0] + r[i][1] * r[i][1] + r[i][2] * r[i][2]);
+        if (!(l[i] > 0.05f && l[i] < 100.0f)) return 0;
+    }
+    for (i = 0; i < 3; i++)
+        for (j = i + 1; j < 3; j++) {
+            float d = r[i][0] * r[j][0] + r[i][1] * r[j][1] + r[i][2] * r[j][2];
+            if (!(fabsf(d) < 0.05f * l[i] * l[j])) return 0;
+            if (!(l[i] < l[j] * 1.15f && l[j] < l[i] * 1.15f)) return 0;
+        }
+    return 1;
+}
+
+/* the turns in the skater's object: those just before a place holding the
+ * position (a world matrix: rows of four with the position as the fourth, or
+ * rows of three), v313k: scaled ones too; else (with_pos 0) every unit turn */
 static int dn_find_turns(uint32_t who, uint32_t *at, int *st, int max, int *with_pos)
 {
     const float *p = (const float *)XBOX_PTR(who + DN_POS);
+    float pos[3];
     uint32_t o;
-    int n = 0, pass, s2;
+    int n = 0, s2;
+    memcpy(pos, p, sizeof pos);
     *with_pos = 0;
-    for (pass = 0; pass < 2 && n == 0; pass++)
-        for (o = 0; o + 64 <= DN_SCAN && n < max; o += 4)
-            for (s2 = 12; s2 <= 16; s2 += 4) {
-                if (!dn_is_turn(who + o, s2)) continue;
-                if (pass == 0 && !dn_near((const float *)XBOX_PTR(who + o + 3 * s2), p, 0.01f)) continue;
-                at[n] = who + o; st[n] = s2; n++;
-                if (pass == 0) *with_pos = 1;
-                o += 3 * s2 - 4;
-                break;
-            }
+    for (o = 64; o + 12 <= DN_SCAN && n < max; o += 4) {
+        if (!dn_near((const float *)XBOX_PTR(who + o), pos, 0.01f)) continue;
+        for (s2 = 16; s2 >= 12; s2 -= 4) {
+            uint32_t a = who + o - 3 * (uint32_t)s2;
+            int k, dup = 0;
+            if (!dn_is_turn_scaled(a, s2)) continue;
+            for (k = 0; k < n; k++) if (at[k] == a) dup = 1;
+            if (dup) break;
+            at[n] = a; st[n] = s2; n++;
+            *with_pos = 1;
+            break;
+        }
+    }
+    if (n) return n;
+    for (o = 0; o + 64 <= DN_SCAN && n < max; o += 4)
+        for (s2 = 12; s2 <= 16; s2 += 4) {
+            if (!dn_is_turn(who + o, s2)) continue;
+            at[n] = who + o; st[n] = s2; n++;
+            o += 3 * s2 - 4;
+            break;
+        }
     return n;
+}
+
+/* v313k: the numbers round a place, for the log */
+static void dn_dump(const char *what, uint32_t a, int before, int after)
+{
+    char line[1400];
+    int len, i;
+    len = snprintf(line, sizeof line, "[DANCE]   %s %08X:", what, a);
+    for (i = -before; i < after && len < (int)sizeof line - 16; i++)
+        len += snprintf(line + len, sizeof line - len, "%s%.3g", i == 0 ? " | " : " ", MEMF(a + 4 * i));
+    fprintf(stderr, "%s\n", line);
 }
 
 /* the first time: what lies near the skater's position, for the log */
@@ -362,6 +408,19 @@ static void dn_report(uint32_t who)
             fprintf(stderr, " +%X/%d (%.2f %.2f %.2f | %.2f %.2f %.2f)", at[i] - who, st[i], r[0], r[1], r[2], r[st[i] / 4], r[st[i] / 4 + 1], r[st[i] / 4 + 2]);
         }
         fprintf(stderr, "\n");
+    }
+    {   /* v313k: the numbers before each place holding the position, and at what +2D0 points to */
+        float pos[3];
+        uint32_t ptr = MEM32(who + 0x2D0u);
+        memcpy(pos, p, sizeof pos);
+        for (o = 64; o + 12 <= DN_SCAN; o += 4)
+            if (dn_near((const float *)XBOX_PTR(who + o), pos, 0.01f)) {
+                char w[24];
+                snprintf(w, sizeof w, "+%X", o);
+                dn_dump(w, who + o, 24, 4);
+                o += 8;
+            }
+        if (ptr >= 0x10000u && ph_ok(ptr, 0x100u)) dn_dump("+2D0 ->", ptr, 0, 48);
     }
 }
 
