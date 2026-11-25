@@ -247,7 +247,8 @@ void jsrf_photo_place(uint32_t cam)
 }
 
 /* ── v313i: the Yaris bounce (Idea by Miggas: the skater "dances" like the
- * Bouncing Yaris meme's car). L3 on its own, let go, turns it on or off
+ * Bouncing Yaris meme's car). Back on its own, let go (v313o; L3 before),
+ * turns it on or off
  * (xbox_DanceTake). Only the frame's draw sees it: for the draw, every place
  * in the skater's object (the character the following camera follows, +0x24)
  * holding the skater's position (+0xCA4) has its height raised by the
@@ -461,7 +462,7 @@ static void dn_before(void)
     for (k = xbox_DanceTake(); k > 0; k--) {
         dn_on = !dn_on;
         dn_t0 = GetTickCount();
-        fprintf(stderr, "[DANCE] the bounce %s\n", dn_on ? "on (L3 again: off)" : "off");
+        fprintf(stderr, "[DANCE] the bounce %s\n", dn_on ? "on (Back again: off)" : "off");
         if (dn_on && ph_frame - ph_follow_frame <= 3u && ph_ok(ph_follow_cam, 0x28u)) {
             who = MEM32(ph_follow_cam + 0x24u);
             if (ph_ok(who, DN_SCAN)) dn_report(who);

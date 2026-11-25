@@ -630,8 +630,9 @@ static BYTE s_ph_r3[QD_IDX], s_ph_l3[QD_IDX];
 static XBOX_GAMEPAD s_ph_pad[QD_IDX];
 static DWORD s_ph_pad_t[QD_IDX];
 static DWORD s_ph_last_toggle, s_ph_last_shot, s_ph_last_reset;
-/* v313i: L3 on its own, let go: the Yaris bounce on or off (Idea by Miggas) */
-static BYTE s_dn_l3[QD_IDX], s_dn_r3[QD_IDX];
+/* v313i: the Yaris bounce on or off (Idea by Miggas); v313o: Back, let go
+ * (Miggas: the game uses L3) */
+static BYTE s_dn_l3[QD_IDX], s_dn_r3[QD_IDX];   /* Back held; another button with it */
 static LONG s_dn_toggles;
 static DWORD s_dn_last_toggle;
 int xbox_DanceTake(void) { return (int)InterlockedExchange(&s_dn_toggles, 0); }
@@ -794,15 +795,15 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
             }
         }
     }
-    /* v313i: L3 on its own, let go: the bounce (not with R3: the quit window's L3 + R3) */
+    /* v313o: Back on its own, let go: the bounce (v313i–n: L3, which the game uses) */
     if (s_qd_open == 0) {
-        if ((b & XBOX_GAMEPAD_LEFT_THUMB) && !(pb & XBOX_GAMEPAD_LEFT_THUMB)) {
+        if ((b & XBOX_GAMEPAD_BACK) && !(pb & XBOX_GAMEPAD_BACK)) {
             s_dn_l3[idx] = 1;
             s_dn_r3[idx] = 0;
         }
-        if (s_dn_l3[idx] && (b & XBOX_GAMEPAD_RIGHT_THUMB))
-            s_dn_r3[idx] = 1;
-        if (s_dn_l3[idx] && !(b & XBOX_GAMEPAD_LEFT_THUMB)) {
+        if (s_dn_l3[idx] && (b & ~(WORD)XBOX_GAMEPAD_BACK))
+            s_dn_r3[idx] = 1;                 /* with another button: not the bounce */
+        if (s_dn_l3[idx] && !(b & XBOX_GAMEPAD_BACK)) {
             DWORD now = GetTickCount();
             s_dn_l3[idx] = 0;
             if (!s_dn_r3[idx] && now - s_dn_last_toggle > 300u) {   /* one pad seen twice: one toggle */
