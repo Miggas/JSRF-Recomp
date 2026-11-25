@@ -80,6 +80,8 @@ static struct {
     int ncm0, nrail0, nmod0, nnew, lastdat;   /* m29g: counts as read; new models made; the .dat they go in */
     int *newid;                            /* m29g: a stage model's copies' new model id (-1) */
     float (*chbase)[22];                   /* m29g: a copied collision model's head where it started */
+    int draw, dn, dok, dsnap, ndrawn;      /* m29j: the grind tool: on, its points, a point under the mouse, snapped (1 corner, 2 edge) */
+    float dpts[512][3], dhit[3];
     int *rfile;                            /* m29g: a copied rail's number in G.ed (-1) */
     int *vset0; uint8_t (*tail0)[8];       /* m29g: the collision models' other parts as read */
     int *cafirst0, *cacount0;
@@ -191,6 +193,7 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     }
     G.pyaw_saved = (float *)calloc((size_t)G.s.npiece + 1, sizeof(float));
     G.nnew = 0; G.lastdat = -1;                 /* m29g */
+    G.draw = G.dn = G.dok = G.ndrawn = 0;       /* m29j */
     G.newid = (int *)malloc(sizeof(int) * (size_t)(G.s.nmodel + 1));
     if (G.newid) { int i; for (i = 0; i < G.s.nmodel; i++) G.newid[i] = -1; }
     {
@@ -514,6 +517,8 @@ static int raster_band(void *u)
     return 0;
 }
 
+static int rail_drawn(int r) { return r >= G.nrail0 && G.s.rsrc && G.s.rsrc[r] < 0; }   /* m29j */
+
 static void basis(float f[3], float r[3], float u[3])
 {
     float cp = cosf(G.pitch);
@@ -687,7 +692,8 @@ static void render(void)
             for (q = 0; q + 1 < G.s.rn[k]; q++) {
                 if (G.s.rpiece && G.s.rpiece[k] >= 0 && G.s.pieces[G.s.rpiece[k]].removed) break;   /* m29 */
                 const float *a = G.s.rp + (G.s.rs[k] + q) * 3;
-                if (G.inset && G.s.rpiece && G.s.rpiece[k] >= 0 && G.inset[G.s.rpiece[k]])
+                if (rail_drawn(k)) line3(a, a + 3, f, r, u, 90, 255, 120, thick);   /* m29j: drawn here */
+                else if (G.inset && G.s.rpiece && G.s.rpiece[k] >= 0 && G.inset[G.s.rpiece[k]])
                     line3(a, a + 3, f, r, u, 255, 110, 20, thick + 1);   /* m29e: going with what's picked */
                 else line3(a, a + 3, f, r, u, 255, 196, 30, thick);
             }
@@ -871,6 +877,132 @@ static void piece_changed(int k)
     G.dirty = 1;
     G.leave_ask = 0;
     G.need = 1;
+}
+
+/* ---- m29j: grind rails drawn: click points on surfaces, a straight rail between each two ---- */
+
+
+/* world point p to the view's pixels (mx, my); 0 in front */
+static int ed_screen(const float p[3], float *mx, float *my)
+{
+    float f[3], r[3], u[3], c[3], x, y, z, foc = (float)G.th * 0.5f / tanf(0.6f);
+    int k;
+    basis(f, r, u);
+    for (k = 0; k < 3; k++) c[k] = p[k] - G.pos[k];
+    x = c[0] * r[0] + c[1] * r[1] + c[2] * r[2];
+    y = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
+    z = c[0] * f[0] + c[1] * f[1] + c[2] * f[2];
+    if (z < 0.05f) return -1;
+    *mx = (float)G.tw * 0.5f + x * foc / z;
+    *my = (float)G.th * 0.5f - y * foc / z;
+    return 0;
+}
+
+/* the surface point under the mouse (mx, my in the view's pixels): where the ray meets the triangle
+ * under it; a corner of it within 10 pixels, or a point on an edge within 7, wins (rails lie on
+ * edges). 0 found */
+static int draw_hit(float mx, float my, float out[3], int *snap)
+{
+    uint32_t id = G.hover, l = id >> 28, ti = id & 0x0FFFFFFFu;
+    const float *v[3];
+    float f[3], r[3], u[3], d[3], foc = (float)G.th * 0.5f / tanf(0.6f), e1[3], e2[3], pv[3], tv[3], qv[3], det, a, b, t;
+    float sx[3], sy[3], best = 1e30f;
+    int k, c, ok[3];
+    *snap = 0;
+    if ((l == ID_STAGE || l == ID_SEE || l == ID_PROP) && (int)ti < G.s.nt)
+        for (k = 0; k < 3; k++) v[k] = G.s.p + (size_t)G.s.ix[ti * 3 + k] * 3;
+    else if (l == ID_COLL && (int)ti < G.s.nct)
+        for (k = 0; k < 3; k++) v[k] = G.s.cp + (size_t)G.s.cix[ti * 3 + k] * 3;
+    else return -1;
+    basis(f, r, u);
+    for (k = 0; k < 3; k++) d[k] = f[k] + r[k] * ((mx - (float)G.tw * 0.5f) / foc) - u[k] * ((my - (float)G.th * 0.5f) / foc);
+    for (k = 0; k < 3; k++) { e1[k] = v[1][k] - v[0][k]; e2[k] = v[2][k] - v[0][k]; tv[k] = G.pos[k] - v[0][k]; }
+    pv[0] = d[1] * e2[2] - d[2] * e2[1]; pv[1] = d[2] * e2[0] - d[0] * e2[2]; pv[2] = d[0] * e2[1] - d[1] * e2[0];
+    det = e1[0] * pv[0] + e1[1] * pv[1] + e1[2] * pv[2];
+    if (fabsf(det) < 1e-9f) return -1;
+    a = (tv[0] * pv[0] + tv[1] * pv[1] + tv[2] * pv[2]) / det;
+    qv[0] = tv[1] * e1[2] - tv[2] * e1[1]; qv[1] = tv[2] * e1[0] - tv[0] * e1[2]; qv[2] = tv[0] * e1[1] - tv[1] * e1[0];
+    b = (d[0] * qv[0] + d[1] * qv[1] + d[2] * qv[2]) / det;
+    t = (e2[0] * qv[0] + e2[1] * qv[1] + e2[2] * qv[2]) / det;
+    if (t <= 0) return -1;
+    if (a < 0) a = 0;                           /* the id buffer is a pixel off at times: kept on the triangle */
+    if (b < 0) b = 0;
+    if (a + b > 1) { float s2 = a + b; a /= s2; b /= s2; }
+    for (k = 0; k < 3; k++) out[k] = v[0][k] + e1[k] * a + e2[k] * b;
+    for (c = 0; c < 3; c++) ok[c] = !ed_screen(v[c], &sx[c], &sy[c]);
+    for (c = 0; c < 3; c++) {                   /* a corner */
+        float dd;
+        if (!ok[c]) continue;
+        dd = (sx[c] - mx) * (sx[c] - mx) + (sy[c] - my) * (sy[c] - my);
+        if (dd < 100.0f && dd < best) { best = dd; memcpy(out, v[c], 12); *snap = 1; }
+    }
+    if (*snap) return 0;
+    for (c = 0; c < 3; c++) {                   /* an edge */
+        int c2 = (c + 1) % 3;
+        float ex, ey, L, s2, px, py, dd;
+        if (!ok[c] || !ok[c2]) continue;
+        ex = sx[c2] - sx[c]; ey = sy[c2] - sy[c];
+        L = ex * ex + ey * ey;
+        if (L < 1) continue;
+        s2 = ((mx - sx[c]) * ex + (my - sy[c]) * ey) / L;
+        if (s2 < 0) s2 = 0;
+        if (s2 > 1) s2 = 1;
+        px = sx[c] + ex * s2; py = sy[c] + ey * s2;
+        dd = (px - mx) * (px - mx) + (py - my) * (py - my);
+        if (dd < 49.0f && dd < best) {
+            /* the edge's point seen there: the screen's share mended for depth */
+            float z0, z1, w;
+            float cf[3], c0[3], c1[3];
+            for (k = 0; k < 3; k++) { c0[k] = v[c][k] - G.pos[k]; c1[k] = v[c2][k] - G.pos[k]; }
+            z0 = c0[0] * f[0] + c0[1] * f[1] + c0[2] * f[2];
+            z1 = c1[0] * f[0] + c1[1] * f[1] + c1[2] * f[2];
+            w = s2 * z0 / (s2 * z0 + (1 - s2) * z1);
+            for (k = 0; k < 3; k++) cf[k] = v[c][k] + (v[c2][k] - v[c][k]) * w;
+            best = dd; memcpy(out, cf, 12); *snap = 2;
+        }
+    }
+    return 0;
+}
+
+/* the points drawn made a rail: each point's normal "up" turned to stand square to the rail
+ * there (as the game's rails on slopes have it) */
+static void draw_finish(void)
+{
+    if (G.dn >= 2) {
+        float nrm[512][3];
+        int i, k, r;
+        for (i = 0; i < G.dn; i++) {
+            float d[3] = { 0, 0, 0 }, L, up[3] = { 0, 1, 0 }, dot;
+            for (k = 0; k < 3; k++) {
+                if (i + 1 < G.dn) d[k] += G.dpts[i + 1][k] - G.dpts[i][k];
+                if (i > 0) d[k] += G.dpts[i][k] - G.dpts[i - 1][k];
+            }
+            L = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+            if (L > 1e-6f) for (k = 0; k < 3; k++) d[k] /= L;
+            dot = d[1];
+            for (k = 0; k < 3; k++) nrm[i][k] = up[k] - d[k] * dot;
+            L = sqrtf(nrm[i][0] * nrm[i][0] + nrm[i][1] * nrm[i][1] + nrm[i][2] * nrm[i][2]);
+            if (L < 1e-4f) { nrm[i][0] = 0; nrm[i][1] = 1; nrm[i][2] = 0; }
+            else for (k = 0; k < 3; k++) nrm[i][k] /= L;
+        }
+        r = jst_rail_add(&G.s, &G.dpts[0][0], &nrm[0][0], G.dn);
+        if (r >= 0) {
+            int *rf = (int *)realloc(G.rfile, sizeof(int) * (size_t)(G.s.nrail + 1));
+            if (rf) { G.rfile = rf; G.rfile[r] = -1; }
+            G.ndrawn++;
+            G.dirty = 1;
+        }
+    }
+    G.dn = 0;
+    G.need = 1;
+}
+
+/* the last rail drawn taken away (its points none: not drawn, not saved) */
+static void draw_take_back(void)
+{
+    int r;
+    for (r = G.s.nrail - 1; r >= 0; r--)
+        if (rail_drawn(r) && G.s.rn[r] > 0) { G.s.rn[r] = 0; G.ndrawn--; G.dirty = 1; G.need = 1; return; }
 }
 
 static void cur_head(int ci, float h[22]);
@@ -1362,6 +1494,7 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
     int dirtyf[64] = { 0 };
     *files = 0; *pieces_n = 0;
     for (k = 0; k < G.s.npiece; k++) if (G.s.pieces[k].touched) { any = 1; (*pieces_n)++; }
+    for (k = G.nrail0; k < G.s.nrail; k++) if (rail_drawn(k)) any = 1;   /* m29j: rails drawn (or taken back) */
     if (!any) return 0;
     for (m = 0; m < G.s.nmodel; m++) {
         const JSModel *md = &G.s.models[m];
@@ -1586,12 +1719,14 @@ rails:
             int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ro = root_rail(r), ri = ro < G.nrail0 ? G.rmap[ro] : -1;
             JRail *nr;
             if (G.rfile) G.rfile[r] = -1;
-            if (pk < 0 || G.s.pieces[pk].removed || ri < 0) continue;
+            if (rail_drawn(r)) { if (G.s.rn[r] < 2) continue; }   /* m29j: drawn here: flags 0, the box below */
+            else if (pk < 0 || G.s.pieces[pk].removed || ri < 0) continue;
             nr = (JRail *)realloc(G.ed.rail, sizeof(JRail) * (size_t)(G.ed.nrail + 1));
             if (!nr) break;
             G.ed.rail = nr;
             nr = &G.ed.rail[G.ed.nrail];
-            memcpy(nr->rest, G.ed.rail[ri].rest, 28);
+            if (rail_drawn(r)) memset(nr->rest, 0, 28);
+            else memcpy(nr->rest, G.ed.rail[ri].rest, 28);
             nr->pts.n = (size_t)G.s.rn[r] * 24;
             nr->pts.p = (uint8_t *)malloc(nr->pts.n + 1);
             if (!nr->pts.p) break;
@@ -1601,7 +1736,7 @@ rails:
         for (r = 0; r < G.s.nrail; r++) {
             int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ri = r < G.nrail0 ? G.rmap[r] : (G.rfile ? G.rfile[r] : -1);
             float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
-            if (pk < 0 || ri < 0 || !G.s.pieces[pk].touched) continue;
+            if (ri < 0 || (!rail_drawn(r) && (pk < 0 || !G.s.pieces[pk].touched))) continue;
             for (i = 0; i < G.s.rn[r] && (size_t)(i + 1) * 24 <= G.ed.rail[ri].pts.n; i++) {
                 const float *pp = G.s.rp + (size_t)(G.s.rs[r] + i) * 3, *nn = G.s.rnrm + (size_t)(G.s.rs[r] + i) * 3;
                 memcpy(G.ed.rail[ri].pts.p + (size_t)i * 24, pp, 12);
@@ -1622,6 +1757,7 @@ rails:
             if (chg && nl && nn && cap && tmp) {
                 for (r = 0; r < G.s.nrail; r++) {
                     int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ri = r < G.nrail0 ? G.rmap[r] : (G.rfile ? G.rfile[r] : -1);
+                    if (ri >= 0 && rail_drawn(r)) { chg[ri] = 1; continue; }   /* m29j */
                     if (pk < 0 || ri < 0 || !G.s.pieces[pk].touched) continue;
                     chg[ri] = G.s.pieces[pk].removed ? 2 : 1;
                 }
@@ -2057,6 +2193,38 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
                 printf("\n");
             }
         }
+        else if (!strncmp(tok, "rail ", 5)) {     /* (tests) a rail drawn through points "x y z x y z ..." */
+            const char *q3 = tok + 5;
+            int nch;
+            float pp[3];
+            G.dn = 0;
+            while (G.dn < 512 && sscanf(q3, "%f %f %f%n", &pp[0], &pp[1], &pp[2], &nch) == 3) { memcpy(G.dpts[G.dn++], pp, 12); q3 += nch; }
+            draw_finish();
+            printf("rails: %d (%d drawn)\n", G.s.nrail, G.ndrawn);
+        }
+        else if (!strncmp(tok, "rtake", 5)) draw_take_back();
+        else if (!strncmp(tok, "hit", 3)) {       /* (tests) the surface point at the view's middle (or dx dy from it) */
+            float hp[3], pr[3] = { 0, 0, 0 }, ox = 0, oy = 0; int sn = 0, ok;
+            sscanf(tok + 3, "%f %f", &ox, &oy);
+            if (!G.fb) {
+                G.tw = 800; G.th = 600;
+                G.fb = (uint8_t *)malloc((size_t)G.tw * G.th * 4); G.zb = (float *)malloc(sizeof(float) * (size_t)G.tw * G.th);
+                G.idb = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)G.tw * G.th); G.sb = (int8_t *)calloc((size_t)G.tw * G.th, 1);
+            }
+            G.rw = G.tw; G.rh = G.th; render();
+            G.hover = G.idb[(size_t)(G.rh / 2 + (int)oy) * G.rw + G.rw / 2 + (int)ox];
+            ok = draw_hit((float)G.tw * 0.5f + ox, (float)G.th * 0.5f + oy, hp, &sn);
+            ed_ray_y((float)G.tw * 0.5f, (float)G.th * 0.5f, ok ? 0 : 0, pr);
+            printf("hit %d: id %08X at %.2f %.2f %.2f snap %d; cam %.1f %.1f %.1f\n", ok, G.hover, hp[0], hp[1], hp[2], sn, G.pos[0], G.pos[1], G.pos[2]);
+        }
+        else if (!strncmp(tok, "rails", 5)) {
+            int r3;
+            for (r3 = 0; r3 < G.s.nrail; r3++)
+                if (r3 >= G.s.nrail - 3) printf("rail %d: %d points, first %.1f %.1f %.1f nrm %.2f %.2f %.2f\n", r3, G.s.rn[r3],
+                       G.s.rp[(size_t)G.s.rs[r3] * 3], G.s.rp[(size_t)G.s.rs[r3] * 3 + 1], G.s.rp[(size_t)G.s.rs[r3] * 3 + 2],
+                       G.s.rnrm[(size_t)G.s.rs[r3] * 3], G.s.rnrm[(size_t)G.s.rs[r3] * 3 + 1], G.s.rnrm[(size_t)G.s.rs[r3] * 3 + 2]);
+            printf("rails: %d\n", G.s.nrail);
+        }
         else if (!strncmp(tok, "tris ", 5)) {     /* (tests) collision triangles (as now) inside a box; stairs ones */
             float b[6]; int t2, c2, q2, n2 = 0, ns = 0;
             if (sscanf(tok + 5, "%f %f %f %f %f %f", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) == 6) {
@@ -2217,6 +2385,27 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         /* m28: the editor */
         nk_layout_row_dynamic(ctx, row, 1);
         nk_label(ctx, G.dirty ? "Edit (unsaved changes)" : "Edit", NK_TEXT_LEFT);
+        if (G.s.has_bin && G.ed_ok) {                    /* m29j: the grind tool */
+            nk_layout_row_dynamic(ctx, row - 4, 1);
+            if (nk_button_label(ctx, G.draw ? "Drawing a grind rail: Esc to stop" : "Draw a grind rail (R)")) {
+                if (G.draw) { draw_finish(); G.draw = 0; }
+                else { G.draw = 1; G.dn = 0; G.sel = -1; pset_clear(); G.grab = 0; }
+                G.need = 1;
+            }
+            if (G.draw) {
+                nk_layout_row_dynamic(ctx, row - 8, 1);
+                nk_label_colored(ctx, "Click on surfaces: each click a point.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+                nk_label_colored(ctx, "Corners (pink) and edges (blue) snap.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+                nk_label_colored(ctx, "Backspace: back a point. Enter: next rail.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+                nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(90, 255, 120), "This rail: %d point%s", G.dn, G.dn == 1 ? "" : "s");
+            }
+            if (G.ndrawn > 0) {
+                nk_layout_row_dynamic(ctx, row - 4, 1);
+                if (nk_button_label(ctx, G.ndrawn == 1 ? "Take back the drawn rail" : "Take back the last drawn rail")) draw_take_back();
+                nk_layout_row_dynamic(ctx, row - 8, 1);
+                nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(90, 255, 120), "%d rail%s drawn (green)", G.ndrawn, G.ndrawn == 1 ? "" : "s");
+            }
+        }
         if (obj_ok()) {
             float v[3], hd, v0[3], hd0;
             int q, ch = 0;
@@ -2372,6 +2561,18 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 int ctrl = ks[SDL_SCANCODE_LCTRL] || ks[SDL_SCANCODE_RCTRL], shift = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
                 int sel_ok = obj_ok() != 0;
 #define KEYHIT(sc) (ks[sc] && !G.kprev[sc])
+                if (!ctrl && KEYHIT(SDL_SCANCODE_R)) {   /* m29j: the grind tool on, or off (the rail so far kept) */
+                    if (G.draw) { draw_finish(); G.draw = 0; }
+                    else { G.draw = 1; G.dn = 0; G.sel = -1; pset_clear(); G.grab = 0; }
+                    G.need = 1;
+                }
+                if (G.draw) {
+                    if (KEYHIT(SDL_SCANCODE_BACKSPACE) && G.dn > 0) G.dn--;
+                    if (ctrl && KEYHIT(SDL_SCANCODE_Z)) { if (G.dn > 0) G.dn--; else draw_take_back(); }
+                    if (KEYHIT(SDL_SCANCODE_RETURN)) draw_finish();   /* this rail done, the tool still on */
+                    if (KEYHIT(SDL_SCANCODE_ESCAPE)) { draw_finish(); G.draw = 0; }
+                }
+                else {
                 if (ctrl && KEYHIT(SDL_SCANCODE_Z)) ed_undo();
                 if (ctrl && KEYHIT(SDL_SCANCODE_D)) { if (obj_ok() == 1) ed_copy(G.sel); else if (obj_ok() == 2) obj_copy_pieces(); }
                 if (sel_ok && !ctrl && KEYHIT(SDL_SCANCODE_G)) obj_grab();
@@ -2392,6 +2593,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                     else obj_unpick();
                     G.need = 1;
                 }
+                }
 #undef KEYHIT
                 memcpy(G.kprev, ks, sizeof G.kprev);
                 if (G.grab && obj_ok()) {             /* it follows the mouse, at its height */
@@ -2409,6 +2611,14 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 if (G.press && nk_input_is_mouse_released(in, NK_BUTTON_LEFT)) {
                     G.press = 0;
                     if (G.grab) G.grab = 0;          /* dropped there */
+                    else if (G.draw) {                /* m29j: a point of the rail */
+                        if (!G.pmoved && G.dok && G.dn < 512) {
+                            if (!G.dn || fabsf(G.dhit[0] - G.dpts[G.dn - 1][0]) + fabsf(G.dhit[1] - G.dpts[G.dn - 1][1])
+                                         + fabsf(G.dhit[2] - G.dpts[G.dn - 1][2]) > 0.01f)
+                                memcpy(G.dpts[G.dn++], G.dhit, 12);
+                            else draw_finish();       /* the same point twice: done, as SketchUp's double click */
+                        }
+                    }
                     else if (!G.pmoved) {             /* a click: the prop or piece under it, or none */
                         uint32_t id = G.hover, l = id >> 28, ti = id & 0x0FFFFFFFu;
                         int pk = -1;
@@ -2448,6 +2658,23 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             if (hover && G.idb && G.rw > 0) {
                 int mx = (int)((in->mouse.pos.x - b.x) / (float)G.tw * (float)G.rw), my = (int)((in->mouse.pos.y - b.y) / (float)G.th * (float)G.rh);
                 if (mx >= 0 && my >= 0 && mx < G.rw && my < G.rh) G.hover = G.idb[(size_t)my * G.rw + mx];
+            }
+            if (G.draw) {                         /* m29j: the rail so far, to the point under the mouse */
+                struct nk_command_buffer *cv = nk_window_get_canvas(ctx);
+                float ax = 0, ay = 0, bx2, by2;
+                int j, aok = 0;
+                G.dok = hover && !draw_hit(in->mouse.pos.x - b.x, in->mouse.pos.y - b.y, G.dhit, &G.dsnap);
+                for (j = 0; j < G.dn; j++) {
+                    int ok = !ed_screen(G.dpts[j], &bx2, &by2);
+                    if (ok) nk_fill_rect(cv, nk_rect(b.x + bx2 - 3, b.y + by2 - 3, 7, 7), 0, nk_rgb(90, 255, 120));
+                    if (ok && aok) nk_stroke_line(cv, b.x + ax, b.y + ay, b.x + bx2, b.y + by2, 3, nk_rgb(90, 255, 120));
+                    ax = bx2; ay = by2; aok = ok;
+                }
+                if (G.dok && !ed_screen(G.dhit, &bx2, &by2)) {
+                    struct nk_color mc = G.dsnap == 1 ? nk_rgb(255, 80, 255) : G.dsnap == 2 ? nk_rgb(80, 200, 255) : nk_rgb(255, 255, 255);
+                    if (aok) nk_stroke_line(cv, b.x + ax, b.y + ay, b.x + bx2, b.y + by2, 2, nk_rgba(90, 255, 120, 170));
+                    nk_stroke_circle(cv, nk_rect(b.x + bx2 - 6, b.y + by2 - 6, 13, 13), 2, mc);
+                }
             }
         }
     }

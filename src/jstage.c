@@ -1145,3 +1145,24 @@ int jst_cmodel_split(JStage *s, int ci, const uint8_t *take, int to)
         s->pieces[to].cm[s->pieces[to].ncm++] = nci;
     return nci;
 }
+
+/* m29j: a grind rail drawn in the editor: n points (and their normals), no piece, no source.
+ * Its number, or -1 */
+int jst_rail_add(JStage *s, const float *pts, const float *nrm, int n)
+{
+    int nr = s->nrail, nrp0 = s->nrp;
+    if (n < 2 || !s->rp0 || !s->rsrc || !s->rpiece) return -1;
+    if (grow(&s->rs, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rn, sizeof(int) * (size_t)(nr + 1))
+        || grow(&s->rpiece, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rsrc, sizeof(int) * (size_t)(nr + 1))
+        || grow(&s->rp, sizeof(float) * 3 * (size_t)(nrp0 + n)) || grow(&s->rnrm, sizeof(float) * 3 * (size_t)(nrp0 + n))
+        || grow(&s->rp0, sizeof(float) * 3 * (size_t)(nrp0 + n)) || grow(&s->rnrm0, sizeof(float) * 3 * (size_t)(nrp0 + n)))
+        return -1;
+    memcpy(s->rp + (size_t)nrp0 * 3, pts, sizeof(float) * 3 * (size_t)n);
+    memcpy(s->rp0 + (size_t)nrp0 * 3, pts, sizeof(float) * 3 * (size_t)n);
+    memcpy(s->rnrm + (size_t)nrp0 * 3, nrm, sizeof(float) * 3 * (size_t)n);
+    memcpy(s->rnrm0 + (size_t)nrp0 * 3, nrm, sizeof(float) * 3 * (size_t)n);
+    s->rs[nr] = nrp0; s->rn[nr] = n; s->rpiece[nr] = -1; s->rsrc[nr] = -1;
+    s->nrail = nr + 1;
+    s->nrp = nrp0 + n;
+    return nr;
+}

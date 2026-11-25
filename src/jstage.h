@@ -137,6 +137,7 @@ void jst_piece_update(JStage *s, int k);
  * index, -1 out of memory */
 int  jst_piece_copy(JStage *s, const int *set, int n);
 int  jst_cmodel_split(JStage *s, int ci, const uint8_t *take, int to);   /* m29i */
+int  jst_rail_add(JStage *s, const float *pts, const float *nrm, int n);   /* m29j */
 /* m28: the prop a triangle belongs to, -1 none */
 int  jst_prop_of_tri(const JStage *s, int tri);
 /* the stage's name from one of its files' names ("stg30_02.dat" -> "Stg30"); 0 not a stage file */
