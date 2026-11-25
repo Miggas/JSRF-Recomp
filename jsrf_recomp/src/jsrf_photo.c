@@ -266,7 +266,7 @@ extern int xbox_DanceTake(void);        /* input/xinput_device.c */
 #define DN_SCAN         0x2000u         /* the part of the character looked through */
 #define DN_MAX          64
 static int dn_on, dn_cfg;
-static float dn_height = 0.0f, dn_bpm = 125.0f, dn_stretch = 0.3f;   /* v313j: no hop at first, the stretch instead */
+static float dn_height = 0.0f, dn_bpm = 125.0f, dn_stretch = 0.3f, dn_widen = 2.0f;   /* v313n: wider when short */   /* v313j: no hop at first, the stretch instead */
 #define DN_MMAX         16
 static uint32_t dn_mat[DN_MMAX];        /* v313j: the turns found this frame (their first row's address), */
 static int dn_mst[DN_MMAX], dn_nm;      /* their rows' stride (12 or 16) */
@@ -453,6 +453,9 @@ static void dn_before(void)
         if (e) dn_stretch = (float)atof(e);
         if (dn_stretch < 0) dn_stretch = 0;
         if (dn_stretch > 0.8f) dn_stretch = 0.8f;
+        e = getenv("RECOMP_DANCE_WIDEN");
+        if (e && atof(e) >= 0) dn_widen = (float)atof(e);
+        if (dn_widen > 6.0f) dn_widen = 6.0f;
         dn_cfg = 1;
     }
     for (k = xbox_DanceTake(); k > 0; k--) {
@@ -488,6 +491,7 @@ static void dn_before(void)
         int wp, i, rr;
         dn_sy = 1.0f - dn_stretch * cosf(ph * 2.0f * 3.14159265f);
         dn_sw = 1.0f / sqrtf(dn_sy);
+        if (dn_sy < 1.0f) dn_sw = 1.0f + (dn_sw - 1.0f) * dn_widen;   /* v313n (Miggas): wider when short */
         memcpy(feet, (const float *)XBOX_PTR(who + DN_POS), sizeof feet);
         dn_nm = dn_find_turns(who, dn_mat, dn_mst, DN_MMAX, &wp);
         if (wp) dn_nm = 0;                  /* rows before the position: not the parts' */
