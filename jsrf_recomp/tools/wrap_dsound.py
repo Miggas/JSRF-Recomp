@@ -45,6 +45,7 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "D3D8_D3DDevice_Swap", "D3D8_D3DDevice_DrawVerticesUP",     # (jsrf_boost.c)
          "sub_000A2960",                # v312e: the boost's draw (jsrf_boost.c)
          "sub_000131F0",                # v313: the frame's draw (photo mode, jsrf_photo.c)
+         "sub_001BB330",                # v313m: the matrix stack's turn (the Yaris bounce, jsrf_photo.c)
          "sub_001192E0", "sub_00118A60",  # v203: [SNDDIST] play / move a sound
          "sub_00118610",                # v203c: the sound manager's frame (the cut-off)
          "sub_001129E0", "sub_000FD190", "sub_00048570", "sub_000488B0",

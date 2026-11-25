@@ -270,11 +270,13 @@ static float dn_height = 0.0f, dn_bpm = 125.0f, dn_stretch = 0.3f;   /* v313j: n
 #define DN_MMAX         16
 static uint32_t dn_mat[DN_MMAX];        /* v313j: the turns found this frame (their first row's address), */
 static int dn_mst[DN_MMAX], dn_nm;      /* their rows' stride (12 or 16) */
-static float dn_mwas[DN_MMAX][12];
+static float dn_mwas[DN_MMAX][12];   /* v313m: the parts' four rows of three */
 static uint32_t dn_t0;
 static uint32_t dn_at[DN_MAX];          /* the places raised this frame (their height's address) */
 static float dn_was[DN_MAX];
 static int dn_n;
+static uint32_t dn_who;                 /* v313m: the skater stretched this frame (0: none) */
+static float dn_sy = 1.0f, dn_sw = 1.0f, dn_up;   /* its stretch, width and hop this frame */
 
 static int dn_near(const float *a, const float *p, float r)
 {
@@ -439,6 +441,7 @@ static void dn_before(void)
     int k;
     dn_n = 0;
     dn_nm = 0;
+    dn_who = 0;
     if (!dn_cfg) {
         const char *e = getenv("RECOMP_DANCE_HEIGHT");
         if (e && atof(e) > 0) dn_height = (float)atof(e);
@@ -473,25 +476,31 @@ static void dn_before(void)
     up = dn_height * sinf(ph * 3.14159265f);
     /* v313j: tall and thin, then short and wide, easing from one to the other
      * (Miggas): tall at the middle of a beat, wide at its start; the width
-     * the other way, so it looks the same size. Along the turn's most upright
-     * row, from the skater's feet (the turn's own middle). */
+     * the other way, so it looks the same size.
+     * v313m: the body is stretched in the game's matrix stack as it is drawn
+     * (sub_001BB330 below). The parts drawn from matrices the skater keeps
+     * (+0x11D4, +0x1484: v313k and v313l stretched only those, "a tiny part")
+     * are stretched the same way about the feet: across and up the world's
+     * axes, their place moved with it. */
+    dn_sy = 1.0f; dn_sw = 1.0f; dn_up = up; dn_who = who;
     if (dn_stretch > 0) {
-        float sy = 1.0f - dn_stretch * cosf(ph * 2.0f * 3.14159265f), sw = 1.0f / sqrtf(sy);
-        int wp, i, rr, best;
+        float feet[3];
+        int wp, i, rr;
+        dn_sy = 1.0f - dn_stretch * cosf(ph * 2.0f * 3.14159265f);
+        dn_sw = 1.0f / sqrtf(dn_sy);
+        memcpy(feet, (const float *)XBOX_PTR(who + DN_POS), sizeof feet);
         dn_nm = dn_find_turns(who, dn_mat, dn_mst, DN_MMAX, &wp);
-        /* v313l: no world matrix: every unit turn (v313k took the first only, +0x11D4, and only a
-         * tiny part of the skater stretched; +0x1484 holds the same turn) */
-        (void)wp;
+        if (wp) dn_nm = 0;                  /* rows before the position: not the parts' */
         for (i = 0; i < dn_nm; i++) {
-            float *r[3];
-            for (rr = 0; rr < 3; rr++) r[rr] = (float *)XBOX_PTR(dn_mat[i] + rr * dn_mst[i]);
-            for (rr = 0; rr < 3; rr++) memcpy(dn_mwas[i] + rr * 4, r[rr], 12);
-            best = 0;
-            for (rr = 1; rr < 3; rr++) if (fabsf(r[rr][1]) > fabsf(r[best][1])) best = rr;
-            for (rr = 0; rr < 3; rr++) {
-                float k = rr == best ? sy : sw;
-                r[rr][0] *= k; r[rr][1] *= k; r[rr][2] *= k;
-            }
+            float *r[4];
+            if (dn_mst[i] != 16) { dn_mat[i] = 0; continue; }
+            for (rr = 0; rr < 4; rr++) r[rr] = (float *)XBOX_PTR(dn_mat[i] + rr * 16);
+            if (!dn_near(r[3], feet, 40.0f)) { dn_mat[i] = 0; continue; }   /* a part of this skater */
+            for (rr = 0; rr < 4; rr++) memcpy(dn_mwas[i] + rr * 3, r[rr], 12);
+            for (rr = 0; rr < 3; rr++) { r[rr][0] *= dn_sw; r[rr][1] *= dn_sy; r[rr][2] *= dn_sw; }
+            r[3][0] = feet[0] + (r[3][0] - feet[0]) * dn_sw;
+            r[3][1] = feet[1] + (r[3][1] - feet[1]) * dn_sy + up;
+            r[3][2] = feet[2] + (r[3][2] - feet[2]) * dn_sw;
         }
     }
     p = (const float *)XBOX_PTR(who + DN_POS);
@@ -515,11 +524,40 @@ static void dn_after(void)
     int i;
     for (i = 0; i < dn_n; i++) MEMF(dn_at[i]) = dn_was[i];
     dn_n = 0;
-    for (i = 0; i < dn_nm; i++) {       /* v313j: the turns as they were */
+    for (i = 0; i < dn_nm; i++) {       /* v313j: the parts as they were */
         int rr;
-        for (rr = 0; rr < 3; rr++) memcpy((void *)XBOX_PTR(dn_mat[i] + rr * dn_mst[i]), dn_mwas[i] + rr * 4, 12);
+        if (!dn_mat[i]) continue;
+        for (rr = 0; rr < 4; rr++) memcpy((void *)XBOX_PTR(dn_mat[i] + rr * 16), dn_mwas[i] + rr * 3, 12);
     }
     dn_nm = 0;
+    dn_who = 0;
+}
+
+/* v313m: the turn about the up axis on the game's matrix stack (the current
+ * matrix at [0x00264C04]: four rows of four, the rows its axes, the fourth
+ * its place). The skater's draw (sub_00081860, `this` in ebx) moves the
+ * current matrix to the skater's position and turns it three ways, this
+ * last; then draws the body from it (and again for its second pass). Right
+ * after, while the bounce is on and this is the player's skater, the matrix
+ * is stretched along its up row and narrowed along the other two, from the
+ * skater's feet (the matrix's own place). */
+extern void sub_001BB330_gen(void);
+void sub_001BB330(void)
+{
+    uint32_t ra = MEM32(g_esp), self = g_ebx;
+    sub_001BB330_gen();
+    if (dn_who && self == dn_who && (dn_sy != 1.0f) && (ra == 0x00081A3Eu || ra == 0x00081BA0u)) {
+        uint32_t top = MEM32(0x00264C04u), m;
+        int k;
+        if (!ph_ok(top, 4)) return;
+        m = MEM32(top);
+        if (!ph_ok(m, 64)) return;
+        for (k = 0; k < 3; k++) {
+            MEMF(m + 4u * k) *= dn_sw;
+            MEMF(m + 0x10u + 4u * k) *= dn_sy;
+            MEMF(m + 0x20u + 4u * k) *= dn_sw;
+        }
+    }
 }
 
 /* The frame's draw (thiscall on the game manager): photo mode's step, then
