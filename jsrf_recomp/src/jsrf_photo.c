@@ -246,6 +246,121 @@ void jsrf_photo_place(uint32_t cam)
     MEMF(cam + CAM_DISTANCE) = 100.0f;  /* the skater drawn whole */
 }
 
+/* ── v313i: the Yaris bounce (Idea by Miggas: the skater "dances" like the
+ * Bouncing Yaris meme's car). L3 on its own, let go, turns it on or off
+ * (xbox_DanceTake). Only the frame's draw sees it: for the draw, every place
+ * in the skater's object (the character the following camera follows, +0x24)
+ * holding the skater's position (+0xCA4) has its height raised by the
+ * bounce, and put back as it was right after, so the game's own movement,
+ * collision and camera never see it. A first look: [DANCE] lines say which
+ * places were found, and what else near the skater might be the one the
+ * draw reads, should these not be it. RECOMP_DANCE_HEIGHT (units, 3) and
+ * RECOMP_DANCE_BPM (beats a minute, 125: one bounce a beat). */
+extern int xbox_DanceTake(void);        /* input/xinput_device.c */
+#define DN_POS          0xCA4u          /* the character's position */
+#define DN_SCAN         0x2000u         /* the part of the character looked through */
+#define DN_MAX          64
+static int dn_on, dn_cfg;
+static float dn_height = 3.0f, dn_bpm = 125.0f;
+static uint32_t dn_t0;
+static uint32_t dn_at[DN_MAX];          /* the places raised this frame (their height's address) */
+static float dn_was[DN_MAX];
+static int dn_n;
+
+static int dn_near(const float *a, const float *p, float r)
+{
+    return fabsf(a[0] - p[0]) <= r && fabsf(a[1] - p[1]) <= r && fabsf(a[2] - p[2]) <= r;
+}
+
+/* the first time: what lies near the skater's position, for the log */
+static void dn_report(uint32_t who)
+{
+    const float *p = (const float *)XBOX_PTR(who + DN_POS);
+    uint32_t o, q;
+    char line[1024];
+    int n = 0, len;
+    len = snprintf(line, sizeof line, "[DANCE] skater %08X at %.2f %.2f %.2f; the same place at +", who, p[0], p[1], p[2]);
+    for (o = 0; o + 12 <= DN_SCAN; o += 4) {
+        const float *c = (const float *)XBOX_PTR(who + o);
+        if (dn_near(c, p, 0.01f) && len < (int)sizeof line - 16) { len += snprintf(line + len, sizeof line - len, "%X ", o); n++; }
+    }
+    fprintf(stderr, "%s(%d)\n", line, n);
+    len = snprintf(line, sizeof line, "[DANCE] within 4 units at +");
+    n = 0;
+    for (o = 0; o + 12 <= DN_SCAN; o += 4) {
+        const float *c = (const float *)XBOX_PTR(who + o);
+        if (dn_near(c, p, 4.0f) && !dn_near(c, p, 0.01f) && len < (int)sizeof line - 16) { len += snprintf(line + len, sizeof line - len, "%X ", o); n++; }
+    }
+    fprintf(stderr, "%s(%d)\n", line, n);
+    for (o = 0; o + 4 <= DN_SCAN; o += 4) {   /* one step further: what the skater points to */
+        uint32_t ptr = MEM32(who + o);
+        int same = 0, close = 0;
+        if (ptr < 0x10000u || (ptr & 3u) || !ph_ok(ptr, 0x800u) || (ptr >= who && ptr < who + DN_SCAN)) continue;
+        for (q = 0; q + 12 <= 0x800u; q += 4) {
+            const float *c = (const float *)XBOX_PTR(ptr + q);
+            if (dn_near(c, p, 0.01f)) same++;
+            else if (dn_near(c, p, 4.0f)) close++;
+        }
+        if (same || close > 2) fprintf(stderr, "[DANCE]   +%X -> %08X: %d the same place, %d within 4 units\n", o, ptr, same, close);
+    }
+}
+
+static void dn_before(void)
+{
+    uint32_t who, o;
+    const float *p;
+    float up, t, ph;
+    int k;
+    dn_n = 0;
+    if (!dn_cfg) {
+        const char *e = getenv("RECOMP_DANCE_HEIGHT");
+        if (e && atof(e) > 0) dn_height = (float)atof(e);
+        e = getenv("RECOMP_DANCE_BPM");
+        if (e && atof(e) > 10) dn_bpm = (float)atof(e);
+        dn_cfg = 1;
+    }
+    for (k = xbox_DanceTake(); k > 0; k--) {
+        dn_on = !dn_on;
+        dn_t0 = GetTickCount();
+        fprintf(stderr, "[DANCE] the bounce %s\n", dn_on ? "on (L3 again: off)" : "off");
+        if (dn_on && ph_frame - ph_follow_frame <= 3u && ph_ok(ph_follow_cam, 0x28u)) {
+            who = MEM32(ph_follow_cam + 0x24u);
+            if (ph_ok(who, DN_SCAN)) dn_report(who);
+        }
+    }
+    if (!dn_on || ph_state == PH_HOLDING) return;
+    if (ph_frame - ph_follow_frame > 3u || !ph_ok(ph_follow_cam, 0x28u)) return;   /* in play, the camera following */
+    who = MEM32(ph_follow_cam + 0x24u);
+    if (!ph_ok(who, DN_SCAN)) return;
+    /* the bounce: up and down once a beat, quick off the ground and back,
+     * as the car hops (a bounce of |sin|) */
+    t = (float)(GetTickCount() - dn_t0) / 1000.0f;
+    ph = t * dn_bpm / 60.0f;
+    ph -= floorf(ph);
+    up = dn_height * sinf(ph * 3.14159265f);
+    p = (const float *)XBOX_PTR(who + DN_POS);
+    {
+        float pos[3];
+        memcpy(pos, p, sizeof pos);
+        for (o = 0; o + 12 <= DN_SCAN && dn_n < DN_MAX; o += 4) {
+            float *c = (float *)XBOX_PTR(who + o);
+            if (o != DN_POS && !dn_near(c, pos, 0.01f)) continue;
+            dn_at[dn_n] = who + o + 4;
+            dn_was[dn_n] = c[1];
+            c[1] += up;
+            dn_n++;
+            o += 8;
+        }
+    }
+}
+
+static void dn_after(void)
+{
+    int i;
+    for (i = 0; i < dn_n; i++) MEMF(dn_at[i]) = dn_was[i];
+    dn_n = 0;
+}
+
 /* The frame's draw (thiscall on the game manager): photo mode's step, then
  * the draw, with our hold down for its length while photo mode has it. */
 void jsrf_nt3000_voice(void);          /* recomp_manual.c (v313d) */
@@ -292,6 +407,7 @@ void sub_000131F0(void)
         }
         if (!lower) ours = 0;
     }
+    dn_before();                        /* v313i: the bounce, for the draw only */
     if (ours) {
         uint32_t was = MEM32(gm + GM_HOLD_OURS);
         MEM32(gm + GM_HOLD_OURS) = 0;
@@ -300,4 +416,5 @@ void sub_000131F0(void)
     } else {
         sub_000131F0_gen();
     }
+    dn_after();
 }

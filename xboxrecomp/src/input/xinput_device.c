@@ -630,6 +630,11 @@ static BYTE s_ph_r3[QD_IDX], s_ph_l3[QD_IDX];
 static XBOX_GAMEPAD s_ph_pad[QD_IDX];
 static DWORD s_ph_pad_t[QD_IDX];
 static DWORD s_ph_last_toggle, s_ph_last_shot, s_ph_last_reset;
+/* v313i: L3 on its own, let go: the Yaris bounce on or off (Idea by Miggas) */
+static BYTE s_dn_l3[QD_IDX], s_dn_r3[QD_IDX];
+static LONG s_dn_toggles;
+static DWORD s_dn_last_toggle;
+int xbox_DanceTake(void) { return (int)InterlockedExchange(&s_dn_toggles, 0); }
 
 void xbox_PhotoAllow(int ok) { InterlockedExchange(&s_ph_allowed, ok ? 1 : 0); }
 int xbox_PhotoOpen(void) { return s_qd_open == 4; }
@@ -789,6 +794,23 @@ static void quit_filter(int idx, XBOX_INPUT_STATE *st)
             }
         }
     }
+    /* v313i: L3 on its own, let go: the bounce (not with R3: the quit window's L3 + R3) */
+    if (s_qd_open == 0) {
+        if ((b & XBOX_GAMEPAD_LEFT_THUMB) && !(pb & XBOX_GAMEPAD_LEFT_THUMB)) {
+            s_dn_l3[idx] = 1;
+            s_dn_r3[idx] = 0;
+        }
+        if (s_dn_l3[idx] && (b & XBOX_GAMEPAD_RIGHT_THUMB))
+            s_dn_r3[idx] = 1;
+        if (s_dn_l3[idx] && !(b & XBOX_GAMEPAD_LEFT_THUMB)) {
+            DWORD now = GetTickCount();
+            s_dn_l3[idx] = 0;
+            if (!s_dn_r3[idx] && now - s_dn_last_toggle > 300u) {   /* one pad seen twice: one toggle */
+                s_dn_last_toggle = now;
+                InterlockedIncrement(&s_dn_toggles);
+            }
+        }
+    } else s_dn_l3[idx] = 0;
     if (s_qd_open == 0) {
         if (!s_qd_off && (b & sticks) == sticks && (pb & sticks) != sticks) {
             InterlockedExchange(&s_qd_sel, 2);           /* v278b: Return first */
