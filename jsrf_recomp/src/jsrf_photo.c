@@ -255,13 +255,22 @@ void jsrf_photo_place(uint32_t cam)
  * collision and camera never see it. A first look: [DANCE] lines say which
  * places were found, and what else near the skater might be the one the
  * draw reads, should these not be it. RECOMP_DANCE_HEIGHT (units, 3) and
- * RECOMP_DANCE_BPM (beats a minute, 125: one bounce a beat). */
+ * RECOMP_DANCE_BPM (beats a minute, 125: one bounce a beat).
+ * v313j: the stretch (Miggas: tall and thin, then short and wide, easing
+ * between): the skater's turn (three unit rows square to each other, the
+ * position after them) scaled for the draw too; the hop 0 unless
+ * RECOMP_DANCE_HEIGHT is set; RECOMP_DANCE_STRETCH (0.3: 30% taller at
+ * most, 0 for none). */
 extern int xbox_DanceTake(void);        /* input/xinput_device.c */
 #define DN_POS          0xCA4u          /* the character's position */
 #define DN_SCAN         0x2000u         /* the part of the character looked through */
 #define DN_MAX          64
 static int dn_on, dn_cfg;
-static float dn_height = 3.0f, dn_bpm = 125.0f;
+static float dn_height = 0.0f, dn_bpm = 125.0f, dn_stretch = 0.3f;   /* v313j: no hop at first, the stretch instead */
+#define DN_MMAX         16
+static uint32_t dn_mat[DN_MMAX];        /* v313j: the turns found this frame (their first row's address), */
+static int dn_mst[DN_MMAX], dn_nm;      /* their rows' stride (12 or 16) */
+static float dn_mwas[DN_MMAX][12];
 static uint32_t dn_t0;
 static uint32_t dn_at[DN_MAX];          /* the places raised this frame (their height's address) */
 static float dn_was[DN_MAX];
@@ -270,6 +279,46 @@ static int dn_n;
 static int dn_near(const float *a, const float *p, float r)
 {
     return fabsf(a[0] - p[0]) <= r && fabsf(a[1] - p[1]) <= r && fabsf(a[2] - p[2]) <= r;
+}
+
+/* v313j: a turn (three rows of three, a row apart by `st` bytes) whose rows are
+ * each a unit long and square to each other */
+static int dn_is_turn(uint32_t a, int st)
+{
+    const float *r0 = (const float *)XBOX_PTR(a), *r1 = (const float *)XBOX_PTR(a + st), *r2 = (const float *)XBOX_PTR(a + 2 * st);
+    const float *r[3] = { r0, r1, r2 };
+    int i, j;
+    for (i = 0; i < 3; i++) {
+        float l = r[i][0] * r[i][0] + r[i][1] * r[i][1] + r[i][2] * r[i][2];
+        if (!(l > 0.97f && l < 1.03f)) return 0;
+        for (j = i + 1; j < 3; j++) {
+            float d = r[i][0] * r[j][0] + r[i][1] * r[j][1] + r[i][2] * r[j][2];
+            if (!(fabsf(d) < 0.02f)) return 0;
+        }
+    }
+    /* not the plain identity (stored "no turn"s) unless it sits by the position */
+    return 1;
+}
+
+/* the turns in the skater's object: those with the position just after them
+ * (a world matrix) first, else every one */
+static int dn_find_turns(uint32_t who, uint32_t *at, int *st, int max, int *with_pos)
+{
+    const float *p = (const float *)XBOX_PTR(who + DN_POS);
+    uint32_t o;
+    int n = 0, pass, s2;
+    *with_pos = 0;
+    for (pass = 0; pass < 2 && n == 0; pass++)
+        for (o = 0; o + 64 <= DN_SCAN && n < max; o += 4)
+            for (s2 = 12; s2 <= 16; s2 += 4) {
+                if (!dn_is_turn(who + o, s2)) continue;
+                if (pass == 0 && !dn_near((const float *)XBOX_PTR(who + o + 3 * s2), p, 0.01f)) continue;
+                at[n] = who + o; st[n] = s2; n++;
+                if (pass == 0) *with_pos = 1;
+                o += 3 * s2 - 4;
+                break;
+            }
+    return n;
 }
 
 /* the first time: what lies near the skater's position, for the log */
@@ -303,6 +352,17 @@ static void dn_report(uint32_t who)
         }
         if (same || close > 2) fprintf(stderr, "[DANCE]   +%X -> %08X: %d the same place, %d within 4 units\n", o, ptr, same, close);
     }
+    {   /* v313j: the turns */
+        uint32_t at[DN_MMAX];
+        int st[DN_MMAX], n2, wp, i;
+        n2 = dn_find_turns(who, at, st, DN_MMAX, &wp);
+        fprintf(stderr, "[DANCE] %d turn%s %s:", n2, n2 == 1 ? "" : "s", wp ? "with the position after them" : "(none with the position after it)");
+        for (i = 0; i < n2; i++) {
+            const float *r = (const float *)XBOX_PTR(at[i]);
+            fprintf(stderr, " +%X/%d (%.2f %.2f %.2f | %.2f %.2f %.2f)", at[i] - who, st[i], r[0], r[1], r[2], r[st[i] / 4], r[st[i] / 4 + 1], r[st[i] / 4 + 2]);
+        }
+        fprintf(stderr, "\n");
+    }
 }
 
 static void dn_before(void)
@@ -312,11 +372,18 @@ static void dn_before(void)
     float up, t, ph;
     int k;
     dn_n = 0;
+    dn_nm = 0;
     if (!dn_cfg) {
         const char *e = getenv("RECOMP_DANCE_HEIGHT");
         if (e && atof(e) > 0) dn_height = (float)atof(e);
+        e = getenv("RECOMP_DANCE_HEIGHT");
+        if (e && atof(e) == 0) dn_height = 0;
         e = getenv("RECOMP_DANCE_BPM");
         if (e && atof(e) > 10) dn_bpm = (float)atof(e);
+        e = getenv("RECOMP_DANCE_STRETCH");
+        if (e) dn_stretch = (float)atof(e);
+        if (dn_stretch < 0) dn_stretch = 0;
+        if (dn_stretch > 0.8f) dn_stretch = 0.8f;
         dn_cfg = 1;
     }
     for (k = xbox_DanceTake(); k > 0; k--) {
@@ -338,6 +405,27 @@ static void dn_before(void)
     ph = t * dn_bpm / 60.0f;
     ph -= floorf(ph);
     up = dn_height * sinf(ph * 3.14159265f);
+    /* v313j: tall and thin, then short and wide, easing from one to the other
+     * (Miggas): tall at the middle of a beat, wide at its start; the width
+     * the other way, so it looks the same size. Along the turn's most upright
+     * row, from the skater's feet (the turn's own middle). */
+    if (dn_stretch > 0) {
+        float sy = 1.0f - dn_stretch * cosf(ph * 2.0f * 3.14159265f), sw = 1.0f / sqrtf(sy);
+        int wp, i, rr, best;
+        dn_nm = dn_find_turns(who, dn_mat, dn_mst, DN_MMAX, &wp);
+        if (!wp && dn_nm > 1) dn_nm = 1;   /* no world matrix: only the first turn (the log lists them all) */
+        for (i = 0; i < dn_nm; i++) {
+            float *r[3];
+            for (rr = 0; rr < 3; rr++) r[rr] = (float *)XBOX_PTR(dn_mat[i] + rr * dn_mst[i]);
+            for (rr = 0; rr < 3; rr++) memcpy(dn_mwas[i] + rr * 4, r[rr], 12);
+            best = 0;
+            for (rr = 1; rr < 3; rr++) if (fabsf(r[rr][1]) > fabsf(r[best][1])) best = rr;
+            for (rr = 0; rr < 3; rr++) {
+                float k = rr == best ? sy : sw;
+                r[rr][0] *= k; r[rr][1] *= k; r[rr][2] *= k;
+            }
+        }
+    }
     p = (const float *)XBOX_PTR(who + DN_POS);
     {
         float pos[3];
@@ -359,6 +447,11 @@ static void dn_after(void)
     int i;
     for (i = 0; i < dn_n; i++) MEMF(dn_at[i]) = dn_was[i];
     dn_n = 0;
+    for (i = 0; i < dn_nm; i++) {       /* v313j: the turns as they were */
+        int rr;
+        for (rr = 0; rr < 3; rr++) memcpy((void *)XBOX_PTR(dn_mat[i] + rr * dn_mst[i]), dn_mwas[i] + rr * 4, 12);
+    }
+    dn_nm = 0;
 }
 
 /* The frame's draw (thiscall on the game manager): photo mode's step, then
