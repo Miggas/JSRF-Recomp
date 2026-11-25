@@ -189,9 +189,13 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
         G.rmap = (int *)malloc(sizeof(int) * (size_t)(G.s.nrail + 1));
         for (i = 0; G.rmap && i < G.s.nrail; i++) {
             G.rmap[i] = -1;
-            for (j = 0; j < G.ed.nrail; j++)
-                if ((int)(G.ed.rail[j].pts.n / 24) == G.s.rn[i] && G.s.rn[i] > 0
-                        && !memcmp(G.ed.rail[j].pts.p, G.s.rp0 + (size_t)G.s.rs[i] * 3, 12)) { G.rmap[i] = j; break; }
+            for (j = 0; j < G.ed.nrail; j++) {   /* m29e: every point the same, and each file rail once (stages have rails twice over) */
+                int q2, same = (int)(G.ed.rail[j].pts.n / 24) == G.s.rn[i] && G.s.rn[i] > 0, k2;
+                for (q2 = 0; same && q2 < G.s.rn[i]; q2++)
+                    same = !memcmp(G.ed.rail[j].pts.p + (size_t)q2 * 24, G.s.rp0 + (size_t)(G.s.rs[i] + q2) * 3, 12);
+                for (k2 = 0; same && k2 < i; k2++) if (G.rmap[k2] == j) same = 0;
+                if (same) { G.rmap[i] = j; break; }
+            }
         }
         memcpy(G.slot0, G.ed.slot, sizeof G.slot0);
         G.nlists0 = G.ed.nlists;
@@ -657,7 +661,9 @@ static void render(void)
             for (q = 0; q + 1 < G.s.rn[k]; q++) {
                 if (G.s.rpiece && G.s.rpiece[k] >= 0 && G.s.pieces[G.s.rpiece[k]].removed) break;   /* m29 */
                 const float *a = G.s.rp + (G.s.rs[k] + q) * 3;
-                line3(a, a + 3, f, r, u, 255, 196, 30, thick);
+                if (G.inset && G.s.rpiece && G.s.rpiece[k] >= 0 && G.inset[G.s.rpiece[k]])
+                    line3(a, a + 3, f, r, u, 255, 110, 20, thick + 1);   /* m29e: going with what's picked */
+                else line3(a, a + 3, f, r, u, 255, 196, 30, thick);
             }
     }
     if (obj_ok()) {                                /* m28: the picked prop's box (m29: or piece's) */
@@ -892,8 +898,17 @@ static void pset_claim(void)
                 if (v < rlo[q]) rlo[q] = v;
                 if (v > rhi[q]) rhi[q] = v;
             }
-        for (q = 0; q < 3; q++) if (rlo[q] < lo[q] - 1.0f || rhi[q] > hi[q] + 1.0f) break;
-        if (q < 3) continue;
+        /* m29e: a rail only within one of the pieces' own boxes (not anywhere in their joint box:
+         * Miggas: rails beside a moved platform went with it, away from their bars) */
+        {
+            int j2, in = 0;
+            for (j2 = 0; j2 < G.npset && !in; j2++) {
+                const JSPiece *sp = &G.s.pieces[G.pset[j2]];
+                for (q = 0; q < 3; q++) if (rlo[q] < sp->lo[q] - 1.0f || rhi[q] > sp->hi[q] + 1.0f) break;
+                if (q == 3) in = 1;
+            }
+            if (!in) continue;
+        }
         if (owner >= 0) {
             JSPiece *op = &G.s.pieces[owner];
             for (k = 0; k < op->nrail; k++) if (op->rail[k] == i) { op->rail[k] = op->rail[--op->nrail]; break; }
