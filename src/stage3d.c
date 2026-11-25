@@ -80,6 +80,8 @@ static struct {
     int ncm0, nrail0, nmod0, nnew, lastdat;   /* m29g: counts as read; new models made; the .dat they go in */
     int *newid;                            /* m29g: a stage model's copies' new model id (-1) */
     float (*chbase)[22];                   /* m29g: a copied collision model's head where it started */
+    uint32_t *dflag, drawflag;             /* m29k: a drawn rail's flags (by rail); those for the next one */
+    uint32_t tval[12]; int ntval, tcount[12], rbytype;   /* m29k: the rail types in the stage, shown by colour */
     int draw, dn, dok, dsnap, ndrawn;      /* m29j: the grind tool: on, its points, a point under the mouse, snapped (1 corner, 2 edge) */
     float dpts[512][3], dhit[3];
     int *rfile;                            /* m29g: a copied rail's number in G.ed (-1) */
@@ -194,6 +196,7 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     G.pyaw_saved = (float *)calloc((size_t)G.s.npiece + 1, sizeof(float));
     G.nnew = 0; G.lastdat = -1;                 /* m29g */
     G.draw = G.dn = G.dok = G.ndrawn = 0;       /* m29j */
+    free(G.dflag); G.dflag = NULL; G.drawflag = 0; G.ntval = 0;   /* m29k */
     G.newid = (int *)malloc(sizeof(int) * (size_t)(G.s.nmodel + 1));
     if (G.newid) { int i; for (i = 0; i < G.s.nmodel; i++) G.newid[i] = -1; }
     {
@@ -518,6 +521,11 @@ static int raster_band(void *u)
 }
 
 static int rail_drawn(int r) { return r >= G.nrail0 && G.s.rsrc && G.s.rsrc[r] < 0; }   /* m29j */
+static uint32_t rail_flags(int r);
+/* m29k: a rail type's colour: as the list in the panel has them */
+static const uint8_t s_tcol[12][3] = { {255,196,30}, {255,90,90}, {80,170,255}, {200,110,255}, {255,140,200}, {120,255,240},
+                                       {255,255,140}, {170,120,60}, {255,150,60}, {150,150,255}, {200,200,200}, {120,200,90} };
+static int type_index(uint32_t v) { int i; for (i = 0; i < G.ntval; i++) if (G.tval[i] == v) return i; return -1; }
 
 static void basis(float f[3], float r[3], float u[3])
 {
@@ -692,7 +700,9 @@ static void render(void)
             for (q = 0; q + 1 < G.s.rn[k]; q++) {
                 if (G.s.rpiece && G.s.rpiece[k] >= 0 && G.s.pieces[G.s.rpiece[k]].removed) break;   /* m29 */
                 const float *a = G.s.rp + (G.s.rs[k] + q) * 3;
-                if (rail_drawn(k)) line3(a, a + 3, f, r, u, 90, 255, 120, thick);   /* m29j: drawn here */
+                int ti2 = G.rbytype ? type_index(rail_flags(k)) : -1;
+                if (ti2 >= 0) line3(a, a + 3, f, r, u, s_tcol[ti2][0], s_tcol[ti2][1], s_tcol[ti2][2], rail_drawn(k) ? thick + 1 : thick);   /* m29k: by type */
+                else if (rail_drawn(k)) line3(a, a + 3, f, r, u, 90, 255, 120, thick);   /* m29j: drawn here */
                 else if (G.inset && G.s.rpiece && G.s.rpiece[k] >= 0 && G.inset[G.s.rpiece[k]])
                     line3(a, a + 3, f, r, u, 255, 110, 20, thick + 1);   /* m29e: going with what's picked */
                 else line3(a, a + 3, f, r, u, 255, 196, 30, thick);
@@ -988,7 +998,9 @@ static void draw_finish(void)
         r = jst_rail_add(&G.s, &G.dpts[0][0], &nrm[0][0], G.dn);
         if (r >= 0) {
             int *rf = (int *)realloc(G.rfile, sizeof(int) * (size_t)(G.s.nrail + 1));
+            uint32_t *df = (uint32_t *)realloc(G.dflag, sizeof(uint32_t) * (size_t)(G.s.nrail + 1));
             if (rf) { G.rfile = rf; G.rfile[r] = -1; }
+            if (df) { G.dflag = df; G.dflag[r] = G.drawflag; }   /* m29k */
             G.ndrawn++;
             G.dirty = 1;
         }
@@ -1434,6 +1446,39 @@ static int root_rail(int r)
     while (r >= G.nrail0 && G.s.rsrc && G.s.rsrc[r] >= 0) r = G.s.rsrc[r];
     return r;
 }
+/* m29k: a rail's flags (the word after its points: what kind of rail it is) */
+static uint32_t rail_flags(int r)
+{
+    int ro, ri;
+    const uint8_t *b;
+    if (rail_drawn(r)) return G.dflag ? G.dflag[r] : 0;
+    ro = root_rail(r);
+    ri = ro < G.nrail0 && G.rmap ? G.rmap[ro] : -1;
+    if (ri < 0 || ri >= G.ed.nrail) return 0;
+    b = G.ed.rail[ri].rest;
+    return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
+}
+/* the types in the stage, counted (and the one drawn rails get, listed too) */
+static void types_count(void)
+{
+    int r, i;
+    G.ntval = 0;
+    for (r = 0; r <= G.s.nrail; r++) {
+        uint32_t v;
+        if (r == G.s.nrail) v = G.drawflag;
+        else { if (G.s.rn[r] < 2) continue; v = rail_flags(r); }
+        i = type_index(v);
+        if (i < 0 && G.ntval < 12) { i = G.ntval++; G.tval[i] = v; G.tcount[i] = 0; }
+        if (i >= 0 && r < G.s.nrail) G.tcount[i]++;
+    }
+    for (i = 1; i < G.ntval; i++) {             /* by value */
+        int j;
+        for (j = i; j > 0 && G.tval[j - 1] > G.tval[j]; j--) {
+            uint32_t t = G.tval[j]; int c = G.tcount[j];
+            G.tval[j] = G.tval[j - 1]; G.tcount[j] = G.tcount[j - 1]; G.tval[j - 1] = t; G.tcount[j - 1] = c;
+        }
+    }
+}
 /* a copy's vertex: the vertex as read it comes from */
 static int root_vert(int v)
 {
@@ -1725,7 +1770,11 @@ rails:
             if (!nr) break;
             G.ed.rail = nr;
             nr = &G.ed.rail[G.ed.nrail];
-            if (rail_drawn(r)) memset(nr->rest, 0, 28);
+            if (rail_drawn(r)) {                    /* m29k: its type as chosen */
+                uint32_t fl = G.dflag ? G.dflag[r] : 0;
+                memset(nr->rest, 0, 28);
+                nr->rest[0] = (uint8_t)fl; nr->rest[1] = (uint8_t)(fl >> 8); nr->rest[2] = (uint8_t)(fl >> 16); nr->rest[3] = (uint8_t)(fl >> 24);
+            }
             else memcpy(nr->rest, G.ed.rail[ri].rest, 28);
             nr->pts.n = (size_t)G.s.rn[r] * 24;
             nr->pts.p = (uint8_t *)malloc(nr->pts.n + 1);
@@ -2203,6 +2252,8 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
             printf("rails: %d (%d drawn)\n", G.s.nrail, G.ndrawn);
         }
         else if (!strncmp(tok, "rtake", 5)) draw_take_back();
+        else if (!strncmp(tok, "rtype ", 6)) { G.drawflag = (uint32_t)strtoul(tok + 6, NULL, 16); }
+        else if (!strncmp(tok, "types", 5)) { int k3; types_count(); for (k3 = 0; k3 < G.ntval; k3++) printf("type %X: %d\n", G.tval[k3], G.tcount[k3]); }
         else if (!strncmp(tok, "hit", 3)) {       /* (tests) the surface point at the view's middle (or dx dy from it) */
             float hp[3], pr[3] = { 0, 0, 0 }, ox = 0, oy = 0; int sn = 0, ok;
             sscanf(tok + 3, "%f %f", &ox, &oy);
@@ -2364,6 +2415,23 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         }
         snprintf(t, sizeof t, "Grind rails (%d)", G.s.nrail);
         check(ctx, t, &G.rail);
+        if (G.rail && G.ed_ok) {                         /* m29k: by type */
+            check(ctx, "   Colour rails by type", &G.rbytype);
+            if (G.rbytype) {
+                types_count();
+                for (k = 0; k < G.ntval; k++) {
+                    struct nk_rect b;
+                    nk_layout_row_template_begin(ctx, row - 8);
+                    nk_layout_row_template_push_static(ctx, 22);
+                    nk_layout_row_template_push_dynamic(ctx);
+                    nk_layout_row_template_end(ctx);
+                    b = nk_widget_bounds(ctx);
+                    nk_fill_rect(nk_window_get_canvas(ctx), nk_rect(b.x + 10, b.y + 5, 10, b.h - 10), 2, nk_rgb(s_tcol[k][0], s_tcol[k][1], s_tcol[k][2]));
+                    nk_spacing(ctx, 1);
+                    nk_labelf(ctx, NK_TEXT_LEFT, "Type %X: %d rail%s", G.tval[k], G.tcount[k], G.tcount[k] == 1 ? "" : "s");
+                }
+            }
+        }
         snprintf(t, sizeof t, "Collision (%d triangles)", G.s.nct);
         check(ctx, t, &G.coll);
         if (G.coll) {
@@ -2398,6 +2466,24 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 nk_label_colored(ctx, "Corners (pink) and edges (blue) snap.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
                 nk_label_colored(ctx, "Backspace: back a point. Enter: next rail.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
                 nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(90, 255, 120), "This rail: %d point%s", G.dn, G.dn == 1 ? "" : "s");
+            }
+            {                                           /* m29k: the type new rails get */
+                const char *items[13];
+                char lab[13][24];
+                int cur = 0, n2, k3;
+                types_count();
+                n2 = G.ntval;
+                for (k3 = 0; k3 < n2; k3++) {
+                    snprintf(lab[k3], sizeof lab[k3], "Type %X (%d)", G.tval[k3], G.tcount[k3]);
+                    items[k3] = lab[k3];
+                    if (G.tval[k3] == G.drawflag) cur = k3;
+                }
+                nk_layout_row_dynamic(ctx, row - 6, 2);
+                nk_label(ctx, "New rails' type:", NK_TEXT_LEFT);
+                if (n2 > 0) {
+                    int sel2 = nk_combo(ctx, items, n2, cur, (int)row - 6, nk_vec2(170, 260));
+                    if (sel2 != cur) G.drawflag = G.tval[sel2];
+                }
             }
             if (G.ndrawn > 0) {
                 nk_layout_row_dynamic(ctx, row - 4, 1);

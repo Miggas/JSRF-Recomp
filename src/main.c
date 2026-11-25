@@ -59,7 +59,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m29j"
+#define MODTOOL_VERSION "m29k"
 
 /* ---- the files ---- */
 
