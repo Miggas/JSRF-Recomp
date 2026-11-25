@@ -1419,9 +1419,12 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
                     for (a2 = 1; a2 < n; a2++)          /* in rail order, as the game's are */
                         for (b2 = a2; b2 > 0 && tmp[b2 - 1] > tmp[b2]; b2--) { int t = tmp[b2]; tmp[b2] = tmp[b2 - 1]; tmp[b2 - 1] = t; }
                     if (!n) { G.ed.slot[sl] = -1; continue; }
-                    for (j = 0; j < nlists; j++)        /* the same list as another slot's: shared */
-                        if (nn[j] == n && !memcmp(nl[j], tmp, sizeof(int) * (size_t)n)) break;
-                    if (j == nlists) {
+                    /* m29f: every slot its own list, never shared with another slot's, as in the game's
+                     * files: the game turns the offsets in a list into addresses where they lie when it
+                     * loads, so a shared list was turned twice and its rails lost (Miggas: grinds that
+                     * only started from one end, or stopped midway, after any change) */
+                    j = nlists;
+                    {
                         nl[j] = (int *)malloc(sizeof(int) * (size_t)n);
                         if (!nl[j]) continue;
                         memcpy(nl[j], tmp, sizeof(int) * (size_t)n);

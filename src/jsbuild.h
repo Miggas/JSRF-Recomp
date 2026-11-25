@@ -12,7 +12,8 @@
  *    (shared by models), 8-byte triangles.
  *  - block 1, grind rails: an id, 1024 slots of (offset, count) of lists
  *    of rail offsets (lists shared by slots; an empty slot points at the
- *    first list), 36-byte rails (their points' (offset, count), the rest
+ *    first list; m29f: never two slots on one list: the game makes a
+ *    list's offsets into addresses in place when it loads), 36-byte rails (their points' (offset, count), the rest
  *    kept), 24-byte points (position, normal).
  *  - block 2, areas: a word, the areas' (offset, count), then an area's
  *    (offset, count) of 80-byte placements; 340-byte areas (+144 their
