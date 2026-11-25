@@ -77,6 +77,12 @@ static struct {
     float (*cm0)[28];                      /* m29: the collision models' heads as read (rows, position, box) */
     int *tset0;                            /* their triangle sets as read */
     int *tset_own;                         /* m29d: a moved model's own copy of its triangles (-1) */
+    int ncm0, nrail0, nmod0, nnew, lastdat;   /* m29g: counts as read; new models made; the .dat they go in */
+    int *newid;                            /* m29g: a stage model's copies' new model id (-1) */
+    float (*chbase)[22];                   /* m29g: a copied collision model's head where it started */
+    int *rfile;                            /* m29g: a copied rail's number in G.ed (-1) */
+    int *vset0; uint8_t (*tail0)[8];       /* m29g: the collision models' other parts as read */
+    int *cafirst0, *cacount0;
     uint8_t (*cabox0)[24];                 /* the collision areas' boxes as read */
     float *pyaw_saved;                     /* a piece's turn as last saved (normals in the .dat) */
     int *rmap;                             /* m29: a rail's number in G.ed (-1) */
@@ -184,6 +190,15 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
             for (j = 0; j < G.s.cmodels[i].nt; j++) G.ctm[G.s.cmodels[i].t0 + j] = i;
     }
     G.pyaw_saved = (float *)calloc((size_t)G.s.npiece + 1, sizeof(float));
+    G.nnew = 0; G.lastdat = -1;                 /* m29g */
+    G.newid = (int *)malloc(sizeof(int) * (size_t)(G.s.nmodel + 1));
+    if (G.newid) { int i; for (i = 0; i < G.s.nmodel; i++) G.newid[i] = -1; }
+    {
+        int i, best = -1;
+        for (i = 0; i < G.s.nmodel; i++) if (G.s.models[i].id > best) { best = G.s.models[i].id; G.lastdat = G.s.models[i].dat; }
+    }
+    G.nmod0 = G.ed_ok ? (int)(G.ed.head[24] | G.ed.head[25] << 8 | G.ed.head[26] << 16 | G.ed.head[27] << 24) : 0;
+    G.nrail0 = G.ed_ok ? G.ed.nrail : 0;
     if (G.ed_ok) {                              /* the viewer's rails to the file's (by their points), and the lists as read */
         int i, j;
         G.rmap = (int *)malloc(sizeof(int) * (size_t)(G.s.nrail + 1));
@@ -216,6 +231,15 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
             for (i = 0; i < G.ed.ncm; i++) { memcpy(G.cm0[i], G.ed.cm[i].head, 88); G.tset0[i] = G.ed.cm[i].tset; }
             G.tset_own = (int *)malloc(sizeof(int) * (size_t)(G.ed.ncm + 1));
             if (G.tset_own) for (i = 0; i < G.ed.ncm; i++) G.tset_own[i] = -1;
+            G.ncm0 = G.ed.ncm;
+            G.vset0 = (int *)malloc(sizeof(int) * (size_t)(G.ed.ncm + 1));
+            G.tail0 = (uint8_t (*)[8])malloc(8 * (size_t)(G.ed.ncm + 1));
+            G.cafirst0 = (int *)malloc(sizeof(int) * (size_t)(G.ed.nca + 1));
+            G.cacount0 = (int *)malloc(sizeof(int) * (size_t)(G.ed.nca + 1));
+            if (G.vset0 && G.tail0 && G.cafirst0 && G.cacount0) {
+                for (i = 0; i < G.ed.ncm; i++) { G.vset0[i] = G.ed.cm[i].vset; memcpy(G.tail0[i], G.ed.cm[i].tail, 8); }
+                for (i = 0; i < G.ed.nca; i++) { G.cafirst0[i] = G.ed.ca[i].first; G.cacount0[i] = G.ed.ca[i].count; }
+            }
             for (i = 0; i < G.ed.nca; i++) memcpy(G.cabox0[i], G.ed.ca[i].box, 24);
         } else { free(G.cm0); free(G.tset0); free(G.cabox0); G.cm0 = NULL; G.tset0 = NULL; G.cabox0 = NULL; }
     }
@@ -246,6 +270,8 @@ void s3d_close(void)
         for (k = 0; k < G.nundo; k++) { free(G.undo[k].r); free(G.undo[k].rm); free(G.undo[k].pc); free(G.undo[k].prm); }
         free(G.ctm); free(G.cm0); free(G.tset0); free(G.tset_own); free(G.cabox0); free(G.pyaw_saved); free(G.rmap);
         G.tset_own = NULL;
+        free(G.newid); free(G.chbase); free(G.rfile); free(G.vset0); free(G.tail0); free(G.cafirst0); free(G.cacount0);
+        G.newid = NULL; G.chbase = NULL; G.rfile = NULL; G.vset0 = NULL; G.tail0 = NULL; G.cafirst0 = NULL; G.cacount0 = NULL;
         if (G.list0) for (k = 0; k < G.nlists0; k++) free(G.list0[k]);
         free(G.list0); free(G.nlist0);
         G.rmap = NULL; G.list0 = NULL; G.nlist0 = NULL;
@@ -750,6 +776,8 @@ static int ed_undo(void)
             jst_piece_update(&G.s, k);
         }
     }
+    for (k = u->np; k < G.s.npiece; k++)        /* m29g: copies made after it: gone again */
+        if (!G.s.pieces[k].removed) { G.s.pieces[k].removed = 1; jst_piece_update(&G.s, k); }
     free(u->r); free(u->rm); free(u->pc); free(u->prm);
     if (G.sel >= 0 && G.s.props[G.sel].removed) G.sel = -1;
     pset_clean();
@@ -855,6 +883,7 @@ static void pset_claim(void)
     float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
     int j, i, q, to;
     if (G.npset < 1) return;
+    for (j = 0; j < G.npset; j++) if (G.s.pieces[G.pset[j]].src >= 0) return;   /* m29g: copies bring their own */
     for (j = 0; j < G.npset; j++) {
         const JSPiece *pc = &G.s.pieces[G.pset[j]];
         if (pc->touched && (pc->yaw != 0 || pc->t3[0] != 0 || pc->t3[1] != 0 || pc->t3[2] != 0)) return;
@@ -1151,6 +1180,114 @@ static const char *kind_name(int k)
     return md->kind == 2 ? "see-through part" : "map piece";
 }
 
+
+/* ---- m29g: a collision model's head (box, rows, position) as it is now ---- */
+
+static void head_turn_move(float h[22], float yaw, const float pv[3], const float t[3])
+{
+    float a = yaw * 3.14159265f / 180.0f, c = cosf(a), sn = sinf(a), dx, dz;
+    int r;
+    for (r = 0; r < 3; r++) {                   /* the rows turned */
+        float x = h[6 + r * 4], z = h[6 + r * 4 + 2];
+        h[6 + r * 4] = x * c + z * sn;
+        h[6 + r * 4 + 2] = -x * sn + z * c;
+    }
+    dx = h[18] - pv[0]; dz = h[20] - pv[2];     /* the position turned about pv, then moved */
+    h[18] = pv[0] + dx * c + dz * sn + t[0];
+    h[19] += t[1];
+    h[20] = pv[2] - dx * sn + dz * c + t[2];
+}
+
+/* collision model ci's head now: its start (as read, or where its copy began) turned and moved
+ * as its piece is, its box round its corners as they are */
+static void cur_head(int ci, float h[22])
+{
+    const JSCModel *cr = &G.s.cmodels[ci];
+    int pk = G.s.cpiece ? G.s.cpiece[ci] : -1, q, r;
+    float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
+    if (ci < G.ncm0) memcpy(h, G.cm0[ci], 88);
+    else memcpy(h, G.chbase[ci], 88);
+    if (pk >= 0) head_turn_move(h, G.s.pieces[pk].yaw, G.s.pieces[pk].pv, G.s.pieces[pk].t3);
+    for (q = 0; q < cr->nv; q++)
+        for (r = 0; r < 3; r++) {
+            float v = G.s.cp[(size_t)(cr->v0 + q) * 3 + r];
+            if (v < lo[r]) lo[r] = v;
+            if (v > hi[r]) hi[r] = v;
+        }
+    if (cr->nv) for (r = 0; r < 3; r++) { h[r] = lo[r]; h[3 + r] = hi[r]; }
+}
+
+static int root_cm(int ci)                      /* the collision model as read a copy comes from */
+{
+    while (ci >= G.ncm0 && G.s.cmodels[ci].src >= 0) ci = G.s.cmodels[ci].src;
+    return ci;
+}
+static int root_rail(int r)
+{
+    while (r >= G.nrail0 && G.s.rsrc && G.s.rsrc[r] >= 0) r = G.s.rsrc[r];
+    return r;
+}
+/* a copy's vertex: the vertex as read it comes from */
+static int root_vert(int v)
+{
+    int pk = G.s.vpiece[v];
+    while (pk >= 0 && G.s.pieces[pk].src >= 0) {
+        const JSPiece *pc = &G.s.pieces[pk];
+        v = G.s.pieces[pc->src].v[v - pc->v[0]];
+        pk = G.s.vpiece[v];
+    }
+    return v;
+}
+static int root_piece(int k)
+{
+    while (k >= 0 && G.s.pieces[k].src >= 0) k = G.s.pieces[k].src;
+    return k;
+}
+
+/* the picked pieces copied, with their collision and rails, beside them */
+static void obj_copy_pieces(void)
+{
+    int first, n0 = G.s.npiece, ncm_before = G.s.ncmodel, nr_before = G.s.nrail, j, k;
+    float lo[3], hi[3], p[3], y;
+    if (obj_ok() != 2) return;
+    ed_snap();
+    first = jst_piece_copy(&G.s, G.pset, G.npset);
+    if (first < 0) return;
+    {                                           /* the viewer's buffers grow with it */
+        float *vv = (float *)realloc(G.vv, sizeof(float) * 3 * (size_t)(G.s.nv + 1));
+        float *cv = (float *)realloc(G.cv, sizeof(float) * 3 * (size_t)(G.s.ncv + 1));
+        uint8_t *in = (uint8_t *)realloc(G.inset, (size_t)G.s.npiece + 1);
+        int *ctm = (int *)realloc(G.ctm, sizeof(int) * (size_t)(G.s.nct + 1));
+        float *py = (float *)realloc(G.pyaw_saved, sizeof(float) * (size_t)(G.s.npiece + 1));
+        int *to = G.tset_own ? (int *)realloc(G.tset_own, sizeof(int) * (size_t)(G.s.ncmodel + 1)) : NULL;
+        float (*cb)[22] = (float (*)[22])realloc(G.chbase, sizeof(float) * 22 * (size_t)(G.s.ncmodel + 1));
+        int *rf = (int *)realloc(G.rfile, sizeof(int) * (size_t)(G.s.nrail + 1));
+        if (vv) G.vv = vv;
+        if (cv) G.cv = cv;
+        if (in) { G.inset = in; memset(G.inset + n0, 0, (size_t)(G.s.npiece - n0) + 1); }
+        if (ctm) {
+            G.ctm = ctm;
+            for (k = ncm_before; k < G.s.ncmodel; k++)
+                for (j = 0; j < G.s.cmodels[k].nt; j++) G.ctm[G.s.cmodels[k].t0 + j] = k;
+        }
+        if (py) { G.pyaw_saved = py; for (k = n0; k < G.s.npiece; k++) G.pyaw_saved[k] = 0; }
+        if (to) { G.tset_own = to; for (k = ncm_before; k < G.s.ncmodel; k++) G.tset_own[k] = -1; }
+        if (cb) {                               /* a copied collision model starts where its source is now */
+            G.chbase = cb;
+            for (k = ncm_before; k < G.s.ncmodel; k++) cur_head(G.s.cmodels[k].src, G.chbase[k]);
+        }
+        if (rf) { G.rfile = rf; for (k = 0; k < G.s.nrail; k++) if (k >= nr_before || k < G.nrail0) G.rfile[k] = -1; }
+        if (!vv || !cv || !in || !ctm || !py || !cb || !rf) return;
+    }
+    pset_clear();
+    for (k = first; k < G.s.npiece; k++) pset_add(k);
+    obj_box(lo, hi);
+    obj_get(p, &y);
+    p[0] += (hi[0] - lo[0]) + 2.0f;             /* beside the first */
+    obj_set(p, y);
+    G.dirty = 1;
+}
+
 /* the pieces' edits into the .dat files (vertex positions, normals, the
  * spheres the game culls by) and the collision moved with them into G.ed;
  * the .dat files written by the saver. 0 done */
@@ -1169,7 +1306,7 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
         uint32_t vo, vc, fvf, vs, io, ic, strip, go, gc, g, i;
         int mt = 0;
         if (md->dat < 0 || md->dat >= 64) continue;
-        for (k = 0; k < G.s.npiece && !mt; k++) if (G.s.pieces[k].model == m && G.s.pieces[k].touched) mt = 1;
+        for (k = 0; k < G.s.npiece && !mt; k++) if (G.s.pieces[k].model == m && G.s.pieces[k].touched && G.s.pieces[k].src < 0) mt = 1;
         if (!mt) continue;
         if (!buf[md->dat]) {
             char p[2048];
@@ -1257,125 +1394,137 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
 #undef U32
         dirtyf[md->dat] = 1;
     }
-    /* the collision moved with them */
-    if (G.cm0) {
-        int empty = -1, i;
+    /* the collision moved with them, made again from the models as read each time (m29g: copies
+     * added to their source's area); a moved one's triangles get their corner notes again (m29d) */
+    if (G.cm0 && G.vset0 && G.cafirst0 && G.tset0) {
+        int empty = -1, i, a, nn = 0, cap = G.s.ncmodel + 16;
+        float (*cur)[22] = (float (*)[22])malloc(sizeof(float) * 22 * (size_t)(G.s.ncmodel + 1));
+        int *ctset = (int *)malloc(sizeof(int) * (size_t)(G.s.ncmodel + 1)), *keep = (int *)calloc((size_t)G.s.ncmodel + 1, sizeof(int));
+        JCModel *ncm = (JCModel *)malloc(sizeof(JCModel) * (size_t)cap);
+        if (!cur || !ctset || !keep || !ncm) { free(cur); free(ctset); free(keep); free(ncm); goto rails; }
         for (i = 0; i < G.ed.nts; i++) if (!G.ed.ts[i].n) empty = i;
-        for (k = 0; k < G.s.npiece; k++) {
-            const JSPiece *pc = &G.s.pieces[k];
-            float a = pc->yaw * 3.14159265f / 180.0f, c = cosf(a), sn = sinf(a);
-            int j;
-            if (!pc->touched) continue;
-            for (j = 0; j < pc->ncm; j++) {
-                int ci = pc->cm[j], q, r;
-                JCModel *cm = &G.ed.cm[ci];
-                const JSCModel *cr = &G.s.cmodels[ci];
-                float head[22], lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
-                memcpy(head, G.cm0[ci], 88);
-                for (r = 0; r < 3; r++) {          /* the rows turned */
-                    float x = head[6 + r * 4], z = head[6 + r * 4 + 2];
-                    head[6 + r * 4] = x * c + z * sn;
-                    head[6 + r * 4 + 2] = -x * sn + z * c;
+        for (i = 0; i < G.s.ncmodel; i++) {
+            int pk = G.s.cpiece ? G.s.cpiece[i] : -1, ri = root_cm(i);
+            const JSPiece *pc = pk >= 0 ? &G.s.pieces[pk] : NULL;
+            int moved = i >= G.ncm0 || (pc && pc->touched && (pc->yaw != 0 || pc->t3[0] != 0 || pc->t3[1] != 0 || pc->t3[2] != 0));
+            keep[i] = i < G.ncm0 || !(pc && pc->removed);
+            cur_head(i, cur[i]);
+            ctset[i] = G.tset0[ri];
+            if (pc && pc->removed) {                    /* gone: no triangles left to stand on */
+                if (empty < 0) {
+                    JBytes *nt = (JBytes *)realloc(G.ed.ts, sizeof(JBytes) * (size_t)(G.ed.nts + 1));
+                    if (nt) { G.ed.ts = nt; nt[G.ed.nts].p = (uint8_t *)malloc(1); nt[G.ed.nts].n = 0; empty = G.ed.nts++; }
                 }
-                {                                  /* the position turned about the piece's middle, then moved */
-                    float dx = head[18] - pc->pv[0], dz = head[20] - pc->pv[2];
-                    head[18] = pc->pv[0] + dx * c + dz * sn + pc->t3[0];
-                    head[19] += pc->t3[1];
-                    head[20] = pc->pv[2] - dx * sn + dz * c + pc->t3[2];
+                if (empty >= 0) ctset[i] = empty;
+            } else if (moved && G.tset_own) {
+                /* m29d: each triangle notes which corner is lowest and highest on each axis, from its
+                 * world place (bits 16..27 of its second word: min x, max x, min y, max y, min z,
+                 * max z, two bits each, the first corner on a tie). The game builds the triangle's box
+                 * from it, so a moved or turned model's own copy of its triangles gets them again */
+                int own = G.tset_own[i];
+                const JBytes *src = &G.ed.ts[G.tset0[ri]], *vsb = &G.ed.vs[G.vset0[ri]];
+                if (own < 0) {
+                    JBytes *nt = (JBytes *)realloc(G.ed.ts, sizeof(JBytes) * (size_t)(G.ed.nts + 1));
+                    if (nt) {
+                        G.ed.ts = nt;
+                        src = &G.ed.ts[G.tset0[ri]];
+                        nt[G.ed.nts].n = src->n;
+                        nt[G.ed.nts].p = (uint8_t *)malloc(src->n + 1);
+                        if (nt[G.ed.nts].p) own = G.tset_own[i] = G.ed.nts++;
+                    }
                 }
-                for (q = 0; q < cr->nv; q++)
-                    for (r = 0; r < 3; r++) {
-                        float v = G.s.cp[(size_t)(cr->v0 + q) * 3 + r];
-                        if (v < lo[r]) lo[r] = v;
-                        if (v > hi[r]) hi[r] = v;
-                    }
-                if (cr->nv) for (r = 0; r < 3; r++) { head[r] = lo[r]; head[3 + r] = hi[r]; }
-                memcpy(cm->head, head, 88);
-                if (pc->removed) {                 /* gone: no triangles left to stand on */
-                    if (empty < 0) {
-                        JBytes *nt = (JBytes *)realloc(G.ed.ts, sizeof(JBytes) * (size_t)(G.ed.nts + 1));
-                        if (nt) { G.ed.ts = nt; nt[G.ed.nts].p = (uint8_t *)malloc(1); nt[G.ed.nts].n = 0; empty = G.ed.nts++; }
-                    }
-                    if (empty >= 0) cm->tset = empty;
-                } else {
-                    cm->tset = G.tset0[ci];
-                    /* m29d: each triangle notes which corner is lowest and highest on each axis, from
-                     * its world place (bits 16..27 of its second word: min x, max x, min y, max y,
-                     * min z, max z, two bits each, the first corner on a tie; matches every triangle
-                     * of the stages read). The game builds the triangle's box from it, so a turned
-                     * model's notes are worked out again (Miggas: a turned platform's floor and ramp
-                     * didn't hold him). Its own copy of the triangles, so others sharing them keep theirs */
-                    if ((pc->yaw != 0 || pc->t3[0] != 0 || pc->t3[1] != 0 || pc->t3[2] != 0) && G.tset_own) {
-                        int own = G.tset_own[ci];
-                        const JBytes *vsb = &G.ed.vs[cm->vset];
-                        if (own < 0) {
-                            JBytes *nt = (JBytes *)realloc(G.ed.ts, sizeof(JBytes) * (size_t)(G.ed.nts + 1));
-                            if (nt) {
-                                G.ed.ts = nt;
-                                nt[G.ed.nts].n = G.ed.ts[G.tset0[ci]].n;
-                                nt[G.ed.nts].p = (uint8_t *)malloc(nt[G.ed.nts].n + 1);
-                                if (nt[G.ed.nts].p) {
-                                    memcpy(nt[G.ed.nts].p, G.ed.ts[G.tset0[ci]].p, nt[G.ed.nts].n);
-                                    own = G.tset_own[ci] = G.ed.nts++;
-                                }
-                            }
+                if (own >= 0) {
+                    JBytes *tb = &G.ed.ts[own];
+                    const float *head = cur[i];
+                    size_t t, nv;
+                    src = &G.ed.ts[G.tset0[ri]];
+                    vsb = &G.ed.vs[G.vset0[ri]];
+                    nv = vsb->n / 16;
+                    memcpy(tb->p, src->p, tb->n);
+                    ctset[i] = own;
+                    for (t = 0; t + 8 <= tb->n; t += 8) {
+                        uint32_t w0 = tb->p[t] | tb->p[t + 1] << 8 | tb->p[t + 2] << 16 | (uint32_t)tb->p[t + 3] << 24;
+                        uint32_t w1 = tb->p[t + 4] | tb->p[t + 5] << 8 | tb->p[t + 6] << 16 | (uint32_t)tb->p[t + 7] << 24;
+                        float wv[3][3];
+                        int cn, ax, bits = 0;
+                        for (cn = 0; cn < 3; cn++) {
+                            uint32_t vi = (w0 >> (10 * cn)) & 1023u;
+                            float lv[3];
+                            if (vi >= nv) break;
+                            memcpy(lv, vsb->p + vi * 16, 12);
+                            for (ax = 0; ax < 3; ax++)   /* world = position + x row0 + y row1 + z row2 */
+                                wv[cn][ax] = (float)((double)head[18 + ax] + (double)lv[0] * head[6 + ax]
+                                                     + (double)lv[1] * head[10 + ax] + (double)lv[2] * head[14 + ax]);
                         }
-                        if (own >= 0) {
-                            JBytes *tb = &G.ed.ts[own];
-                            size_t t, nv = vsb->n / 16;
-                            cm->tset = own;
-                            memcpy(tb->p, G.ed.ts[G.tset0[ci]].p, tb->n);   /* from the original each time */
-                            for (t = 0; t + 8 <= tb->n; t += 8) {
-                                uint32_t w0 = tb->p[t] | tb->p[t + 1] << 8 | tb->p[t + 2] << 16 | (uint32_t)tb->p[t + 3] << 24;
-                                uint32_t w1 = tb->p[t + 4] | tb->p[t + 5] << 8 | tb->p[t + 6] << 16 | (uint32_t)tb->p[t + 7] << 24;
-                                float wv[3][3];
-                                int cn, ax, bits = 0;
-                                for (cn = 0; cn < 3; cn++) {
-                                    uint32_t vi = (w0 >> (10 * cn)) & 1023u;
-                                    float lv[3];
-                                    if (vi >= nv) break;
-                                    memcpy(lv, vsb->p + vi * 16, 12);
-                                    for (ax = 0; ax < 3; ax++)   /* world = position + x row0 + y row1 + z row2 */
-                                        wv[cn][ax] = (float)((double)head[18 + ax] + (double)lv[0] * head[6 + ax]
-                                                             + (double)lv[1] * head[10 + ax] + (double)lv[2] * head[14 + ax]);
-                                }
-                                if (cn < 3) continue;
-                                for (ax = 0; ax < 3; ax++) {
-                                    int mn = 0, mx = 0;
-                                    for (cn = 1; cn < 3; cn++) {
-                                        if (wv[cn][ax] < wv[mn][ax]) mn = cn;
-                                        if (wv[cn][ax] > wv[mx][ax]) mx = cn;
-                                    }
-                                    bits |= mn << (4 * ax) | mx << (4 * ax + 2);
-                                }
-                                w1 = (w1 & ~(0xFFFu << 16)) | (uint32_t)bits << 16;
-                                tb->p[t + 4] = (uint8_t)w1; tb->p[t + 5] = (uint8_t)(w1 >> 8);
-                                tb->p[t + 6] = (uint8_t)(w1 >> 16); tb->p[t + 7] = (uint8_t)(w1 >> 24);
+                        if (cn < 3) continue;
+                        for (ax = 0; ax < 3; ax++) {
+                            int mn = 0, mx = 0;
+                            for (cn = 1; cn < 3; cn++) {
+                                if (wv[cn][ax] < wv[mn][ax]) mn = cn;
+                                if (wv[cn][ax] > wv[mx][ax]) mx = cn;
                             }
+                            bits |= mn << (4 * ax) | mx << (4 * ax + 2);
                         }
+                        w1 = (w1 & ~(0xFFFu << 16)) | (uint32_t)bits << 16;
+                        tb->p[t + 4] = (uint8_t)w1; tb->p[t + 5] = (uint8_t)(w1 >> 8);
+                        tb->p[t + 6] = (uint8_t)(w1 >> 16); tb->p[t + 7] = (uint8_t)(w1 >> 24);
                     }
                 }
             }
         }
-        /* each area's box as read, grown round its models as they are now */
-        for (i = 0; i < G.ed.nca; i++) {
+        /* each area: its models as read, then the copies of models in it */
+        for (a = 0; a < G.ed.nca; a++) {
             float bx[6];
-            int j, r;
-            memcpy(bx, G.cabox0[i], 24);
-            for (j = 0; j < G.ed.ca[i].count; j++) {
-                const float *h = (const float *)G.ed.cm[G.ed.ca[i].first + j].head;
+            int jj, r;
+            G.ed.ca[a].first = nn;
+            memcpy(bx, G.cabox0[a], 24);
+            for (i = 0; i < G.s.ncmodel; i++) {
+                int ri = root_cm(i);
+                if (i < G.ncm0 ? !(i >= G.cafirst0[a] && i < G.cafirst0[a] + G.cacount0[a]) : (!keep[i] || G.s.cmodels[ri].area != a)) continue;
+                if (i >= G.ncm0 && a != G.s.cmodels[i].area) continue;
+                if (nn == cap) break;
+                memcpy(ncm[nn].head, cur[i], 88);
+                ncm[nn].vset = G.vset0[ri]; ncm[nn].tset = ctset[i];
+                memcpy(ncm[nn].tail, G.tail0[ri], 8);
+                nn++;
+            }
+            G.ed.ca[a].count = nn - G.ed.ca[a].first;
+            for (jj = G.ed.ca[a].first; jj < nn; jj++) {   /* the area's box grown round its models as they are now */
                 float hb[6];
-                memcpy(hb, h, 24);
+                memcpy(hb, ncm[jj].head, 24);
                 for (r = 0; r < 3; r++) { if (hb[r] < bx[r]) bx[r] = hb[r]; if (hb[3 + r] > bx[3 + r]) bx[3 + r] = hb[3 + r]; }
             }
-            memcpy(G.ed.ca[i].box, bx, 24);
+            memcpy(G.ed.ca[a].box, bx, 24);
         }
+        free(G.ed.cm);
+        G.ed.cm = ncm;
+        G.ed.ncm = nn;
+        free(cur); free(ctset); free(keep);
     }
+rails:
     /* the rails moved with them; a removed piece's rails taken out of the lists that find them */
     if (G.rmap && G.list0) {
         int r, i, j, q;
+        for (r = G.nrail0; r < G.ed.nrail; r++) free(G.ed.rail[r].pts.p);   /* m29g: copies made again below */
+        if (G.ed.nrail > G.nrail0) G.ed.nrail = G.nrail0;
+        for (r = G.nrail0; r < G.s.nrail; r++) {        /* m29g: copied rails, after the rails as read */
+            int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ro = root_rail(r), ri = ro < G.nrail0 ? G.rmap[ro] : -1;
+            JRail *nr;
+            if (G.rfile) G.rfile[r] = -1;
+            if (pk < 0 || G.s.pieces[pk].removed || ri < 0) continue;
+            nr = (JRail *)realloc(G.ed.rail, sizeof(JRail) * (size_t)(G.ed.nrail + 1));
+            if (!nr) break;
+            G.ed.rail = nr;
+            nr = &G.ed.rail[G.ed.nrail];
+            memcpy(nr->rest, G.ed.rail[ri].rest, 28);
+            nr->pts.n = (size_t)G.s.rn[r] * 24;
+            nr->pts.p = (uint8_t *)malloc(nr->pts.n + 1);
+            if (!nr->pts.p) break;
+            if (G.rfile) G.rfile[r] = G.ed.nrail;
+            G.ed.nrail++;
+        }
         for (r = 0; r < G.s.nrail; r++) {
-            int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ri = G.rmap[r];
+            int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ri = r < G.nrail0 ? G.rmap[r] : (G.rfile ? G.rfile[r] : -1);
             float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
             if (pk < 0 || ri < 0 || !G.s.pieces[pk].touched) continue;
             for (i = 0; i < G.s.rn[r] && (size_t)(i + 1) * 24 <= G.ed.rail[ri].pts.n; i++) {
@@ -1397,7 +1546,7 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
             int *cap = (int *)calloc(1025, sizeof(int)), *tmp = (int *)malloc(sizeof(int) * (size_t)(G.ed.nrail + 1));
             if (chg && nl && nn && cap && tmp) {
                 for (r = 0; r < G.s.nrail; r++) {
-                    int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ri = G.rmap[r];
+                    int pk = G.s.rpiece ? G.s.rpiece[r] : -1, ri = r < G.nrail0 ? G.rmap[r] : (G.rfile ? G.rfile[r] : -1);
                     if (pk < 0 || ri < 0 || !G.s.pieces[pk].touched) continue;
                     chg[ri] = G.s.pieces[pk].removed ? 2 : 1;
                 }
@@ -1440,6 +1589,213 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
             }
             free(chg); free(nl); free(nn); free(cap); free(tmp);
         }
+    }
+    /* m29g: copies of map pieces: for each stage model they come from, one new stage model (a block
+     * at the end of the .dat holding the stage's last model, the next model number, placed in its
+     * source's area, the .bin's model count one more) */
+    if (G.newid && G.lastdat >= 0 && G.lastdat < 64 && G.ed_ok) {
+#define RD32(x) ((uint32_t)(x)[0] | (uint32_t)(x)[1] << 8 | (uint32_t)(x)[2] << 16 | (uint32_t)(x)[3] << 24)
+#define WR32(x, v) do { uint32_t v_ = (uint32_t)(v); (x)[0] = (uint8_t)v_; (x)[1] = (uint8_t)(v_ >> 8); (x)[2] = (uint8_t)(v_ >> 16); (x)[3] = (uint8_t)(v_ >> 24); } while (0)
+        for (m = 0; m < G.s.nmodel; m++) {
+            const JSModel *md = &G.s.models[m];
+            int has = 0, anyc = 0, q, gi, nvn = 0, ntri = 0, *vmap = NULL, *vlist = NULL, *gcount = NULL, id;
+            uint32_t i;
+            uint8_t *sb, *D, *sbase, *mh, *blk, *nd;
+            uint32_t vo, vc, fvf, vs, mh7, goff, gc, nmat, ntex, msize, mrel, grel, srel, vrel, irel, dsize, bsize;
+            int ngu = 0, *gused = NULL;
+            uint16_t *ib = NULL;
+            size_t boff, off;
+            for (k = 0; k < G.s.npiece; k++)
+                if (G.s.pieces[k].src >= 0 && G.s.pieces[k].model == m) { anyc = 1; if (!G.s.pieces[k].removed) has = 1; }
+            if (!anyc || (!has && G.newid[m] < 0)) continue;
+            if (md->dat < 0 || md->dat >= 64) continue;
+            for (q = 0; q < 2; q++) {                   /* the source's file and the one the new model goes in */
+                int fi = q ? G.lastdat : md->dat;
+                if (!buf[fi]) {
+                    char pth[2048];
+                    pjoin(pth, G.dir, G.s.datfile[fi]);
+                    buf[fi] = (uint8_t *)read_file(pth, &bn[fi]);
+                    if (!buf[fi]) { snprintf(msg, msgn, "Couldn't read %s.", G.s.datfile[fi]); goto fail; }
+                }
+            }
+            sb = buf[md->dat];
+            if (md->boff + 20 > bn[md->dat] || md->doff + 0x90 > bn[md->dat]) continue;
+            ntex = RD32(sb + md->boff + 16);
+            D = sb + md->doff; sbase = D + 0x10;
+            mh = sbase + RD32(D + 0x10);
+            vo = RD32(mh); vc = RD32(mh + 4); fvf = RD32(mh + 8); vs = RD32(mh + 12); mh7 = RD32(mh + 28);
+            goff = RD32(D + 0x80); gc = RD32(D + 0x84); nmat = RD32(D + 0x7C);
+            if (!gc || gc > 4096 || nmat > 64 || (int)vc != md->nv) continue;
+            vmap = (int *)malloc(sizeof(int) * (size_t)(G.s.nv + 1));
+            vlist = (int *)malloc(sizeof(int) * (size_t)(G.s.nv + 1));
+            gcount = (int *)calloc(gc, sizeof(int));
+            gused = (int *)malloc(sizeof(int) * gc);
+            if (!vmap || !vlist || !gcount || !gused) { free(vmap); free(vlist); free(gcount); free(gused); continue; }
+            for (k = 0; k < G.s.nv; k++) vmap[k] = -1;
+            /* the triangles, by the group they come from */
+            for (k = 0; k < G.s.npiece; k++) {
+                const JSPiece *pc = &G.s.pieces[k];
+                if (pc->src < 0 || pc->model != m || pc->removed) continue;
+                for (i = 0; i < (uint32_t)pc->nt; i++) {
+                    int t = pc->t[i], g2 = G.s.tgroup ? G.s.tgroup[t] : -1;
+                    if (g2 < 0 || (uint32_t)g2 >= gc) continue;
+                    gcount[g2]++;
+                    ntri++;
+                }
+            }
+            for (gi = 0; gi < (int)gc; gi++) if (gcount[gi]) gused[ngu++] = gi;
+            ib = (uint16_t *)malloc(sizeof(uint16_t) * (size_t)(ntri * 3 + 2));
+            if (!ib) { free(vmap); free(vlist); free(gcount); free(gused); continue; }
+            /* the new model's parts, laid out as the game's: header, materials, mesh header, groups,
+             * spheres, vertices, indices (a list, not a strip) */
+            mrel = 0x80 + 20 * nmat;
+            grel = mrel + 32;
+            srel = grel + 32 * (uint32_t)ngu;
+            {
+                int ti = 0;
+                for (gi = 0; gi < ngu; gi++)
+                    for (k = 0; k < G.s.npiece; k++) {
+                        const JSPiece *pc = &G.s.pieces[k];
+                        if (pc->src < 0 || pc->model != m || pc->removed) continue;
+                        for (i = 0; i < (uint32_t)pc->nt; i++) {
+                            int t = pc->t[i], c3;
+                            if (!G.s.tgroup || G.s.tgroup[t] != gused[gi]) continue;
+                            for (c3 = 0; c3 < 3; c3++) {
+                                int v = (int)G.s.ix[(size_t)t * 3 + c3];
+                                if (vmap[v] < 0) { vmap[v] = nvn; vlist[nvn++] = v; }
+                                ib[ti * 3 + c3] = (uint16_t)vmap[v];
+                            }
+                            ti++;
+                        }
+                    }
+            }
+            vrel = srel + 16 * (uint32_t)ngu;
+            irel = vrel + (uint32_t)nvn * vs;
+            dsize = (irel + 0x10 + (uint32_t)ntri * 6 + 3) & ~3u;
+            bsize = 20 + 4 * ntex + dsize;
+            blk = (uint8_t *)calloc(1, bsize);
+            if (!blk || nvn > 65535) { free(blk); free(ib); free(vmap); free(vlist); free(gcount); free(gused); continue; }
+            id = G.newid[m] >= 0 ? G.newid[m] : G.nmod0 + G.nnew;
+            WR32(blk, 1); WR32(blk + 4, id); WR32(blk + 8, dsize); WR32(blk + 12, md->kind); WR32(blk + 16, ntex);
+            memcpy(blk + 20, sb + md->boff + 20, 4 * ntex);
+            nd = blk + 20 + 4 * ntex;
+            memcpy(nd, D, 0x90);
+            memcpy(nd + 0x90, D + 0x90, 20 * nmat);
+            WR32(nd + 0x10, mrel);
+            WR32(nd + 0x80, grel);
+            WR32(nd + 0x84, ngu);
+            {
+                uint8_t *nmh = nd + 0x10 + mrel;
+                WR32(nmh, vrel); WR32(nmh + 4, nvn); WR32(nmh + 8, fvf); WR32(nmh + 12, vs);
+                WR32(nmh + 16, irel); WR32(nmh + 20, ntri * 3); WR32(nmh + 24, 0); WR32(nmh + 28, mh7);
+            }
+            for (i = 0; i < (uint32_t)nvn; i++) {     /* each corner: as read, at its place now, its normal turned */
+                int v = vlist[i], rv = root_vert(v), pk = G.s.vpiece[v], rp = root_piece(pk);
+                uint8_t *dv = nd + 0x10 + vrel + i * vs;
+                memcpy(dv, sbase + vo + (size_t)(rv - md->v0) * vs, vs);
+                memcpy(dv, G.s.p + (size_t)v * 3, 12);
+                if ((fvf & 0x10) && pk >= 0 && rp >= 0) {
+                    float a2 = (G.s.pieces[pk].yaw + G.s.pieces[pk].yaw_base - G.s.pieces[rp].yaw) * 3.14159265f / 180.0f, nrm[3];
+                    if (a2 != 0) {
+                        float c = cosf(a2), sn = sinf(a2), x;
+                        memcpy(nrm, dv + 12, 12);
+                        x = nrm[0];
+                        nrm[0] = x * c + nrm[2] * sn; nrm[2] = -x * sn + nrm[2] * c;
+                        memcpy(dv + 12, nrm, 12);
+                    }
+                }
+            }
+            memcpy(nd + 0x10 + irel, ib, (size_t)ntri * 6);
+            {                                           /* groups and their spheres; the model's */
+                int first = 0;
+                float mlo[3] = { 1e30f, 1e30f, 1e30f }, mhi[3] = { -1e30f, -1e30f, -1e30f }, mr2 = 0, mc[3];
+                for (gi = 0; gi < ngu; gi++) {
+                    uint8_t *ge = nd + 0x10 + grel + 32 * gi;
+                    float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f }, cc[3], r2 = 0, sp[4];
+                    int z;
+                    memcpy(ge, sbase + goff + 32 * gused[gi], 32);
+                    WR32(ge, gcount[gused[gi]]); WR32(ge + 4, first * 3); WR32(ge + 28, srel + 16 * gi);
+                    for (z = first * 3; z < (first + gcount[gused[gi]]) * 3; z++) {
+                        const float *pp = G.s.p + (size_t)vlist[ib[z]] * 3;
+                        for (q = 0; q < 3; q++) { if (pp[q] < lo[q]) lo[q] = pp[q]; if (pp[q] > hi[q]) hi[q] = pp[q]; }
+                    }
+                    for (q = 0; q < 3; q++) cc[q] = (lo[q] + hi[q]) * 0.5f;
+                    for (z = first * 3; z < (first + gcount[gused[gi]]) * 3; z++) {
+                        const float *pp = G.s.p + (size_t)vlist[ib[z]] * 3;
+                        float d2 = (pp[0] - cc[0]) * (pp[0] - cc[0]) + (pp[1] - cc[1]) * (pp[1] - cc[1]) + (pp[2] - cc[2]) * (pp[2] - cc[2]);
+                        if (d2 > r2) r2 = d2;
+                    }
+                    sp[0] = cc[0]; sp[1] = cc[1]; sp[2] = cc[2]; sp[3] = sqrtf(r2) * 1.001f + 0.01f;
+                    memcpy(nd + 0x10 + srel + 16 * gi, sp, 16);
+                    for (q = 0; q < 3; q++) { if (lo[q] < mlo[q]) mlo[q] = lo[q]; if (hi[q] > mhi[q]) mhi[q] = hi[q]; }
+                    first += gcount[gused[gi]];
+                }
+                for (q = 0; q < 3; q++) mc[q] = (mlo[q] + mhi[q]) * 0.5f;
+                for (i = 0; i < (uint32_t)nvn; i++) {
+                    const float *pp = G.s.p + (size_t)vlist[i] * 3;
+                    float d2 = (pp[0] - mc[0]) * (pp[0] - mc[0]) + (pp[1] - mc[1]) * (pp[1] - mc[1]) + (pp[2] - mc[2]) * (pp[2] - mc[2]);
+                    if (d2 > mr2) mr2 = d2;
+                }
+                {
+                    float sp[4] = { mc[0], mc[1], mc[2], sqrtf(mr2) * 1.001f + 0.01f };
+                    if (!nvn) sp[0] = sp[1] = sp[2] = sp[3] = 0;
+                    memcpy(nd + 0x20, sp, 16);
+                }
+            }
+            /* into the last models' .dat: its earlier version out, this one after the last block */
+            {
+                uint8_t *tb = buf[G.lastdat];
+                size_t tn = bn[G.lastdat], end = 0, cut0 = 0, cut1 = 0;
+                off = 0;
+                while (off + 8 <= tn) {
+                    uint32_t t = RD32(tb + off);
+                    size_t e2;
+                    if (t == 1) { if (off + 20 > tn) break; e2 = off + 20 + (size_t)RD32(tb + off + 16) * 4 + RD32(tb + off + 8); }
+                    else if (t == 0) e2 = off + 8 + RD32(tb + off + 4);
+                    else e2 = off + 4 + (size_t)t;
+                    if (e2 <= off || e2 > tn) break;
+                    if (t == 1 && (int)RD32(tb + off + 4) == id) { cut0 = off; cut1 = e2; }
+                    off = e2;
+                }
+                end = off;
+                if (cut1 > cut0) {
+                    memmove(tb + cut0, tb + cut1, tn - cut1);
+                    tn -= cut1 - cut0;
+                    end -= cut1 - cut0;
+                }
+                tb = (uint8_t *)realloc(tb, tn + bsize);
+                if (!tb) { free(blk); free(ib); free(vmap); free(vlist); free(gcount); free(gused); snprintf(msg, msgn, "Out of memory."); goto fail; }
+                memmove(tb + end + bsize, tb + end, tn - end);
+                memcpy(tb + end, blk, bsize);
+                buf[G.lastdat] = tb;
+                bn[G.lastdat] = tn + bsize;
+                dirtyf[G.lastdat] = 1;
+            }
+            if (G.newid[m] < 0) {                       /* a new model: its placement, beside its source's */
+                int a2;
+                G.newid[m] = id;
+                G.nnew++;
+                for (a2 = 0; a2 < G.ed.nva; a2++) {
+                    size_t e, ne = G.ed.pl[a2].n / 80;
+                    for (e = 0; e < ne; e++)
+                        if ((int)RD32(G.ed.pl[a2].p + e * 80 + 64) == md->id) break;
+                    if (e < ne) {
+                        uint8_t *np = (uint8_t *)realloc(G.ed.pl[a2].p, G.ed.pl[a2].n + 80);
+                        if (np) {
+                            memcpy(np + G.ed.pl[a2].n, np + e * 80, 80);
+                            WR32(np + G.ed.pl[a2].n + 64, id);
+                            G.ed.pl[a2].p = np;
+                            G.ed.pl[a2].n += 80;
+                        }
+                        break;
+                    }
+                }
+                WR32(G.ed.head + 24, G.nmod0 + G.nnew);
+            }
+            free(blk); free(ib); free(vmap); free(vlist); free(gcount); free(gused);
+        }
+#undef RD32
+#undef WR32
     }
     for (k = 0; k < 64; k++)
         if (dirtyf[k]) {
@@ -1556,6 +1912,7 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
         else if (sscanf(tok, "padd %d", &k) == 1) pset_add(k);
         else if (!strncmp(tok, "inside", 6)) obj_add_inside();
         else if (!strncmp(tok, "touch", 5)) obj_add_touching();
+        else if (!strncmp(tok, "pcopy", 5)) obj_copy_pieces();
         else if (!strncmp(tok, "near", 4)) {      /* (tests) pieces within 20 of the picked ones' box */
             float lo[3], hi[3]; int q2, kk;
             obj_box(lo, hi);
@@ -1705,9 +2062,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             if (ch || hd != hd0) { if (!G.grab) ed_snap(); obj_set(v, hd); }
             nk_layout_row_dynamic(ctx, row - 4, 2);
             if (nk_button_label(ctx, G.grab ? "Grabbed: click to drop" : "Grab (G)")) obj_grab();
-            if (obj_ok() == 1) {
-                if (nk_button_label(ctx, "Copy (Ctrl+D)")) ed_copy(G.sel);
-            } else nk_spacing(ctx, 1);
+            if (nk_button_label(ctx, "Copy (Ctrl+D)")) { if (obj_ok() == 1) ed_copy(G.sel); else obj_copy_pieces(); }
             if (nk_button_label(ctx, "Turn -15 ([)")) { ed_snap(); obj_turn(-15); }
             if (nk_button_label(ctx, "Turn +15 (])")) { ed_snap(); obj_turn(15); }
             if (nk_button_label(ctx, "Delete (Del)")) obj_delete();
@@ -1835,7 +2190,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 int sel_ok = obj_ok() != 0;
 #define KEYHIT(sc) (ks[sc] && !G.kprev[sc])
                 if (ctrl && KEYHIT(SDL_SCANCODE_Z)) ed_undo();
-                if (obj_ok() == 1 && ctrl && KEYHIT(SDL_SCANCODE_D)) ed_copy(G.sel);
+                if (ctrl && KEYHIT(SDL_SCANCODE_D)) { if (obj_ok() == 1) ed_copy(G.sel); else if (obj_ok() == 2) obj_copy_pieces(); }
                 if (sel_ok && !ctrl && KEYHIT(SDL_SCANCODE_G)) obj_grab();
                 if (sel_ok && KEYHIT(SDL_SCANCODE_DELETE)) obj_delete();
                 if (obj_ok() == 2 && !ctrl && KEYHIT(SDL_SCANCODE_I)) obj_add_inside();

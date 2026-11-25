@@ -54,7 +54,7 @@ static void *arr_add(Arr *a, size_t k)
 }
 
 typedef struct {
-    Arr p, uv, col, ix, ttex, tkind;
+    Arr p, uv, col, ix, ttex, tkind, tg;    /* m29g: tg a triangle's group in its model (-1 a prop's) */
     Arr cp, cix, cs;
     Arr rs, rn, rp, rnrm;
 } Build;
@@ -67,6 +67,7 @@ typedef struct {
     const uint8_t *d;                   /* its data */
     int dat;                            /* m29: its file */
     size_t doff;                        /* m29: d's offset in it */
+    size_t boff;                        /* m29g: its block's */
     size_t len;
 } Model;
 
@@ -101,6 +102,7 @@ static void dat_models(const Dat *f, int fi, Model **ms, int *n, int *cap)
                 m->d = f->buf + off + 20 + nt * 4;
                 m->dat = fi;
                 m->doff = off + 20 + nt * 4;
+                m->boff = off;
                 m->len = sz;
             }
         } else if (t == 0) end = off + u32(f->buf + off + 4) + 8;
@@ -186,11 +188,12 @@ static int add_stage_model(JStage *s, Build *b, const Model *m)
                 if (a >= vc || bb >= vc || c >= vc) continue;
                 {
                     uint32_t *t = (uint32_t *)arr_add(&b->ix, 3);
-                    int *tt = (int *)arr_add(&b->ttex, 1);
+                    int *tt = (int *)arr_add(&b->ttex, 1), *tgp = (int *)arr_add(&b->tg, 1);
                     uint8_t *tk = (uint8_t *)arr_add(&b->tkind, 1);
                     if (!t || !tt || !tk) return -1;
                     t[0] = (uint32_t)v0 + a; t[1] = (uint32_t)v0 + bb; t[2] = (uint32_t)v0 + c;
                     *tt = tex;
+                    if (tgp) *tgp = (int)g;
                     *tk = m->kind == 2 ? (uv < 0 ? JST_T_SHADOW : JST_T_SEE) : JST_T_STAGE;
                 }
             }
@@ -223,7 +226,8 @@ static int add_prop(JStage *s, Build *b, const Model *m, const float *r, float *
     }
     for (i = 0; i < me.nt; i++) {
         uint32_t *t = (uint32_t *)arr_add(&b->ix, 3);
-        int *tt = (int *)arr_add(&b->ttex, 1), mt = me.tmat ? me.tmat[i] : 0;
+        int *tt = (int *)arr_add(&b->ttex, 1), mt = me.tmat ? me.tmat[i] : 0, *tgp = (int *)arr_add(&b->tg, 1);
+        if (tgp) *tgp = -1;
         uint8_t *tk = (uint8_t *)arr_add(&b->tkind, 1);
         if (!t || !tt || !tk) break;
         t[0] = (uint32_t)v0 + me.ix[i * 3]; t[1] = (uint32_t)v0 + me.ix[i * 3 + 1]; t[2] = (uint32_t)v0 + me.ix[i * 3 + 2];
@@ -262,7 +266,7 @@ static void read_collision(JStage *s, Build *b, const uint8_t *B, size_t n, int 
             s->cmodels = (JSCModel *)realloc(s->cmodels, sizeof(JSCModel) * (size_t)(s->ncmodel + 1));
             if (!s->cmodels) { s->ncmodel = 0; return; }
             cmr = &s->cmodels[s->ncmodel++];
-            cmr->area = (int)i; cmr->v0 = v0; cmr->nv = 0; cmr->t0 = t0c; cmr->nt = 0;
+            cmr->area = (int)i; cmr->v0 = v0; cmr->nv = 0; cmr->t0 = t0c; cmr->nt = 0; cmr->src = -1;
             if ((size_t)vo + (size_t)vc * 16 > n || (size_t)to + (size_t)tc * 8 > n || vc > 1024) continue;
             for (k = 0; k < 3; k++) {          /* rows at 24, 40, 56; the position at 72 */
                 r[k * 3] = f32(m + 24 + 16 * k); r[k * 3 + 1] = f32(m + 28 + 16 * k); r[k * 3 + 2] = f32(m + 32 + 16 * k);
@@ -381,7 +385,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     size_t binsz = 0;
     memset(s, 0, sizeof *s);
     memset(&b, 0, sizeof b);
-    b.p.sz = 12; b.uv.sz = 8; b.col.sz = 4; b.ix.sz = 4; b.ttex.sz = sizeof(int); b.tkind.sz = 1;
+    b.p.sz = 12; b.uv.sz = 8; b.col.sz = 4; b.ix.sz = 4; b.ttex.sz = sizeof(int); b.tkind.sz = 1; b.tg.sz = sizeof(int);
     b.cp.sz = 12; b.cix.sz = 4; b.cs.sz = 2; b.rs.sz = sizeof(int); b.rn.sz = sizeof(int); b.rp.sz = 12; b.rnrm.sz = 12;
     snprintf(s->name, sizeof s->name, "%s", name);
     snprintf(prefix, sizeof prefix, "%s_", name);
@@ -445,7 +449,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
                 s->models = (JSModel *)realloc(s->models, sizeof(JSModel) * (size_t)(s->nmodel + 1));
                 if (s->models) {
                     mm = &s->models[s->nmodel++];
-                    mm->id = ms[i].id; mm->kind = ms[i].kind; mm->dat = ms[i].dat; mm->doff = ms[i].doff;
+                    mm->id = ms[i].id; mm->kind = ms[i].kind; mm->dat = ms[i].dat; mm->doff = ms[i].doff; mm->boff = ms[i].boff;
                     mm->v0 = v0m; mm->nv = (int)b.p.n - v0m; mm->t0 = t0m; mm->nt = (int)(b.ix.n / 3) - t0m;
                 } else s->nmodel = 0;
                 int col, uv;
@@ -504,7 +508,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     for (i = 0; i < ndat; i++) free(dats[i].buf);
     free(bin);
     s->nv = (int)b.p.n; s->p = (float *)b.p.p; s->uv = (float *)b.uv.p; s->col = (uint32_t *)b.col.p;
-    s->nt = (int)b.ix.n / 3; s->ix = (uint32_t *)b.ix.p; s->ttex = (int *)b.ttex.p; s->tkind = (uint8_t *)b.tkind.p;
+    s->nt = (int)b.ix.n / 3; s->ix = (uint32_t *)b.ix.p; s->ttex = (int *)b.ttex.p; s->tkind = (uint8_t *)b.tkind.p; s->tgroup = (int *)b.tg.p;
     s->ncv = (int)b.cp.n; s->cp = (float *)b.cp.p; s->nct = (int)b.cix.n / 3; s->cix = (uint32_t *)b.cix.p; s->csurf = (uint16_t *)b.cs.p;
     s->nrail = (int)b.rs.n; s->rs = (int *)b.rs.p; s->rn = (int *)b.rn.p; s->nrp = (int)b.rp.n; s->rp = (float *)b.rp.p; s->rnrm = (float *)b.rnrm.p;
     for (i = 0; i < 3; i++) { s->lo[i] = 1e30f; s->hi[i] = -1e30f; }
@@ -534,12 +538,12 @@ void jst_free(JStage *s)
 {
     int i;
     for (i = 0; i < s->ntex; i++) free(s->tex[i].rgba);
-    free(s->tex); free(s->p); free(s->uv); free(s->col); free(s->ix); free(s->ttex); free(s->tkind);
+    free(s->tex); free(s->p); free(s->uv); free(s->col); free(s->ix); free(s->ttex); free(s->tkind); free(s->tgroup);
     free(s->cp); free(s->cix); free(s->csurf); free(s->rs); free(s->rn); free(s->rp); free(s->rnrm);
     for (i = 0; i < s->nprop; i++) free(s->props[i].local);
     free(s->props);
     for (i = 0; i < s->npiece; i++) { free(s->pieces[i].v); free(s->pieces[i].t); free(s->pieces[i].cm); free(s->pieces[i].rail); }
-    free(s->rp0); free(s->rnrm0); free(s->rpiece);
+    free(s->rp0); free(s->rnrm0); free(s->rpiece); free(s->rsrc);
     free(s->pieces); free(s->models); free(s->tpiece); free(s->vpiece); free(s->p0); free(s->cp0);
     free(s->cmodels); free(s->cpiece);
     memset(s, 0, sizeof *s);
@@ -609,6 +613,7 @@ static void build_pieces(JStage *s)
                 s->pieces = np;
                 memset(&np[s->npiece], 0, sizeof(JSPiece));
                 np[s->npiece].model = m;
+                np[s->npiece].src = -1;
                 for (k = 0; k < 3; k++) { np[s->npiece].lo[k] = 1e30f; np[s->npiece].hi[k] = -1e30f; }
                 slot[r] = s->npiece++;
             }
@@ -648,6 +653,8 @@ static void build_pieces(JStage *s)
     s->rp0 = (float *)malloc(sizeof(float) * 3 * (size_t)(s->nrp + 1));
     s->rnrm0 = (float *)malloc(sizeof(float) * 3 * (size_t)(s->nrp + 1));
     s->rpiece = (int *)malloc(sizeof(int) * (size_t)(s->nrail + 1));
+    s->rsrc = (int *)malloc(sizeof(int) * (size_t)(s->nrail + 1));
+    if (s->rsrc) for (i = 0; i < s->nrail; i++) s->rsrc[i] = -1;
     if (s->rp0 && s->rnrm0 && s->rpiece) {
         memcpy(s->rp0, s->rp, sizeof(float) * 3 * (size_t)s->nrp);
         memcpy(s->rnrm0, s->rnrm, sizeof(float) * 3 * (size_t)s->nrp);
@@ -749,6 +756,128 @@ void jst_piece_update(JStage *s, int k)
     }
 }
 
+
+/* ---- m29g: map pieces copied ---- */
+
+static int grow(void *pp, size_t bytes)
+{
+    void **p = (void **)pp, *n = realloc(*p, bytes ? bytes : 1);
+    if (!n) return -1;
+    *p = n;
+    return 0;
+}
+
+int jst_piece_copy(JStage *s, const int *set, int n)
+{
+    int j, first = s->npiece;
+    if (!s->p0 || !s->cp0 || !s->rp0 || !s->rsrc) return -1;
+    for (j = 0; j < n; j++) {
+        int k = set[j], i, q, nv0 = s->nv, nt0 = s->nt, np;
+        JSPiece *src, *pc;
+        int *map;
+        if (k < 0 || k >= s->npiece || s->pieces[k].removed) continue;
+        src = &s->pieces[k];
+        /* room */
+        if (grow(&s->p, sizeof(float) * 3 * (size_t)(nv0 + src->nv)) || grow(&s->uv, sizeof(float) * 2 * (size_t)(nv0 + src->nv))
+            || grow(&s->col, sizeof(uint32_t) * (size_t)(nv0 + src->nv)) || grow(&s->p0, sizeof(float) * 3 * (size_t)(nv0 + src->nv))
+            || grow(&s->vpiece, sizeof(int) * (size_t)(nv0 + src->nv))
+            || grow(&s->ix, sizeof(uint32_t) * 3 * (size_t)(nt0 + src->nt)) || grow(&s->ttex, sizeof(int) * (size_t)(nt0 + src->nt))
+            || grow(&s->tkind, (size_t)(nt0 + src->nt)) || grow(&s->tgroup, sizeof(int) * (size_t)(nt0 + src->nt))
+            || grow(&s->tpiece, sizeof(int) * (size_t)(nt0 + src->nt)) || grow(&s->pieces, sizeof(JSPiece) * (size_t)(s->npiece + 1)))
+            return -1;
+        src = &s->pieces[k];
+        np = s->npiece++;
+        pc = &s->pieces[np];
+        memset(pc, 0, sizeof *pc);
+        pc->model = src->model;
+        pc->src = k;
+        pc->touched = 1;
+        pc->yaw_base = src->yaw + src->yaw_base;   /* how far turned from the file's, where it starts */
+        pc->v = (int *)malloc(sizeof(int) * (size_t)(src->nv + 1));
+        pc->t = (int *)malloc(sizeof(int) * (size_t)(src->nt + 1));
+        map = (int *)malloc(sizeof(int) * (size_t)(src->nv + 1));
+        if (!pc->v || !pc->t || !map) { free(map); return -1; }
+        for (q = 0; q < 3; q++) { pc->lo[q] = 1e30f; pc->hi[q] = -1e30f; }
+        for (i = 0; i < src->nv; i++) {             /* its corners, where the source's are now */
+            int sv = src->v[i], nvx = nv0 + i;
+            memcpy(s->p + (size_t)nvx * 3, s->p + (size_t)sv * 3, 12);
+            memcpy(s->p0 + (size_t)nvx * 3, s->p + (size_t)sv * 3, 12);
+            memcpy(s->uv + (size_t)nvx * 2, s->uv + (size_t)sv * 2, 8);
+            s->col[nvx] = s->col[sv];
+            s->vpiece[nvx] = np;
+            pc->v[i] = nvx;
+            for (q = 0; q < 3; q++) {
+                float v = s->p[(size_t)nvx * 3 + q];
+                if (v < pc->lo[q]) pc->lo[q] = v;
+                if (v > pc->hi[q]) pc->hi[q] = v;
+            }
+        }
+        for (q = 0; q < 3; q++) pc->pv[q] = pc->c[q] = (pc->lo[q] + pc->hi[q]) * 0.5f;
+        pc->nv = src->nv;
+        s->nv = nv0 + src->nv;
+        for (i = 0; i < src->nt; i++) {
+            int st = src->t[i], nti = nt0 + i, c3;
+            for (c3 = 0; c3 < 3; c3++) {
+                int sv = (int)s->ix[(size_t)st * 3 + c3], lv = 0, z;
+                for (z = 0; z < src->nv; z++) if (src->v[z] == sv) { lv = z; break; }
+                s->ix[(size_t)nti * 3 + c3] = (uint32_t)(nv0 + lv);
+            }
+            s->ttex[nti] = s->ttex[st];
+            s->tkind[nti] = s->tkind[st];
+            s->tgroup[nti] = s->tgroup[st];
+            s->tpiece[nti] = np;
+            pc->t[i] = nti;
+        }
+        pc->nt = src->nt;
+        s->nt = nt0 + src->nt;
+        free(map);
+        /* its collision */
+        for (i = 0; i < src->ncm; i++) {
+            int ci = src->cm[i], ncv0 = s->ncv, nct0 = s->nct, nci = s->ncmodel;
+            const JSCModel *cm = &s->cmodels[ci];
+            JSCModel *ncm;
+            if (grow(&s->cp, sizeof(float) * 3 * (size_t)(ncv0 + cm->nv)) || grow(&s->cp0, sizeof(float) * 3 * (size_t)(ncv0 + cm->nv))
+                || grow(&s->cix, sizeof(uint32_t) * 3 * (size_t)(nct0 + cm->nt)) || grow(&s->csurf, sizeof(uint16_t) * (size_t)(nct0 + cm->nt))
+                || grow(&s->cmodels, sizeof(JSCModel) * (size_t)(nci + 1)) || grow(&s->cpiece, sizeof(int) * (size_t)(nci + 1)))
+                return -1;
+            cm = &s->cmodels[ci];
+            memcpy(s->cp + (size_t)ncv0 * 3, s->cp + (size_t)cm->v0 * 3, sizeof(float) * 3 * (size_t)cm->nv);
+            memcpy(s->cp0 + (size_t)ncv0 * 3, s->cp + (size_t)cm->v0 * 3, sizeof(float) * 3 * (size_t)cm->nv);
+            for (q = 0; q < cm->nt * 3; q++) s->cix[(size_t)nct0 * 3 + q] = s->cix[(size_t)cm->t0 * 3 + q] - (uint32_t)cm->v0 + (uint32_t)ncv0;
+            memcpy(s->csurf + nct0, s->csurf + cm->t0, sizeof(uint16_t) * (size_t)cm->nt);
+            ncm = &s->cmodels[nci];
+            ncm->area = cm->area; ncm->v0 = ncv0; ncm->nv = cm->nv; ncm->t0 = nct0; ncm->nt = cm->nt; ncm->src = ci;
+            s->ncv = ncv0 + cm->nv;
+            s->nct = nct0 + cm->nt;
+            s->ncmodel = nci + 1;
+            s->cpiece[nci] = np;
+            pc = &s->pieces[np];
+            if (grow(&pc->cm, sizeof(int) * (size_t)(pc->ncm + 1))) return -1;
+            pc->cm[pc->ncm++] = nci;
+        }
+        /* its rails */
+        for (i = 0; i < src->nrail; i++) {
+            int r = src->rail[i], nr = s->nrail, nrp0 = s->nrp, cnt = s->rn[r];
+            if (grow(&s->rs, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rn, sizeof(int) * (size_t)(nr + 1))
+                || grow(&s->rpiece, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rsrc, sizeof(int) * (size_t)(nr + 1))
+                || grow(&s->rp, sizeof(float) * 3 * (size_t)(nrp0 + cnt)) || grow(&s->rnrm, sizeof(float) * 3 * (size_t)(nrp0 + cnt))
+                || grow(&s->rp0, sizeof(float) * 3 * (size_t)(nrp0 + cnt)) || grow(&s->rnrm0, sizeof(float) * 3 * (size_t)(nrp0 + cnt)))
+                return -1;
+            memcpy(s->rp + (size_t)nrp0 * 3, s->rp + (size_t)s->rs[r] * 3, sizeof(float) * 3 * (size_t)cnt);
+            memcpy(s->rnrm + (size_t)nrp0 * 3, s->rnrm + (size_t)s->rs[r] * 3, sizeof(float) * 3 * (size_t)cnt);
+            memcpy(s->rp0 + (size_t)nrp0 * 3, s->rp + (size_t)s->rs[r] * 3, sizeof(float) * 3 * (size_t)cnt);
+            memcpy(s->rnrm0 + (size_t)nrp0 * 3, s->rnrm + (size_t)s->rs[r] * 3, sizeof(float) * 3 * (size_t)cnt);
+            s->rs[nr] = nrp0; s->rn[nr] = cnt; s->rpiece[nr] = np; s->rsrc[nr] = r;
+            s->nrail = nr + 1;
+            s->nrp = nrp0 + cnt;
+            pc = &s->pieces[np];
+            if (grow(&pc->rail, sizeof(int) * (size_t)(pc->nrail + 1))) return -1;
+            pc->rail[pc->nrail++] = nr;
+        }
+    }
+    return s->npiece > first ? first : -1;
+}
+
 /* ---- m28: props moved, removed, copied ---- */
 
 void jst_prop_update(JStage *s, int k)
@@ -786,6 +915,7 @@ int jst_prop_dup(JStage *s, int k)
     ix = (uint32_t *)realloc(s->ix, sizeof(uint32_t) * 3 * (size_t)nt); if (ix) s->ix = ix;
     tt = (int *)realloc(s->ttex, sizeof(int) * (size_t)nt); if (tt) s->ttex = tt;
     tk = (uint8_t *)realloc(s->tkind, (size_t)nt); if (tk) s->tkind = tk;
+    { int *tg = (int *)realloc(s->tgroup, sizeof(int) * (size_t)nt); if (tg) s->tgroup = tg; else return -1; }
     np = (JSProp *)realloc(s->props, sizeof(JSProp) * (size_t)(s->nprop + 1)); if (np) s->props = np;
     loc = (float *)malloc(sizeof(float) * 3 * (size_t)s->props[k].nv);
     if (!p || !uv || !col || !ix || !tt || !tk || !np || !loc) { free(loc); return -1; }
@@ -805,6 +935,7 @@ int jst_prop_dup(JStage *s, int k)
         int q;
         for (q = 0; q < 3; q++) s->ix[(size_t)(pp->t0 + i) * 3 + q] = s->ix[(size_t)(src->t0 + i) * 3 + q] - (uint32_t)src->v0 + (uint32_t)pp->v0;
         s->ttex[pp->t0 + i] = s->ttex[src->t0 + i];
+        s->tgroup[pp->t0 + i] = -1;
         s->tkind[pp->t0 + i] = JST_T_PROP;
     }
     s->nv = nv;
