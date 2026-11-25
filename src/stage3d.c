@@ -76,6 +76,7 @@ static struct {
     int *ctm;                              /* m29: a collision triangle's model */
     float (*cm0)[28];                      /* m29: the collision models' heads as read (rows, position, box) */
     int *tset0;                            /* their triangle sets as read */
+    int *tset_own;                         /* m29d: a moved model's own copy of its triangles (-1) */
     uint8_t (*cabox0)[24];                 /* the collision areas' boxes as read */
     float *pyaw_saved;                     /* a piece's turn as last saved (normals in the .dat) */
     int *rmap;                             /* m29: a rail's number in G.ed (-1) */
@@ -209,6 +210,8 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
         G.cabox0 = (uint8_t (*)[24])calloc((size_t)G.ed.nca + 1, 24);
         if (G.cm0 && G.tset0 && G.cabox0) {
             for (i = 0; i < G.ed.ncm; i++) { memcpy(G.cm0[i], G.ed.cm[i].head, 88); G.tset0[i] = G.ed.cm[i].tset; }
+            G.tset_own = (int *)malloc(sizeof(int) * (size_t)(G.ed.ncm + 1));
+            if (G.tset_own) for (i = 0; i < G.ed.ncm; i++) G.tset_own[i] = -1;
             for (i = 0; i < G.ed.nca; i++) memcpy(G.cabox0[i], G.ed.ca[i].box, 24);
         } else { free(G.cm0); free(G.tset0); free(G.cabox0); G.cm0 = NULL; G.tset0 = NULL; G.cabox0 = NULL; }
     }
@@ -237,7 +240,8 @@ void s3d_close(void)
     {
         int k;
         for (k = 0; k < G.nundo; k++) { free(G.undo[k].r); free(G.undo[k].rm); free(G.undo[k].pc); free(G.undo[k].prm); }
-        free(G.ctm); free(G.cm0); free(G.tset0); free(G.cabox0); free(G.pyaw_saved); free(G.rmap);
+        free(G.ctm); free(G.cm0); free(G.tset0); free(G.tset_own); free(G.cabox0); free(G.pyaw_saved); free(G.rmap);
+        G.tset_own = NULL;
         if (G.list0) for (k = 0; k < G.nlists0; k++) free(G.list0[k]);
         free(G.list0); free(G.nlist0);
         G.rmap = NULL; G.list0 = NULL; G.nlist0 = NULL;
@@ -1278,7 +1282,64 @@ static int pieces_save(int *files, int *pieces_n, char *msg, size_t msgn)
                         if (nt) { G.ed.ts = nt; nt[G.ed.nts].p = (uint8_t *)malloc(1); nt[G.ed.nts].n = 0; empty = G.ed.nts++; }
                     }
                     if (empty >= 0) cm->tset = empty;
-                } else cm->tset = G.tset0[ci];
+                } else {
+                    cm->tset = G.tset0[ci];
+                    /* m29d: each triangle notes which corner is lowest and highest on each axis, from
+                     * its world place (bits 16..27 of its second word: min x, max x, min y, max y,
+                     * min z, max z, two bits each, the first corner on a tie; matches every triangle
+                     * of the stages read). The game builds the triangle's box from it, so a turned
+                     * model's notes are worked out again (Miggas: a turned platform's floor and ramp
+                     * didn't hold him). Its own copy of the triangles, so others sharing them keep theirs */
+                    if ((pc->yaw != 0 || pc->t3[0] != 0 || pc->t3[1] != 0 || pc->t3[2] != 0) && G.tset_own) {
+                        int own = G.tset_own[ci];
+                        const JBytes *vsb = &G.ed.vs[cm->vset];
+                        if (own < 0) {
+                            JBytes *nt = (JBytes *)realloc(G.ed.ts, sizeof(JBytes) * (size_t)(G.ed.nts + 1));
+                            if (nt) {
+                                G.ed.ts = nt;
+                                nt[G.ed.nts].n = G.ed.ts[G.tset0[ci]].n;
+                                nt[G.ed.nts].p = (uint8_t *)malloc(nt[G.ed.nts].n + 1);
+                                if (nt[G.ed.nts].p) {
+                                    memcpy(nt[G.ed.nts].p, G.ed.ts[G.tset0[ci]].p, nt[G.ed.nts].n);
+                                    own = G.tset_own[ci] = G.ed.nts++;
+                                }
+                            }
+                        }
+                        if (own >= 0) {
+                            JBytes *tb = &G.ed.ts[own];
+                            size_t t, nv = vsb->n / 16;
+                            cm->tset = own;
+                            memcpy(tb->p, G.ed.ts[G.tset0[ci]].p, tb->n);   /* from the original each time */
+                            for (t = 0; t + 8 <= tb->n; t += 8) {
+                                uint32_t w0 = tb->p[t] | tb->p[t + 1] << 8 | tb->p[t + 2] << 16 | (uint32_t)tb->p[t + 3] << 24;
+                                uint32_t w1 = tb->p[t + 4] | tb->p[t + 5] << 8 | tb->p[t + 6] << 16 | (uint32_t)tb->p[t + 7] << 24;
+                                float wv[3][3];
+                                int cn, ax, bits = 0;
+                                for (cn = 0; cn < 3; cn++) {
+                                    uint32_t vi = (w0 >> (10 * cn)) & 1023u;
+                                    float lv[3];
+                                    if (vi >= nv) break;
+                                    memcpy(lv, vsb->p + vi * 16, 12);
+                                    for (ax = 0; ax < 3; ax++)   /* world = position + x row0 + y row1 + z row2 */
+                                        wv[cn][ax] = (float)((double)head[18 + ax] + (double)lv[0] * head[6 + ax]
+                                                             + (double)lv[1] * head[10 + ax] + (double)lv[2] * head[14 + ax]);
+                                }
+                                if (cn < 3) continue;
+                                for (ax = 0; ax < 3; ax++) {
+                                    int mn = 0, mx = 0;
+                                    for (cn = 1; cn < 3; cn++) {
+                                        if (wv[cn][ax] < wv[mn][ax]) mn = cn;
+                                        if (wv[cn][ax] > wv[mx][ax]) mx = cn;
+                                    }
+                                    bits |= mn << (4 * ax) | mx << (4 * ax + 2);
+                                }
+                                w1 = (w1 & ~(0xFFFu << 16)) | (uint32_t)bits << 16;
+                                tb->p[t + 4] = (uint8_t)w1; tb->p[t + 5] = (uint8_t)(w1 >> 8);
+                                tb->p[t + 6] = (uint8_t)(w1 >> 16); tb->p[t + 7] = (uint8_t)(w1 >> 24);
+                            }
+                        }
+                    }
+                }
             }
         }
         /* each area's box as read, grown round its models as they are now */
