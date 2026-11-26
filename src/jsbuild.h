@@ -31,7 +31,7 @@ typedef struct { uint8_t *p; size_t n; } JBytes;
 typedef struct { uint8_t box[24]; int first, count; } JCArea;
 typedef struct { uint8_t head[88]; int vset, tset; uint8_t tail[8]; } JCModel;
 typedef struct { uint8_t rest[28]; JBytes pts; } JRail;
-typedef struct { uint8_t rec[340]; JBytes port, vis; } JVArea;
+typedef struct { uint8_t rec[340]; JBytes port, vis; JBytes ex[4]; int exn[4]; } JVArea;   /* m29n: ex, the lists at +240..264 (Stg11: 128-byte records at +264) */
 
 typedef struct {
     uint8_t head[0xA0];

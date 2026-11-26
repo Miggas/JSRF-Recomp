@@ -520,7 +520,7 @@ static int raster_band(void *u)
     return 0;
 }
 
-static int rail_drawn(int r) { return r >= G.nrail0 && G.s.rsrc && G.s.rsrc[r] < 0; }   /* m29j */
+static int rail_drawn(int r) { return G.ed_ok && r >= G.nrail0 && G.s.rsrc && G.s.rsrc[r] < 0; }   /* m29j; m29n: only where the editor is (else nrail0 is 0: every rail looked drawn, type 0) */
 static uint32_t rail_flags(int r);
 /* m29k: a rail type's colour: as the list in the panel has them */
 static const uint8_t s_tcol[12][3] = { {255,196,30}, {255,90,90}, {80,170,255}, {200,110,255}, {255,140,200}, {120,255,240},

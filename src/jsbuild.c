@@ -296,8 +296,23 @@ static int parse2(const uint8_t *B, size_t n, JSBin *s, char *err, size_t errn)
     for (i = 0; i < na; i++) {
         const uint8_t *a = B + ao + (size_t)i * 340;
         uint32_t po = u32(a + 144), pc = u32(a + 148), vo = u32(a + 152), vc = u32(a + 156);
-        for (f = 0; f < 4; f++)
-            if (u32(a + f_extra[f] + 4)) return fail(err, errn, "area %u has a list at +%d (never seen before)", i, f_extra[f]);
+        for (f = 0; f < 4; f++) {
+            /* m29n: lists at +240..264 hold something at times (Chuo Street, Stg11: one 128-byte
+             * record at +264 in areas 11 and 13, at the block's end). Kept as they are: each runs
+             * to the next of these lists' places (or the block's end), as the game lays them out */
+            uint32_t eo = u32(a + f_extra[f]), ec = u32(a + f_extra[f] + 4), nx = (uint32_t)n, j2;
+            int f2;
+            if (!ec) continue;
+            if (ec > 100000 || eo >= n) return fail(err, errn, "area %u's list at +%d past the block", i, f_extra[f]);
+            for (j2 = 0; j2 < na; j2++)
+                for (f2 = 0; f2 < 4; f2++) {
+                    uint32_t x = u32(B + ao + (size_t)j2 * 340 + f_extra[f2]);
+                    if (x > eo && x < nx) nx = x;
+                }
+            if ((nx - eo) % ec) return fail(err, errn, "area %u's list at +%d: %u bytes for %u", i, f_extra[f], nx - eo, ec);
+            if (dup_bytes(&s->va[i].ex[f], B + eo, nx - eo)) return fail(err, errn, "out of memory");
+            s->va[i].exn[f] = (int)ec;
+        }
         if (pc > 100000 || (size_t)po + (size_t)pc * 144 > n || vc > 100000 || (size_t)vo + (size_t)vc * 4 > n)
             return fail(err, errn, "area %u's lists past the block", i);
         memcpy(s->va[i].rec, a, 340);
@@ -334,10 +349,11 @@ static void write2(const JSBin *s, int moved, Out *o)
         o_set(o, ao + (size_t)q * 340 + 152, (uint32_t)at);
         o_set(o, ao + (size_t)q * 340 + 156, (uint32_t)(s->va[q].vis.n / 4));
     }
-    for (i = 0; i < s->nva; i++)
-        for (f = 0; f < 4; f++) {
+    for (f = 0; f < 4; f++)                   /* m29n: their records, a list kind at a time (as Stg11), empty ones pointing on */
+        for (i = 0; i < s->nva; i++) {
             o_set(o, ao + (size_t)i * 340 + (size_t)f_extra[f], (uint32_t)o->n);
-            o_set(o, ao + (size_t)i * 340 + (size_t)f_extra[f] + 4, 0);
+            o_set(o, ao + (size_t)i * 340 + (size_t)f_extra[f] + 4, (uint32_t)s->va[i].exn[f]);
+            if (s->va[i].exn[f]) o_put(o, s->va[i].ex[f].p, s->va[i].ex[f].n);
         }
 }
 
@@ -415,7 +431,7 @@ void jsb_free(JSBin *s)
     free(s->rail);
     for (i = 0; i < s->nva; i++) {
         if (s->pl) free(s->pl[i].p);
-        if (s->va) { free(s->va[i].port.p); free(s->va[i].vis.p); }
+        if (s->va) { int f9; free(s->va[i].port.p); free(s->va[i].vis.p); for (f9 = 0; f9 < 4; f9++) free(s->va[i].ex[f9].p); }
     }
     free(s->pl);
     free(s->va);
