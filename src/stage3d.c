@@ -1457,14 +1457,9 @@ static int root_rail(int r)
 /* m29k: a rail's flags (the word after its points: what kind of rail it is) */
 static uint32_t rail_flags(int r)
 {
-    int ro, ri;
-    const uint8_t *b;
+    if (r < 0 || r >= G.s.nrail) return 0;
     if (rail_drawn(r)) return G.dflag ? G.dflag[r] : 0;
-    ro = root_rail(r);
-    ri = ro < G.nrail0 && G.rmap ? G.rmap[ro] : -1;
-    if (ri < 0 || ri >= G.ed.nrail) return 0;
-    b = G.ed.rail[ri].rest;
-    return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
+    return G.s.rflag ? G.s.rflag[r] : 0;  /* m29m: as read, so every stage has them (not only the editable ones) */
 }
 /* the types in the stage, counted (and the one drawn rails get, listed too) */
 static void types_count(void)
@@ -2423,7 +2418,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         }
         snprintf(t, sizeof t, "Grind rails (%d)", G.s.nrail);
         check(ctx, t, &G.rail);
-        if (G.rail && G.ed_ok) {                         /* m29k: by type */
+        if (G.rail && G.s.nrail > 0) {                   /* m29k: by type; m29m: on every stage */
             check(ctx, "   Colour rails by type", &G.rbytype);
             if (G.rbytype) {
                 types_count();
@@ -2438,6 +2433,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                     nk_spacing(ctx, 1);
                     nk_labelf(ctx, NK_TEXT_LEFT, "Type %X%s (%d)", G.tval[k], type_note(G.tval[k]), G.tcount[k]);
                 }
+                nk_layout_row_dynamic(ctx, row - 4, 1); /* m29m: back to one column (the Collision box lost its words) */
             }
         }
         snprintf(t, sizeof t, "Collision (%d triangles)", G.s.nct);

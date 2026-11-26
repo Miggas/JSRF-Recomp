@@ -56,7 +56,7 @@ static void *arr_add(Arr *a, size_t k)
 typedef struct {
     Arr p, uv, col, ix, ttex, tkind, tg;    /* m29g: tg a triangle's group in its model (-1 a prop's) */
     Arr cp, cix, cs, cts;
-    Arr rs, rn, rp, rnrm;
+    Arr rs, rn, rp, rnrm, rf;
 } Build;
 
 /* ---- the .dat files: models by id, textures ---- */
@@ -324,8 +324,10 @@ static void read_rails(Build *b, const uint8_t *B, size_t n)
             seen[nseen++] = po;
             {
                 int *rs = (int *)arr_add(&b->rs, 1), *rn = (int *)arr_add(&b->rn, 1);
+                uint32_t *rf = (uint32_t *)arr_add(&b->rf, 1);
                 float *p = (float *)arr_add(&b->rp, pc), *nn = (float *)arr_add(&b->rnrm, pc);
-                if (!rs || !rn || !p || !nn) { free(seen); return; }
+                if (!rs || !rn || !rf || !p || !nn) { free(seen); return; }
+                *rf = u32(B + h + 8);           /* m29m: its type (0: 10 points, 1: 500) */
                 *rs = (int)(b->rp.n - pc);
                 *rn = (int)pc;
                 for (q = 0; q < pc; q++) {
@@ -389,7 +391,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     memset(s, 0, sizeof *s);
     memset(&b, 0, sizeof b);
     b.p.sz = 12; b.uv.sz = 8; b.col.sz = 4; b.ix.sz = 4; b.ttex.sz = sizeof(int); b.tkind.sz = 1; b.tg.sz = sizeof(int);
-    b.cp.sz = 12; b.cix.sz = 4; b.cs.sz = 2; b.cts.sz = sizeof(int); b.rs.sz = sizeof(int); b.rn.sz = sizeof(int); b.rp.sz = 12; b.rnrm.sz = 12;
+    b.cp.sz = 12; b.cix.sz = 4; b.cs.sz = 2; b.cts.sz = sizeof(int); b.rs.sz = sizeof(int); b.rn.sz = sizeof(int); b.rf.sz = sizeof(uint32_t); b.rp.sz = 12; b.rnrm.sz = 12;
     snprintf(s->name, sizeof s->name, "%s", name);
     snprintf(prefix, sizeof prefix, "%s_", name);
     fd.name = prefix; fd.found = found; fd.n = 0; fd.cap = 128;
@@ -513,7 +515,7 @@ int jst_load(const char *dir, const char *name, JStage *s, char *err, size_t err
     s->nv = (int)b.p.n; s->p = (float *)b.p.p; s->uv = (float *)b.uv.p; s->col = (uint32_t *)b.col.p;
     s->nt = (int)b.ix.n / 3; s->ix = (uint32_t *)b.ix.p; s->ttex = (int *)b.ttex.p; s->tkind = (uint8_t *)b.tkind.p; s->tgroup = (int *)b.tg.p;
     s->ncv = (int)b.cp.n; s->cp = (float *)b.cp.p; s->nct = (int)b.cix.n / 3; s->cix = (uint32_t *)b.cix.p; s->csurf = (uint16_t *)b.cs.p; s->ctsi = (int *)b.cts.p;
-    s->nrail = (int)b.rs.n; s->rs = (int *)b.rs.p; s->rn = (int *)b.rn.p; s->nrp = (int)b.rp.n; s->rp = (float *)b.rp.p; s->rnrm = (float *)b.rnrm.p;
+    s->nrail = (int)b.rs.n; s->rs = (int *)b.rs.p; s->rn = (int *)b.rn.p; s->rflag = (uint32_t *)b.rf.p; s->nrp = (int)b.rp.n; s->rp = (float *)b.rp.p; s->rnrm = (float *)b.rnrm.p;
     for (i = 0; i < 3; i++) { s->lo[i] = 1e30f; s->hi[i] = -1e30f; }
     for (i = 0; i < s->ncv; i++)                 /* the box: the collision's (the skyline's far pieces aside) */
         for (j = 0; j < 3; j++) {
@@ -542,7 +544,7 @@ void jst_free(JStage *s)
     int i;
     for (i = 0; i < s->ntex; i++) free(s->tex[i].rgba);
     free(s->tex); free(s->p); free(s->uv); free(s->col); free(s->ix); free(s->ttex); free(s->tkind); free(s->tgroup);
-    free(s->cp); free(s->cix); free(s->csurf); free(s->ctsi); free(s->rs); free(s->rn); free(s->rp); free(s->rnrm);
+    free(s->cp); free(s->cix); free(s->csurf); free(s->ctsi); free(s->rs); free(s->rn); free(s->rflag); free(s->rp); free(s->rnrm);
     for (i = 0; i < s->nprop; i++) free(s->props[i].local);
     free(s->props);
     for (i = 0; i < s->npiece; i++) { free(s->pieces[i].v); free(s->pieces[i].t); free(s->pieces[i].cm); free(s->pieces[i].rail); }
@@ -897,6 +899,7 @@ int jst_piece_copy(JStage *s, const int *set, int n)
         for (i = 0; i < src->nrail; i++) {
             int r = src->rail[i], nr = s->nrail, nrp0 = s->nrp, cnt = s->rn[r];
             if (grow(&s->rs, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rn, sizeof(int) * (size_t)(nr + 1))
+                || grow(&s->rflag, sizeof(uint32_t) * (size_t)(nr + 1))
                 || grow(&s->rpiece, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rsrc, sizeof(int) * (size_t)(nr + 1))
                 || grow(&s->rp, sizeof(float) * 3 * (size_t)(nrp0 + cnt)) || grow(&s->rnrm, sizeof(float) * 3 * (size_t)(nrp0 + cnt))
                 || grow(&s->rp0, sizeof(float) * 3 * (size_t)(nrp0 + cnt)) || grow(&s->rnrm0, sizeof(float) * 3 * (size_t)(nrp0 + cnt)))
@@ -906,6 +909,7 @@ int jst_piece_copy(JStage *s, const int *set, int n)
             memcpy(s->rp0 + (size_t)nrp0 * 3, s->rp + (size_t)s->rs[r] * 3, sizeof(float) * 3 * (size_t)cnt);
             memcpy(s->rnrm0 + (size_t)nrp0 * 3, s->rnrm + (size_t)s->rs[r] * 3, sizeof(float) * 3 * (size_t)cnt);
             s->rs[nr] = nrp0; s->rn[nr] = cnt; s->rpiece[nr] = np; s->rsrc[nr] = r;
+            s->rflag[nr] = s->rflag[r];
             s->nrail = nr + 1;
             s->nrp = nrp0 + cnt;
             pc = &s->pieces[np];
@@ -1153,6 +1157,7 @@ int jst_rail_add(JStage *s, const float *pts, const float *nrm, int n)
     int nr = s->nrail, nrp0 = s->nrp;
     if (n < 2 || !s->rp0 || !s->rsrc || !s->rpiece) return -1;
     if (grow(&s->rs, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rn, sizeof(int) * (size_t)(nr + 1))
+        || grow(&s->rflag, sizeof(uint32_t) * (size_t)(nr + 1))
         || grow(&s->rpiece, sizeof(int) * (size_t)(nr + 1)) || grow(&s->rsrc, sizeof(int) * (size_t)(nr + 1))
         || grow(&s->rp, sizeof(float) * 3 * (size_t)(nrp0 + n)) || grow(&s->rnrm, sizeof(float) * 3 * (size_t)(nrp0 + n))
         || grow(&s->rp0, sizeof(float) * 3 * (size_t)(nrp0 + n)) || grow(&s->rnrm0, sizeof(float) * 3 * (size_t)(nrp0 + n)))
@@ -1161,7 +1166,7 @@ int jst_rail_add(JStage *s, const float *pts, const float *nrm, int n)
     memcpy(s->rp0 + (size_t)nrp0 * 3, pts, sizeof(float) * 3 * (size_t)n);
     memcpy(s->rnrm + (size_t)nrp0 * 3, nrm, sizeof(float) * 3 * (size_t)n);
     memcpy(s->rnrm0 + (size_t)nrp0 * 3, nrm, sizeof(float) * 3 * (size_t)n);
-    s->rs[nr] = nrp0; s->rn[nr] = n; s->rpiece[nr] = -1; s->rsrc[nr] = -1;
+    s->rs[nr] = nrp0; s->rn[nr] = n; s->rpiece[nr] = -1; s->rsrc[nr] = -1; s->rflag[nr] = 0;
     s->nrail = nr + 1;
     s->nrp = nrp0 + n;
     return nr;

@@ -120,6 +120,7 @@ typedef struct {
     float *rp0, *rnrm0;                 /* rail points and normals as read */
     int *rpiece;                        /* a rail's piece (-1) */
     int *rsrc;                          /* m29g: a copied rail's source (-1) */
+    uint32_t *rflag;                    /* m29m: a rail's type, as read (0: 10 points, 1: 500 points) */
     JSProp *props; int nprop;           /* m28 */
 } JStage;
 
