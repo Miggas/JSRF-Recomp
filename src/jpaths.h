@@ -28,3 +28,17 @@ int  jp_cars(const uint8_t *b, size_t n, int file, JPaths *out);
 /* mission chains from one mission file's bytes (appended); how many */
 int  jp_mission(const uint8_t *b, size_t n, int file, JPaths *out);
 void jp_free(JPaths *ps);
+
+/* m29p: a mission's marks (Mission/mssnNNNN.bin, by the header's section table at word 13: (offset, count)
+ * pairs). Section 2: 44-byte entries (type, 0, x y z, 0, facing (0x10000 a turn), 0, x2 y2 z2): type 0 a
+ * spawn (place and facing), 1 a second point only, 2 both. Section 7: four-corner planes (48 bytes: a
+ * huge flat one far under the map, upright ones at its edges). Section 9: an upright frame and points after it. */
+typedef struct { int type; float p[3]; int facing; float p2[3]; } JSpawn;
+typedef struct { float c[4][3]; } JPlane;
+typedef struct {
+    JSpawn *sp; int nsp;
+    JPlane *pl; int npl;
+    float frame[4][3], fpt[3][3]; int has_frame;
+} JMarks;
+int  jp_marks(const uint8_t *b, size_t n, JMarks *m);   /* 0 read, -1 not one */
+void jp_marks_free(JMarks *m);

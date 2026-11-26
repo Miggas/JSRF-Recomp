@@ -122,3 +122,59 @@ void jp_free(JPaths *ps)
     ps->path = NULL;
     ps->npath = 0;
 }
+
+/* m29p: a mission's marks: see jpaths.h */
+int jp_marks(const uint8_t *b, size_t n, JMarks *m)
+{
+    uint32_t so, sc, i, k;
+    memset(m, 0, sizeof *m);
+    if (n < 0x80) return -1;
+    so = u32(b + 4 * 15); sc = u32(b + 4 * 16);       /* section 2: the spawns */
+    if (so && sc && sc < 1000 && (size_t)so + 44u * sc <= n) {
+        m->sp = (JSpawn *)calloc(sc, sizeof(JSpawn));
+        if (m->sp)
+            for (i = 0; i < sc; i++) {
+                const uint8_t *q = b + so + 44 * i;
+                JSpawn *e = &m->sp[m->nsp];
+                e->type = (int)u32(q);
+                if (e->type < 0 || e->type > 16) break;
+                for (k = 0; k < 3; k++) { e->p[k] = f32(q + 8 + 4 * k); e->p2[k] = f32(q + 32 + 4 * k); }
+                e->facing = (int)(u32(q + 24) & 0xFFFF);
+                m->nsp++;
+            }
+    }
+    so = u32(b + 4 * 25); sc = u32(b + 4 * 26);       /* section 7: the planes */
+    if (so && sc && sc < 1000 && (size_t)so + 48u * sc <= n) {
+        m->pl = (JPlane *)calloc(sc, sizeof(JPlane));
+        if (m->pl)
+            for (i = 0; i < sc; i++) {
+                int bad = 0;
+                for (k = 0; k < 12; k++) {
+                    float v = f32(b + so + 48 * i + 4 * k);
+                    if (!isfinite(v) || fabsf(v) > 100000) bad = 1;
+                    m->pl[m->npl].c[k / 3][k % 3] = v;
+                }
+                if (bad) break;
+                m->npl++;
+            }
+    }
+    so = u32(b + 4 * 29); sc = u32(b + 4 * 30);       /* section 9: a frame and three points after it */
+    if (so && sc == 1 && (size_t)so + 96 <= n) {
+        for (k = 0; k < 12; k++) m->frame[k / 3][k % 3] = f32(b + so + 4 * k);
+        for (k = 0; k < 3; k++) {                     /* the points: 12 bytes, then 4 or 8 of gap as read */
+            m->fpt[0][k] = f32(b + so + 48 + 4 * k);
+            m->fpt[1][k] = f32(b + so + 60 + 4 * k);
+            m->fpt[2][k] = f32(b + so + 80 + 4 * k);
+        }
+        m->has_frame = 1;
+        for (k = 0; k < 12; k++) if (!isfinite(m->frame[k / 3][k % 3]) || fabsf(m->frame[k / 3][k % 3]) > 100000) m->has_frame = 0;
+    }
+    return 0;
+}
+
+void jp_marks_free(JMarks *m)
+{
+    free(m->sp);
+    free(m->pl);
+    memset(m, 0, sizeof *m);
+}

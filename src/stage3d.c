@@ -85,6 +85,8 @@ static struct {
     int showcars, showmis, cars_done, mis_done, mis_sel, nmis;
     JPaths cars;                           /* the car routes lying on this stage's floor */
     JPaths *mis;                           /* each mission's chains that do */
+    JMarks *mmark;                         /* m29p: each listed mission's spawns and planes */
+    int showmarks;
     char (*misname)[24];
     int *fgcell, *fgtri, fgw, fgh;         /* the floor's triangles by 64-unit squares, for the test */
     float fgx0, fgz0;
@@ -208,7 +210,8 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     {                                           /* m29o */
         int k9;
         jp_free(&G.cars);
-        for (k9 = 0; k9 < G.nmis; k9++) jp_free(&G.mis[k9]);
+        for (k9 = 0; k9 < G.nmis; k9++) { jp_free(&G.mis[k9]); if (G.mmark) jp_marks_free(&G.mmark[k9]); }
+        free(G.mmark); G.mmark = NULL;
         free(G.mis); G.mis = NULL; free(G.misname); G.misname = NULL; G.nmis = 0;
         free(G.fgcell); free(G.fgtri); G.fgcell = G.fgtri = NULL;
         G.cars_done = G.mis_done = 0; G.mis_sel = 0;
@@ -707,17 +710,31 @@ static void mis_load(void)
         b = read_file(fp, &n);
         if (!b) continue;
         jp_mission((const uint8_t *)b, n, i, &one);
-        free(b);
-        if (one.npath >= 4 && fg_share(&one, 0) >= 0.7f) {
-            JPaths *nm = (JPaths *)realloc(G.mis, sizeof(JPaths) * (size_t)(G.nmis + 1));
-            char (*nn)[24] = (char (*)[24])realloc(G.misname, sizeof(*nn) * (size_t)(G.nmis + 1));
-            if (nm) G.mis = nm;
-            if (nn) G.misname = nn;
-            if (!nm || !nn) { jp_free(&one); break; }
-            G.mis[G.nmis] = one;
-            snprintf(G.misname[G.nmis], 24, "%.*s", (int)(strlen(m.names[i]) - 4), m.names[i]);
-            G.nmis++;
-        } else jp_free(&one);
+        {
+            JMarks mk;
+            int here = one.npath >= 4 && fg_share(&one, 0) >= 0.7f, k2, on = 0, all = 0;
+            jp_marks((const uint8_t *)b, n, &mk);
+            for (k2 = 0; k2 < mk.nsp; k2++)          /* m29p: or its spawns lie on this stage */
+                if (mk.sp[k2].type != 1) { all++; on += fg_on(mk.sp[k2].p); }
+            if (!here && all && on * 2 >= all) here = 1;
+            free(b);
+            if (here) {
+                JPaths *nm = (JPaths *)realloc(G.mis, sizeof(JPaths) * (size_t)(G.nmis + 1));
+                JMarks *nk = (JMarks *)realloc(G.mmark, sizeof(JMarks) * (size_t)(G.nmis + 1));
+                char (*nn)[24] = (char (*)[24])realloc(G.misname, sizeof(*nn) * (size_t)(G.nmis + 1));
+                if (nm) G.mis = nm;
+                if (nk) G.mmark = nk;
+                if (nn) G.misname = nn;
+                if (!nm || !nk || !nn) { jp_free(&one); jp_marks_free(&mk); break; }
+                G.mis[G.nmis] = one;
+                G.mmark[G.nmis] = mk;
+                snprintf(G.misname[G.nmis], 24, "%.*s", (int)(strlen(m.names[i]) - 4), m.names[i]);
+                G.nmis++;
+                continue;
+            }
+            jp_marks_free(&mk);
+        }
+        jp_free(&one);
     }
     free(m.names);
 }
@@ -940,6 +957,36 @@ static void render(void)
                 }
                 for (q = 0; q + 1 < pp->n; q++) line3(pp->p + q * 3, pp->p + q * 3 + 3, f, r, u, 255, 110, 210, thick);
             }
+    }
+    if (G.showmarks && G.mmark && G.mis_sel >= 0 && G.mis_sel < G.nmis) {   /* m29p: the mission's marks */
+        const JMarks *mk = &G.mmark[G.mis_sel];
+        int k, q, thick = G.rw >= 900 ? 3 : 2;
+        for (k = 0; k < mk->nsp; k++) {
+            const JSpawn *e = &mk->sp[k];
+            float t[3];
+            if (e->type != 1) {                    /* a spawn: a green post, an arrow where it faces */
+                float a = (float)e->facing * 6.2831853f / 65536.0f;
+                memcpy(t, e->p, 12); t[1] += 24;
+                line3(e->p, t, f, r, u, 60, 255, 90, thick + 1);
+                memcpy(t, e->p, 12); t[1] += 2; t[0] += 18 * sinf(a); t[2] += 18 * cosf(a);
+                { float b2[3]; memcpy(b2, e->p, 12); b2[1] += 2; line3(b2, t, f, r, u, 60, 255, 90, thick + 1); }
+            }
+            if (e->type != 0) {                    /* its second point: a yellow post */
+                memcpy(t, e->p2, 12); t[1] += 24;
+                line3(e->p2, t, f, r, u, 255, 230, 40, thick + 1);
+                if (e->type == 2) line3(e->p, e->p2, f, r, u, 255, 230, 40, 1);
+            }
+        }
+        for (k = 0; k < mk->npl; k++)              /* the planes: red */
+            for (q = 0; q < 4; q++) line3(mk->pl[k].c[q], mk->pl[k].c[(q + 1) & 3], f, r, u, 255, 60, 60, thick);
+        if (mk->has_frame) {                       /* the frame: orange, its points as posts */
+            for (q = 0; q < 4; q++) line3(mk->frame[q], mk->frame[(q + 1) & 3], f, r, u, 255, 150, 40, thick);
+            for (q = 0; q < 3; q++) {
+                float t[3];
+                memcpy(t, mk->fpt[q], 12); t[1] += 16;
+                line3(mk->fpt[q], t, f, r, u, 255, 150, 40, thick);
+            }
+        }
     }
     if (obj_ok()) {                                /* m28: the picked prop's box (m29: or piece's) */
         float lo[3], hi[3], c[8][3];
@@ -2484,8 +2531,13 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
             int k3;
             cars_load(); mis_load();
             printf("car routes here: %d\n", G.cars.npath);
-            for (k3 = 0; k3 < G.nmis; k3++) printf("mission %s: %d chains\n", G.misname[k3], G.mis[k3].npath);
-            G.showcars = G.showmis = 1;
+            for (k3 = 0; k3 < G.nmis; k3++) {
+                const JMarks *mk = &G.mmark[k3];
+                int s0 = 0, s1 = 0, s2 = 0, q3;
+                for (q3 = 0; q3 < mk->nsp; q3++) { if (mk->sp[q3].type == 0) s0++; else if (mk->sp[q3].type == 1) s1++; else s2++; }
+                printf("mission %s: %d chains, spawns %d/%d/%d (types 0/1/2), %d planes, frame %d\n", G.misname[k3], G.mis[k3].npath, s0, s1, s2, mk->npl, mk->has_frame);
+            }
+            G.showcars = G.showmis = G.showmarks = 1;
         }
         else if (!strncmp(tok, "rtype ", 6)) { G.drawflag = (uint32_t)strtoul(tok + 6, NULL, 16); }
         else if (!strncmp(tok, "types", 5)) { int k3; types_count(); for (k3 = 0; k3 < G.ntval; k3++) printf("type %X: %d\n", G.tval[k3], G.tcount[k3]); }
@@ -2659,6 +2711,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             check(ctx, t, &G.showmis);
             if (G.showmis && !wm) { mis_load(); G.need = 1; }
             if (G.showmis && G.nmis > 0) {
+                check(ctx, "   Spawns (green), planes (red)", &G.showmarks);
                 const char *items[64];
                 char lab[64][40];
                 int k3, n3 = G.nmis < 64 ? G.nmis : 64, sel;
