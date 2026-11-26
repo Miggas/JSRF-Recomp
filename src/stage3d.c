@@ -2710,8 +2710,14 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             else snprintf(t, sizeof t, "Mission paths (crowd?)");
             check(ctx, t, &G.showmis);
             if (G.showmis && !wm) { mis_load(); G.need = 1; }
+            if (G.showmis) check(ctx, "   Spawns (green), planes (red)", &G.showmarks);   /* m29q: always there */
+            if (G.showmis && G.mis_done && G.nmis == 0) {
+                char md[LPATH];
+                nk_layout_row_dynamic(ctx, row - 8, 1);
+                if (media_dir(md)) nk_label_colored(ctx, "   No StgObj/Mission folders found", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
+                else nk_label_colored(ctx, "   No mission found on this stage", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
+            }
             if (G.showmis && G.nmis > 0) {
-                check(ctx, "   Spawns (green), planes (red)", &G.showmarks);
                 const char *items[64];
                 char lab[64][40];
                 int k3, n3 = G.nmis < 64 ? G.nmis : 64, sel;
