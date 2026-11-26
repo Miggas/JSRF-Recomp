@@ -16,6 +16,7 @@
 
 #include "stage3d.h"
 #include "jsbuild.h"
+#include "jpaths.h"
 #include "util.h"
 
 /* what is under a pixel: the layer in the top bits, the triangle below */
@@ -80,6 +81,13 @@ static struct {
     int ncm0, nrail0, nmod0, nnew, lastdat;   /* m29g: counts as read; new models made; the .dat they go in */
     int *newid;                            /* m29g: a stage model's copies' new model id (-1) */
     float (*chbase)[22];                   /* m29g: a copied collision model's head where it started */
+    /* m29o: car routes and mission chains on this stage */
+    int showcars, showmis, cars_done, mis_done, mis_sel, nmis;
+    JPaths cars;                           /* the car routes lying on this stage's floor */
+    JPaths *mis;                           /* each mission's chains that do */
+    char (*misname)[24];
+    int *fgcell, *fgtri, fgw, fgh;         /* the floor's triangles by 64-unit squares, for the test */
+    float fgx0, fgz0;
     uint32_t *dflag, drawflag;             /* m29k: a drawn rail's flags (by rail); those for the next one */
     uint32_t tval[12]; int ntval, tcount[12], rbytype;   /* m29k: the rail types in the stage, shown by colour */
     int draw, dn, dok, dsnap, ndrawn;      /* m29j: the grind tool: on, its points, a point under the mouse, snapped (1 corner, 2 edge) */
@@ -197,6 +205,14 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     G.nnew = 0; G.lastdat = -1;                 /* m29g */
     G.draw = G.dn = G.dok = G.ndrawn = 0;       /* m29j */
     free(G.dflag); G.dflag = NULL; G.drawflag = 0; G.ntval = 0;   /* m29k */
+    {                                           /* m29o */
+        int k9;
+        jp_free(&G.cars);
+        for (k9 = 0; k9 < G.nmis; k9++) jp_free(&G.mis[k9]);
+        free(G.mis); G.mis = NULL; free(G.misname); G.misname = NULL; G.nmis = 0;
+        free(G.fgcell); free(G.fgtri); G.fgcell = G.fgtri = NULL;
+        G.cars_done = G.mis_done = 0; G.mis_sel = 0;
+    }
     G.newid = (int *)malloc(sizeof(int) * (size_t)(G.s.nmodel + 1));
     if (G.newid) { int i; for (i = 0; i < G.s.nmodel; i++) G.newid[i] = -1; }
     {
@@ -520,6 +536,192 @@ static int raster_band(void *u)
     return 0;
 }
 
+/* ---- m29o: car routes and mission chains (jpaths.c), kept when they lie on this stage ---- */
+
+/* the floor's triangles (facing up) by 64-unit squares in x, z */
+static void fg_build(void)
+{
+    float lo[2] = { 1e30f, 1e30f }, hi[2] = { -1e30f, -1e30f };
+    int t, pass, *cnt;
+    if (G.fgcell || G.s.nct <= 0) return;
+    for (t = 0; t < G.s.ncv; t++) {
+        float x = G.s.cp[(size_t)t * 3], z = G.s.cp[(size_t)t * 3 + 2];
+        if (x < lo[0]) lo[0] = x;
+        if (x > hi[0]) hi[0] = x;
+        if (z < lo[1]) lo[1] = z;
+        if (z > hi[1]) hi[1] = z;
+    }
+    G.fgx0 = lo[0]; G.fgz0 = lo[1];
+    G.fgw = (int)((hi[0] - lo[0]) / 64) + 1; G.fgh = (int)((hi[1] - lo[1]) / 64) + 1;
+    if (G.fgw < 1 || G.fgh < 1 || (long long)G.fgw * G.fgh > 4000000) return;
+    G.fgcell = (int *)calloc((size_t)G.fgw * G.fgh + 1, sizeof(int));
+    cnt = (int *)calloc((size_t)G.fgw * G.fgh + 1, sizeof(int));
+    if (!G.fgcell || !cnt) { free(cnt); free(G.fgcell); G.fgcell = NULL; return; }
+    for (pass = 0; pass < 2; pass++) {
+        int total = 0, c;
+        for (t = 0; t < G.s.nct; t++) {
+            const float *a = G.s.cp + (size_t)G.s.cix[t * 3] * 3, *b = G.s.cp + (size_t)G.s.cix[t * 3 + 1] * 3, *c3 = G.s.cp + (size_t)G.s.cix[t * 3 + 2] * 3;
+            float e1x = b[0] - a[0], e1z = b[2] - a[2], e2x = c3[0] - a[0], e2z = c3[2] - a[2];
+            int x0, x1, z0, z1, gx, gz;
+            if (fabsf(e1x * e2z - e1z * e2x) < 1e-6f) continue;   /* standing up: no floor */
+            x0 = (int)((fminf(a[0], fminf(b[0], c3[0])) - G.fgx0) / 64); x1 = (int)((fmaxf(a[0], fmaxf(b[0], c3[0])) - G.fgx0) / 64);
+            z0 = (int)((fminf(a[2], fminf(b[2], c3[2])) - G.fgz0) / 64); z1 = (int)((fmaxf(a[2], fmaxf(b[2], c3[2])) - G.fgz0) / 64);
+            for (gz = z0; gz <= z1 && gz < G.fgh; gz++)
+                for (gx = x0; gx <= x1 && gx < G.fgw; gx++) {
+                    size_t ci = (size_t)gz * G.fgw + gx;
+                    if (pass == 0) cnt[ci]++;
+                    else G.fgtri[G.fgcell[ci] + cnt[ci]++] = t;
+                }
+        }
+        if (pass == 0) {
+            for (c = 0; c < G.fgw * G.fgh; c++) { G.fgcell[c] = total; total += cnt[c]; cnt[c] = 0; }
+            G.fgcell[G.fgw * G.fgh] = total;
+            G.fgtri = (int *)malloc(sizeof(int) * (size_t)(total + 1));
+            if (!G.fgtri) { free(cnt); free(G.fgcell); G.fgcell = NULL; return; }
+        }
+    }
+    free(cnt);
+}
+
+/* a point within 4 units of the floor under it */
+static int fg_on(const float *p)
+{
+    int gx, gz, k;
+    if (!G.fgcell) return 0;
+    gx = (int)((p[0] - G.fgx0) / 64); gz = (int)((p[2] - G.fgz0) / 64);
+    if (gx < 0 || gz < 0 || gx >= G.fgw || gz >= G.fgh) return 0;
+    for (k = G.fgcell[(size_t)gz * G.fgw + gx]; k < G.fgcell[(size_t)gz * G.fgw + gx + 1]; k++) {
+        int t = G.fgtri[k];
+        const float *a = G.s.cp + (size_t)G.s.cix[t * 3] * 3, *b = G.s.cp + (size_t)G.s.cix[t * 3 + 1] * 3, *c = G.s.cp + (size_t)G.s.cix[t * 3 + 2] * 3;
+        float d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]), l1, l2, l3, y;
+        if (fabsf(d) < 1e-9f) continue;
+        l1 = ((b[2] - c[2]) * (p[0] - c[0]) + (c[0] - b[0]) * (p[2] - c[2])) / d;
+        l2 = ((c[2] - a[2]) * (p[0] - c[0]) + (a[0] - c[0]) * (p[2] - c[2])) / d;
+        l3 = 1 - l1 - l2;
+        if (l1 < -1e-4f || l2 < -1e-4f || l3 < -1e-4f) continue;
+        y = l1 * a[1] + l2 * b[1] + l3 * c[1];
+        if (fabsf(y - p[1]) < 4.0f) return 1;
+    }
+    return 0;
+}
+
+/* the share of a set's points on this stage's floor */
+static float fg_share(const JPaths *ps, int from)
+{
+    int i, j, on = 0, all = 0;
+    for (i = from; i < ps->npath; i++)
+        for (j = 0; j < ps->path[i].n; j++) { all++; on += fg_on(ps->path[i].p + j * 3); }
+    return all ? (float)on / (float)all : 0;
+}
+
+/* the game's Media folder: the stage's folder's parent (or its parent's, for Stage/Custom) */
+static int media_dir(char *out)
+{
+    char d[LPATH], t[LPATH];
+    int up;
+    snprintf(d, sizeof d, "%s", G.dir);
+    for (up = 0; up < 4; up++) {
+        char *e = d + strlen(d);
+        while (e > d && (e[-1] == '/' || e[-1] == '\\')) *--e = 0;
+        while (e > d && e[-1] != '/' && e[-1] != '\\') e--;
+        if (e == d) return -1;
+        e[-1] = 0;
+        pjoin(t, d, "StgObj");
+        if (is_dir(t)) { snprintf(out, LPATH, "%s", d); return 0; }
+    }
+    return -1;
+}
+
+struct mis_scan { char dir[LPATH]; int nf; char (*names)[24]; };
+static void mis_list_cb(const char *name, bool isdir, void *u)
+{
+    struct mis_scan *m = (struct mis_scan *)u;
+    size_t L = strlen(name);
+    char (*nn)[24];
+    if (isdir || L < 5 || L > 20 || (strcmp(name + L - 4, ".bin") && strcmp(name + L - 4, ".BIN"))) return;
+    nn = (char (*)[24])realloc(m->names, sizeof(*nn) * (size_t)(m->nf + 1));
+    if (!nn) return;
+    m->names = nn;
+    snprintf(m->names[m->nf++], 24, "%s", name);
+}
+static int name_cmp(const void *a, const void *b) { return strcmp((const char *)a, (const char *)b); }
+
+/* the car routes (every CarObj file) lying on this stage, the first time they're asked for */
+static void cars_load(void)
+{
+    char md[LPATH], so[LPATH], fp[LPATH];
+    struct mis_scan m;
+    int i;
+    if (G.cars_done) return;
+    G.cars_done = 1;
+    fg_build();
+    if (media_dir(md)) return;
+    pjoin(so, md, "StgObj");
+    memset(&m, 0, sizeof m);
+    list_dir(so, mis_list_cb, &m);
+    for (i = 0; i < m.nf; i++) {
+        JPaths one = { 0 };
+        size_t n;
+        char *b;
+        int k;
+        if (strncmp(m.names[i], "CarObj", 6) && strncmp(m.names[i], "carobj", 6)) continue;
+        pjoin(fp, so, m.names[i]);
+        b = read_file(fp, &n);
+        if (!b) continue;
+        jp_cars((const uint8_t *)b, n, i, &one);
+        free(b);
+        for (k = 0; k < one.npath; k++) {           /* each route: kept when it lies on this stage */
+            JPaths t1 = { &one.path[k], 1 };
+            if (fg_share(&t1, 0) >= 0.7f) {
+                JPath *np = (JPath *)realloc(G.cars.path, sizeof(JPath) * (size_t)(G.cars.npath + 1));
+                if (!np) break;
+                G.cars.path = np;
+                G.cars.path[G.cars.npath++] = one.path[k];
+                one.path[k].p = NULL; one.path[k].key = NULL;
+            }
+        }
+        jp_free(&one);
+    }
+    free(m.names);
+}
+
+/* the missions whose chains lie on this stage, the first time they're asked for */
+static void mis_load(void)
+{
+    char md[LPATH], fp[LPATH];
+    struct mis_scan m;
+    int i;
+    if (G.mis_done) return;
+    G.mis_done = 1;
+    fg_build();
+    if (media_dir(md)) return;
+    memset(&m, 0, sizeof m);
+    pjoin(m.dir, md, "Mission");
+    list_dir(m.dir, mis_list_cb, &m);
+    if (m.nf > 1) qsort(m.names, (size_t)m.nf, sizeof *m.names, name_cmp);
+    for (i = 0; i < m.nf; i++) {
+        JPaths one = { 0 };
+        size_t n;
+        char *b;
+        pjoin(fp, m.dir, m.names[i]);
+        b = read_file(fp, &n);
+        if (!b) continue;
+        jp_mission((const uint8_t *)b, n, i, &one);
+        free(b);
+        if (one.npath >= 4 && fg_share(&one, 0) >= 0.7f) {
+            JPaths *nm = (JPaths *)realloc(G.mis, sizeof(JPaths) * (size_t)(G.nmis + 1));
+            char (*nn)[24] = (char (*)[24])realloc(G.misname, sizeof(*nn) * (size_t)(G.nmis + 1));
+            if (nm) G.mis = nm;
+            if (nn) G.misname = nn;
+            if (!nm || !nn) { jp_free(&one); break; }
+            G.mis[G.nmis] = one;
+            snprintf(G.misname[G.nmis], 24, "%.*s", (int)(strlen(m.names[i]) - 4), m.names[i]);
+            G.nmis++;
+        } else jp_free(&one);
+    }
+    free(m.names);
+}
+
 static int rail_drawn(int r) { return G.ed_ok && r >= G.nrail0 && G.s.rsrc && G.s.rsrc[r] < 0; }   /* m29j; m29n: only where the editor is (else nrail0 is 0: every rail looked drawn, type 0) */
 static uint32_t rail_flags(int r);
 /* m29k: a rail type's colour: as the list in the panel has them */
@@ -714,6 +916,29 @@ static void render(void)
                 else if (G.inset && G.s.rpiece && G.s.rpiece[k] >= 0 && G.inset[G.s.rpiece[k]])
                     line3(a, a + 3, f, r, u, 255, 110, 20, thick + 1);   /* m29e: going with what's picked */
                 else line3(a, a + 3, f, r, u, 255, 196, 30, thick);
+            }
+    }
+    {                                               /* m29o: car routes (blue) and mission chains (pink) */
+        int k, q, thick = G.rw >= 900 ? 3 : 2;
+        if (G.showcars)
+            for (k = 0; k < G.cars.npath; k++) {
+                const JPath *pp = &G.cars.path[k];
+                for (q = 0; q < pp->n; q++) {
+                    int q2 = q + 1 < pp->n ? q + 1 : 0;     /* a loop: the last back to the first */
+                    if (q2 == 0 && !pp->loop) break;
+                    line3(pp->p + q * 3, pp->p + q2 * 3, f, r, u, 70, 170, 255, thick);
+                }
+            }
+        if (G.showmis && G.mis_sel >= 0 && G.mis_sel < G.nmis)
+            for (k = 0; k < G.mis[G.mis_sel].npath; k++) {
+                const JPath *pp = &G.mis[G.mis_sel].path[k];
+                if (pp->n == 1) {                   /* one point: a small cross */
+                    float a2[3], b2[3];
+                    memcpy(a2, pp->p, 12); memcpy(b2, pp->p, 12);
+                    a2[0] -= 3; b2[0] += 3; line3(a2, b2, f, r, u, 255, 110, 210, thick);
+                    a2[0] += 3; b2[0] -= 3; a2[2] -= 3; b2[2] += 3; line3(a2, b2, f, r, u, 255, 110, 210, thick);
+                }
+                for (q = 0; q + 1 < pp->n; q++) line3(pp->p + q * 3, pp->p + q * 3 + 3, f, r, u, 255, 110, 210, thick);
             }
     }
     if (obj_ok()) {                                /* m28: the picked prop's box (m29: or piece's) */
@@ -2255,6 +2480,13 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
             printf("rails: %d (%d drawn)\n", G.s.nrail, G.ndrawn);
         }
         else if (!strncmp(tok, "rtake", 5)) draw_take_back();
+        else if (!strncmp(tok, "paths", 5)) {     /* (tests) m29o: car routes and missions on this stage */
+            int k3;
+            cars_load(); mis_load();
+            printf("car routes here: %d\n", G.cars.npath);
+            for (k3 = 0; k3 < G.nmis; k3++) printf("mission %s: %d chains\n", G.misname[k3], G.mis[k3].npath);
+            G.showcars = G.showmis = 1;
+        }
         else if (!strncmp(tok, "rtype ", 6)) { G.drawflag = (uint32_t)strtoul(tok + 6, NULL, 16); }
         else if (!strncmp(tok, "types", 5)) { int k3; types_count(); for (k3 = 0; k3 < G.ntval; k3++) printf("type %X: %d\n", G.tval[k3], G.tcount[k3]); }
         else if (!strncmp(tok, "hit", 3)) {       /* (tests) the surface point at the view's middle (or dx dy from it) */
@@ -2415,6 +2647,30 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             check(ctx, "Shadows", &G.shadows);
             snprintf(t, sizeof t, "Shadow volumes (%d)", G.s.nshadow);
             check(ctx, t, &G.shadow);
+        }
+        {                                           /* m29o: car routes, mission chains */
+            int was = G.showcars, wm = G.showmis;
+            if (G.cars_done) snprintf(t, sizeof t, "Car routes (%d)", G.cars.npath);
+            else snprintf(t, sizeof t, "Car routes");
+            check(ctx, t, &G.showcars);
+            if (G.showcars && !was) { cars_load(); G.need = 1; }
+            if (G.mis_done) snprintf(t, sizeof t, "Mission paths (%d missions here)", G.nmis);
+            else snprintf(t, sizeof t, "Mission paths (crowd?)");
+            check(ctx, t, &G.showmis);
+            if (G.showmis && !wm) { mis_load(); G.need = 1; }
+            if (G.showmis && G.nmis > 0) {
+                const char *items[64];
+                char lab[64][40];
+                int k3, n3 = G.nmis < 64 ? G.nmis : 64, sel;
+                for (k3 = 0; k3 < n3; k3++) {
+                    snprintf(lab[k3], sizeof lab[k3], "%s (%d)", G.misname[k3], G.mis[k3].npath);
+                    items[k3] = lab[k3];
+                }
+                if (G.mis_sel >= n3) G.mis_sel = 0;
+                nk_layout_row_dynamic(ctx, row - 4, 1);
+                sel = nk_combo(ctx, items, n3, G.mis_sel, (int)row - 6, nk_vec2(220, 300));
+                if (sel != G.mis_sel) { G.mis_sel = sel; G.need = 1; }
+            }
         }
         snprintf(t, sizeof t, "Grind rails (%d)", G.s.nrail);
         check(ctx, t, &G.rail);
