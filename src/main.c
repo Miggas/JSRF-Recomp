@@ -59,7 +59,7 @@
 #include <sys/stat.h>
 #include "util.h"
 
-#define MODTOOL_VERSION "m29s"
+#define MODTOOL_VERSION "m29t"
 
 /* ---- the files ---- */
 
@@ -1913,14 +1913,15 @@ static void stage_files_ui(struct nk_context *ctx, float row)
     const JStage *st = s3d_stage();
     int i;
     if (!st) return;
-    nk_layout_row_dynamic(ctx, row, 1);
-    nk_label(ctx, "Rebuild (stage editor, step 2)", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(ctx, row - 6, 1);
-    if (nk_button_label(ctx, "Check: rebuild, compare")) stage_rebuild(0);
-    if (nk_button_label(ctx, "Test: write it, parts moved")) stage_rebuild(1);
-    if (nk_button_label(ctx, "Put the originals back")) stage_put_back();
-    nk_layout_row_dynamic(ctx, row, 1);
-    nk_label(ctx, "Its files (for their textures)", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(ctx, row - 4, 1);       /* m29t: clearer names */
+    if (nk_button_label(ctx, "Put the original files back")) stage_put_back();
+    nk_layout_row_dynamic(ctx, row - 8, 1);
+    nk_label_colored(ctx, "Rebuild tests", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+    nk_layout_row_dynamic(ctx, row - 6, 2);
+    if (nk_button_label(ctx, "Check")) stage_rebuild(0);
+    if (nk_button_label(ctx, "Write shuffled")) stage_rebuild(1);
+    nk_layout_row_dynamic(ctx, row - 8, 1);
+    nk_label_colored(ctx, "Open a file's textures", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
     SDL_LockMutex(s_mx);
     for (i = 0; i < s_nfiles; i++) {
         char nm[16], lb[160];

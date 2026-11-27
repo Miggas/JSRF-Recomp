@@ -88,6 +88,7 @@ static struct {
     int *misno;                            /* their numbers */
     int showmarks, showped, showwarp, showexit, showpick, showsoul, showparked;
     char sname[16];                        /* the stage's name (Stg11) */
+    int help;                              /* m29t: the shortcuts window open */
     int *fgcell, *fgtri, fgw, fgh;         /* the floor's triangles by 64-unit squares, for the test */
     float fgx0, fgz0;
     uint32_t *dflag, drawflag;             /* m29k: a drawn rail's flags (by rail); those for the next one */
@@ -2551,6 +2552,8 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
             printf("rails: %d (%d drawn)\n", G.s.nrail, G.ndrawn);
         }
         else if (!strncmp(tok, "rtake", 5)) draw_take_back();
+        else if (!strncmp(tok, "help", 4)) G.help = 1;                 /* (tests) m29t */
+        else if (!strncmp(tok, "drawon", 6)) { G.draw = 1; G.dn = 2; }
         else if (!strncmp(tok, "paths", 5)) {     /* (tests) m29o: car routes and missions on this stage */
             int k3;
             cars_load(); mis_load();
@@ -2692,54 +2695,270 @@ static int check(struct nk_context *ctx, const char *label, int *v)
     return 0;
 }
 
+/* m29t: a button that shows when its tool or state is on (an accent colour) */
+static int btn_on(struct nk_context *ctx, const char *label, int on)
+{
+    int r;
+    if (on) {
+        nk_style_push_style_item(ctx, &ctx->style.button.normal, nk_style_item_color(nk_rgb(196, 140, 30)));
+        nk_style_push_style_item(ctx, &ctx->style.button.hover, nk_style_item_color(nk_rgb(220, 160, 40)));
+        nk_style_push_color(ctx, &ctx->style.button.text_normal, nk_rgb(20, 20, 24));
+        nk_style_push_color(ctx, &ctx->style.button.text_hover, nk_rgb(20, 20, 24));
+    }
+    r = nk_button_label(ctx, label);
+    if (on) {
+        nk_style_pop_color(ctx); nk_style_pop_color(ctx);
+        nk_style_pop_style_item(ctx); nk_style_pop_style_item(ctx);
+    }
+    return r;
+}
+
+/* m29t: every key and mouse move of the stage view, in one window */
+static void shortcuts_window(struct nk_context *ctx, float x, float y, float hgt, float row)
+{
+    static const char *rows[][2] = {
+        { "#Camera", "" },
+        { "Left drag", "Look around" },
+        { "Right drag", "Slide sideways, up and down" },
+        { "Mouse wheel", "Forward, back" },
+        { "W A S D / arrows", "Move" },
+        { "Q / E", "Down / up" },
+        { "Shift (held)", "Move faster" },
+        { "#Picking", "" },
+        { "Click", "Pick a prop or a map piece" },
+        { "Shift+click", "Add or take away a map piece" },
+        { "T", "Add the pieces it touches" },
+        { "I", "Add the pieces inside it" },
+        { "Esc", "Deselect (or drop what's moving)" },
+        { "#Changing what's picked", "" },
+        { "G", "Move it with the mouse, click to drop" },
+        { "Right click", "Put it back (while moving)" },
+        { "[ / ]", "Turn 15 degrees left / right" },
+        { "Shift+[ / ]", "Turn 90 degrees" },
+        { "Page Up / Down", "Raise / lower 1 (Shift: 10)" },
+        { "Ctrl+D", "Copy" },
+        { "Delete", "Delete" },
+        { "#Grind rails", "" },
+        { "R", "Start or stop drawing rails" },
+        { "Click", "Add a point (snaps to corners and edges)" },
+        { "Backspace", "Take back a point" },
+        { "Enter", "Finish this rail, start another" },
+        { "Esc", "Finish and stop drawing" },
+        { "#Stage", "" },
+        { "Ctrl+Z", "Undo" },
+        { "Ctrl+S", "Save the stage" },
+        { "F1", "This list" },
+    };
+    size_t i;
+    if (nk_begin(ctx, "Keyboard shortcuts", nk_rect(x, y, 520, hgt < 300 ? 300 : hgt),
+                 NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE)) {
+        for (i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+            if (rows[i][0][0] == '#') {
+                nk_layout_row_dynamic(ctx, row - 4, 1);
+                nk_label_colored(ctx, rows[i][0] + 1, NK_TEXT_LEFT, nk_rgb(230, 180, 60));
+                continue;
+            }
+            nk_layout_row_template_begin(ctx, row - 10);
+            nk_layout_row_template_push_static(ctx, 150);
+            nk_layout_row_template_push_dynamic(ctx);
+            nk_layout_row_template_end(ctx);
+            nk_label(ctx, rows[i][0], NK_TEXT_LEFT);
+            nk_label_colored(ctx, rows[i][1], NK_TEXT_LEFT, nk_rgb(190, 190, 200));
+        }
+    } else G.help = 0;                            /* closed with its x */
+    nk_end(ctx);
+}
+
 int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float w, float h, float row,
              char *msg, size_t msgn, const char *export_dir, void (*more)(struct nk_context *ctx, float row))
 {
-    const float cw = 300;
+    const float cw = 320;
     int back = 0, k;
     char t[256];
     if (!G.open) return 1;
-    if (nk_begin(ctx, "Stage", nk_rect(x, y, cw, h), NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
-        nk_layout_row_dynamic(ctx, row, 1);
-        if (nk_button_label(ctx, "Back to the stages")) {
+    /* m29t: the panel tidied (Miggas: too many things, unclear buttons): a top bar, the tools, what's
+     * picked, undo and save, then folding sections (View, Traffic & missions, Camera, Files); the how-to
+     * lines went to a shortcuts window (F1) */
+    if (nk_begin(ctx, "Stage", nk_rect(x, y, cw, h), NK_WINDOW_BORDER)) {
+        const struct nk_color dim = nk_rgb(150, 150, 160);
+        nk_layout_row_template_begin(ctx, row);
+        nk_layout_row_template_push_static(ctx, 92);
+        nk_layout_row_template_push_dynamic(ctx);
+        nk_layout_row_template_end(ctx);
+        if (nk_button_label(ctx, "< Stages")) {
             if (G.dirty && !G.leave_ask) {       /* m28: not without asking */
                 G.leave_ask = 1;
-                snprintf(msg, msgn, "Unsaved changes to %s: Save them, or press Back again to leave without saving.", G.s.name);
+                snprintf(msg, msgn, "Unsaved changes to %s: Save them, or press Stages again to leave without saving.", G.s.name);
             } else back = 1;
         }
-        nk_layout_row_dynamic(ctx, row - 6, 1);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%s: %d .dat files", G.s.name, G.s.ndat);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%d stage models, %d props", G.s.nmodels, G.s.nprops);
-        nk_labelf(ctx, NK_TEXT_LEFT, "%d triangles, %d textures", G.s.nt, G.s.ntex);
+        nk_labelf(ctx, NK_TEXT_LEFT, "  %s%s", G.s.name, G.dirty ? "  (unsaved)" : "");
+        nk_layout_row_dynamic(ctx, row - 10, 1);
+        nk_labelf_colored(ctx, NK_TEXT_LEFT, dim, "%d models, %d props, %d rails", G.s.nmodels, G.s.nprops, G.s.nrail);
         if (!G.s.has_bin) nk_label_colored(ctx, "No .bin: no collision, rails, props", NK_TEXT_LEFT, nk_rgb(230, 170, 90));
-        nk_layout_row_dynamic(ctx, row, 1);
-        nk_label(ctx, "Show", NK_TEXT_LEFT);
-        nk_layout_row_dynamic(ctx, row - 4, 1);
-        check(ctx, "Stage models", &G.vis);
-        check(ctx, "See-through parts", &G.see);
-        check(ctx, "Props", &G.prop);
-        if (G.s.nshadow) {
-            check(ctx, "Shadows", &G.shadows);
-            snprintf(t, sizeof t, "Shadow volumes (%d)", G.s.nshadow);
-            check(ctx, t, &G.shadow);
+
+        /* the tools */
+        if (G.s.has_bin && G.ed_ok) {
+            nk_layout_row_dynamic(ctx, row, 2);
+            if (btn_on(ctx, "Select", !G.draw) && G.draw) { draw_finish(); G.draw = 0; G.need = 1; }
+            if (btn_on(ctx, "Draw rail (R)", G.draw) && !G.draw) { G.draw = 1; G.dn = 0; G.sel = -1; pset_clear(); G.grab = 0; G.need = 1; }
+        } else {
+            nk_layout_row_dynamic(ctx, row - 10, 1);
+            nk_label_colored(ctx, G.s.has_bin ? "Viewing only: this stage can't be edited" : "Viewing only", NK_TEXT_LEFT, nk_rgb(230, 170, 90));
         }
-        {                                           /* m29o: car routes, mission chains */
+        if (G.draw) {                                   /* m29j: the rail tool's options */
+            const char *items[13];
+            char lab[13][40];
+            int cur = 0, n2, k3;
+            nk_layout_row_dynamic(ctx, row - 8, 1);
+            nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(90, 255, 120), "This rail: %d point%s (click surfaces)", G.dn, G.dn == 1 ? "" : "s");
+            types_count();
+            n2 = G.ntval;
+            for (k3 = 0; k3 < n2; k3++) {
+                snprintf(lab[k3], sizeof lab[k3], "Type %X%s", G.tval[k3], type_note(G.tval[k3]));
+                items[k3] = lab[k3];
+                if (G.tval[k3] == G.drawflag) cur = k3;
+            }
+            nk_layout_row_template_begin(ctx, row - 4);
+            nk_layout_row_template_push_static(ctx, 70);
+            nk_layout_row_template_push_dynamic(ctx);
+            nk_layout_row_template_end(ctx);
+            nk_label(ctx, "Type:", NK_TEXT_LEFT);
+            if (n2 > 0) {
+                int sel2 = nk_combo(ctx, items, n2, cur, (int)row - 6, nk_vec2(240, 260));
+                if (sel2 != cur) G.drawflag = G.tval[sel2];
+            } else nk_label(ctx, "", NK_TEXT_LEFT);
+            nk_layout_row_dynamic(ctx, row - 4, 2);
+            if (nk_button_label(ctx, "Back a point")) { if (G.dn > 0) G.dn--; }
+            if (nk_button_label(ctx, "Finish rail")) draw_finish();
+        }
+        if (G.ndrawn > 0) {
+            nk_layout_row_dynamic(ctx, row - 4, 1);
+            snprintf(t, sizeof t, "Remove the last drawn rail (%d drawn)", G.ndrawn);
+            if (nk_button_label(ctx, t)) draw_take_back();
+        }
+
+        /* what's picked */
+        if (obj_ok() && !G.draw) {
+            float v[3], hd, v0[3], hd0;
+            int q, ch = 0;
+            obj_get(v, &hd);
+            memcpy(v0, v, sizeof v0);
+            hd0 = hd;
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            if (obj_ok() == 1) nk_labelf(ctx, NK_TEXT_LEFT, "Prop %d (model %d, area %d)", G.sel, G.s.props[G.sel].model_id, G.s.props[G.sel].area);
+            else {
+                const JSPiece *pc = &G.s.pieces[G.psel];
+                int ncm = 0, nr = 0, j;
+                for (j = 0; j < G.npset; j++) { ncm += G.s.pieces[G.pset[j]].ncm; nr += G.s.pieces[G.pset[j]].nrail; }
+                if (G.npset == 1)
+                    nk_labelf(ctx, NK_TEXT_LEFT, "%c%s %d (model %d)", toupper((unsigned char)kind_name(G.psel)[0]), kind_name(G.psel) + 1,
+                              G.psel, G.s.models[pc->model].id);
+                else nk_labelf(ctx, NK_TEXT_LEFT, "%d map pieces", G.npset);
+                nk_labelf_colored(ctx, NK_TEXT_LEFT, dim, "Takes %d collision part%s, %d rail%s with it",
+                                  ncm, ncm == 1 ? "" : "s", nr, nr == 1 ? "" : "s");
+            }
+            nk_layout_row_dynamic(ctx, row - 6, 2);
+            for (q = 0; q < 3; q++) {
+                static const char *nmx[3] = { "#X:", "#Y:", "#Z:" };
+                nk_property_float(ctx, nmx[q], -100000.0f, &v[q], 100000.0f, 1.0f, 0.5f);
+            }
+            nk_property_float(ctx, "#Turn:", -360.0f, &hd, 360.0f, 15.0f, 1.0f);
+            for (q = 0; q < 3; q++) ch |= v[q] != v0[q];
+            if (ch || hd != hd0) { if (!G.grab) ed_snap(); obj_set(v, hd); }
+            nk_layout_row_dynamic(ctx, row - 4, 2);
+            if (btn_on(ctx, G.grab ? "Click to drop it" : "Move (G)", G.grab)) obj_grab();
+            if (nk_button_label(ctx, "Copy (Ctrl+D)")) { if (obj_ok() == 1) ed_copy(G.sel); else obj_copy_pieces(); }
+            if (nk_button_label(ctx, "Turn left ([)")) { ed_snap(); obj_turn(-15); }
+            if (nk_button_label(ctx, "Turn right (])")) { ed_snap(); obj_turn(15); }
+            if (obj_ok() == 2) {
+                if (nk_button_label(ctx, "+ Touching (T)")) obj_add_touching();
+                if (nk_button_label(ctx, "+ Inside (I)")) obj_add_inside();
+            }
+            if (nk_button_label(ctx, "Delete (Del)")) obj_delete();
+            if (nk_button_label(ctx, "Deselect (Esc)")) obj_unpick();
+        } else if (!G.draw && G.s.has_bin && G.ed_ok) {
+            nk_layout_row_dynamic(ctx, row - 10, 1);
+            nk_label_colored(ctx, "Click a prop or a piece of the map", NK_TEXT_LEFT, dim);
+        }
+
+        /* undo and save */
+        if (G.s.has_bin && G.ed_ok) {
+            nk_layout_row_dynamic(ctx, row, 2);
+            if (nk_button_label(ctx, G.nundo ? "Undo (Ctrl+Z)" : "Nothing to undo")) ed_undo();
+            if (btn_on(ctx, G.dirty ? "Save (Ctrl+S)" : "Saved", G.dirty) && G.dirty) ed_save(msg, msgn);
+        }
+
+        /* View */
+        if (nk_tree_push(ctx, NK_TREE_TAB, "View", NK_MAXIMIZED)) {
+            nk_layout_row_dynamic(ctx, row - 6, 2);
+            check(ctx, "Stage models", &G.vis);
+            check(ctx, "See-through", &G.see);
+            check(ctx, "Props", &G.prop);
+            if (G.s.nshadow) {
+                check(ctx, "Shadows", &G.shadows);
+                check(ctx, "Shadow mesh", &G.shadow);
+            }
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            snprintf(t, sizeof t, "Grind rails (%d)", G.s.nrail);
+            check(ctx, t, &G.rail);
+            if (G.rail && G.s.nrail > 0) {               /* m29k: by type */
+                check(ctx, "    Colour them by type", &G.rbytype);
+                if (G.rbytype) {
+                    types_count();
+                    for (k = 0; k < G.ntval; k++) {
+                        struct nk_rect b;
+                        nk_layout_row_template_begin(ctx, row - 10);
+                        nk_layout_row_template_push_static(ctx, 34);
+                        nk_layout_row_template_push_dynamic(ctx);
+                        nk_layout_row_template_end(ctx);
+                        b = nk_widget_bounds(ctx);
+                        nk_fill_rect(nk_window_get_canvas(ctx), nk_rect(b.x + 20, b.y + 5, 10, b.h - 10), 2, nk_rgb(s_tcol[k][0], s_tcol[k][1], s_tcol[k][2]));
+                        nk_spacing(ctx, 1);
+                        nk_labelf(ctx, NK_TEXT_LEFT, "Type %X%s (%d)", G.tval[k], type_note(G.tval[k]), G.tcount[k]);
+                    }
+                    nk_layout_row_dynamic(ctx, row - 6, 1);
+                }
+            }
+            snprintf(t, sizeof t, "Collision (%d triangles)", G.s.nct);
+            check(ctx, t, &G.coll);
+            if (G.coll) {                                /* each surface type, with its colour */
+                for (k = 0; k < JST_NSURF; k++) {
+                    struct nk_rect b;
+                    if (!G.scount[k]) continue;
+                    nk_layout_row_template_begin(ctx, row - 10);
+                    nk_layout_row_template_push_static(ctx, 34);
+                    nk_layout_row_template_push_dynamic(ctx);
+                    nk_layout_row_template_end(ctx);
+                    b = nk_widget_bounds(ctx);
+                    nk_fill_rect(nk_window_get_canvas(ctx), nk_rect(b.x + 20, b.y + 5, 10, b.h - 10), 2,
+                                 nk_rgb(jst_surf[k].r, jst_surf[k].g, jst_surf[k].b));
+                    nk_spacing(ctx, 1);
+                    snprintf(t, sizeof t, "%s (%d)", jst_surf[k].name, G.scount[k]);
+                    check(ctx, t, &G.surf[k]);
+                }
+                nk_layout_row_dynamic(ctx, row - 6, 1);
+            }
+            nk_tree_pop(ctx);
+        }
+
+        /* Traffic & missions */
+        if (nk_tree_push(ctx, NK_TREE_TAB, "Traffic & missions", NK_MINIMIZED)) {
             int was = G.showcars, wm = G.showmis;
-            if (G.cars_done) snprintf(t, sizeof t, "Car routes (%d)", G.cars.npath);
-            else snprintf(t, sizeof t, "Car routes");
+            nk_layout_row_dynamic(ctx, row - 6, 1);
+            if (G.cars_done) snprintf(t, sizeof t, "Car routes, blue (%d)", G.cars.npath);
+            else snprintf(t, sizeof t, "Car routes, blue");
             check(ctx, t, &G.showcars);
             if (G.showcars && (!was || !G.cars_done)) { cars_load(); G.need = 1; }   /* m29r: or a new stage opened with it on */
-            if (G.mis_done) snprintf(t, sizeof t, "Missions (%d on this stage)", G.nmis);
-            else snprintf(t, sizeof t, "Missions");
+            if (G.mis_done) snprintf(t, sizeof t, "Mission data (%d mission%s here)", G.nmis, G.nmis == 1 ? "" : "s");
+            else snprintf(t, sizeof t, "Mission data");
             check(ctx, t, &G.showmis);
             if (G.showmis && (!wm || !G.mis_done)) { mis_load(); G.need = 1; }
             if (G.showmis && G.mis_done && G.nmis == 0) {
                 char md[LPATH];
-                nk_layout_row_dynamic(ctx, row - 8, 1);
-                if (media_dir(md)) nk_label_colored(ctx, "   No Mission folder found", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
-                else nk_label_colored(ctx, "   No mission found on this stage", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
+                nk_layout_row_dynamic(ctx, row - 10, 1);
+                nk_label_colored(ctx, media_dir(md) ? "    No Mission folder found" : "    No mission on this stage", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
             }
-            if (G.showmis && G.nmis > 0) {          /* m29s: the stage's missions by number and name (GG Notebook) */
+            if (G.showmis && G.nmis > 0) {              /* m29s: the stage's missions by number and name (GG Notebook) */
                 const char *items[128];
                 char lab[128][72];
                 int k3, n3 = G.nmis < 128 ? G.nmis : 128, sel;
@@ -2753,189 +2972,64 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 sel = nk_combo(ctx, items, n3, G.mis_sel, (int)row - 6, nk_vec2(340, 320));
                 if (sel != G.mis_sel) { G.mis_sel = sel; G.need = 1; }
                 ms = &G.msn[G.mis_sel];
-                {
-                    int sp0 = 0, k4;
-                    for (k4 = 0; k4 < ms->nsp; k4++) sp0 += ms->sp[k4].type != 1;
-                    snprintf(t, sizeof t, "   Crowd, pink (%d)", ms->ped.npath);
-                    if (check(ctx, t, &G.showped)) G.need = 1;
-                    snprintf(t, sizeof t, "   Spawns, green/yellow (%d)", ms->nsp);
-                    if (check(ctx, t, &G.showmarks)) G.need = 1;
-                    snprintf(t, sizeof t, "   Fall-out warps, purple (%d)", ms->ndw);
-                    if (check(ctx, t, &G.showwarp)) G.need = 1;
-                    snprintf(t, sizeof t, "   Exits, red/orange (%d)", ms->nexit + ms->ntp);
-                    if (check(ctx, t, &G.showexit)) G.need = 1;
-                    snprintf(t, sizeof t, "   Cans (%d)", ms->npk);
-                    if (check(ctx, t, &G.showpick)) G.need = 1;
-                    snprintf(t, sizeof t, "   Graffiti souls, white (%d)", ms->nsoul);
-                    if (check(ctx, t, &G.showsoul)) G.need = 1;
-                    snprintf(t, sizeof t, "   Placed cars, blue (%d)", ms->ncar);
-                    if (check(ctx, t, &G.showparked)) G.need = 1;
-                    (void)sp0;
-                }
+                nk_layout_row_dynamic(ctx, row - 8, 1);
+                snprintf(t, sizeof t, "Crowd paths, pink (%d)", ms->ped.npath);
+                check(ctx, t, &G.showped);
+                snprintf(t, sizeof t, "Spawns, green (%d)", ms->nsp);
+                check(ctx, t, &G.showmarks);
+                snprintf(t, sizeof t, "Fall-out warps, purple (%d)", ms->ndw);
+                check(ctx, t, &G.showwarp);
+                snprintf(t, sizeof t, "Exits, red (%d)", ms->nexit + ms->ntp);
+                check(ctx, t, &G.showexit);
+                snprintf(t, sizeof t, "Spray cans (%d)", ms->npk);
+                check(ctx, t, &G.showpick);
+                snprintf(t, sizeof t, "Graffiti souls, white (%d)", ms->nsoul);
+                check(ctx, t, &G.showsoul);
+                snprintf(t, sizeof t, "Placed cars, blue (%d)", ms->ncar);
+                check(ctx, t, &G.showparked);
             }
+            nk_tree_pop(ctx);
         }
-        snprintf(t, sizeof t, "Grind rails (%d)", G.s.nrail);
-        check(ctx, t, &G.rail);
-        if (G.rail && G.s.nrail > 0) {                   /* m29k: by type; m29m: on every stage */
-            check(ctx, "   Colour rails by type", &G.rbytype);
-            if (G.rbytype) {
-                types_count();
-                for (k = 0; k < G.ntval; k++) {
-                    struct nk_rect b;
-                    nk_layout_row_template_begin(ctx, row - 8);
-                    nk_layout_row_template_push_static(ctx, 22);
-                    nk_layout_row_template_push_dynamic(ctx);
-                    nk_layout_row_template_end(ctx);
-                    b = nk_widget_bounds(ctx);
-                    nk_fill_rect(nk_window_get_canvas(ctx), nk_rect(b.x + 10, b.y + 5, 10, b.h - 10), 2, nk_rgb(s_tcol[k][0], s_tcol[k][1], s_tcol[k][2]));
-                    nk_spacing(ctx, 1);
-                    nk_labelf(ctx, NK_TEXT_LEFT, "Type %X%s (%d)", G.tval[k], type_note(G.tval[k]), G.tcount[k]);
-                }
-                nk_layout_row_dynamic(ctx, row - 4, 1); /* m29m: back to one column (the Collision box lost its words) */
-            }
-        }
-        snprintf(t, sizeof t, "Collision (%d triangles)", G.s.nct);
-        check(ctx, t, &G.coll);
-        if (G.coll) {
-            for (k = 0; k < JST_NSURF; k++) {
-                struct nk_rect b;
-                if (!G.scount[k]) continue;
-                nk_layout_row_template_begin(ctx, row - 6);
-                nk_layout_row_template_push_static(ctx, 14);
-                nk_layout_row_template_push_dynamic(ctx);
-                nk_layout_row_template_end(ctx);
-                b = nk_widget_bounds(ctx);
-                nk_fill_rect(nk_window_get_canvas(ctx), nk_rect(b.x + 2, b.y + 5, 10, b.h - 10), 2,
-                             nk_rgb(jst_surf[k].r, jst_surf[k].g, jst_surf[k].b));
-                nk_spacing(ctx, 1);
-                snprintf(t, sizeof t, "%s (%d)", jst_surf[k].name, G.scount[k]);
-                check(ctx, t, &G.surf[k]);
-            }
-        }
-        /* m28: the editor */
-        nk_layout_row_dynamic(ctx, row, 1);
-        nk_label(ctx, G.dirty ? "Edit (unsaved changes)" : "Edit", NK_TEXT_LEFT);
-        if (G.s.has_bin && G.ed_ok) {                    /* m29j: the grind tool */
-            nk_layout_row_dynamic(ctx, row - 4, 1);
-            if (nk_button_label(ctx, G.draw ? "Drawing a grind rail: Esc to stop" : "Draw a grind rail (R)")) {
-                if (G.draw) { draw_finish(); G.draw = 0; }
-                else { G.draw = 1; G.dn = 0; G.sel = -1; pset_clear(); G.grab = 0; }
+
+        /* Camera */
+        if (nk_tree_push(ctx, NK_TREE_TAB, "Camera", NK_MINIMIZED)) {
+            nk_layout_row_dynamic(ctx, row - 4, 2);
+            if (nk_button_label(ctx, "Overview")) overview();
+            if (nk_button_label(ctx, "From above")) {
+                float c[3] = { (G.s.lo[0] + G.s.hi[0]) * 0.5f, 0, (G.s.lo[2] + G.s.hi[2]) * 0.5f };
+                float size = fmaxf(G.s.hi[0] - G.s.lo[0], G.s.hi[2] - G.s.lo[2]);
+                G.pos[0] = c[0]; G.pos[1] = G.s.hi[1] + size * 0.75f; G.pos[2] = c[2];
+                G.yaw = 0; G.pitch = -1.5607f;
                 G.need = 1;
             }
-            if (G.draw) {
+            {
+                float size = fmaxf(G.s.hi[0] - G.s.lo[0], G.s.hi[2] - G.s.lo[2]), sp = G.speed;
                 nk_layout_row_dynamic(ctx, row - 8, 1);
-                nk_label_colored(ctx, "Click on surfaces: each click a point.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-                nk_label_colored(ctx, "Corners (pink) and edges (blue) snap.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-                nk_label_colored(ctx, "Backspace: back a point. Enter: next rail.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-                nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(90, 255, 120), "This rail: %d point%s", G.dn, G.dn == 1 ? "" : "s");
+                nk_labelf(ctx, NK_TEXT_LEFT, "Speed: %.0f a second", G.speed);
+                nk_slider_float(ctx, size * 0.01f, &sp, size * 1.0f, size * 0.005f);
+                G.speed = sp;
             }
-            {                                           /* m29k: the type new rails get */
-                const char *items[13];
-                char lab[13][40];
-                int cur = 0, n2, k3;
-                types_count();
-                n2 = G.ntval;
-                for (k3 = 0; k3 < n2; k3++) {
-                    snprintf(lab[k3], sizeof lab[k3], "Type %X%s", G.tval[k3], type_note(G.tval[k3]));
-                    items[k3] = lab[k3];
-                    if (G.tval[k3] == G.drawflag) cur = k3;
-                }
-                nk_layout_row_dynamic(ctx, row - 6, 2);
-                nk_label(ctx, "New rails' type:", NK_TEXT_LEFT);
-                if (n2 > 0) {
-                    int sel2 = nk_combo(ctx, items, n2, cur, (int)row - 6, nk_vec2(230, 260));
-                    if (sel2 != cur) G.drawflag = G.tval[sel2];
-                }
-            }
-            if (G.ndrawn > 0) {
-                nk_layout_row_dynamic(ctx, row - 4, 1);
-                if (nk_button_label(ctx, G.ndrawn == 1 ? "Take back the drawn rail" : "Take back the last drawn rail")) draw_take_back();
-                nk_layout_row_dynamic(ctx, row - 8, 1);
-                nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(90, 255, 120), "%d rail%s drawn (green)", G.ndrawn, G.ndrawn == 1 ? "" : "s");
-            }
+            nk_layout_row_dynamic(ctx, row - 10, 1);
+            nk_labelf_colored(ctx, NK_TEXT_LEFT, dim, "At %.0f, %.0f, %.0f; drawn in %.0f ms", G.pos[0], G.pos[1], G.pos[2], G.ms);
+            nk_tree_pop(ctx);
         }
-        if (obj_ok()) {
-            float v[3], hd, v0[3], hd0;
-            int q, ch = 0;
-            obj_get(v, &hd);
-            memcpy(v0, v, sizeof v0);
-            hd0 = hd;
-            nk_layout_row_dynamic(ctx, row - 6, 1);
-            if (obj_ok() == 1) nk_labelf(ctx, NK_TEXT_LEFT, "Prop %d: model %d, area %d", G.sel, G.s.props[G.sel].model_id, G.s.props[G.sel].area);
-            else {
-                const JSPiece *pc = &G.s.pieces[G.psel];
-                int ncm = 0, nr = 0, j;
-                for (j = 0; j < G.npset; j++) { ncm += G.s.pieces[G.pset[j]].ncm; nr += G.s.pieces[G.pset[j]].nrail; }
-                if (G.npset == 1)
-                    nk_labelf(ctx, NK_TEXT_LEFT, "%c%s %d (model %d)", toupper((unsigned char)kind_name(G.psel)[0]), kind_name(G.psel) + 1,
-                              G.psel, G.s.models[pc->model].id);
-                else nk_labelf(ctx, NK_TEXT_LEFT, "%d pieces picked together", G.npset);
-                nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(150, 150, 160), "With it: %d collision piece%s, %d rail%s",
-                                  ncm, ncm == 1 ? "" : "s", nr, nr == 1 ? "" : "s");
+
+        /* Files */
+        if (nk_tree_push(ctx, NK_TREE_TAB, "Files", NK_MINIMIZED)) {
+            nk_layout_row_dynamic(ctx, row - 4, 1);
+            if (nk_button_label(ctx, "Export as .obj")) {
+                char dir[LPATH], err[512];
+                pjoin(dir, export_dir, G.s.name);
+                if (jst_write_obj(&G.s, dir, err, sizeof err)) snprintf(msg, msgn, "%s", err);
+                else snprintf(msg, msgn, "%s exported to %s: %s_visual.obj (with its textures), %s_collision.obj, %s_rails.obj.",
+                              G.s.name, dir, G.s.name, G.s.name, G.s.name);
             }
-            for (q = 0; q < 3; q++) {
-                static const char *nmx[3] = { "#X:", "#Y:", "#Z:" };
-                nk_property_float(ctx, nmx[q], -100000.0f, &v[q], 100000.0f, 1.0f, 0.5f);
-            }
-            nk_property_float(ctx, "#Facing:", -360.0f, &hd, 360.0f, 15.0f, 1.0f);
-            for (q = 0; q < 3; q++) ch |= v[q] != v0[q];
-            if (ch || hd != hd0) { if (!G.grab) ed_snap(); obj_set(v, hd); }
-            nk_layout_row_dynamic(ctx, row - 4, 2);
-            if (nk_button_label(ctx, G.grab ? "Grabbed: click to drop" : "Grab (G)")) obj_grab();
-            if (nk_button_label(ctx, "Copy (Ctrl+D)")) { if (obj_ok() == 1) ed_copy(G.sel); else obj_copy_pieces(); }
-            if (nk_button_label(ctx, "Turn -15 ([)")) { ed_snap(); obj_turn(-15); }
-            if (nk_button_label(ctx, "Turn +15 (])")) { ed_snap(); obj_turn(15); }
-            if (nk_button_label(ctx, "Delete (Del)")) obj_delete();
-            if (nk_button_label(ctx, "Unpick (Esc)")) obj_unpick();
-            if (obj_ok() == 2) {
-                nk_layout_row_dynamic(ctx, row - 4, 1);
-                nk_layout_row_dynamic(ctx, row - 4, 2);
-                if (nk_button_label(ctx, "Add touching (T)")) obj_add_touching();
-                if (nk_button_label(ctx, "Add inside (I)")) obj_add_inside();
-                nk_layout_row_dynamic(ctx, row - 8, 1);
-                nk_label_colored(ctx, "Shift+click adds or takes away a piece", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-            }
-        } else {
-            nk_layout_row_dynamic(ctx, row - 8, 1);
-            nk_label_colored(ctx, "Click a prop or a piece of the map.", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
+            if (more) more(ctx, row);
+            nk_tree_pop(ctx);
         }
-        nk_layout_row_dynamic(ctx, row - 4, 2);
-        if (nk_button_label(ctx, G.nundo ? "Undo (Ctrl+Z)" : "Undo (nothing)")) ed_undo();
-        if (nk_button_label(ctx, G.dirty ? "Save the stage" : "Saved")) { if (G.dirty) ed_save(msg, msgn); }
+
         nk_layout_row_dynamic(ctx, row, 1);
-        nk_label(ctx, "Camera", NK_TEXT_LEFT);
-        nk_layout_row_dynamic(ctx, row, 2);
-        if (nk_button_label(ctx, "Overview")) overview();
-        if (nk_button_label(ctx, "From above")) {
-            float c[3] = { (G.s.lo[0] + G.s.hi[0]) * 0.5f, 0, (G.s.lo[2] + G.s.hi[2]) * 0.5f };
-            float size = fmaxf(G.s.hi[0] - G.s.lo[0], G.s.hi[2] - G.s.lo[2]);
-            G.pos[0] = c[0]; G.pos[1] = G.s.hi[1] + size * 0.75f; G.pos[2] = c[2];
-            G.yaw = 0; G.pitch = -1.5607f;
-            G.need = 1;
-        }
-        nk_layout_row_dynamic(ctx, row - 4, 1);
-        {
-            float size = fmaxf(G.s.hi[0] - G.s.lo[0], G.s.hi[2] - G.s.lo[2]), sp = G.speed;
-            nk_labelf(ctx, NK_TEXT_LEFT, "Speed: %.0f a second", G.speed);
-            nk_slider_float(ctx, size * 0.01f, &sp, size * 1.0f, size * 0.005f);
-            G.speed = sp;
-        }
-        nk_layout_row_dynamic(ctx, row - 8, 1);
-        nk_label_colored(ctx, "Left drag: look around", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-        nk_label_colored(ctx, "W A S D: move, Q E: down, up", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-        nk_label_colored(ctx, "Shift: faster. Wheel: forward, back", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-        nk_label_colored(ctx, "Right drag: move sideways, up", NK_TEXT_LEFT, nk_rgb(150, 150, 160));
-        nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(150, 150, 160), "At %.0f, %.0f, %.0f", G.pos[0], G.pos[1], G.pos[2]);
-        nk_labelf_colored(ctx, NK_TEXT_LEFT, nk_rgb(150, 150, 160), "Drawn in %.0f ms", G.ms);
-        nk_layout_row_dynamic(ctx, row, 1);
-        if (nk_button_label(ctx, "Export as .obj")) {
-            char dir[LPATH], err[512];
-            pjoin(dir, export_dir, G.s.name);
-            if (jst_write_obj(&G.s, dir, err, sizeof err)) snprintf(msg, msgn, "%s", err);
-            else snprintf(msg, msgn, "%s exported to %s: %s_visual.obj (with its textures), %s_collision.obj, %s_rails.obj.",
-                          G.s.name, dir, G.s.name, G.s.name, G.s.name);
-        }
-        if (more) more(ctx, row);
+        if (btn_on(ctx, "Keyboard shortcuts (F1)", G.help)) G.help = !G.help;
     }
     nk_end(ctx);
 
@@ -2945,7 +3039,7 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         char hv[160];
         nk_layout_row_dynamic(ctx, row - 6, 1);
         hover_text(hv, sizeof hv);
-        nk_label(ctx, hv[0] ? hv : "Point at something to see what it is.", NK_TEXT_LEFT);
+        nk_label(ctx, hv[0] ? hv : "Point at something to see what it is.   F1: keyboard shortcuts", NK_TEXT_LEFT);
         nk_layout_row_dynamic(ctx, h - row - 30, 1);
         if (nk_widget(&b, ctx) != NK_WIDGET_INVALID) {
             int bw = (int)b.w, bh = (int)b.h, hover = nk_input_is_mouse_hovering_rect(in, b), moved = 0, scale;
@@ -2992,6 +3086,8 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 float mv[3] = { 0, 0, 0 }, sp = G.speed * dt * ((ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT]) ? 4.0f : 1.0f);
                 float fl[3] = { f[0], 0, f[2] }, fl_l = sqrtf(f[0] * f[0] + f[2] * f[2]);
                 if (fl_l > 1e-4f) { fl[0] /= fl_l; fl[2] /= fl_l; }
+                int ctl = ks[SDL_SCANCODE_LCTRL] || ks[SDL_SCANCODE_RCTRL];   /* m29t: Ctrl+S / Ctrl+D don't move the camera */
+                if (ctl) sp = 0;
                 if (ks[SDL_SCANCODE_W] || ks[SDL_SCANCODE_UP]) for (k = 0; k < 3; k++) mv[k] += f[k];
                 if (ks[SDL_SCANCODE_S] || ks[SDL_SCANCODE_DOWN]) for (k = 0; k < 3; k++) mv[k] -= f[k];
                 if (ks[SDL_SCANCODE_D] || ks[SDL_SCANCODE_RIGHT]) for (k = 0; k < 3; k++) mv[k] += r[k];
@@ -3009,7 +3105,9 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
                 int ctrl = ks[SDL_SCANCODE_LCTRL] || ks[SDL_SCANCODE_RCTRL], shift = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
                 int sel_ok = obj_ok() != 0;
 #define KEYHIT(sc) (ks[sc] && !G.kprev[sc])
-                if (!ctrl && KEYHIT(SDL_SCANCODE_R)) {   /* m29j: the grind tool on, or off (the rail so far kept) */
+                if (KEYHIT(SDL_SCANCODE_F1)) G.help = !G.help;   /* m29t */
+                if (ctrl && KEYHIT(SDL_SCANCODE_S) && G.dirty && G.ed_ok) ed_save(msg, msgn);
+                if (!ctrl && KEYHIT(SDL_SCANCODE_R) && G.ed_ok && G.s.has_bin) {   /* m29j: the grind tool on, or off (the rail so far kept) */
                     if (G.draw) { draw_finish(); G.draw = 0; }
                     else { G.draw = 1; G.dn = 0; G.sel = -1; pset_clear(); G.grab = 0; }
                     G.need = 1;
@@ -3127,5 +3225,6 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
         }
     }
     nk_end(ctx);
+    if (G.help) shortcuts_window(ctx, x + cw + 20, y + 40, h - 60, row);   /* m29t: over the view */
     return back;
 }
