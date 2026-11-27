@@ -4900,11 +4900,17 @@ static void ff_light_vertex(uint32_t index, const float eye[4], Nv2aVshOutput *o
     memcpy(vs, o->d1, sizeof vs);            /* vertex specular */
     src_for[0] = NULL; src_for[1] = vd; src_for[2] = vs;
 
+    /* v313s: a lit batch with no normal (no array, no value set) faces the
+     * viewer: eye space (0, 0, -1). The start menu's counter box is such a
+     * batch, lit by one light straight on; the old default, (0, 0, 1) in
+     * model space, faced it away from that light and the box, its icons
+     * and its x's came out black (Miggas; teal on the Xbox). */
     if (!fetch_attr(&s_gpu.attr[2], index, nrm)) {
-        nrm[0] = 0; nrm[1] = 0; nrm[2] = 1;
+        n[0] = 0; n[1] = 0; n[2] = -1; n[3] = 0;
+    } else {
+        nrm[3] = 0.0f;
+        mat4_apply(s_gpu.ff_inv_mv0, nrm, n);
     }
-    nrm[3] = 0.0f;
-    mat4_apply(s_gpu.ff_inv_mv0, nrm, n);
     l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
     if (l > 0.0f) { n[0] /= l; n[1] /= l; n[2] /= l; }
 
