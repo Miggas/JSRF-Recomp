@@ -84,10 +84,10 @@ static struct {
     /* m29o: car routes and mission chains on this stage */
     int showcars, showmis, cars_done, mis_done, mis_sel, nmis;
     JPaths cars;                           /* the car routes lying on this stage's floor */
-    JPaths *mis;                           /* each mission's chains that do */
-    JMarks *mmark;                         /* m29p: each listed mission's spawns and planes */
-    int showmarks;
-    char (*misname)[24];
+    JMission *msn;                         /* m29s: this stage's missions (by the stage number in their header) */
+    int *misno;                            /* their numbers */
+    int showmarks, showped, showwarp, showexit, showpick, showsoul, showparked;
+    char sname[16];                        /* the stage's name (Stg11) */
     int *fgcell, *fgtri, fgw, fgh;         /* the floor's triangles by 64-unit squares, for the test */
     float fgx0, fgz0;
     uint32_t *dflag, drawflag;             /* m29k: a drawn rail's flags (by rail); those for the next one */
@@ -181,6 +181,7 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     if (jst_load(dir, name, &G.s, err, errn)) return -1;
     G.open = 1;
     snprintf(G.dir, sizeof G.dir, "%s", dir);
+    snprintf(G.sname, sizeof G.sname, "%s", name);   /* m29s */
     G.sel = -1; G.grab = 0; G.dirty = 0; G.leave_ask = 0; G.nundo = 0;
     G.ed_ok = 0;
     if (G.s.binfile[0]) {                       /* m28: the .bin in its parts, for saving edits */
@@ -210,9 +211,8 @@ int s3d_open(const char *dir, const char *name, char *err, size_t errn)
     {                                           /* m29o */
         int k9;
         jp_free(&G.cars);
-        for (k9 = 0; k9 < G.nmis; k9++) { jp_free(&G.mis[k9]); if (G.mmark) jp_marks_free(&G.mmark[k9]); }
-        free(G.mmark); G.mmark = NULL;
-        free(G.mis); G.mis = NULL; free(G.misname); G.misname = NULL; G.nmis = 0;
+        for (k9 = 0; k9 < G.nmis; k9++) jp_mission_free(&G.msn[k9]);
+        free(G.msn); G.msn = NULL; free(G.misno); G.misno = NULL; G.nmis = 0;
         free(G.fgcell); free(G.fgtri); G.fgcell = G.fgtri = NULL;
         G.cars_done = G.mis_done = 0; G.mis_sel = 0;
     }
@@ -688,53 +688,48 @@ static void cars_load(void)
     free(m.names);
 }
 
-/* the missions whose chains lie on this stage, the first time they're asked for */
+/* m29s: this stage's missions: those whose header names its stage number, the first time they're asked for */
 static void mis_load(void)
 {
     char md[LPATH], fp[LPATH];
     struct mis_scan m;
-    int i;
+    int i, major = -1, minor = -1;
     if (G.mis_done) return;
     G.mis_done = 1;
-    fg_build();
-    if (media_dir(md)) return;
+    if (strlen(G.sname) >= 5 && (G.sname[0] == 'S' || G.sname[0] == 's') && isdigit((unsigned char)G.sname[3]) && isdigit((unsigned char)G.sname[4])) {
+        major = G.sname[3] - '0'; minor = G.sname[4] - '0';
+    }
+    if (major < 0 || media_dir(md)) return;
     memset(&m, 0, sizeof m);
     pjoin(m.dir, md, "Mission");
     list_dir(m.dir, mis_list_cb, &m);
     if (m.nf > 1) qsort(m.names, (size_t)m.nf, sizeof *m.names, name_cmp);
     for (i = 0; i < m.nf; i++) {
-        JPaths one = { 0 };
+        uint8_t hd[4];
+        FILE *f;
+        JMission one;
         size_t n;
         char *b;
+        if (strncmp(m.names[i], "mssn", 4) && strncmp(m.names[i], "MSSN", 4)) continue;
         pjoin(fp, m.dir, m.names[i]);
+        f = fopen(fp, "rb");                     /* the stage number first: most missions are elsewhere */
+        if (!f) continue;
+        if (fread(hd, 1, 4, f) != 4) { fclose(f); continue; }
+        fclose(f);
+        if ((hd[0] | hd[1] << 8) != minor || (hd[2] | hd[3] << 8) != major) continue;
         b = read_file(fp, &n);
         if (!b) continue;
-        jp_mission((const uint8_t *)b, n, i, &one);
-        {
-            JMarks mk;
-            int here = one.npath >= 4 && fg_share(&one, 0) >= 0.7f, k2, on = 0, all = 0;
-            jp_marks((const uint8_t *)b, n, &mk);
-            for (k2 = 0; k2 < mk.nsp; k2++)          /* m29p: or its spawns lie on this stage */
-                if (mk.sp[k2].type != 1) { all++; on += fg_on(mk.sp[k2].p); }
-            if (!here && all && on * 2 >= all) here = 1;
-            free(b);
-            if (here) {
-                JPaths *nm = (JPaths *)realloc(G.mis, sizeof(JPaths) * (size_t)(G.nmis + 1));
-                JMarks *nk = (JMarks *)realloc(G.mmark, sizeof(JMarks) * (size_t)(G.nmis + 1));
-                char (*nn)[24] = (char (*)[24])realloc(G.misname, sizeof(*nn) * (size_t)(G.nmis + 1));
-                if (nm) G.mis = nm;
-                if (nk) G.mmark = nk;
-                if (nn) G.misname = nn;
-                if (!nm || !nk || !nn) { jp_free(&one); jp_marks_free(&mk); break; }
-                G.mis[G.nmis] = one;
-                G.mmark[G.nmis] = mk;
-                snprintf(G.misname[G.nmis], 24, "%.*s", (int)(strlen(m.names[i]) - 4), m.names[i]);
-                G.nmis++;
-                continue;
-            }
-            jp_marks_free(&mk);
+        if (jp_mission_read((const uint8_t *)b, n, &one) == 0) {
+            JMission *nm = (JMission *)realloc(G.msn, sizeof(JMission) * (size_t)(G.nmis + 1));
+            int *nn = (int *)realloc(G.misno, sizeof(int) * (size_t)(G.nmis + 1));
+            if (nm) G.msn = nm;
+            if (nn) G.misno = nn;
+            if (!nm || !nn) { jp_mission_free(&one); free(b); break; }
+            G.msn[G.nmis] = one;
+            G.misno[G.nmis] = atoi(m.names[i] + 4);
+            G.nmis++;
         }
-        jp_free(&one);
+        free(b);
     }
     free(m.names);
 }
@@ -946,47 +941,76 @@ static void render(void)
                     line3(pp->p + q * 3, pp->p + q2 * 3, f, r, u, 70, 170, 255, thick);
                 }
             }
-        if (G.showmis && G.mis_sel >= 0 && G.mis_sel < G.nmis)
-            for (k = 0; k < G.mis[G.mis_sel].npath; k++) {
-                const JPath *pp = &G.mis[G.mis_sel].path[k];
-                if (pp->n == 1) {                   /* one point: a small cross */
-                    float a2[3], b2[3];
-                    memcpy(a2, pp->p, 12); memcpy(b2, pp->p, 12);
-                    a2[0] -= 3; b2[0] += 3; line3(a2, b2, f, r, u, 255, 110, 210, thick);
-                    a2[0] += 3; b2[0] -= 3; a2[2] -= 3; b2[2] += 3; line3(a2, b2, f, r, u, 255, 110, 210, thick);
+    }
+    if (G.showmis && G.msn && G.mis_sel >= 0 && G.mis_sel < G.nmis) {   /* m29s: the picked mission's data */
+        const JMission *ms = &G.msn[G.mis_sel];
+        int k, q, j, thick = G.rw >= 900 ? 3 : 2;
+        float t[3], b2[3];
+        if (G.showped)                             /* the crowd's paths: pink */
+            for (k = 0; k < ms->ped.npath; k++) {
+                const JPath *pp = &ms->ped.path[k];
+                if (pp->n == 1) {
+                    memcpy(t, pp->p, 12); memcpy(b2, pp->p, 12); t[0] -= 3; b2[0] += 3;
+                    line3(t, b2, f, r, u, 255, 110, 210, thick);
                 }
                 for (q = 0; q + 1 < pp->n; q++) line3(pp->p + q * 3, pp->p + q * 3 + 3, f, r, u, 255, 110, 210, thick);
             }
-    }
-    if (G.showmarks && G.mmark && G.mis_sel >= 0 && G.mis_sel < G.nmis) {   /* m29p: the mission's marks */
-        const JMarks *mk = &G.mmark[G.mis_sel];
-        int k, q, thick = G.rw >= 900 ? 3 : 2;
-        for (k = 0; k < mk->nsp; k++) {
-            const JSpawn *e = &mk->sp[k];
-            float t[3];
-            if (e->type != 1) {                    /* a spawn: a green post, an arrow where it faces */
-                float a = (float)e->facing * 6.2831853f / 65536.0f;
-                memcpy(t, e->p, 12); t[1] += 24;
-                line3(e->p, t, f, r, u, 60, 255, 90, thick + 1);
-                memcpy(t, e->p, 12); t[1] += 2; t[0] += 18 * sinf(a); t[2] += 18 * cosf(a);
-                { float b2[3]; memcpy(b2, e->p, 12); b2[1] += 2; line3(b2, t, f, r, u, 60, 255, 90, thick + 1); }
+        if (G.showmarks)
+            for (k = 0; k < ms->nsp; k++) {        /* positions: spawns green (an arrow where they face), skate-to yellow */
+                const JSpawn *e = &ms->sp[k];
+                if (e->type != 1) {
+                    float a = (float)e->facing * 6.2831853f / 65536.0f;
+                    memcpy(t, e->p, 12); t[1] += 24;
+                    line3(e->p, t, f, r, u, 60, 255, 90, thick + 1);
+                    memcpy(b2, e->p, 12); b2[1] += 2;
+                    memcpy(t, b2, 12); t[0] += 18 * sinf(a); t[2] += 18 * cosf(a);
+                    line3(b2, t, f, r, u, 60, 255, 90, thick + 1);
+                }
+                if (e->type != 0) {
+                    memcpy(t, e->p2, 12); t[1] += 24;
+                    line3(e->p2, t, f, r, u, 255, 230, 40, thick + 1);
+                    if (e->type == 2) line3(e->p, e->p2, f, r, u, 255, 230, 40, 1);
+                }
             }
-            if (e->type != 0) {                    /* its second point: a yellow post */
-                memcpy(t, e->p2, 12); t[1] += 24;
-                line3(e->p2, t, f, r, u, 255, 230, 40, thick + 1);
-                if (e->type == 2) line3(e->p, e->p2, f, r, u, 255, 230, 40, 1);
-            }
+        if (G.showexit) {                          /* exit planes red, teleporters orange */
+            for (k = 0; k < ms->nexit; k++)
+                for (q = 0; q < 4; q++) line3(ms->exitpl[k].c[q], ms->exitpl[k].c[(q + 1) & 3], f, r, u, 255, 60, 60, thick);
+            for (k = 0; k < ms->ntp; k++)
+                for (q = 0; q < 4; q++) line3(ms->tp[k].c[q], ms->tp[k].c[(q + 1) & 3], f, r, u, 255, 150, 40, thick);
         }
-        for (k = 0; k < mk->npl; k++)              /* the planes: red */
-            for (q = 0; q < 4; q++) line3(mk->pl[k].c[q], mk->pl[k].c[(q + 1) & 3], f, r, u, 255, 60, 60, thick);
-        if (mk->has_frame) {                       /* the frame: orange, its points as posts */
-            for (q = 0; q < 4; q++) line3(mk->frame[q], mk->frame[(q + 1) & 3], f, r, u, 255, 150, 40, thick);
-            for (q = 0; q < 3; q++) {
-                float t[3];
-                memcpy(t, mk->fpt[q], 12); t[1] += 16;
-                line3(mk->fpt[q], t, f, r, u, 255, 150, 40, thick);
+        if (G.showwarp)                            /* death warps: purple planes, a line from each to where it sends you */
+            for (k = 0; k < ms->ndw; k++) {
+                const JWarp *w = &ms->dw[k];
+                memcpy(t, w->to, 12); t[1] += 30;
+                line3(w->to, t, f, r, u, 190, 90, 255, thick + 2);
+                for (j = 0; j < w->npl; j++) {
+                    float c[3] = { 0, 0, 0 };
+                    for (q = 0; q < 4; q++) {
+                        line3(w->pl[j].c[q], w->pl[j].c[(q + 1) & 3], f, r, u, 190, 90, 255, thick);
+                        c[0] += w->pl[j].c[q][0] / 4; c[1] += w->pl[j].c[q][1] / 4; c[2] += w->pl[j].c[q][2] / 4;
+                    }
+                    line3(c, t, f, r, u, 190, 90, 255, 1);
+                }
             }
-        }
+        if (G.showpick)                            /* cans: a short post in the can's colour */
+            for (k = 0; k < ms->npk; k++) {
+                static const uint8_t pc[6][3] = { {255,220,40}, {60,140,255}, {255,60,60}, {255,60,60}, {80,220,80}, {255,255,255} };
+                int ty = ms->pk[k].type >= 0 && ms->pk[k].type < 6 ? ms->pk[k].type : 5;
+                memcpy(t, ms->pk[k].p, 12); t[1] += 8;
+                line3(ms->pk[k].p, t, f, r, u, pc[ty][0], pc[ty][1], pc[ty][2], thick + 2);
+            }
+        if (G.showsoul)                            /* graffiti souls: a white cross up high */
+            for (k = 0; k < ms->nsoul; k++) {
+                memcpy(t, ms->soul[k].p, 12); memcpy(b2, ms->soul[k].p, 12);
+                t[1] -= 6; b2[1] += 6; line3(t, b2, f, r, u, 255, 255, 255, thick + 1);
+                t[1] += 6; b2[1] -= 6; t[0] -= 6; b2[0] += 6; line3(t, b2, f, r, u, 255, 255, 255, thick + 1);
+            }
+        if (G.showparked)                          /* parked cars: a blue cross */
+            for (k = 0; k < ms->ncar; k++) {
+                memcpy(t, ms->car[k].p, 12); memcpy(b2, ms->car[k].p, 12);
+                t[0] -= 10; b2[0] += 10; t[1] += 3; b2[1] += 3; line3(t, b2, f, r, u, 70, 170, 255, thick + 1);
+                t[0] += 10; b2[0] -= 10; t[2] -= 10; b2[2] += 10; line3(t, b2, f, r, u, 70, 170, 255, thick + 1);
+            }
     }
     if (obj_ok()) {                                /* m28: the picked prop's box (m29: or piece's) */
         float lo[3], hi[3], c[8][3];
@@ -2532,12 +2556,11 @@ void s3d_test_edit(const char *script, char *msg, size_t msgn)
             cars_load(); mis_load();
             printf("car routes here: %d\n", G.cars.npath);
             for (k3 = 0; k3 < G.nmis; k3++) {
-                const JMarks *mk = &G.mmark[k3];
-                int s0 = 0, s1 = 0, s2 = 0, q3;
-                for (q3 = 0; q3 < mk->nsp; q3++) { if (mk->sp[q3].type == 0) s0++; else if (mk->sp[q3].type == 1) s1++; else s2++; }
-                printf("mission %s: %d chains, spawns %d/%d/%d (types 0/1/2), %d planes, frame %d\n", G.misname[k3], G.mis[k3].npath, s0, s1, s2, mk->npl, mk->has_frame);
+                const JMission *ms = &G.msn[k3];
+                printf("mission %04d %s: crowd %d, positions %d, warps %d, exits %d, teleporters %d, cans %d, souls %d, parked %d\n", G.misno[k3],
+                       jp_mission_name(G.misno[k3]), ms->ped.npath, ms->nsp, ms->ndw, ms->nexit, ms->ntp, ms->npk, ms->nsoul, ms->ncar);
             }
-            G.showcars = G.showmis = G.showmarks = 1;
+            G.showcars = G.showmis = G.showmarks = G.showped = G.showwarp = G.showexit = G.showpick = G.showsoul = G.showparked = 1;
         }
         else if (!strncmp(tok, "rtype ", 6)) { G.drawflag = (uint32_t)strtoul(tok + 6, NULL, 16); }
         else if (!strncmp(tok, "types", 5)) { int k3; types_count(); for (k3 = 0; k3 < G.ntval; k3++) printf("type %X: %d\n", G.tval[k3], G.tcount[k3]); }
@@ -2706,29 +2729,49 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             else snprintf(t, sizeof t, "Car routes");
             check(ctx, t, &G.showcars);
             if (G.showcars && (!was || !G.cars_done)) { cars_load(); G.need = 1; }   /* m29r: or a new stage opened with it on */
-            if (G.mis_done) snprintf(t, sizeof t, "Mission paths (%d missions here)", G.nmis);
-            else snprintf(t, sizeof t, "Mission paths (crowd?)");
+            if (G.mis_done) snprintf(t, sizeof t, "Missions (%d on this stage)", G.nmis);
+            else snprintf(t, sizeof t, "Missions");
             check(ctx, t, &G.showmis);
             if (G.showmis && (!wm || !G.mis_done)) { mis_load(); G.need = 1; }
-            if (G.showmis) check(ctx, "   Spawns (green), planes (red)", &G.showmarks);   /* m29q: always there */
             if (G.showmis && G.mis_done && G.nmis == 0) {
                 char md[LPATH];
                 nk_layout_row_dynamic(ctx, row - 8, 1);
-                if (media_dir(md)) nk_label_colored(ctx, "   No StgObj/Mission folders found", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
+                if (media_dir(md)) nk_label_colored(ctx, "   No Mission folder found", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
                 else nk_label_colored(ctx, "   No mission found on this stage", NK_TEXT_LEFT, nk_rgb(255, 150, 120));
             }
-            if (G.showmis && G.nmis > 0) {
-                const char *items[64];
-                char lab[64][40];
-                int k3, n3 = G.nmis < 64 ? G.nmis : 64, sel;
+            if (G.showmis && G.nmis > 0) {          /* m29s: the stage's missions by number and name (GG Notebook) */
+                const char *items[128];
+                char lab[128][72];
+                int k3, n3 = G.nmis < 128 ? G.nmis : 128, sel;
+                const JMission *ms;
                 for (k3 = 0; k3 < n3; k3++) {
-                    snprintf(lab[k3], sizeof lab[k3], "%s (%d)", G.misname[k3], G.mis[k3].npath);
+                    snprintf(lab[k3], sizeof lab[k3], "%04d %s", G.misno[k3], jp_mission_name(G.misno[k3]));
                     items[k3] = lab[k3];
                 }
                 if (G.mis_sel >= n3) G.mis_sel = 0;
                 nk_layout_row_dynamic(ctx, row - 4, 1);
-                sel = nk_combo(ctx, items, n3, G.mis_sel, (int)row - 6, nk_vec2(220, 300));
+                sel = nk_combo(ctx, items, n3, G.mis_sel, (int)row - 6, nk_vec2(340, 320));
                 if (sel != G.mis_sel) { G.mis_sel = sel; G.need = 1; }
+                ms = &G.msn[G.mis_sel];
+                {
+                    int sp0 = 0, k4;
+                    for (k4 = 0; k4 < ms->nsp; k4++) sp0 += ms->sp[k4].type != 1;
+                    snprintf(t, sizeof t, "   Crowd, pink (%d)", ms->ped.npath);
+                    if (check(ctx, t, &G.showped)) G.need = 1;
+                    snprintf(t, sizeof t, "   Spawns, green/yellow (%d)", ms->nsp);
+                    if (check(ctx, t, &G.showmarks)) G.need = 1;
+                    snprintf(t, sizeof t, "   Fall-out warps, purple (%d)", ms->ndw);
+                    if (check(ctx, t, &G.showwarp)) G.need = 1;
+                    snprintf(t, sizeof t, "   Exits, red/orange (%d)", ms->nexit + ms->ntp);
+                    if (check(ctx, t, &G.showexit)) G.need = 1;
+                    snprintf(t, sizeof t, "   Cans (%d)", ms->npk);
+                    if (check(ctx, t, &G.showpick)) G.need = 1;
+                    snprintf(t, sizeof t, "   Graffiti souls, white (%d)", ms->nsoul);
+                    if (check(ctx, t, &G.showsoul)) G.need = 1;
+                    snprintf(t, sizeof t, "   Placed cars, blue (%d)", ms->ncar);
+                    if (check(ctx, t, &G.showparked)) G.need = 1;
+                    (void)sp0;
+                }
             }
         }
         snprintf(t, sizeof t, "Grind rails (%d)", G.s.nrail);
