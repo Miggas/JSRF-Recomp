@@ -2702,7 +2702,7 @@ static void vcache_put(uint32_t index, const Nv2aVshOutput *v)
     s_perf_vruns++;
 }
 
-/* ── GPU backend glue (nv2a_gl.c) ─────────────────────────────────────── */
+/* ── GPU backend glue (nv2a_render.c) ─────────────────────────────────────── */
 
 static uint32_t tex_bytes(const Texture *t)
 {
@@ -2798,7 +2798,7 @@ int nv2a_exec_decode_texture(int stage, uint32_t face, uint32_t *out)
     return 1;
 }
 
-/* Everything nv2a_gl.c needs to draw what the executor would. Returns 0 when
+/* Everything nv2a_render.c needs to draw what the executor would. Returns 0 when
  * there is no drawable surface. */
 static void ws_note_target(uint32_t base, uint32_t bytes, uint32_t w, uint32_t h);   /* v187e */
 
@@ -2921,7 +2921,7 @@ static int gl_state(NvGlState *st)
         st->poly_offset = 0;
     }
     /* v207b: on the screens kept at 4:3 (the garage menus, character
-     * select) depth is stored over the whole range (bg_far 2; nv2a_gl.c).
+     * select) depth is stored over the whole range (bg_far 2; nv2a_render.c).
      * The graffiti menu's buttons and icons are small 3D models, an icon
      * 1-4 steps of 24-bit depth in front of its button (RECOMP_GL_DRAWLOG,
      * Miggas's run); the near band stores 1 - z/2, and half a step is below
@@ -3006,7 +3006,7 @@ static float ws_cut_for(int kind, const NvGlState *st);                 /* v217c
 /* v224b: the menus whose sides are filled row by row say so in the command
  * stream itself: jsrf_widescreen.c sets a z-bias no title uses (units 2e7:
  * fill, 2e8: a menu with its own sides, no fill) and puts the real one back
- * before anything is drawn. Seen here in order, so the flip (nv2a_gl.c)
+ * before anything is drawn. Seen here in order, so the flip (nv2a_render.c)
  * knows exactly which frames have it: no frame before or after the menu is
  * filled, and none of its own is missed (v224 went by when the game set its
  * marks, which runs ahead of this and not in step: the fill flashed). */
@@ -3026,12 +3026,56 @@ static int s_scene_open, s_scene_draws, s_frame_draws;
  * drew most of the frame: the create and edit screens draw their 3D scene
  * from other functions while the menu's function still runs (Miggas) */
 static int s_menu_open, s_menu_draws;
+static int s_hud_on, s_hud_corner;          /* v312k: the HUD's scale (ws_fill_mark) */
+static float s_hud_s = 1.0f;
+/* the HUD's scale for this draw: about the corner, in NDC before the squeeze
+ * (at the widescreen edges: where the squeeze puts the screen's edges) */
+static void hud_for(NvGlState *st)
+{
+    float k = st->ws_k > 0.0f && st->ws_k < 1.0f ? st->ws_k : 1.0f, sx, sy;
+    st->hud[2] = 1.0f;
+    st->hud[0] = st->hud[1] = 0.0f;
+    if (!s_hud_on || s_hud_s == 1.0f)
+        return;
+    sx = (s_hud_corner & 1) ? 1.0f : -1.0f;
+    sy = (s_hud_corner & 2) ? -1.0f : 1.0f;            /* NDC y up: the top is +1 */
+    if (s_hud_corner & 4)
+        sx = (sx - st->ws_c * (1.0f - k)) / k;
+    st->hud[0] = sx;
+    st->hud[1] = sy;
+    st->hud[2] = s_hud_s;
+}
+
 static void ws_fill_mark(float u)
 {
     float a = fabsf(u);
     static int said;
     if (a < 1.0e7f || a >= 1.0e10f)
         return;
+    if (a >= 2.15e9f && a < 3.8e9f) {
+        /* v312k: the HUD's scale (jsrf_widescreen.c): 2.2e9 + corner x 1e8 +
+         * scale x 20 x 1e6 begins it (corner: bit 0 right, bit 1 bottom, bit
+         * 2 at the widescreen edges; scale 0: hidden), 3.5e9 ends it */
+        if (a >= 3.0e9f)
+            s_hud_on = 0;
+        else {
+            double v = (double)a - 2.2e9;
+            int c = (int)(v / 1.0e8 + 0.001), si = (int)((v - c * 1.0e8) / 1.0e6 + 0.5);
+            if (c < 0) c = 0;
+            if (c > 7) c = 7;
+            s_hud_corner = c;
+            s_hud_s = (float)si / 20.0f;
+            s_hud_on = 1;
+        }
+        return;
+    }
+    if (a >= 1.25e9f && a < 1.85e9f) {
+        /* v312e: the new boost effect, here, at this strength (jsrf_boost.c:
+         * 1.3e9 + strength x 5e8) */
+        extern void nv2a_gl_boost_fx(float strength);
+        nv2a_gl_boost_fx((a - 1.3e9f) / 5.0e8f);
+        return;
+    }
     if (!said++)
         fprintf(stderr, "[WS] menu side fill: marks seen in the command stream\n");
     if (a >= 1.0e9f)
@@ -3209,6 +3253,7 @@ static void gl_submit(uint32_t n)
     st.ws_c = ws_centre(&st);                              /* v187l */
     st.ws_edge = ws_edge_for(s_fog_direct ? XK_PRE
                              : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
+    hud_for(&st);                                          /* v312k */
     drawlog(s_fog_direct ? XK_PRE : (s_gpu.xf_mode & 3) == 2 ? XK_PROGRAM : XK_FIXED, &st);
     nv2a_gl_draw(&st, s_xf, s_gl_fog, s_gl_idx, m);
     s_gpu.tris_drawn += m / 3;
@@ -3613,6 +3658,8 @@ static double xbox_WidescreenK(void)    /* no presenter here: the harness */
     return e ? atof(e) : 1.0;
 }
 #endif
+/* v313: the squeeze, for the renderer's photos (nv2a_render.c) */
+double nv2a_pb_ws_k(void) { return xbox_WidescreenK(); }
 /* v187b-e: the x span (guest pixels) of a batch of at most maxn vertices.
  * 0 when it has more, or a position cannot be read. */
 /* v187u: position (screen x, y, z, w) of index i of the batch, as ws_span */
@@ -3746,6 +3793,7 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
  * icons (Miggas's idea: find the menu's draws and see which one hides
  * them): the icon and the button it should sit on show up as two lines over
  * the same box. */
+static void drawlog_ff(void);   /* v313q */
 static void drawlog(int kind, const NvGlState *st)
 {
     static int on = -1, was;
@@ -3813,6 +3861,8 @@ static void drawlog(int kind, const NvGlState *st)
             st->blend_enable, st->blend_sfactor, st->blend_dfactor,
             st->alpha_test, st->alpha_func, st->alpha_ref, st->color_mask, st->cull_enable,
             st->surf_va, st->width, st->height);
+    if (kind == XK_FIXED)
+        drawlog_ff();
 }
 
 /* v187e: the display-sized surfaces drawn into lately. A texture over one
@@ -4100,7 +4150,7 @@ static float ws_k_for(int kind, const NvGlState *st, uint32_t *is_2d)
  * background layers across the whole width may colour that column: anything
  * narrower that reaches the top or the bottom -- the bars scanning along
  * the top, which flashed the whole corner when they crossed it -- is kept
- * off it (nv2a_gl.c, by the scissor).
+ * off it (nv2a_render.c, by the scissor).
  * The small grey square in the top-left corner (an untextured piece of the
  * menu's backdrop within a dozen pixels of the corner, hidden by a TV's
  * overscan) is not drawn at all: it was carried out to the screen edge.
@@ -4527,6 +4577,7 @@ static void gl_draw_batch(void)
         st.ws_cut = ws_cut_for(s_vx.kind, &st);           /* v217c */
     st.ws_c = ws_centre(&st);                              /* v187l */
         st.ws_edge = ws_edge_for(s_vx.kind, &st);         /* v191 */
+        hud_for(&st);                                     /* v312k */
         fast_qpc_li(&q1);
         s_perf_glprep += (uint64_t)(q1.QuadPart - q0.QuadPart);
         if (s_ftrace == 2)
@@ -4732,6 +4783,63 @@ static struct {
     } l[8];
 } s_lt = { {0, 0, 0}, {0, 0, 0}, 1.0f, 0, 0, 0, 0, {{{0}}} };
 
+/* v313q: a fixed-function draw's colour inputs for the F9 draw log: the
+ * lighting state, the first vertex's diffuse colour and the combiners
+ * (the start menu's counter box came out black, Miggas) */
+static void mat4_apply(const float m[16], const float v[4], float out[4]);
+static uint32_t s_two_side;                 /* v313r: SET_TWO_SIDE_LIGHT_EN (0x17C4), for the log */
+static void drawlog_ff(void)
+{
+    const VertexAttr *ca = color_attr();
+    float c[4] = {-1, -1, -1, -1};
+    unsigned i, lit = 0;
+    if (s_gpu.idx_count && ca->offset && ca->stride)
+        fetch_attr(ca, s_gpu.idx[0], c);
+    fprintf(stderr, "[DRAWLOG]      ff: lighting %u%s cmat %08X lights %02X amb %.2f %.2f %.2f emis %.2f %.2f %.2f"
+            " alpha %.2f spec %u | vertex0 diffuse %.2f %.2f %.2f %.2f | combiners %u\n",
+            (unsigned)s_gpu.ff_lighting, ff_lighting_off() ? " (off)" : "", s_lt.color_material,
+            s_lt.enable_mask, s_lt.scene_ambient[0], s_lt.scene_ambient[1], s_lt.scene_ambient[2],
+            s_lt.emission[0], s_lt.emission[1], s_lt.emission[2], s_lt.alpha, s_lt.specular_on,
+            c[0], c[1], c[2], c[3], (unsigned)s_gpu.rc_seen);
+    if (s_gpu.rc_seen)
+        fprintf(stderr, "[DRAWLOG]      rc: control %08X c0 icw %08X ocw %08X a0 icw %08X ocw %08X"
+                " c1 icw %08X ocw %08X f0 %08X f1 %08X final %08X %08X stages %08X\n",
+                s_gpu.rc.control, s_gpu.rc.color_icw[0], s_gpu.rc.color_ocw[0],
+                s_gpu.rc.alpha_icw[0], s_gpu.rc.alpha_ocw[0], s_gpu.rc.color_icw[1],
+                s_gpu.rc.color_ocw[1], s_gpu.rc.factor0[0], s_gpu.rc.factor1[0],
+                s_gpu.rc.final0, s_gpu.rc.final1, s_gpu.rc.stage_program);
+    for (i = 0; i < 8 && s_gpu.ff_lighting; i++)
+        if (s_lt.enable_mask & (3u << (2 * i))) {
+            fprintf(stderr, "[DRAWLOG]      light %u: amb %.2f %.2f %.2f dif %.2f %.2f %.2f dir %.2f %.2f %.2f\n", i,
+                    s_lt.l[i].ambient[0], s_lt.l[i].ambient[1], s_lt.l[i].ambient[2],
+                    s_lt.l[i].diffuse[0], s_lt.l[i].diffuse[1], s_lt.l[i].diffuse[2],
+                    s_lt.l[i].dir[0], s_lt.l[i].dir[1], s_lt.l[i].dir[2]);
+            if (++lit >= 2) break;
+        }
+    /* v313r: the normal vertex 0 brings, in eye space, against the first
+     * triangle's own facing (eye space, from its positions) */
+    if (s_gpu.ff_lighting && s_gpu.idx_count >= 3) {
+        float nr[4] = {0, 0, 1, 0}, ne[4], p[3][4], e[3][4], u[3], v[3], f[3];
+        int has = fetch_attr(&s_gpu.attr[2], s_gpu.idx[0], nr), k;
+        nr[3] = 0.0f;
+        mat4_apply(s_gpu.ff_inv_mv0, nr, ne);
+        for (k = 0; k < 3; k++) {
+            fetch_attr(&s_gpu.attr[0], s_gpu.idx[k], p[k]);
+            p[k][3] = 1.0f;
+            mat4_apply(s_gpu.ff_mv[0], p[k], e[k]);
+        }
+        for (k = 0; k < 3; k++) { u[k] = e[1][k] - e[0][k]; v[k] = e[2][k] - e[0][k]; }
+        f[0] = u[1] * v[2] - u[2] * v[1];
+        f[1] = u[2] * v[0] - u[0] * v[2];
+        f[2] = u[0] * v[1] - u[1] * v[0];
+        fprintf(stderr, "[DRAWLOG]      normal: %s %.2f %.2f %.2f (attr type %u size %u stride %u) eye %.2f %.2f %.2f"
+                " | triangle 0 facing (eye) %.3g %.3g %.3g | control %08X two-side %u front %X cull face %X\n",
+                has ? "read" : "none, default", nr[0], nr[1], nr[2], s_gpu.attr[2].type, s_gpu.attr[2].size,
+                s_gpu.attr[2].stride, ne[0], ne[1], ne[2], f[0], f[1], f[2], s_lt.control, s_two_side,
+                s_gpu.front_face, s_gpu.cull_face);
+    }
+}
+
 static int ff_light_method(uint32_t method, uint32_t param)
 {
     float f;
@@ -4743,6 +4851,7 @@ static int ff_light_method(uint32_t method, uint32_t param)
     if (method == 0x03BC) { s_lt.enable_mask = param; return 1; }     /* LIGHT_ENABLE_MASK */
     if (method == 0x03B8) { s_lt.specular_on = param; return 1; }     /* SPECULAR_ENABLE */
     if (method == 0x0294) { s_lt.control = param; return 1; }         /* LIGHT_CONTROL */
+    if (method == 0x17C4) { s_two_side = param; return 0; }           /* v313r: noted only */
     if (method >= 0x1000 && method < 0x1400) {
         uint32_t i = (method - 0x1000) / 0x80, o = (method - 0x1000) % 0x80;
         if (o < 0x0C)       s_lt.l[i].ambient[o / 4] = f;
@@ -4791,11 +4900,17 @@ static void ff_light_vertex(uint32_t index, const float eye[4], Nv2aVshOutput *o
     memcpy(vs, o->d1, sizeof vs);            /* vertex specular */
     src_for[0] = NULL; src_for[1] = vd; src_for[2] = vs;
 
+    /* v313s: a lit batch with no normal (no array, no value set) faces the
+     * viewer: eye space (0, 0, -1). The start menu's counter box is such a
+     * batch, lit by one light straight on; the old default, (0, 0, 1) in
+     * model space, faced it away from that light and the box, its icons
+     * and its x's came out black (Miggas; teal on the Xbox). */
     if (!fetch_attr(&s_gpu.attr[2], index, nrm)) {
-        nrm[0] = 0; nrm[1] = 0; nrm[2] = 1;
+        n[0] = 0; n[1] = 0; n[2] = -1; n[3] = 0;
+    } else {
+        nrm[3] = 0.0f;
+        mat4_apply(s_gpu.ff_inv_mv0, nrm, n);
     }
-    nrm[3] = 0.0f;
-    mat4_apply(s_gpu.ff_inv_mv0, nrm, n);
     l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
     if (l > 0.0f) { n[0] /= l; n[1] /= l; n[2] /= l; }
 
@@ -6479,7 +6594,14 @@ int nv2a_pb_exec_indices16(const uint32_t *p, uint32_t n)
 }
 
 /* v260b: the default branch's methods by kind, once seen (method >> 2) */
-enum { DCLS_UNKNOWN, DCLS_CONST, DCLS_PROG, DCLS_UNHANDLED };
+enum { DCLS_UNKNOWN, DCLS_CONST, DCLS_PROG, DCLS_UNHANDLED,
+       /* vk14: the plain stores further down the chain, which the fixed-
+        * function batches send every time (matrices: 16 words each; ~5% of
+        * the executor walked the chain for them, Miggas's Deck profile) */
+       DCLS_ALPHA_ICW, DCLS_COLOR_ICW, DCLS_COLOR_OCW, DCLS_ALPHA_OCW,
+       DCLS_FACTOR0, DCLS_FACTOR1, DCLS_VP_OFFSET, DCLS_VP_SCALE,
+       DCLS_MV, DCLS_INV_MV0, DCLS_TEXMAT, DCLS_TEXGEN, DCLS_TEXMAT_ON,
+       DCLS_TEXPLANE, DCLS_COMPOSITE };
 static uint8_t s_dcls[2048];
 
 static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
@@ -6977,29 +7099,70 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
         case DCLS_CONST:   nv2a_vsh_constant_word(param); return;
         case DCLS_PROG:    nv2a_vsh_program_word(param); return;
         case DCLS_UNHANDLED: note_unhandled(method, param); return;
+        case DCLS_ALPHA_ICW: s_gpu.rc.alpha_icw[(method - 0x0260) / 4] = param; return;
+        case DCLS_COLOR_ICW: s_gpu.rc.color_icw[(method - 0x0AC0) / 4] = param; return;
+        case DCLS_COLOR_OCW: s_gpu.rc.color_ocw[(method - 0x1E40) / 4] = param; return;
+        case DCLS_ALPHA_OCW: s_gpu.rc.alpha_ocw[(method - 0x0AA0) / 4] = param; return;
+        case DCLS_FACTOR0:   s_gpu.rc.factor0[(method - 0x0A60) / 4] = param; return;
+        case DCLS_FACTOR1:   s_gpu.rc.factor1[(method - 0x0A80) / 4] = param; return;
+        case DCLS_VP_OFFSET: nv2a_vsh_constant_component(59, (method - 0x0A20) / 4, param); return;
+        case DCLS_VP_SCALE:  nv2a_vsh_constant_component(58, (method - 0x0AF0) / 4, param); return;
+        case DCLS_MV: {
+            uint32_t k = (method - 0x0480) / 4;
+            memcpy(&s_gpu.ff_mv[k >> 4][k & 15], &param, 4);
+            return;
+        }
+        case DCLS_INV_MV0:   memcpy(&s_gpu.ff_inv_mv0[(method - 0x0580) / 4], &param, 4); return;
+        case DCLS_TEXMAT: {
+            uint32_t k = (method - 0x06C0) / 4;
+            memcpy(&s_gpu.ff_texmat[k >> 4][k & 15], &param, 4);
+            return;
+        }
+        case DCLS_TEXGEN: {
+            uint32_t k = (method - 0x03C0) / 4;
+            s_gpu.ff_texgen[k >> 2][k & 3] = param;
+            return;
+        }
+        case DCLS_TEXMAT_ON: s_gpu.ff_texmat_on[(method - 0x0420) / 4] = param; return;
+        case DCLS_TEXPLANE: {
+            uint32_t k = (method - 0x0840) / 4;
+            memcpy(&s_gpu.ff_texplane[k >> 4][(k >> 2) & 3][k & 3], &param, 4);
+            return;
+        }
+        case DCLS_COMPOSITE:
+            memcpy(&s_gpu.ff_composite[(method - 0x0680) / 4], &param, 4);
+            s_gpu.ff_composite_set = 1;
+            return;
         default: break;
         }
+#define DCLS_SET(c) (s_dcls[(method >> 2) & 2047] = (c))
         if (method >= 0x0260 && method < 0x0280) {         /* ALPHA_ICW(i) */
+            DCLS_SET(DCLS_ALPHA_ICW);
             s_gpu.rc.alpha_icw[(method - 0x0260) / 4] = param;
             break;
         }
         if (method >= 0x0AC0 && method < 0x0AE0) {         /* COLOR_ICW(i) */
+            DCLS_SET(DCLS_COLOR_ICW);
             s_gpu.rc.color_icw[(method - 0x0AC0) / 4] = param;
             break;
         }
         if (method >= 0x1E40 && method < 0x1E60) {         /* COLOR_OCW(i) */
+            DCLS_SET(DCLS_COLOR_OCW);
             s_gpu.rc.color_ocw[(method - 0x1E40) / 4] = param;
             break;
         }
         if (method >= 0x0AA0 && method < 0x0AC0) {         /* ALPHA_OCW(i) */
+            DCLS_SET(DCLS_ALPHA_OCW);
             s_gpu.rc.alpha_ocw[(method - 0x0AA0) / 4] = param;
             break;
         }
         if (method >= 0x0A60 && method < 0x0A80) {         /* FACTOR0(i) */
+            DCLS_SET(DCLS_FACTOR0);
             s_gpu.rc.factor0[(method - 0x0A60) / 4] = param;
             break;
         }
         if (method >= 0x0A80 && method < 0x0AA0) {         /* FACTOR1(i) */
+            DCLS_SET(DCLS_FACTOR1);
             s_gpu.rc.factor1[(method - 0x0A80) / 4] = param;
             break;
         }
@@ -7009,42 +7172,51 @@ static void exec_method_body(uint32_t subch, uint32_t method, uint32_t param)
          * Dropped, every vertex program put its whole batch at the origin:
          * no 3D anywhere, and a black car on the garage screen. */
         if (method >= 0x0A20 && method < 0x0A30) {
+            DCLS_SET(DCLS_VP_OFFSET);
             nv2a_vsh_constant_component(59, (method - 0x0A20) / 4, param);
             break;
         }
         if (method >= 0x0AF0 && method < 0x0B00) {
+            DCLS_SET(DCLS_VP_SCALE);
             nv2a_vsh_constant_component(58, (method - 0x0AF0) / 4, param);
             break;
         }
         if (method >= 0x0480 && method < 0x0580) {    /* MODEL_VIEW_MATRIX0..3 */
+            DCLS_SET(DCLS_MV);
             uint32_t k = (method - 0x0480) / 4;
             memcpy(&s_gpu.ff_mv[k >> 4][k & 15], &param, 4);
             break;
         }
         if (method >= 0x0580 && method < 0x05C0) {    /* INVERSE_MODEL_VIEW_MATRIX0 */
+            DCLS_SET(DCLS_INV_MV0);
             memcpy(&s_gpu.ff_inv_mv0[(method - 0x0580) / 4], &param, 4);
             break;
         }
         if (method >= 0x06C0 && method < 0x07C0) {    /* TEXTURE_MATRIX0..3 */
+            DCLS_SET(DCLS_TEXMAT);
             uint32_t k = (method - 0x06C0) / 4;
             memcpy(&s_gpu.ff_texmat[k >> 4][k & 15], &param, 4);
             break;
         }
         if (method >= 0x03C0 && method < 0x0400) {    /* TEXGEN_S/T/R/Q per stage */
+            DCLS_SET(DCLS_TEXGEN);
             uint32_t k = (method - 0x03C0) / 4;
             s_gpu.ff_texgen[k >> 2][k & 3] = param;
             break;
         }
         if (method >= 0x0420 && method < 0x0430) {    /* TEXTURE_MATRIX_ENABLE */
+            DCLS_SET(DCLS_TEXMAT_ON);
             s_gpu.ff_texmat_on[(method - 0x0420) / 4] = param;
             break;
         }
         if (method >= 0x0840 && method < 0x0940) {    /* TEXGEN_SPLANE.. per stage */
+            DCLS_SET(DCLS_TEXPLANE);
             uint32_t k = (method - 0x0840) / 4;
             memcpy(&s_gpu.ff_texplane[k >> 4][(k >> 2) & 3][k & 3], &param, 4);
             break;
         }
         if (method >= 0x0680 && method < 0x06C0) {    /* COMPOSITE_MATRIX */
+            DCLS_SET(DCLS_COMPOSITE);
             memcpy(&s_gpu.ff_composite[(method - 0x0680) / 4], &param, 4);
             s_gpu.ff_composite_set = 1;
             break;

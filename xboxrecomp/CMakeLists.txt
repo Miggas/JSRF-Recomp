@@ -30,6 +30,12 @@ add_compile_definitions(
 # Win32 host primitives. Carries no Xbox semantics; provides the foundation
 # the kernel HLE and the graphics/audio/input layers build on.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/sdl2.cmake)
+# vulkan-test: the Vulkan renderer's dependencies (glslang is C++)
+option(XBOXRECOMP_VULKAN "Vulkan renderer beside OpenGL (RECOMP_RENDERER=vulkan)" ON)
+if(XBOXRECOMP_VULKAN)
+    enable_language(CXX)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/vulkan.cmake)
+endif()
 
 add_subdirectory(src/platform)
 

@@ -1114,10 +1114,34 @@ void sub_00025390(void)                     /* start load job (thiscall, ret 8) 
     }
 }
 
+/* v312d: the step also checks the job's time: from its start ([this+0x190],
+ * the time stamp counter) to now, 15 seconds (0xE4E1C0 us) is a disc that
+ * can't be read, and the game stops with JSRF_FATAL.ERR. Shaders built before
+ * the start hold the game for as long as they take (17.6 s on Miggas's RX 6900
+ * XT with the driver's cache empty), during job 17: a black screen for good
+ * (Reported by Miggas). Time the game was held moves the job's start on by
+ * as much (g_xbox_held_tsc, kernel_hal.c); the quit window's too. */
+extern volatile uint64_t g_xbox_held_tsc;
+
 void sub_00025310(void)                     /* one step of the active job */
 {
     uint32_t self = g_ecx;
     uint32_t was = MEM32(self + 0x44), job = MEM32(self + 0x48);
+    {
+        static uint64_t held_seen;
+        uint64_t held = g_xbox_held_tsc;
+        if (held != held_seen) {
+            if (was == 1) {
+                uint64_t st = MEM32(self + 0x190) | (uint64_t)MEM32(self + 0x194) << 32;
+                st += held - held_seen;
+                MEM32(self + 0x190) = (uint32_t)st;
+                MEM32(self + 0x194) = (uint32_t)(st >> 32);
+                fprintf(stderr, "[LOAD] job %u: its time moved on by %.1f s the game was held\n",
+                        job, (double)(held - held_seen) / 733333333.0);
+            }
+            held_seen = held;
+        }
+    }
     sub_00025310_gen();
     if (was != 1) return;
     ld_steps++;
@@ -1423,10 +1447,23 @@ static void adx_timing(int skipped)
         last_report = now;
     }
 }
+/* v313t: no ADX server runs while the game is held (the quit window, the
+ * shader build). The held APU plays nothing, so a streamed sound's play
+ * position stands still while the server, on the vsync thread, kept
+ * running and counting: after about 5 seconds CRI's ADXT took the stalled
+ * stream for an error and stopped it, and the music stayed off until the
+ * next stage (sound effects, not streamed, were fine; Reported by
+ * Miggas). Held, the server waits with everything else. */
+extern volatile LONG g_xbox_game_held;
 void sub_00141F10(void)
 {
     double t0 = 0;
     int skipped = MEM32(0x0026173Cu) != 0;
+    if (g_xbox_game_held) {
+        g_eax = 0;
+        g_esp += 4;                          /* ret */
+        return;
+    }
     if (skipped)
         cri_adx_skips++;
     else
@@ -1821,6 +1858,8 @@ extern void sub_001BD5FF_gen(void);   /* XGetDevices(type)                      
 extern void sub_001BD621_gen(void);   /* XGetDeviceChanges(type, *ins, *rem)     */
 extern void sub_001C3BA1_gen(void);   /* XInputOpen(type, port, slot, poll)      */
 extern void sub_001C3E14_gen(void);   /* XInputGetState(h, *state)               */
+void boost_note_buttons(uint32_t ps);   /* v312c: jsrf_boost.c */
+void boost_note_texture(uint32_t stage, uint32_t tex);
 
 static unsigned xi_gd, xi_gdc, xi_open, xi_get;
 static uint32_t xi_last_buttons = 0xFFFFFFFFu;
@@ -1895,6 +1934,7 @@ void sub_001C3E14(void)
 {
     uint32_t h = MEM32(g_esp + 4), ps = MEM32(g_esp + 8);
     sub_001C3E14_gen();
+    if (g_eax == 0) boost_note_buttons(ps);     /* v312c: jsrf_boost.c */
     xi_get++;
     if (ps && GetTickCount() - xi_report > 3000) {
         xi_report = GetTickCount();
@@ -2051,6 +2091,7 @@ void D3D8_D3DDevice_SetTexture(void)
             last_ms = now;
         }
     }
+    boost_note_texture(stage, tex);             /* v312c: jsrf_boost.c */
     D3D8_D3DDevice_SetTexture_gen();
 }
 
@@ -2105,7 +2146,8 @@ void sub_001A2E2E(void)
  *
  * wrap_dsound.py rewrites the 27 sites to recomp_rcpss_at / recomp_rsqrtss_at
  * with a site number. Settings:
- *   default: Pentium III values at site 4 (sub_0014C410) only, exact elsewhere
+ *   default (v312m, Miggas): Pentium III values at every site, as RECOMP_SSE=p3
+ *   (v127..v312l: at site 4, sub_0014C410, only: RECOMP_SSE_ONLY_SITES=4)
  *   RECOMP_SSE=p3 | host | exact  every site    (RECOMP_SSE_EXACT=1 = exact)
  *   RECOMP_SSE_EXACT_SITES=3,7,20   these sites exact, the rest per RECOMP_SSE
  *   RECOMP_SSE_ONLY_SITES=3,7,20    only these sites approximate, the rest exact
@@ -2139,11 +2181,11 @@ static void sse_setup(void)
     if (m && !strcmp(m, "host")) d = SSE_HOST;
     else if (m && !strcmp(m, "exact")) d = SSE_EXACT;
     if (x && x[0] == '1') d = SSE_EXACT;
-    /* v127 default (no RECOMP_SSE*): console values at site 4 only
-     * (sub_0014C410, the one the brake sparks need), exact everywhere else.
-     * Approximating all 27 broke geometry and shading. RECOMP_SSE=p3 gives
-     * console values at every site. */
-    if (!m && !x && !on && !ex) { d = SSE_EXACT; on = "4"; }
+    /* v127..v312l default (no RECOMP_SSE*): console values at site 4 only
+     * (sub_0014C410, the one the brake sparks need), exact everywhere else
+     * (v125's host values at every site had broken geometry on AMD). v312m
+     * (Miggas): the console's values at every site, as RECOMP_SSE=p3, are
+     * the default; RECOMP_SSE_ONLY_SITES=4 gives the old one. */
     for (i = 0; i < SSE_SITES; i++) s_sse_mode[i] = (signed char)(on ? SSE_EXACT : d);
     if (on) sse_list(on, d == SSE_EXACT ? SSE_P3 : d);
     if (ex) sse_list(ex, SSE_EXACT);
@@ -3247,6 +3289,8 @@ void sub_001BAF70(void)
  * RECOMP_CAM_LOG=1: its state twice a second. */
 extern void sub_000A5070_gen(void);
 extern void sub_000A28B0_gen(void);
+int jsrf_camwall_apply(uint32_t cam, int own_line);   /* v312z: jsrf_camwall.c */
+void jsrf_photo_follow_seen(uint32_t cam);            /* v313: jsrf_photo.c */
 extern void (*g_xbox_pad_filter)(int pad, short *rx, short *ry, unsigned char lt);
 
 #define RCAM_DEAD    0.20f
@@ -3572,6 +3616,18 @@ void sub_000A28B0(void)
     if (on) rcam_restore(cam);
     sub_000A28B0_gen();
     if (on) rcam_apply(cam);
+    {   /* v312z: the drawn eye kept out of walls (jsrf_camwall.c); the right
+         * stick's eye, when it turned it, is the one kept, so the turn is
+         * put back as it should be next frame */
+        int turned = on && s_rcam.applied && s_rcam.cam == cam;
+        if (jsrf_camwall_apply(cam, turned) && turned)
+            memcpy(s_rcam.our_eye, (const void *)XBOX_PTR(cam + 0x44), 12);
+    }
+    {   /* v313: photo mode may start from this camera (jsrf_photo.c) */
+        uint32_t mode = MEM32(cam + 0x208);
+        if (mode == 3u || mode == 4u || mode == 5u || mode == 9u)
+            jsrf_photo_follow_seen(cam);
+    }
 }
 
 
@@ -4010,6 +4066,49 @@ void sub_001192E0(void)
  * player's (0x329F7, loader in ebp) and the other characters' (0x337A4,
  * loader in ebx); v298 only covered the first, and the garage's
  * characters go through the second. */
+/* v313d: NT 3000's own voice in every release (Idea by Miggas). PAL's
+ * YoyoB (NT 3000) speaks from bank 38, pv_yoyob.dat: Yoyo's lines with the
+ * slightly robotic voice NT 3000 is meant to have. The file is on every
+ * disc, but the NTSC releases (US, Japan, the Sega GT 2002 combo) give YoyoB
+ * Yoyo's bank 19 (pv_yoyo.dat), so NT 3000 sounds just like Yoyo; there,
+ * bank 38 is e_haya_b.dat (e_hysb_j.dat in the Japanese voices' list), which
+ * nothing loads: the enemy voice table (0x1EC3D0) never names 38 and no
+ * load asks for it, which is why PAL could give the slot to YoyoB. So, once
+ * at start, in a release whose tables are still as NTSC has them, bank 38's
+ * file in both voice lists (0x2227D0, 0x2228B4: a pointer to each bank's
+ * file name) is renamed pv_yoyob.dat in place (the same length) and YoyoB's
+ * entry in the character -> voice bank table (0x1EE6B8, character 7) is set
+ * to 38, as in PAL. Always on (v313e, Miggas: the fix shouldn't be turned off). */
+static void nt3000_name(uint32_t list, const char *was)
+{
+    uint32_t p = MEM32(list + 38u * 4u);
+    if (p >= 0x10000u && p < 0x00300000u && !memcmp((const char *)XBOX_PTR(p), was, 13))
+        memcpy((char *)XBOX_PTR(p), "pv_yoyob.dat", 13);
+}
+
+void jsrf_nt3000_voice(void)
+{
+    static int done;
+    if (done) return;
+    done = 1;
+    if (MEM32(0x001EE6B8u + 6u * 4u) != 19u || MEM32(0x001EE6B8u + 7u * 4u) != 19u)
+        return;                         /* PAL: his own already */
+    if (memcmp((const char *)XBOX_PTR(MEM32(0x002227D0u + 38u * 4u)), "e_haya_b.dat", 13))
+        return;                         /* not the list this was made for */
+    nt3000_name(0x002227D0u, "e_haya_b.dat");
+    nt3000_name(0x002228B4u, "e_hysb_j.dat");
+    MEM32(0x001EE6B8u + 7u * 4u) = 38u;
+    /* v313p: and bank 38 takes the characters' sound presets, as in PAL.
+     * NTSC left it on the enemy voices' table (flags 1 on every line), so
+     * it escaped the game's rule that holds back the characters' lines
+     * (preset flag 2) while the mission event object (the action manager's
+     * slot 0x12AC) is up: in such a select NT 3000 spoke and nobody else
+     * did (a tester's chapter 8 save, reported through Miggas). */
+    if (MEM32(0x00224ED8u + 19u * 4u))
+        MEM32(0x00224ED8u + 38u * 4u) = MEM32(0x00224ED8u + 19u * 4u);
+    fprintf(stderr, "[VOICE] NT 3000 speaks from bank 38, pv_yoyob.dat, as in the PAL release\n");
+}
+
 extern void sub_00118BA0_gen(void);
 void sub_00118BA0(void)             /* release a sound bank by id (cdecl) */
 {
@@ -4049,8 +4148,7 @@ void sub_00118A60(void)
  * object kinds use it (the tanks, the police, the vehicles...); the map
  * itself does not. b and c are scaled by RECOMP_OBJ_DRAW_DIST (default 2;
  * 1 = as on the Xbox), so they are drawn and fade in further away. */
-extern void sub_000C1340_gen(void);
-void sub_000C1340(void)
+static float obj_dist_k(void)
 {
     static float k = -1.0f;
     if (k < 0.0f) {
@@ -4058,9 +4156,16 @@ void sub_000C1340(void)
         k = e && *e ? (float)atof(e) : 2.0f;
         if (!(k >= 1.0f && k <= 20.0f))
             k = 1.0f;
-        fprintf(stderr, "[OBJDIST] objects drawn up to %g x the game's distance "
-                "(RECOMP_OBJ_DRAW_DIST)\n", k);
+        fprintf(stderr, "[OBJDIST] objects, crowds, spray cans, props and checkpoints drawn up to "
+                "%g x the game's distance (RECOMP_OBJ_DRAW_DIST)\n", k);
     }
+    return k;
+}
+
+extern void sub_000C1340_gen(void);
+void sub_000C1340(void)
+{
+    float k = obj_dist_k();
     if (k != 1.0f) {
         float a = MEMF(g_esp + 0x0C), b = MEMF(g_esp + 0x10), c = MEMF(g_esp + 0x14);
         if (a > 0.0f && b >= a && c > b && c < 1.0e8f) {
@@ -4069,6 +4174,101 @@ void sub_000C1340(void)
         }
     }
     sub_000C1340_gen();
+}
+
+/* ── v312l: the draw distance of the rest of the street (Idea by Miggas) ──
+ * The other gates the game decides by whether to draw a thing, found by
+ * JSRF-PC (spriteice/JSRF-PC, its port/draw_distance.h and recomp_manual.c;
+ * the findings only, this is our own code): each compares the thing's depth
+ * in front of the eye with constants of the game's own. For the length of
+ * the gate's call, those constants are set to RECOMP_OBJ_DRAW_DIST times
+ * theirs (a fade's 1 / length, divided by it), then put back; nothing the
+ * gates call reads them (JSRF-PC: the transform, fabs and the device's
+ * on-screen test).
+ *   sub_000435B0  the pickups (spray cans): drawn to 500, faded from 450
+ *   sub_0003BCD0  the race's checkpoints: drawn to 400, faded from 300
+ *   sub_000B9B50  props and the car sets' objects: near to 400 and 500;
+ *   sub_000B9C70  ...their fade, from 400 (1 / 100 a unit)
+ *   sub_000E3930, sub_000E3BB0  a part fixed to a police or tank: to 600
+ *   sub_000C29C0  a person in a crowd: drawn to 400, fading past 300. Its
+ *                 caller fades it by (400 - depth) / 100 and draws the model,
+ *                 and the crowd's updates (sub_000C39E0, sub_000C3A20) move
+ *                 only people nearer than 400, both from the depth the gate
+ *                 keeps at +0x48: kept divided by the factor instead, they
+ *                 fade and walk as far out as the gate draws them (the
+ *                 model's detail and shadow, which read it too, as if nearer). */
+static void od_with(void (*gen)(void), const uint32_t *at, const int *inv, int n)
+{
+    float k = obj_dist_k(), was[4];
+    int i;
+    if (k == 1.0f) { gen(); return; }
+    for (i = 0; i < n; i++) {
+        was[i] = MEMF(at[i]);
+        MEMF(at[i]) = inv[i] ? was[i] / k : was[i] * k;
+    }
+    gen();
+    for (i = 0; i < n; i++)
+        MEMF(at[i]) = was[i];
+}
+
+extern void sub_000435B0_gen(void);
+void sub_000435B0(void)
+{
+    static const uint32_t at[3] = { 0x001CA6C0u, 0x001CA6BCu, 0x001CA6B8u };   /* 500, 450, 1 / 50 */
+    static const int inv[3] = { 0, 0, 1 };
+    od_with(sub_000435B0_gen, at, inv, 3);
+}
+
+extern void sub_0003BCD0_gen(void);
+void sub_0003BCD0(void)
+{
+    static const uint32_t at[3] = { 0x001CA43Cu, 0x001CA438u, 0x001CA434u };   /* 400, 300, 1 / 100 */
+    static const int inv[3] = { 0, 0, 1 };
+    od_with(sub_0003BCD0_gen, at, inv, 3);
+}
+
+extern void sub_000B9B50_gen(void);
+void sub_000B9B50(void)
+{
+    static const uint32_t at[2] = { 0x001CA43Cu, 0x001CA6C0u };                /* 400, 500 */
+    static const int inv[2] = { 0, 0 };
+    od_with(sub_000B9B50_gen, at, inv, 2);
+}
+
+extern void sub_000B9C70_gen(void);
+void sub_000B9C70(void)
+{
+    static const uint32_t at[2] = { 0x001CA43Cu, 0x001CA434u };                /* 400, 1 / 100 */
+    static const int inv[2] = { 0, 1 };
+    od_with(sub_000B9C70_gen, at, inv, 2);
+}
+
+extern void sub_000E3930_gen(void);
+void sub_000E3930(void)
+{
+    static const uint32_t at[1] = { 0x001CED60u };                             /* 600 */
+    static const int inv[1] = { 0 };
+    od_with(sub_000E3930_gen, at, inv, 1);
+}
+
+extern void sub_000E3BB0_gen(void);
+void sub_000E3BB0(void)
+{
+    static const uint32_t at[1] = { 0x001CED60u };
+    static const int inv[1] = { 0 };
+    od_with(sub_000E3BB0_gen, at, inv, 1);
+}
+
+extern void sub_000C29C0_gen(void);
+void sub_000C29C0(void)
+{
+    static const uint32_t at[2] = { 0x001CA43Cu, 0x001CA438u };                /* 400, 300 */
+    static const int inv[2] = { 0, 0 };
+    uint32_t self = g_ecx;
+    float k = obj_dist_k();
+    od_with(sub_000C29C0_gen, at, inv, 2);
+    if (k != 1.0f)
+        MEMF(self + 0x48) /= k;
 }
 
 

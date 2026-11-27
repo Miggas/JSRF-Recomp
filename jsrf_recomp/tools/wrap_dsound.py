@@ -41,6 +41,11 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_0002DA70", "sub_0002D8D0",   # v310: bigger graffiti (jsrf_graffiti.c)
          "sub_00038DF0",                # v310d: the graffiti select's bigger .grf
          "sub_000756E0", "sub_000149D0", "sub_0011A8B0",   # v311: Early Test Runs (jsrf_testruns.c)
+         "D3D8_D3DDevice_SetRenderTarget", "D3D8_D3DDevice_Clear",   # v312c: the boost's targets
+         "D3D8_D3DDevice_Swap", "D3D8_D3DDevice_DrawVerticesUP",     # (jsrf_boost.c)
+         "sub_000A2960",                # v312e: the boost's draw (jsrf_boost.c)
+         "sub_000131F0",                # v313: the frame's draw (photo mode, jsrf_photo.c)
+         "sub_001BB330",                # v313m: the matrix stack's turn (the Yaris bounce, jsrf_photo.c)
          "sub_001192E0", "sub_00118A60",  # v203: [SNDDIST] play / move a sound
          "sub_00118610",                # v203c: the sound manager's frame (the cut-off)
          "sub_001129E0", "sub_000FD190", "sub_00048570", "sub_000488B0",
@@ -58,6 +63,8 @@ NAMES = ("DSOUND_IDirectSound_SetI3DL2Listener", "DSOUND_IDirectSound_SetEffectD
          "sub_0011A490",                # v222: the test run course screen, not held at 4:3
          "sub_00124BD0",                # v228c: graffiti select's 3D scene: no side fill
          "sub_000C1340",                # v233: street objects' draw distance
+         "sub_000435B0", "sub_0003BCD0", "sub_000B9B50", "sub_000B9C70",   # v312l: the rest's
+         "sub_000E3930", "sub_000E3BB0", "sub_000C29C0",                   # draw distance
          "sub_001133A0",                # v235: the start menu in battles in widescreen
          "sub_0006A7C0",                # v239b: the stage's light pass (marked as the map's)
          "sub_0007C9E0",                # v276b: chapter select on a new game (jsrf_chapter_select.c)

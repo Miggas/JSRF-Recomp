@@ -1138,3 +1138,23 @@ uint64_t xbox_ReadTimeStampCounter(void)
              + (rem * XBOX_TSC_HZ) / (uint64_t)freq.QuadPart;
     }
 }
+
+/* v312d: the time the game spent held (the quit window, shaders built before
+ * the start), in time stamp counter ticks. The counter itself keeps going
+ * (D3D and DirectSound time their waits with it), so a game timer that must
+ * not count the hold subtracts this: JSRF's load-job watchdog
+ * (recomp_manual.c, sub_00025310) declared the disc unreadable after a
+ * 17-second shader build (Reported by Miggas). */
+volatile uint64_t g_xbox_held_tsc;
+static uint64_t s_hold_t0;
+static volatile LONG s_hold_on;
+
+void xbox_HoldClock(int on)
+{
+    if (on) {
+        if (!InterlockedExchange(&s_hold_on, 1))
+            s_hold_t0 = xbox_ReadTimeStampCounter();
+    } else if (InterlockedExchange(&s_hold_on, 0)) {
+        g_xbox_held_tsc += xbox_ReadTimeStampCounter() - s_hold_t0;
+    }
+}

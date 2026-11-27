@@ -22,13 +22,13 @@ Back to the main guide: [README.md](README.md#6-settings-jsrfini).
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_GL_CPU_VERTEX=1` | Process vertices on the CPU. Workaround for the black screen some NVIDIA systems get at start-up. |
+| `RECOMP_GL_CPU_VERTEX=1` | Process vertices on the CPU instead of the GPU, for comparing when something is drawn wrong. |
 | `RECOMP_RENDERER=sw` | Use the software renderer instead of OpenGL. Very slow; for comparing when the GPU renderer draws something wrong. |
 | `RECOMP_GL_WDEPTH=0` | Turn off the distance-precise depth buffer and go back to the console's 24-bit depth. On by default, it stops far-away textures and shadows from flickering. `RECOMP_GL_WDEPTH_NEAR` (default `128`) sets the distance up to which the game's own depth is kept. *Idea by Miggas.* |
 | `RECOMP_GL_EDGE=0` | Turn off the edge fix (full-screen layers pushed one pixel past the screen edges, so no line shows along the top and left). |
 | `RECOMP_GL_ADDITIVE_DEPTH=1` | Let the map's glows and light beams write depth again, as the original does. Brings back the Skyscraper District bug where the chain-link floor disappears behind the light pillars. |
 | `RECOMP_GL_MENU_DEPTH=0` | Turn off the menu depth fix (graffiti menu icons hidden behind their buttons). |
-| `RECOMP_GL_PREBUILD=0` | Don't build missing shaders ahead on light frames (they're then compiled when the game first needs them). |
+| `RECOMP_VK_PIPES_WAIT=0` | Vulkan: don't wait at the start for the pipelines ("Building Shaders"); they're made during play instead. OpenGL's is `RECOMP_GL_PREBUILD=0`, in `jsrf.ini`. |
 | `RECOMP_GL_NO_WINDOW_CLIP=1` | Ignore the game's window clipping (used by split screen). |
 
 ## Widescreen
@@ -76,6 +76,14 @@ Back to the main guide: [README.md](README.md#6-settings-jsrfini).
 | Setting | What it does |
 |---|---|
 | `RECOMP_SAVE_DIR=…` | Where the `savegame` folder (the cache and partition images) goes, if not in the game folder. Your save itself stays in `UDATA`. |
+
+## Free camera
+
+| Setting | What it does |
+|---|---|
+| `RECOMP_FREECAM=1` | Free camera, for looking around a level. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed (shown in the window title). The game gets no keyboard input while the camera flies. |
+| `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
+| `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
 
 ## Logs for finding problems
 

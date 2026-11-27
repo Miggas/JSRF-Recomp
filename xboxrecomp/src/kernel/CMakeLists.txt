@@ -29,17 +29,28 @@ set(KERNEL_SOURCES
     nv2a_combiner.c
 )
 
-# GPU rasterisation through OpenGL 3.3 (nv2a_gl.c). SDL2 provides the
+# GPU rasterisation through OpenGL 3.3 (nv2a_render.c, the renderer, and
+# nv2a_rb_gl.c, its OpenGL backend). SDL2 provides the
 # context: found on the system on Linux, downloaded and built statically on
 # Windows. -DXBOXRECOMP_GL=OFF builds without it (software rasteriser only).
 option(XBOXRECOMP_GL "Rasterise NV2A batches on the host GPU via OpenGL" ON)
 if(XBOXRECOMP_GL)
-    list(APPEND KERNEL_SOURCES nv2a_gl.c ../third_party/glad/src/gl.c)
+    list(APPEND KERNEL_SOURCES nv2a_render.c nv2a_rb_dispatch.c nv2a_rb_gl.c ../third_party/glad/src/gl.c)
 else()
     list(APPEND KERNEL_SOURCES nv2a_gl_stub.c)
 endif()
 
+# vulkan-test: the Vulkan renderer beside OpenGL (cmake/vulkan.cmake)
+if(XBOXRECOMP_GL AND XBOXRECOMP_VULKAN)
+    list(APPEND KERNEL_SOURCES nv2a_vk.c glvk.c nv2a_rb_vk.c nv2a_rb_queue.c)
+endif()
+
 add_library(xbox_kernel STATIC ${KERNEL_SOURCES})
+
+if(XBOXRECOMP_GL AND XBOXRECOMP_VULKAN)
+    target_link_libraries(xbox_kernel PUBLIC xrvk_deps)
+    target_compile_definitions(xbox_kernel PRIVATE XBOXRECOMP_HAVE_VK=1)
+endif()
 
 if(XBOXRECOMP_GL)
     target_include_directories(xbox_kernel PRIVATE

@@ -10,7 +10,7 @@ cmake_minimum_required(VERSION 3.20)
 #   4. Add any game-specific compile definitions or link libraries
 # ============================================================================
 
-project(jsrf_recomp C)
+project(jsrf_recomp C CXX)   # CXX: glslang, for the Vulkan renderer (vulkan-test)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -90,6 +90,9 @@ set(JSRF_OWN_SOURCES
     src/jsrf_chapter_select.c  # v276: chapter select (RECOMP_CHAPTER_SELECT)
     src/jsrf_graffiti.c     # v310: bigger graffiti
     src/jsrf_testruns.c     # v311: Early Test Runs
+    src/jsrf_boost.c        # v312c: the boost's render targets (RECOMP_BOOST_LOG)
+    src/jsrf_camwall.c      # v312z: the camera kept out of walls (RECOMP_CAM_WALLS)
+    src/jsrf_photo.c        # v313: photo mode (R3)
 )
 if(NOT JSRF_RELEASE STREQUAL "usa")
     find_package(Python3 COMPONENTS Interpreter)
@@ -194,6 +197,15 @@ if(WIN32)
         PROPERTIES COMPILE_OPTIONS "-fno-builtin")
     target_compile_options(${PROJECT_NAME} PRIVATE -fno-strict-aliasing -fwrapv
         -Wno-unused -Wno-unused-label -Wno-unused-but-set-variable)
+endif()
+
+# vk14: the same fast memory functions in the Zig builds on Linux (glibc
+# has fast ones, but Zig links its byte-at-a-time ones into the program,
+# and the program's win -- for the shared libraries too). See the file.
+if(UNIX AND CMAKE_C_COMPILER MATCHES "zig")
+    target_sources(${PROJECT_NAME} PRIVATE ${XBOXRECOMP_DIR}/src/platform/win_memfuncs.c)
+    set_source_files_properties(${XBOXRECOMP_DIR}/src/platform/win_memfuncs.c
+        PROPERTIES COMPILE_OPTIONS "-fno-builtin")
 endif()
 
 # ── Game-specific additions ─────────────────────────────────────

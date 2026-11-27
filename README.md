@@ -29,6 +29,7 @@ code on your computer, and compiled into a normal program. The Xbox's hardware
 
 ## Contents
 
+- [What's new compared to the Xbox](#whats-new-compared-to-the-xbox)
 1. [What you need](#1-what-you-need)
 2. [Install and play](#2-install-and-play)
 3. [Steam Deck](#3-steam-deck)
@@ -44,6 +45,66 @@ Debug and advanced settings: [DEBUG.md](DEBUG.md).
 
 ---
 
+## What's new compared to the Xbox
+
+Everything below is added by the recomp. The game itself plays as it did on the
+Xbox. Most additions can be turned off in the launcher or `jsrf.ini`.
+
+### Platforms and setup
+- Native **Windows 10/11, Linux and Steam Deck** builds (no Proton needed on the Deck).
+- **Every retail release:** US, Europe (PAL), Japan, and the JSRF on the Sega GT 2002 combo discs (US, Europe, Asia).
+- **Launcher:** Play, Build, Update and every setting in one window, with no command line.
+- **Language choice** on any release. Options depend on the release.
+
+### Graphics
+- **Higher internal resolution**, up to 8x the Xbox's 640x480 (4K and above).
+- **Widescreen** at any aspect ratio (16:9, 16:10, 21:9...). The HUD sits in the screen corners, and the menus are laid out wide.
+- **Anti-aliasing:** FXAA, SMAA (four levels) and MSAA (2x/4x/8x).
+- **Anisotropic filtering** (2x to 16x).
+- **No pop-in:** buildings and level geometry are drawn further ahead. On by default, with per-map extra areas.
+- **Longer object draw distance:** police, tanks, vehicles, crowds, spray cans, props and race checkpoints show up from further away.
+- **Vulkan renderer** beside OpenGL.
+- **Shaders built ahead**, before play.
+- **HUD scale** (0.5x to 1.5x) or **no HUD** at all.
+- **Cutscene black bars** can be turned off.
+- **New boost effect:** a radial blur, sharp around the skater, in place of the game's trails (strength adjustable).
+- **No dark rim around 2D art** (HUD, menus, text and decals at high resolution).
+- **Bigger graffiti:** stages and the graffiti select take higher-resolution graffiti made with the mod tool.
+- **Display:** VSync, borderless fullscreen (F11 toggles it), and a mouse pointer that hides itself.
+
+### Camera
+- **Right-stick camera:** turn the view while skating or standing still, with invert and sensitivity settings.
+- **Camera kept out of walls:** it slides along or moves in instead of going through walls.
+- **Photo mode:** click R3. The world freezes, the HUD hides, the camera flies freely, and A saves a PNG to `Screenshots/`.
+
+### Gameplay and quality of life
+- **Skip any cutscene** by holding START.
+- **Quit window** (click both sticks, or Shift + Ctrl): pauses the game, then Return, Quit to Title or Quit Game.
+- **Mission select** (LB + RB in the title): 29 missions under chapter headings, each with its objective.
+  - Start with no spray cans, 20, or the maximum.
+  - The cutscenes around each mission are skipped.
+  - A **timer**, plus your five **personal best** times for each mission.
+- **Early Test Runs:** open Roboy's test runs as you reach their areas, or with your graffiti souls, instead of only at the end.
+
+### Controls
+- **Any controller:** Xbox, PlayStation (DualSense/DualShock), Switch and others. Buttons go by position, as on an Xbox pad.
+- **Keyboard** play.
+- **Up to 4 players** on one PC, with players assigned in the order they press a button.
+- **Rumble**, with a strength setting.
+
+### Sound
+- **PC sound mixing:** the game's sound runs on the PC instead of emulated Xbox audio hardware.
+
+### Saves
+- **Saves from anywhere:** saves from a real Xbox or an emulator load, whatever their signature.
+- **Portable saves** in a `UDATA` folder beside the game.
+
+### Fixes for the game's own bugs
+- **Yoyo keeps his voice:** in the US and Japanese releases he shares a voice file with NT 3000, and after the chapter 7 garage he could lose it.
+- **NT 3000 gets his own robotic voice:** only the PAL release used his voice file, though every release has it.
+
+---
+
 ## 1. What you need
 
 - **A Windows 10/11 PC, a Linux PC or a Steam Deck.** The game is built on the
@@ -52,7 +113,7 @@ Debug and advanced settings: [DEBUG.md](DEBUG.md).
   release, as its files or as a disc image (`.iso`).
 - **About 3 GB of free disk space.**
 - **An internet connection** the first time, for the launcher's tools.
-- **A graphics card with OpenGL 3.3** or newer.
+- **A graphics card with OpenGL 3.3 or Vulkan.**
 
 Nothing else has to be installed: the launcher brings its own tools.
 
@@ -141,7 +202,7 @@ the game drops frames while it waits. To avoid that:
 
 | Tab | What it does |
 |---|---|
-| **Play** | The game folder, what is ready (✓ / ✗, click one to fix it), **Build** and **PLAY**. |
+| **Play** | The game folder; what is ready (✓ / ! / ✗, click one to fix it), the launcher's and the project's updates among them; **PLAY**, **Build** (when something is out of date), **Launch ModTool** (when `jsrf_modtool` is in the launcher's folder) and **Verify game files** (none of the game's files missing). |
 | **Settings** | `jsrf.ini` in tabs: Gameplay, Video, Input, Audio, Debug. |
 | **Build** | **Generate code** and **Build** separately; each skips what is up to date. |
 | **Update** | Gets the newest version of the project and of the launcher. |
@@ -172,7 +233,8 @@ controller. The keyboard works as controller 1:
 
 - **Quit:** click both sticks (`Shift` + `Ctrl`): **Quit Game**, **Quit to Title** (while in a level) or **Return**, then **A**.
   Closing the window or `Alt+F4` works too.
-- **Skip a cutscene:** hold **START** (`Enter`) for about 2 seconds.
+- **Skip a cutscene:** hold **START** (`Enter`) for about 1.3 seconds.
+- **Photo mode:** click the right stick (**R3**; `Ctrl` on the keyboard). The game freezes and the HUD hides. Left stick moves the camera, right stick looks, **RT / LT** go up / down, **RB / LB** fast / slow. **A** takes the photo (saved in the `Screenshots` folder), **Y** puts the camera back where it started, **R3** or **B** goes back to the game. *Idea by Miggas.*
 - **Mission select:** on the title screen, press **LB + RB** together (White + Black; `Q` + `E` on the keyboard) for a list of the story's races, boss fights and challenges by chapter. Pick one and how many spray cans to start with (none, 20 or as many as your character carries), then choose **NEW GAME**: pick your character (all are unlocked) and the mission starts. Refight a boss or redo a race without touching your save (just don't save afterwards): when the mission ends, the game goes back to the title. *Idea by Miggas.*
 
 ---
@@ -197,11 +259,16 @@ override the file.
 | `RECOMP_HOLD_SKIP=0` | Turns off skipping cutscenes by holding START. |
 | `RECOMP_LANGUAGE=french` | The game's language: `english` (default), `french`, `german`, `spanish`, `italian`, `japanese`. Which ones each release has: see [section 1](#1-what-you-need). |
 | `RECOMP_SAVE_STRICT=1` | Refuse saves from other sources (a real Xbox, emulators, save editors), as the Xbox does. |
+| `RECOMP_LETTERBOX=0` | No black bars in cutscenes. |
+| `RECOMP_BOOST_EFFECT=original` | The game's own boost trails instead of the new boost effect (a blur, clear around your character). |
+| `RECOMP_BOOST_STRENGTH=0.55` | Strength of the new boost effect, `0.1` to `1`. |
+| `RECOMP_EARLY_TESTRUNS=story` | Early Test Runs: Roboy's test runs open as you finish each area's chapter (`story`) or by graffiti souls only (`souls`), instead of at the end of the story. Off by default. *Idea by Miggas.* |
 
 **`[display]`**
 
 | Setting | What it does |
 |---|---|
+| `RECOMP_RENDERER=vulkan` | Vulkan instead of OpenGL. |
 | `RECOMP_GL_SCALE=2` | Internal resolution: `1` = 640×480, `2` = 1280×960, `3` = 1920×1440, `4` = 2560×1920, `5` = 3200×2400, `6` = 3840×2880 (4K) (up to `8`, if the graphics card allows). |
 | `RECOMP_GL_ANISO=16` | Anisotropic filtering: `2`, `4`, `8` or `16`. |
 | `RECOMP_GL_AA=smaa_high` | Anti-aliasing: `fxaa`, `smaa_low`, `smaa_medium`, `smaa_high` or `smaa_ultra`. |
@@ -210,7 +277,9 @@ override the file.
 | `RECOMP_GL_PRESENT=dxgi` | Borderless window (Windows only). May lower performance. |
 | `RECOMP_WIDESCREEN=auto` | Widescreen: `1` = 16:9, `auto` = your monitor's shape, or `RECOMP_ASPECT=21:9` for others. |
 | `RECOMP_GL_VSYNC=1` | VSync. |
-| `RECOMP_GL_PREBUILD=0` | Don't build the shaders at start; build them during play instead. |
+| `RECOMP_HUD=0` | Hide the HUD. |
+| `RECOMP_HUD_SCALE=1.0` | HUD size, `0.5` to `1.5`. |
+| `RECOMP_GL_PREBUILD=0` | OpenGL: don't build the shaders at start ("Building Shaders"); build them during play instead. On Vulkan the same is `RECOMP_VK_PIPES_WAIT=0`. |
 | `RECOMP_CURSOR_HIDE=0` | Keep the mouse pointer visible over the game. |
 
 **`[input]`**
@@ -246,15 +315,12 @@ override the file.
 | `RECOMP_DRAW_AREAS_SKIP=EE7A:96,105` | Map pieces never to draw (`MapID:area,area;MapID:area`; a map ID alone = no fix on that map). |
 | `RECOMP_DRAW_AREAS_ADD=` | Map pieces always to draw. Same format. |
 | `RECOMP_AREA_PICKER=1` | Finds the numbers for the two lists above (`1` = skip, `2` = add). F6/F7 select an area, F8 toggles it, F10 clears all; the list goes to the log. |
-| `RECOMP_OBJ_DRAW_DIST=2` | Draw distance of street objects (tanks, police, vehicles). `1` = original. |
+| `RECOMP_OBJ_DRAW_DIST=2` | How far away things are drawn: crowds, spray cans, props, race checkpoints, police, tanks and vehicles. `1` = original, `2` (default) twice as far, `3`, `4` further. |
 
 **`[tools]`**
 
 | Setting | What it does |
 |---|---|
-| `RECOMP_FREECAM=1` | Free camera. F5 = on/off, WASD = move, Shift / Ctrl = up / down, mouse = look, wheel = speed. |
-| `RECOMP_FREECAM_SPEED=2` | The free camera's start speed. |
-| `RECOMP_FREECAM_SENS=0.003` | The free camera's mouse sensitivity. |
 | `RECOMP_CHAPTER_SELECT=2` | Chapter select: a new game starts at chapter 2's opening; `2:0` its Garage (chapter 5: `5:10`). Skips the chapter's earlier events, and the game's save points save over your progress: back up `UDATA` first. Also in the launcher's **Settings → Debug**. *From andeecollard's jsrf-recomp.* |
 | `RECOMP_SHOW_MISSION=1` | The window title shows the current mission (`mssnCCMM`), your position and the objective. F9 writes your position to the log. |
 | `RECOMP_MISSION_SPAWN=CCMM:x,y,z,facing` | A mission picked in mission select starts at that spot, facing that way (from F9: it logs the way you were skating). Several missions on one line, separated by `;`. |
@@ -292,8 +358,8 @@ leave it out when copying the game somewhere.
 | A download fails | Check the internet connection and try again. |
 | A build fails | **Open log file** (under the buttons), find the first line with `error`, and report it. |
 | `Could not copy the game … is the game still running?` | Close the game and **Build** again. |
+| Short stutters the first time something appears (weaker PCs, Steam Deck) | Let **Building Shaders** finish at the start. It gets better as the shader cache fills. |
 | The game is slow or stutters | Lower **Settings → Video → resolution scale**; turn **Settings → Debug → Logging** off. |
-| A black screen at start | Add `RECOMP_GL_CPU_VERTEX=1` to `jsrf.ini`. A known bug on NVIDIA systems; a fix is in the works. |
 
 **Reporting a problem:** turn on **Settings → Debug → Logging**, play until
 it happens, close the game and send `stderr.txt` from the game folder (for a
@@ -348,10 +414,19 @@ co-author.
   built on.
 - Piaka for the borderless window tip, skipping the intro logos, and the HUD
   placement from his widescreen work.
-- mstan's JSRFRecomp for the idea of holding START to skip cutscenes.
+- mstan's JSRFRecomp for the ideas of holding START to skip cutscenes and
+  Early Test Runs.
+- [spriteice's JSRF-PC](https://github.com/spriteice/JSRF-PC) for findings
+  (no code taken): keeping the camera out of walls follows its "Default cam fix",
+  photo mode uses the game's holds and camera draw as JSRF-PC found them, the
+  HUD scale came after its own, and the draw distances for crowds, spray cans,
+  props and checkpoints are the ones it found.
+- [Rossybergg's ReJet](https://github.com/Rossybergg/ReJet) for the finding
+  behind the fix for the dark rim around 2D art (no code taken).
 - The quit window and the "Building Shaders" message use the
   [NiseJSRF](https://www.dafont.com/nisejsrf.font) font by Yoyo ("100% Free"; its V, X and K redrawn here),
-  drawn with [stb_truetype](https://github.com/nothings/stb) (public domain).
+  drawn with [stb_truetype](https://github.com/nothings/stb), and photo mode saves
+  its PNGs with stb_image_write (both public domain).
 - s-ilent for MSAA (`RECOMP_GL_MSAA`, [pull request #4](https://github.com/Miggas/JSRF-Recomp/pull/4)).
 - [andeecollard's jsrf-recomp](https://github.com/andeecollard/jsrf-recomp) (MIT)
   for the DirectSound lift (PC sound mixing, `RECOMP_DSOUND_LIFT`) and chapter

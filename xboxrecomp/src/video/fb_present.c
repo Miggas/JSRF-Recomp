@@ -16,6 +16,13 @@
  */
 #include <stdint.h>
 
+/* vulkan-test, step 4: with RECOMP_RENDERER=vulkan the renderer sets this
+ * (nv2a_vk_present_frame, nv2a_vk.h) and the window's frames go through a
+ * Vulkan swapchain instead of GDI. It returns 0 when Vulkan can't present,
+ * and the window goes back to GDI for good. */
+int (*xbox_fb_vk_frame)(void *win, const uint32_t *px, uint32_t w, uint32_t h,
+                        int cw, int ch, int dx, int dy, int dw, int dh);
+
 #if defined(_WIN32)
 #include <windows.h>
 #include <stdio.h>
@@ -646,6 +653,28 @@ static void fb_blit(HWND hwnd, HDC hdc, BITMAPINFO *bi)
     }
 }
 
+/* the frame into the window: through Vulkan when it presents, else GDI */
+static void fb_show(HWND hwnd, HDC hdc, BITMAPINFO *bi)
+{
+    static int vk_failed;
+    if (xbox_fb_vk_frame && !vk_failed) {
+        RECT cr;
+        int cw, ch, dw, dh;
+        GetClientRect(hwnd, &cr);
+        cw = cr.right - cr.left; ch = cr.bottom - cr.top;
+        if (cw <= 0 || ch <= 0)
+            return;
+        xbox_PresentFit(cw, ch, &dw, &dh);
+        if (xbox_fb_vk_frame(hwnd, s_rgb, s_rgb_w, s_rgb_h, cw, ch,
+                             (cw - dw) / 2, (ch - dh) / 2, dw, dh))
+            return;
+        vk_failed = 1;
+        fprintf(stderr, "  [FBWIN] Vulkan can't present to the window: GDI shows the"
+                " frames instead\n");
+    }
+    fb_blit(hwnd, hdc, bi);
+}
+
 static DWORD WINAPI fb_thread(LPVOID unused)
 {
     HWND hwnd;
@@ -745,14 +774,14 @@ static DWORD WINAPI fb_thread(LPVOID unused)
                 s_rgb_w = s_pres_w[idx]; s_rgb_h = s_pres_h[idx];
                 memcpy(s_rgb, s_present[idx], (size_t)s_rgb_w * s_rgb_h * 4);
             }
-            fb_blit(hwnd, hdc, &bi);
+            fb_show(hwnd, hdc, &bi);
         } else if (s_fb_va && s_fb_pitch && s_rgb) {
             /* No flip yet, or pinned with RECOMP_FB_VA: read guest memory as
              * before, which is also what a title that never flips needs. */
             const uint8_t *src =
                 (const uint8_t *)((uintptr_t)s_fb_va + xbox_GetMemoryOffset());
             fb_convert(src, s_fb_pitch / s_fb_width);
-            fb_blit(hwnd, hdc, &bi);
+            fb_show(hwnd, hdc, &bi);
         }
         {
             /* One dump a few seconds in, so the title has had time to render
@@ -824,13 +853,15 @@ void xbox_FramebufferWindowStart(void)
 
 #else
 /* ── v244: Linux. The window is the GL context's own SDL window
- * (nv2a_gl.c shows it at the first frame and hands it over with
+ * (nv2a_render.c shows it at the first frame and hands it over with
  * xbox_FramebufferWindowAttach); this keeps its events, the keys the game
  * reads, full screen, the title and the free camera's mouse. Everything
  * runs on the executor thread, which made the window: the events are
  * pumped once a presented frame (xbox_FramebufferWindowPump). The same
  * shape and widescreen logic as the Windows window above. */
 #include <SDL.h>
+#include <SDL_vulkan.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -945,9 +976,74 @@ void xbox_PresentFit(int cw, int ch, int *dw, int *dh)
     *dw = w; *dh = h;
 }
 
-/* frames only ever reach this window from the GPU; the CPU paths are off */
+/* With OpenGL frames only ever reach this window from the GPU and the CPU
+ * paths are off. vulkan-test, step 4: with RECOMP_RENDERER=vulkan the
+ * software rasteriser's frames are shown through Vulkan (xbox_fb_vk_frame),
+ * in a window made here at the first one. */
+void xbox_FramebufferWindowAttach(void *sdl_window);
+void xbox_FramebufferWindowPump(void);
+extern ptrdiff_t xbox_GetMemoryOffset(void);
+
 void xbox_FramebufferWindowSet(uint32_t fb_va, uint32_t pitch) { (void)fb_va; (void)pitch; }
-void xbox_FramebufferWindowPresent(uint32_t fb_va, uint32_t pitch) { (void)fb_va; (void)pitch; }
+void xbox_FramebufferWindowPresent(uint32_t fb_va, uint32_t pitch)
+{
+    static int failed;
+    static uint32_t *px;
+    enum { W = 640, H = 480 };
+    const uint8_t *src;
+    uint32_t bpp, x, y;
+    int cw = 0, ch = 0, dw, dh;
+
+    if (!xbox_fb_vk_frame || failed || !fb_va || !pitch || !s_fb_running)
+        return;
+    if (!s_sw) {
+        SDL_Window *w;
+        if (SDL_WasInit(SDL_INIT_VIDEO) == 0 && SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
+            fprintf(stderr, "[FB] SDL video init failed: %s -- no window\n", SDL_GetError());
+            failed = 1;
+            return;
+        }
+        w = SDL_CreateWindow(s_title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H,
+                             SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+        if (!w) {
+            fprintf(stderr, "[FB] no Vulkan window: %s\n", SDL_GetError());
+            failed = 1;
+            return;
+        }
+        xbox_FramebufferWindowAttach(w);
+    }
+    xbox_FramebufferWindowPump();
+    if (!px && !(px = (uint32_t *)malloc((size_t)W * H * 4)))
+        return;
+    bpp = pitch / W;
+    src = (const uint8_t *)((uintptr_t)fb_va + xbox_GetMemoryOffset());
+    for (y = 0; y < H; y++) {
+        const uint8_t *row = src + (size_t)y * pitch;
+        uint32_t *dst = px + (size_t)y * W;
+        if (bpp == 4) {
+            memcpy(dst, row, (size_t)W * 4);
+        } else if (bpp == 2) {
+            const uint16_t *p = (const uint16_t *)row;
+            for (x = 0; x < W; x++) {
+                uint16_t v = p[x];
+                uint32_t r = (uint32_t)((v >> 11) & 0x1F) * 255u / 31u;
+                uint32_t g = (uint32_t)((v >>  5) & 0x3F) * 255u / 63u;
+                uint32_t b = (uint32_t)( v        & 0x1F) * 255u / 31u;
+                dst[x] = (r << 16) | (g << 8) | b;
+            }
+        } else {
+            memset(dst, 0, (size_t)W * 4);
+        }
+    }
+    SDL_Vulkan_GetDrawableSize(s_sw, &cw, &ch);
+    if (cw <= 0 || ch <= 0)
+        return;
+    xbox_PresentFit(cw, ch, &dw, &dh);
+    if (!xbox_fb_vk_frame(s_sw, px, W, H, cw, ch, (cw - dw) / 2, (ch - dh) / 2, dw, dh)) {
+        failed = 1;
+        fprintf(stderr, "[FB] Vulkan can't present to the window: nothing more is shown\n");
+    }
+}
 int xbox_FramebufferWindowAccepts(uint32_t w, uint32_t h)
 {
     (void)w; (void)h;

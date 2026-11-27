@@ -2,7 +2,7 @@
  * v187n: widescreen, game side -- the HUD at the screen edges, and the
  * screens built for 4:3 only. Adapted from Piaka's widescreen patch (his
  * addresses and the sprite-queue idea; his renderer half is not used, the
- * toolkit's nv2a_pb_exec.c / nv2a_gl.c squeeze does that part here).
+ * toolkit's nv2a_pb_exec.c / nv2a_render.c squeeze does that part here).
  * Nothing here does anything unless widescreen is on (RECOMP_WIDESCREEN /
  * RECOMP_ASPECT).
  *
@@ -85,29 +85,75 @@ static int ws_hold_on(void)
     return on;
 }
 
+/* ── v312k: the HUD's size (Idea by Miggas, after JSRF-PC's HUD scale) ────
+ * RECOMP_HUD_SCALE=0.5..1.5 (steps of 0.05; 1 = as the game has it) scales
+ * every listed HUD piece about the screen corner it sits in, margins too;
+ * RECOMP_HUD=0 hides the HUD (each piece folded into its corner). Sprites
+ * and strings are scaled where they are queued or added (they are drawn
+ * later, outside the HUD function); what a function draws itself (the spray
+ * can and boost icon, 3D models: anchor +-3) through a mark in the command
+ * stream the renderer scales its positions by (nv2a_pb_exec.c, hud_for).
+ * Each piece's corner: left or right by its anchor, top or bottom by where
+ * a sprite or string lies (above or below the middle), or, for the 3D
+ * ones, from the table below. In widescreen with the HUD at the edges, the
+ * corners are the wide screen's. Not in split screen. */
+int jsrf_photo_holding(void);       /* v313: jsrf_photo.c */
+static float hud_scale(void)
+{
+    static float s = -1.0f;
+    if (jsrf_photo_holding())
+        return 0.0f;                    /* v313: photo mode hides the HUD */
+    if (s < 0.0f) {
+        const char *e = getenv("RECOMP_HUD_SCALE"), *h = getenv("RECOMP_HUD");
+        s = e && *e ? (float)atof(e) : 1.0f;
+        if (!(s >= 0.5f && s <= 1.5f)) s = 1.0f;
+        s = (float)(int)(s * 20.0f + 0.5f) / 20.0f;
+        if (h && h[0] == '0') s = 0.0f;
+        if (s == 0.0f)
+            fprintf(stderr, "[HUD] hidden (RECOMP_HUD=0)\n");
+        else if (s != 1.0f)
+            fprintf(stderr, "[HUD] scaled by %.2f about its corners (RECOMP_HUD_SCALE)\n", s);
+    }
+    return s;
+}
+static int ws_split(void);
+void jsrf_ZBiasMark(uint32_t v);
+static int hud_mod(void) { return hud_scale() != 1.0f && !ws_split(); }
+
+/* the corner a piece at guest y on side `sign` (-1 left, +1 right) goes to */
+static void hud_corner(int sign, int bottom, float *cx, float *cy)
+{
+    double k = xbox_WidescreenK();
+    double half = (ws_hud_on() && k > 0.2 && k < 0.9999) ? 320.0 / k : 320.0;
+    *cx = (float)(320.0 + sign * half);
+    *cy = bottom ? 480.0f : 0.0f;
+}
+
 /* ── HUD anchors ────────────────────────────────────────────────────────
  * -1 left, +1 right: sprite quads moved by the anchor when queued.
  * -3, +3: the function also draws directly; the device screen-space offset
  *         is moved while it runs (sprites it queues are not moved twice). */
-static const struct { uint32_t addr; int anchor; } ws_hud[] = {
-    { 0x001060B0u,  1 },    /* health bar and border */
-    { 0x0010D480u,  1 },    /* lower-right gauge and numbers */
-    { 0x0010DC60u,  3 },    /* spray can (3D), "x" and count */
-    { 0x00109B70u,  3 },    /* boost-ready icon (3D) */
-    { 0x000FFFD0u, -1 },    /* trick count and score rows */
-    { 0x00101F20u, -3 },    /* trick name; v307b: -3, its own sprite object
-                             * fills the batch, drawn inside this function
-                             * (0x10224C), so the screen offset moves it */
-    { 0x001045D0u, -1 },    /* v307e: the trick name's text, sliding in */
-    { 0x00102DB0u,  3 },    /* v305: VS race position ("1 ST") */
-    { 0x00103AE0u,  3 },    /* v305: VS lap count ("3/3 LAP") */
-    { 0x000F7720u,  9 },    /* v191b: letterbox bars (cutscenes, dialogue) */
-    { 0x000F7990u,  9 },    /* v191b: the bars opening and closing */
+/* v312k: bottom: the corner the HUD scale uses for what the function draws
+ * itself (anchor +-3; sprites and strings go by their own y) */
+static const struct { uint32_t addr; int anchor, bottom; } ws_hud[] = {
+    { 0x001060B0u,  1, 0 },    /* health bar and border */
+    { 0x0010D480u,  1, 1 },    /* lower-right gauge and numbers */
+    { 0x0010DC60u,  3, 0 },    /* spray can (3D), "x" and count */
+    { 0x00109B70u,  3, 1 },    /* boost-ready icon (3D) */
+    { 0x000FFFD0u, -1, 0 },    /* trick count and score rows */
+    { 0x00101F20u, -3, 0 },    /* trick name; v307b: -3, its own sprite object
+                                * fills the batch, drawn inside this function
+                                * (0x10224C), so the screen offset moves it */
+    { 0x001045D0u, -1, 0 },    /* v307e: the trick name's text, sliding in */
+    { 0x00102DB0u,  3, 0 },    /* v305: VS race position ("1 ST") */
+    { 0x00103AE0u,  3, 0 },    /* v305: VS lap count ("3/3 LAP") */
+    { 0x000F7720u,  9, 0 },    /* v191b: letterbox bars (cutscenes, dialogue) */
+    { 0x000F7990u,  9, 0 },    /* v191b: the bars opening and closing */
 };
 
 extern void D3D8_D3DDevice_SetScreenSpaceOffset(void);
 
-typedef struct { int anchor, changed, prev_screen; float x, y; uint32_t addr; } WsScope;
+typedef struct { int anchor, changed, prev_screen, hud_mark; float x, y; uint32_t addr; } WsScope;
 static RECOMP_TLS WsScope ws_stack[32];
 static RECOMP_TLS int ws_depth;
 static RECOMP_TLS int ws_screen;    /* anchor the screen offset currently has */
@@ -187,12 +233,23 @@ static void ws_enter(uint32_t addr)
     s->anchor = anchor;
     s->addr = addr;                     /* v307d: for the text log */
     s->changed = 0;
+    s->hud_mark = 0;
+    if ((anchor == 3 || anchor == -3) && hud_mod()) {   /* v312k: what it draws, scaled */
+        int bottom = 0;
+        float si = hud_scale() * 20.0f;
+        for (k = 0; k < sizeof ws_hud / sizeof ws_hud[0]; ++k)
+            if (ws_hud[k].addr == addr)
+                bottom = ws_hud[k].bottom;
+        jsrf_ZBiasMark(2200000000u + (uint32_t)((anchor > 0 ? 1 : 0) + (bottom ? 2 : 0) + (ws_hud_on() ? 4 : 0))
+                       * 100000000u + (uint32_t)(si + 0.5f) * 1000000u);
+        s->hud_mark = 1;
+    }
     if (anchor == 3 || anchor == -3) {
         /* D3D device at 0x19DCE0; its screen-space offset is stored at +0x9E8
          * and +0x9EC plus the constant at 0x19A040 (pixel-centre bias). */
         uint32_t device = MEM32(0x19DCE0u);
         int screen = anchor / 3;
-        float extra = ws_half_extra();
+        float extra = ws_hud_on() ? ws_half_extra() : 0.0f;   /* v312k: entered for the HUD scale too */
         if (device && screen != ws_screen && extra != 0.0f) {
             s->x = MEMF(device + 0x9E8u) - MEMF(0x19A040u);
             s->y = MEMF(device + 0x9ECu) - MEMF(0x19A040u);
@@ -216,13 +273,15 @@ static void ws_leave(void)
         ws_set_screen_offset(s->x, s->y);
         ws_screen = s->prev_screen;
     }
+    if (s->hud_mark)
+        jsrf_ZBiasMark(3500000000u);    /* v312k: the HUD scale ends */
 }
 
 #define WS_HUD_SCOPE(name, addr)                    \
     extern void name##_gen(void);                   \
     void name(void)                                 \
     {                                               \
-        if (!ws_hud_on()) { name##_gen(); return; } \
+        if (!ws_hud_on() && !hud_mod()) { name##_gen(); return; } \
         ws_enter(addr);                             \
         name##_gen();                               \
         ws_leave();                                 \
@@ -254,7 +313,7 @@ void sub_00103AE0(void)
 {
     s_lap_ms = GetTickCount();
     s_lap_seen = 1;
-    if (!ws_hud_on()) { sub_00103AE0_gen(); return; }
+    if (!ws_hud_on() && !hud_mod()) { sub_00103AE0_gen(); return; }
     ws_enter(0x00103AE0u);
     sub_00103AE0_gen();
     ws_leave();
@@ -418,6 +477,28 @@ static int ws_letterbox_on(void)
     return on;
 }
 
+/* v312k: quads (4 vertices of 32 bytes, x then y) from `from` to `to`,
+ * queued in a HUD function on side `sign`: scaled about their corner */
+static void hud_scale_quads(uint32_t from, uint32_t to, int sign)
+{
+    uint32_t q, v;
+    float s, cx, cy;
+    if (!hud_mod())
+        return;
+    s = hud_scale();
+    for (q = from; q + 0x80u <= to; q += 0x80u) {
+        float ym = 0.0f;
+        for (v = 0; v < 4; ++v)
+            ym += MEMF(q + v * 32u + 4u);
+        hud_corner(sign, ym * 0.25f > 240.0f, &cx, &cy);
+        for (v = 0; v < 4; ++v) {
+            uint32_t p = q + v * 32u;
+            MEMF(p) = cx + (MEMF(p) - cx) * s;
+            MEMF(p + 4u) = cy + (MEMF(p + 4u) - cy) * s;
+        }
+    }
+}
+
 static void ws_sprite_queue(void)
 {
     uint32_t obj, before, v;
@@ -428,7 +509,7 @@ static void ws_sprite_queue(void)
         return;
     }
     anchor = ws_stack[ws_depth - 1].anchor;
-    if (anchor != 9 && !ws_hud_on()) {
+    if (anchor != 9 && !ws_hud_on() && !hud_mod()) {
         sub_0015A880_gen();
         return;
     }
@@ -468,9 +549,10 @@ static void ws_sprite_queue(void)
         return;
     if (g_eax != 0 || MEM32(obj + 0x1C) - before != 0x80)
         return;
-    extra = ws_half_extra();
+    extra = ws_hud_on() ? ws_half_extra() : 0.0f;
     for (v = 0; v < 4; ++v)
         MEMF(before + v * 32u) += (float)anchor * extra;
+    hud_scale_quads(before, before + 0x80u, anchor);   /* v312k */
 }
 
 /* v307: the quad batch's other way in, vtable +0x18 (sub_0015A560): n
@@ -486,7 +568,7 @@ void sub_0015A560(void)
     uint32_t obj = MEM32(g_esp + 4), before, after, v;
     int anchor;
     float dx;
-    if (ws_depth <= 0 || ws_depth > 32 || !ws_hud_on()) {
+    if (ws_depth <= 0 || ws_depth > 32 || (!ws_hud_on() && !hud_mod())) {
         sub_0015A560_gen();
         return;
     }
@@ -500,9 +582,10 @@ void sub_0015A560(void)
     after = MEM32(obj + 0x1C);
     if (g_eax != 0 || after <= before || ((after - before) & 31u) || after - before > 256u * 1024u)
         return;
-    dx = (float)anchor * ws_half_extra();
+    dx = ws_hud_on() ? (float)anchor * ws_half_extra() : 0.0f;
     for (v = before; v < after; v += 32u)
         MEMF(v) += dx;
+    hud_scale_quads(before, after, anchor);   /* v312k */
 }
 
 /* ── screens kept at 4:3 ─────────────────────────────────────────────────
@@ -872,6 +955,17 @@ static void wsm_fill_mark(int fill)
     wsm_zbias(zb);
 }
 void jsrf_RowFillMark(void) { wsm_fill_mark(1); }   /* recomp_manual.c */
+/* v312e: any mark (jsrf_boost.c: the new boost effect), the real z-bias put
+ * back at once */
+void jsrf_ZBiasMark(uint32_t v)
+{
+    uint32_t zb;
+    if (!MEM32(0x19DCE0u))
+        return;                             /* no device yet */
+    zb = MEM32(0x19E2E8u);
+    wsm_zbias(v);
+    wsm_zbias(zb);
+}
 void jsrf_RowFillOff(void) { wsm_fill_mark(3); }    /* v225: recomp_manual.c */
 
 /* v228: graffiti select's 3D scene. The garage's graffiti menu function runs
@@ -1047,6 +1141,26 @@ static void ws_text_log(const char *fn, int where)
     fputc('\n', stderr);
 }
 
+/* v312k: a string added in a HUD function: its x, y scaled about its
+ * corner, and its size (scale x, scale y at esp+20, esp+24) */
+static void hud_scale_text(void)
+{
+    int a, sign;
+    float s, cx, cy;
+    if (!hud_mod() || ws_depth <= 0 || ws_depth > 32 || wsm_cur >= 0 || wsm_in_header)
+        return;
+    a = ws_stack[ws_depth - 1].anchor;
+    if (a != 1 && a != -1 && a != 3 && a != -3)
+        return;
+    sign = a > 0 ? 1 : -1;
+    s = hud_scale();
+    hud_corner(sign, MEMF(g_esp + 8) > 240.0f, &cx, &cy);
+    MEMF(g_esp + 4) = cx + (MEMF(g_esp + 4) - cx) * s;
+    MEMF(g_esp + 8) = cy + (MEMF(g_esp + 8) - cy) * s;
+    MEMF(g_esp + 20) *= s;
+    MEMF(g_esp + 24) *= s;
+}
+
 static int ws_text_anchor(void)
 {
     int a;
@@ -1067,6 +1181,7 @@ void sub_0003D610(void)
     ws_text_log("3D610", where);
     if (where)
         MEMF(g_esp + 4) += (float)where * ws_half_extra();
+    hud_scale_text();                       /* v312k */
     sub_0003D610_gen();
 }
 
@@ -1116,5 +1231,6 @@ void sub_0003D5D0(void)             /* add a string: x at esp+4 */
         if (wsm_in_header)
             MEMF(g_esp + 8) += wsm_dy;      /* v232: the street sign, down */
     }
+    hud_scale_text();                       /* v312k */
     sub_0003D5D0_gen();
 }

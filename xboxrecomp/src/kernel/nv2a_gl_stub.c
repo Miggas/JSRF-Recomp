@@ -1,4 +1,4 @@
-/* Built instead of nv2a_gl.c when XBOXRECOMP_GL is OFF: the GPU backend is
+/* Built instead of nv2a_render.c when XBOXRECOMP_GL is OFF: the GPU backend is
  * absent and the executor keeps the software rasteriser. */
 #include "nv2a_gl.h"
 

@@ -37,6 +37,7 @@
 
 #include <xbox/xboxrecomp.h>
 #include "jsrf_version.h"
+#include "jsrf_logname.h"
 
 extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
 extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
@@ -583,7 +584,8 @@ static void portable_setup(void)
          * lose the log just where it is wanted. */
         const char *log = getenv("RECOMP_LOG");
         if (log && *log) {
-            if (!freopen(log, "w", stderr)) { /* keep the old stderr */ }
+            char name[PATH_MAX];
+            if (!freopen(jsrf_log_name(log, name, sizeof name), "w", stderr)) { /* keep the old stderr */ }
         }
     }
 }

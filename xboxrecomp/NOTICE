@@ -71,7 +71,8 @@ Derived algorithms — credited, independently implemented
 Public domain and free fonts
 ----------------------------
 
-  src/third_party/stb/stb_easy_font.h, src/third_party/stb/stb_truetype.h
+  src/third_party/stb/stb_easy_font.h, src/third_party/stb/stb_truetype.h,
+  src/third_party/stb/stb_image_write.h (v313: photo mode's PNGs)
     Sean Barrett's stb libraries (https://github.com/nothings/stb), public
     domain (or MIT, the reader's choice), as their headers say.
 
