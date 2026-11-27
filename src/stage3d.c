@@ -743,8 +743,16 @@ static const uint8_t s_tcol[12][3] = { {255,196,30}, {255,90,90}, {80,170,255}, 
 /* m29k: what a type is known to be (Miggas, in the game: type 0 grinds give 10 points, type 1 500) */
 static const char *type_note(uint32_t v)
 {
-    if (v == 0) return ": 10 points";
-    if (v == 1) return ": 500 points";
+    /* m29u: bit 0 checked in game; the others guessed from the rails' shapes (Stg00, 10, 11, 30): 0x10000 mostly
+     * short and steep, upright ones among them (poles); 0x20000 long and winding (curves, pipes, cables?) */
+    switch (v) {
+    case 0: return ": 10 points";
+    case 1: return ": 500 points";
+    case 0x10000: return ": poles, steep?";
+    case 0x10001: return ": steep, 500 points?";
+    case 0x20000: return ": long, curving?";
+    case 0x20001: return ": curving, 500 points?";
+    }
     if (v & 1) return ": 500 points?";
     return "";
 }
