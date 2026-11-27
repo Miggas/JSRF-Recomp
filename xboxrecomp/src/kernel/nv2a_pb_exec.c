@@ -3793,6 +3793,7 @@ static int ws_span(int kind, const NvGlState *st, uint32_t maxn, float *lo, floa
  * icons (Miggas's idea: find the menu's draws and see which one hides
  * them): the icon and the button it should sit on show up as two lines over
  * the same box. */
+static void drawlog_ff(void);   /* v313q */
 static void drawlog(int kind, const NvGlState *st)
 {
     static int on = -1, was;
@@ -3860,6 +3861,8 @@ static void drawlog(int kind, const NvGlState *st)
             st->blend_enable, st->blend_sfactor, st->blend_dfactor,
             st->alpha_test, st->alpha_func, st->alpha_ref, st->color_mask, st->cull_enable,
             st->surf_va, st->width, st->height);
+    if (kind == XK_FIXED)
+        drawlog_ff();
 }
 
 /* v187e: the display-sized surfaces drawn into lately. A texture over one
@@ -4779,6 +4782,39 @@ static struct {
         float pos[3], atten[3];
     } l[8];
 } s_lt = { {0, 0, 0}, {0, 0, 0}, 1.0f, 0, 0, 0, 0, {{{0}}} };
+
+/* v313q: a fixed-function draw's colour inputs for the F9 draw log: the
+ * lighting state, the first vertex's diffuse colour and the combiners
+ * (the start menu's counter box came out black, Miggas) */
+static void drawlog_ff(void)
+{
+    const VertexAttr *ca = color_attr();
+    float c[4] = {-1, -1, -1, -1};
+    unsigned i, lit = 0;
+    if (s_gpu.idx_count && ca->offset && ca->stride)
+        fetch_attr(ca, s_gpu.idx[0], c);
+    fprintf(stderr, "[DRAWLOG]      ff: lighting %u%s cmat %08X lights %02X amb %.2f %.2f %.2f emis %.2f %.2f %.2f"
+            " alpha %.2f spec %u | vertex0 diffuse %.2f %.2f %.2f %.2f | combiners %u\n",
+            (unsigned)s_gpu.ff_lighting, ff_lighting_off() ? " (off)" : "", s_lt.color_material,
+            s_lt.enable_mask, s_lt.scene_ambient[0], s_lt.scene_ambient[1], s_lt.scene_ambient[2],
+            s_lt.emission[0], s_lt.emission[1], s_lt.emission[2], s_lt.alpha, s_lt.specular_on,
+            c[0], c[1], c[2], c[3], (unsigned)s_gpu.rc_seen);
+    if (s_gpu.rc_seen)
+        fprintf(stderr, "[DRAWLOG]      rc: control %08X c0 icw %08X ocw %08X a0 icw %08X ocw %08X"
+                " c1 icw %08X ocw %08X f0 %08X f1 %08X final %08X %08X stages %08X\n",
+                s_gpu.rc.control, s_gpu.rc.color_icw[0], s_gpu.rc.color_ocw[0],
+                s_gpu.rc.alpha_icw[0], s_gpu.rc.alpha_ocw[0], s_gpu.rc.color_icw[1],
+                s_gpu.rc.color_ocw[1], s_gpu.rc.factor0[0], s_gpu.rc.factor1[0],
+                s_gpu.rc.final0, s_gpu.rc.final1, s_gpu.rc.stage_program);
+    for (i = 0; i < 8 && s_gpu.ff_lighting; i++)
+        if (s_lt.enable_mask & (3u << (2 * i))) {
+            fprintf(stderr, "[DRAWLOG]      light %u: amb %.2f %.2f %.2f dif %.2f %.2f %.2f dir %.2f %.2f %.2f\n", i,
+                    s_lt.l[i].ambient[0], s_lt.l[i].ambient[1], s_lt.l[i].ambient[2],
+                    s_lt.l[i].diffuse[0], s_lt.l[i].diffuse[1], s_lt.l[i].diffuse[2],
+                    s_lt.l[i].dir[0], s_lt.l[i].dir[1], s_lt.l[i].dir[2]);
+            if (++lit >= 2) break;
+        }
+}
 
 static int ff_light_method(uint32_t method, uint32_t param)
 {
