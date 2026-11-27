@@ -4085,6 +4085,14 @@ void jsrf_nt3000_voice(void)
     nt3000_name(0x002227D0u, "e_haya_b.dat");
     nt3000_name(0x002228B4u, "e_hysb_j.dat");
     MEM32(0x001EE6B8u + 7u * 4u) = 38u;
+    /* v313p: and bank 38 takes the characters' sound presets, as in PAL.
+     * NTSC left it on the enemy voices' table (flags 1 on every line), so
+     * it escaped the game's rule that holds back the characters' lines
+     * (preset flag 2) while the mission event object (the action manager's
+     * slot 0x12AC) is up: in such a select NT 3000 spoke and nobody else
+     * did (a tester's chapter 8 save, reported through Miggas). */
+    if (MEM32(0x00224ED8u + 19u * 4u))
+        MEM32(0x00224ED8u + 38u * 4u) = MEM32(0x00224ED8u + 19u * 4u);
     fprintf(stderr, "[VOICE] NT 3000 speaks from bank 38, pv_yoyob.dat, as in the PAL release\n");
 }
 
