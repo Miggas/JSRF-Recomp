@@ -17,7 +17,7 @@ const JSSurf jst_surf[JST_NSURF] = {
     { 4, "Wall", 214, 138, 65 },
     { 8, "Unknown (8)", 150, 160, 120 },
     { 16, "Stairs", 218, 225, 40 },
-    { 32, "Billboard", 44, 225, 40 },
+    { 32, "Wallride", 44, 225, 40 },          /* m29s: the GG Notebook's name (billboards are where it is) */
     { 128, "Half-pipe", 60, 60, 200 },
     { 256, "Ceiling", 0, 254, 232 },
     { 512, "Untouchable", 225, 40, 40 },
