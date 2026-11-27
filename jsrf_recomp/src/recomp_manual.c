@@ -1447,10 +1447,23 @@ static void adx_timing(int skipped)
         last_report = now;
     }
 }
+/* v313t: no ADX server runs while the game is held (the quit window, the
+ * shader build). The held APU plays nothing, so a streamed sound's play
+ * position stands still while the server, on the vsync thread, kept
+ * running and counting: after about 5 seconds CRI's ADXT took the stalled
+ * stream for an error and stopped it, and the music stayed off until the
+ * next stage (sound effects, not streamed, were fine; Reported by
+ * Miggas). Held, the server waits with everything else. */
+extern volatile LONG g_xbox_game_held;
 void sub_00141F10(void)
 {
     double t0 = 0;
     int skipped = MEM32(0x0026173Cu) != 0;
+    if (g_xbox_game_held) {
+        g_eax = 0;
+        g_esp += 4;                          /* ret */
+        return;
+    }
     if (skipped)
         cri_adx_skips++;
     else
