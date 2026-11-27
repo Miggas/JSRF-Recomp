@@ -2705,11 +2705,11 @@ int s3d_draw(struct nk_context *ctx, SDL_Renderer *ren, float x, float y, float 
             if (G.cars_done) snprintf(t, sizeof t, "Car routes (%d)", G.cars.npath);
             else snprintf(t, sizeof t, "Car routes");
             check(ctx, t, &G.showcars);
-            if (G.showcars && !was) { cars_load(); G.need = 1; }
+            if (G.showcars && (!was || !G.cars_done)) { cars_load(); G.need = 1; }   /* m29r: or a new stage opened with it on */
             if (G.mis_done) snprintf(t, sizeof t, "Mission paths (%d missions here)", G.nmis);
             else snprintf(t, sizeof t, "Mission paths (crowd?)");
             check(ctx, t, &G.showmis);
-            if (G.showmis && !wm) { mis_load(); G.need = 1; }
+            if (G.showmis && (!wm || !G.mis_done)) { mis_load(); G.need = 1; }
             if (G.showmis) check(ctx, "   Spawns (green), planes (red)", &G.showmarks);   /* m29q: always there */
             if (G.showmis && G.mis_done && G.nmis == 0) {
                 char md[LPATH];
