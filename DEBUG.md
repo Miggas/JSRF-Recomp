@@ -29,6 +29,7 @@ Back to the main guide: [README.md](README.md#6-settings-jsrfini).
 | `RECOMP_GL_ADDITIVE_DEPTH=1` | Let the map's glows and light beams write depth again, as the original does. Brings back the Skyscraper District bug where the chain-link floor disappears behind the light pillars. |
 | `RECOMP_GL_MENU_DEPTH=0` | Turn off the menu depth fix (graffiti menu icons hidden behind their buttons). |
 | `RECOMP_GL_PREBUILD=0` | Don't build missing shaders ahead on light frames (they're then compiled when the game first needs them). |
+| `RECOMP_GL_PRELOAD_PROGRAMS=1` | With `RECOMP_GL_PRESENT=dxgi` on Windows, load known shader programs on the render thread before guest boot. Retains up to 256 programs for first use. Startup takes longer. Requires the shader cache, prebuild and the threaded executor. Omit the setting to disable. |
 | `RECOMP_GL_NO_WINDOW_CLIP=1` | Ignore the game's window clipping (used by split screen). |
 
 ## Widescreen

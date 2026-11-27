@@ -1331,6 +1331,7 @@ static void cache_save(const char *path, GLuint pr)
 }
 
 static GLuint link_with2(const char *vsrc, const char *fsrc);
+#include "nv2a_gl_preload.h"
 static GlProg *zvar(GlProg *p, const NvGlState *st);
 static void rcp_note(int kind, int ffkey, int nz, const uint32_t *spec,
                      const uint32_t (*prog)[4], int n);                 /* v241 */
@@ -1365,6 +1366,8 @@ static GLuint link_with2(const char *vsrc, const char *fsrc)
     int cache = shader_cache_on();
     if (cache) {
         cache_path(path, sizeof path, vsrc, fsrc);
+        if (s_preloaded_count && (pr = preloaded_take(path)) != 0)
+            return pr;
         pr = cache_load(path);
         if (pr) {
             s_cache_hits++;
@@ -2148,9 +2151,9 @@ static void rcp_note_prog(const GlProg *base, int nz, const uint32_t *spec)
     if (base && rcp_base(base, &kind, &ffkey, &prog, &n))
         rcp_note(kind, ffkey, nz, spec, prog, n);
 }
-/* build one recipe's program into the shader cache, if it is not there;
- * check_only (v253): only say whether it is missing (1) */
-static int rcp_build2(const Recipe *r, int check_only)
+enum RecipeAction { RCP_BUILD, RCP_CHECK, RCP_PRELOAD };
+/* Return 1 when the check finds a missing recipe binary. */
+static int rcp_build2(const Recipe *r, enum RecipeAction action)
 {
     int missing = 0;
     char *vgen = NULL, *fgen = NULL;
@@ -2171,10 +2174,13 @@ static int rcp_build2(const Recipe *r, int check_only)
     } else
         fsrc = r->nz ? fs_nz() : FS;
     cache_path(path, sizeof path, vsrc, fsrc);
-    f = fopen(path, "rb");
-    if (f)
+    if (action == RCP_PRELOAD && s_preloaded_count < PRELOAD_LIMIT) {
+        unsigned misses = s_cache_misses;
+        if (preload_program(path, vsrc, fsrc) && s_cache_misses != misses)
+            ++s_rcp_built;
+    } else if ((f = fopen(path, "rb")) != NULL)
         fclose(f);                     /* already built */
-    else if (check_only)
+    else if (action == RCP_CHECK)
         missing = 1;
     else {
         GLuint id = link_with2(vsrc, fsrc);
@@ -2187,7 +2193,35 @@ static int rcp_build2(const Recipe *r, int check_only)
     free(fgen);
     return missing;
 }
-static void rcp_build(const Recipe *r) { (void)rcp_build2(r, 0); }
+static void rcp_build(const Recipe *r) { (void)rcp_build2(r, RCP_BUILD); }
+
+int nv2a_gl_preload_requested(void)
+{
+    const char *setting = getenv("RECOMP_GL_PRELOAD_PROGRAMS");
+    const char *present, *renderer;
+    if (!setting || strcmp(setting, "1") != 0)
+        return 0;
+    present = getenv("RECOMP_GL_PRESENT");
+    renderer = getenv("RECOMP_RENDERER");
+    return present && strcmp(present, "dxgi") == 0 &&
+           !(renderer && (!strcmp(renderer, "software") || !strcmp(renderer, "sw"))) &&
+           prebuild_on() && !getenv("RECOMP_GL_NO_SHADER_CACHE");
+}
+
+/* Called by the persistent DXGI renderer thread before the guest begins.
+ * Long GL calls during a guest load can exceed its own I/O deadlines. */
+void nv2a_gl_preload_startup(void)
+{
+    uint64_t t0 = TM_NOW();
+    if (!nv2a_gl_active())
+        return;
+    if (s_rcp_state == 0)
+        rcp_read();
+    while (s_rcp_next < s_rcp_had)
+        rcp_build2(&s_rcp[s_rcp_next++], RCP_PRELOAD);
+    fprintf(stderr, "[GL] shader preload: %u programs retained in %.0f ms\n", s_preloaded_count,
+            (double)(TM_NOW() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency());
+}
 /* at the end of a frame with `draws` draws: some of the list, if light */
 static int s_pre_done;   /* v253: the first-frame check (nv2a_gl_prebuild_hold) has run */
 void nv2a_gl_idle(uint32_t draws)
@@ -4643,7 +4677,7 @@ void nv2a_gl_prebuild_hold(void)
     if (!todo)
         return;
     for (i = s_rcp_next; i < s_rcp_had; i++)
-        if (rcp_build2(&s_rcp[i], 1))
+        if (rcp_build2(&s_rcp[i], RCP_CHECK))
             todo[n++] = i;
     fprintf(stderr, "[GL] shader check: %u of %u setups to build (%.0f ms)\n", n,
             s_rcp_had - s_rcp_next, (double)(TM_NOW() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency());

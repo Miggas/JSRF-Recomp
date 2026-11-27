@@ -3,6 +3,8 @@
 #include "nv2a_gl.h"
 
 int  nv2a_gl_active(void) { return 0; }
+int nv2a_gl_preload_requested(void) { return 0; }
+void nv2a_gl_preload_startup(void) {}
 void nv2a_gl_draw(const NvGlState *st, const Nv2aVshOutput *v,
                   const float *fogf, const uint32_t *idx, uint32_t n_idx)
 { (void)st; (void)v; (void)fogf; (void)idx; (void)n_idx; }

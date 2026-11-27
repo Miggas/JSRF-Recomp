@@ -15,6 +15,7 @@
 #include "xbox_memory_layout.h"
 #include "kernel.h"
 #include "guest_vmem.h"
+#include "nv2a_gl.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,6 +155,7 @@ static size_t xbox_TiledApertureSize(void)
 }
 
 static HANDLE g_nv2a_ack_thread = NULL;
+static HANDLE g_nv2a_preload_ready;
 static volatile LONG g_nv2a_ack_stop = 0;
 static int g_kick_separate;   /* v74: see nv2a_kick_ack_thread */
 
@@ -1294,6 +1296,10 @@ static void fq_exec(void)
 static DWORD WINAPI nv2a_ack_thread(LPVOID param)
 {
     volatile uint32_t *regs = (volatile uint32_t *)param;
+    if (g_nv2a_preload_ready) {
+        nv2a_gl_preload_startup();
+        SetEvent(g_nv2a_preload_ready);
+    }
     while (!InterlockedCompareExchange(&g_nv2a_ack_stop, 0, 0)) {
         {
             static int watched;
@@ -3042,7 +3048,12 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
     }
 
     if (g_nv2a_memory) {
-        xbox_Nv2aAckStart();
+#if defined(_WIN32)
+        if (!getenv("RECOMP_ACK_INLINE") && nv2a_gl_preload_requested())
+            g_nv2a_preload_ready = CreateEvent(NULL, TRUE, FALSE, NULL);
+#endif
+        if (!g_nv2a_preload_ready)
+            xbox_Nv2aAckStart();
     }
 
     /*
@@ -3243,6 +3254,19 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
     }
 
     xbox_WatchInit();
+#if defined(_WIN32)
+    if (g_nv2a_preload_ready) {
+        /* Reserve guest address-space mirrors before creating the driver
+         * context. The guest entry point runs after this function returns. */
+        xbox_Nv2aAckStart();
+        if (g_nv2a_ack_thread) {
+            HANDLE wait_for[] = {g_nv2a_preload_ready, g_nv2a_ack_thread};
+            WaitForMultipleObjects(2, wait_for, FALSE, INFINITE);
+        }
+        CloseHandle(g_nv2a_preload_ready);
+        g_nv2a_preload_ready = NULL;
+    }
+#endif
     fprintf(stderr, "xbox_MemoryLayoutInit: complete\n");
     return TRUE;
 }

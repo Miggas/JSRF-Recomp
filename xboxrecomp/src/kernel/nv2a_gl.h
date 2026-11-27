@@ -101,6 +101,8 @@ static inline void nv2a_gl_vertex_from(NvGlVertex *g, const Nv2aVshOutput *o, fl
 
 /* 1 once a context exists and the shaders built; 0 means use software. */
 int  nv2a_gl_active(void);
+int  nv2a_gl_preload_requested(void);
+void nv2a_gl_preload_startup(void);
 
 /* Triangles: n_idx indices into v (three per triangle, already wound so
  * that culling sees the title's facing), fogf[i] the fog factor of v[i]. */
