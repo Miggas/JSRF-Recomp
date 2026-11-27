@@ -4786,6 +4786,8 @@ static struct {
 /* v313q: a fixed-function draw's colour inputs for the F9 draw log: the
  * lighting state, the first vertex's diffuse colour and the combiners
  * (the start menu's counter box came out black, Miggas) */
+static void mat4_apply(const float m[16], const float v[4], float out[4]);
+static uint32_t s_two_side;                 /* v313r: SET_TWO_SIDE_LIGHT_EN (0x17C4), for the log */
 static void drawlog_ff(void)
 {
     const VertexAttr *ca = color_attr();
@@ -4814,6 +4816,28 @@ static void drawlog_ff(void)
                     s_lt.l[i].dir[0], s_lt.l[i].dir[1], s_lt.l[i].dir[2]);
             if (++lit >= 2) break;
         }
+    /* v313r: the normal vertex 0 brings, in eye space, against the first
+     * triangle's own facing (eye space, from its positions) */
+    if (s_gpu.ff_lighting && s_gpu.idx_count >= 3) {
+        float nr[4] = {0, 0, 1, 0}, ne[4], p[3][4], e[3][4], u[3], v[3], f[3];
+        int has = fetch_attr(&s_gpu.attr[2], s_gpu.idx[0], nr), k;
+        nr[3] = 0.0f;
+        mat4_apply(s_gpu.ff_inv_mv0, nr, ne);
+        for (k = 0; k < 3; k++) {
+            fetch_attr(&s_gpu.attr[0], s_gpu.idx[k], p[k]);
+            p[k][3] = 1.0f;
+            mat4_apply(s_gpu.ff_mv[0], p[k], e[k]);
+        }
+        for (k = 0; k < 3; k++) { u[k] = e[1][k] - e[0][k]; v[k] = e[2][k] - e[0][k]; }
+        f[0] = u[1] * v[2] - u[2] * v[1];
+        f[1] = u[2] * v[0] - u[0] * v[2];
+        f[2] = u[0] * v[1] - u[1] * v[0];
+        fprintf(stderr, "[DRAWLOG]      normal: %s %.2f %.2f %.2f (attr type %u size %u stride %u) eye %.2f %.2f %.2f"
+                " | triangle 0 facing (eye) %.3g %.3g %.3g | control %08X two-side %u front %X cull face %X\n",
+                has ? "read" : "none, default", nr[0], nr[1], nr[2], s_gpu.attr[2].type, s_gpu.attr[2].size,
+                s_gpu.attr[2].stride, ne[0], ne[1], ne[2], f[0], f[1], f[2], s_lt.control, s_two_side,
+                s_gpu.front_face, s_gpu.cull_face);
+    }
 }
 
 static int ff_light_method(uint32_t method, uint32_t param)
@@ -4827,6 +4851,7 @@ static int ff_light_method(uint32_t method, uint32_t param)
     if (method == 0x03BC) { s_lt.enable_mask = param; return 1; }     /* LIGHT_ENABLE_MASK */
     if (method == 0x03B8) { s_lt.specular_on = param; return 1; }     /* SPECULAR_ENABLE */
     if (method == 0x0294) { s_lt.control = param; return 1; }         /* LIGHT_CONTROL */
+    if (method == 0x17C4) { s_two_side = param; return 0; }           /* v313r: noted only */
     if (method >= 0x1000 && method < 0x1400) {
         uint32_t i = (method - 0x1000) / 0x80, o = (method - 0x1000) % 0x80;
         if (o < 0x0C)       s_lt.l[i].ambient[o / 4] = f;
